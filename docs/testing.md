@@ -1,5 +1,7 @@
 # Test boundaries and verification
 
+Ordinary browser verification now targets Treasury. `pnpm verify` additionally selects the historical presentation explicitly for retained shared-workspace browser and application regressions. Those tests do not add Payables to the product scope.
+
 `pnpm verify` runs type checking, the offline Node suites, the production web build and offline
 browser suites, the offline application E2E suites, then generated-evidence drift checks. It does not run live verification. Live checks
 remain explicit and owner-authorized; passing fixtures does not establish deployed behavior.

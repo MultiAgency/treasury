@@ -2,6 +2,7 @@
 export * from "../../../../evidence/inventory.js";
 
 import type { Kind } from "../../../../evidence/inventory.js";
+import { TREASURY_ONLY } from "../../treasury-surface";
 
 /** Product labels only; requirement names and evidence remain canonical. */
-export const AREA_NAMES: Record<Kind, string> = { facilitator: "Payables", treasury: "Portfolio" };
+export const AREA_NAMES: Record<Kind, string> = { facilitator: "Payables", treasury: TREASURY_ONLY ? "Treasury" : "Portfolio" };

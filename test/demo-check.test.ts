@@ -14,10 +14,11 @@ test("demo preflight fails explicitly when a hosted valuation is unavailable", (
   writeFileSync(preload, `
     globalThis.fetch = async (url) => {
       const path = new URL(url).pathname;
+      if (path === "/gw/me") return Response.json({viewer:{account:"owner.near"},agents:[{name:"treasury",area:"treasury"}]});
       const overview = { book: [{ symbol: "USDC", asset: "usdc", decimals: 6, confidential: "10000000", usd: null }],
         target: { usdc: 1 }, rebalance: { minLegUsd: 1 }, policy: { usage: { budget: Object.fromEntries(["daily", "weekly", "monthly"].map(period => [period,
           { limit_usd: null, remaining_usd: null, spent_usd: "0", resets_at: null }])) } } };
-      const value = path.endsWith("/overview") ? overview : path.endsWith("/held") ? [] :
+      const value = path.endsWith("/overview") ? overview : path.endsWith("/unresolved") ? [] :
         path.endsWith("/autopilot/get") ? { on: true, nextRun: "2030-01-01T00:00:00Z" } : undefined;
       if (value === undefined) throw new Error("Unexpected offline request");
       return Response.json({ json: value });

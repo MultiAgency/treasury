@@ -8,16 +8,17 @@ Vocabulary is in `CONTEXT.md`: use its terms in code, tests, docs and conversati
 policy, grant, purpose, authorization, operation, unresolved, held payout, refusal). Read it first.
 
 ## Where things are
-- `README.md` — what runs, how to start it, the two areas (Payables, Treasury), and **Not done yet**.
-- `docs/facilitator.md`, `docs/treasury.md` — each area: its briefs, each requirement's stage, how each claim is
-  known, what isn't covered.
+- `README.md` — what runs, how to start it, the Treasury product scope, and **Not done yet**.
+- `docs/treasury.md` — brief 02 requirements, evidence and gaps.
+- `docs/scope.md` — active Treasury scope and retained historical compatibility.
+- `docs/legacy/` — inherited Payables/workspace docs and roadmap briefs, outside product scope.
 - `docs/architecture.md` — which files are shared core, facilitator or treasury; the one send site; how
   the money path stays safe on one host (journal, reconciliation, checks before each send, invoices).
 - `docs/operations.md` — deployment, executor migration, state preservation, the unattended-run report.
 - `docs/enforcement.md` — what the signed policy guarantees today, how each part is known, and what a
   stronger claim needs (threat model, obligations, open cases, provider questions).
 - `docs/mainnet-log.md` — every dated mainnet run, with proposal numbers; op ids and tx hashes are in the private release record.
-- `DEMO.md` — the hosted walkthrough (kept out of the app so copy edits don't redeploy `dao`).
+- `DEMO.md` — the hosted walkthrough (kept out of the app so copy edits do not require a deployment).
 
 ## The money path
 Files: `src/agent.ts` (dispatch), `authorize.ts`, `lock.ts`, `ops.ts`, `plans.ts`, `treasury.ts`, `autopilot.ts`,
@@ -38,14 +39,13 @@ Files: `src/agent.ts` (dispatch), `authorize.ts`, `lock.ts`, `ops.ts`, `plans.ts
 - **Mandate digest** (`src/mandate.ts`) is recorded with every plan and money action.
 
 ## Live systems
-- Hosts: https://proto.multiagency.ai (`dao` service: gateway + treasury executor + payout
-  approve-only) and https://invoices.multiagency.ai (payout executor). Railway, one replica each,
-  state on the `/data` volume.
+- Treasury host: https://treasury.multiagency.ai, Railway service `treasury`, one replica, state on `/data`.
+  Earlier `proto` and `invoices` hosts belong to the inherited shared workspace; preserve their evidence scope.
 - Deploys, restarts and dashboard money actions are the user's. Prepare and verify; let them ship.
-- The signed-out public page shows the two areas and each requirement's stage, never the evidence,
+- The signed-out public page shows Treasury and each requirement's stage, never the evidence,
   and reads nothing from the server: no balances, amounts, payees, policies, invoices, roster or
-  proposals. `test/public.test.ts` pins `web/src/public.tsx`.
-- `pnpm test:live` moves or touches real funds: run only when asked, never scheduled. `pnpm smoke` is the read-only check of both hosts.
+  proposals. `test/public.test.ts` pins the inherited public boundary; Treasury browser fixtures check no private reads.
+- `pnpm test:live` moves or touches real funds: run only when asked, never scheduled. `pnpm smoke` checks the Treasury host read-only; legacy invoice checks require an explicit `INVOICES_URL`.
 - An unattended run or freeze may be in progress: ask the user before editing money-path files.
 
 ## Calibrated claims
@@ -63,6 +63,13 @@ Every sentence in README, DEMO.md and docs states exactly what was shown, and ho
   *unverified*. A deployed provider version is never assumed from its source.
 - A newly found gap goes into **Not done yet** or `docs/enforcement.md` in the same change.
 - A claim the code no longer supports is fixed or removed in the same change.
+
+## Product focus
+- Ordinary builds, development and Docker images use Treasury. `PUBLIC_TREASURY_ONLY=false` is only for inherited regressions.
+- Payables is a future integration. Do not add invoice collection, agreement management or DCA to the current Treasury demo.
+- Steward remains a hidden experimental demo feature at `/steward`; keep it out of navigation and retain explicit plan execution.
+- Exact public-payout unshielding is a brief-02 gap, not an implemented Payables flow.
+- Shared backend compatibility code is retained deliberately. UI route hiding does not restrict server authorization.
 
 ## Working here
 - Other sessions edit this repo concurrently. When files change unexpectedly, check which sessions

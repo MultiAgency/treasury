@@ -5,6 +5,7 @@ import { SCHEDULE_STOPPED, SCHEDULE_STOP_SCOPE } from "../../shared/schedule-cop
 import { queries } from "../../shared/queries";
 import { ArrowRight, ArrowsLeftRight, CheckCircle } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 
 import { StrategyWorkflow } from "./strategy-workflow";
@@ -13,7 +14,7 @@ import { useCanCall } from "../../app/viewer";
 import { useAgent } from "../../app/agent-context";
 import { Badge, Button, Card, CardHeader, Details, Dot, Empty, ErrorBox, Loading, QueryError, Note, NotExecuted, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
 
-export function Rebalance({ disabledReason, onExecute }: { disabledReason?: string; onExecute?: (planId: string) => void }) {
+export function Rebalance({ disabledReason, onExecute, onResult }: { disabledReason?: string; onExecute?: (planId: string) => void; onResult?: () => void }) {
   const canPreview = useCanCall("rebalance");
   const canExecute = useCanCall("executePlan");
   const executor = useAgent().setup.executor !== false;
@@ -22,12 +23,17 @@ export function Rebalance({ disabledReason, onExecute }: { disabledReason?: stri
   const split = data.book.map((h) => `${Math.round((data.target[h.asset] ?? 0) * 100)}% ${h.symbol}`).join(" / ");
   const preview = useRun(client.rebalance, []);
   const execution = useRun(client.executePlan);
+  const lastResult = execution.events.at(-1);
+  useEffect(() => { if (lastResult) onResult?.(); }, [lastResult, onResult]);
   const busy = preview.state === "running" || execution.state === "running";
   const plan = preview.events.find((e) => e.type === "plan");
   const saved = preview.events.find((e) => e.type === "saved");
   const executed = !!saved && execution.input?.planId === saved.plan.id && execution.state !== "idle";
   const rejected = execution.events.find((e) => e.type === "rejected");
   const blocked = Boolean(disabledReason) || !executor || !hasGrant;
+  const blockReason = disabledReason ?? (!executor ? "Preview and execution are available on this treasury’s executor."
+    : !hasGrant ? "Authorize the saved strategy before previewing a rebalance."
+      : !canPreview ? "Your account does not have permission to prepare a rebalance." : undefined);
 
   return (
     <Card className="lg:col-span-2 lg:row-span-2">
@@ -100,7 +106,7 @@ export function Rebalance({ disabledReason, onExecute }: { disabledReason?: stri
         })}
         {rejected?.type === "rejected" && <NotExecuted problems={rejected.problems} again="Preview" />}
         <ErrorBox error={preview.error ?? execution.error} />
-        {disabledReason && <p className="text-sm text-muted-foreground">{disabledReason}</p>}
+        {blockReason && <p className="text-sm text-muted-foreground">{blockReason} {!hasGrant && executor && <Link to="/automations" className="underline">Review strategy authorization</Link>}</p>}
         {(executed || execution.error) && <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/activity">Review operation outcomes before another preview</Link></Button>}
       </div>
 

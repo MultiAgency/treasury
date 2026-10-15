@@ -1,5 +1,7 @@
 # Agent Connect audit and delivery plan
 
+Historical multi-brief audit. The active scope is brief 02 Agentic Treasury Management; see [repository scope](scope.md) and [Treasury evidence](treasury.md).
+
 Agentic Treasury covers three catalog briefs through two areas: Payables holds briefs 01 and 03;
 Portfolio, the product label for Treasury, holds brief 02. Each brief needs its own demonstration
 and evidence. An agreement in the shared payout agent does not satisfy the isolated-agent lifecycle

@@ -25,7 +25,7 @@ test("running brief coverage excludes roadmap requirements and retains limitatio
   assert.deepEqual(summarizeRequirements(PROTOTYPES.facilitator.briefs[0].requirements),
     { total: 9, agent: 6, other: 1, offline: 0, unverified: 1, unsupported: 1 });
   assert.deepEqual(summarizeRequirements(PROTOTYPES.treasury.briefs[0].requirements),
-    { total: 8, agent: 7, other: 1, offline: 0, unverified: 0, unsupported: 0 });
+    { total: 9, agent: 7, other: 1, offline: 0, unverified: 1, unsupported: 0 });
   for (const kind of ["facilitator", "treasury"] as const) {
     const limitations = PROTOTYPES[kind].briefs[0].limitations;
     assert.ok(limitations?.length);
@@ -37,6 +37,17 @@ test("all generated evidence presentations match the canonical inventory", () =>
   for (const { path, current, expected } of documentationUpdates()) {
     assert.equal(current, expected, `${path} has drifted; run pnpm evidence:write`);
   }
+});
+
+test("primary Treasury docs contain only brief 02 and retain exact-unshielding as a gap", () => {
+  const primary = requirementsMarkdown("treasury", true);
+  assert.match(primary, /02 Agentic Treasury Management/);
+  assert.doesNotMatch(primary, /Adaptive DCA|House Money|Bitcoin treasury/);
+  assert.match(primary, /Unshields exactly what a public payout needs.*Not yet/);
+  assert.match(primary, /atomic|simultaneous requests/);
+  const updates = documentationUpdates();
+  assert.ok(updates.some(entry => entry.path === "docs/legacy/facilitator.md"));
+  assert.doesNotMatch(updates.find(entry => entry.path === "DEMO.md")!.expected, /Invoice → DAO approval/);
 });
 
 test("regeneration preserves surrounding prose and rejects ambiguous boundaries", () => {

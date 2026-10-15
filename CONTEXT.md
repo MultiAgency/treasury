@@ -3,6 +3,15 @@
 An AI agent moves an owner's funds on NEAR Intents, only inside a policy the owner signed. This glossary
 names the concepts that the code, tests and reviews share.
 
+## Product scope
+
+This standalone repo focuses on **Agentic Treasury Management**: allowed assets, per-asset monthly
+caps, a cross-asset USD budget, quoted rebalancing, a strategy-bound schedule, confidential sweep and
+private operation evidence. Treasury is the default interface. Payables and the shared workspace
+terms below describe retained compatibility code and historical evidence, not active product areas.
+Exact public-payout unshielding, an idle-surplus reserve and the complete signed-envelope guarantee
+remain gaps; see `docs/scope.md` and `docs/enforcement.md`. Spending caps do not cap market exposure.
+
 ## Parties
 
 **Owner**:
@@ -22,15 +31,15 @@ An agent that only makes confidential USDC transfers to agreed payees, each held
 It runs the **Payables** area (docs/facilitator.md).
 
 **Area** / **Brief**:
-An area is what one agent shows: **Payables** (the payout agent) or **Treasury** (the treasury agent). A
+The active product area is **Treasury** (the treasury agent). **Payables** identifies the retained payout-agent compatibility area. A
 brief is an experiment from the Agent Connect catalog that an area runs or plans, keeping its catalog
 number and title (01 Confidential Treasury Facilitator, 02 Agentic Treasury Management). Each brief's
 requirements distinguish mainnet observations, offline tests, pinned provider source with deployed
 behavior unverified, and requirements not yet demonstrated.
 _Avoid_: prototype (for an area), use case
 
-**Workspace**:
-The signed-in owner's interface, with a shared Home, Payables and Portfolio sections, and Activity.
+**Workspace (historical shared interface)**:
+The inherited signed-in owner's interface, with shared Home, Payables and Portfolio sections, and Activity. The default Treasury interface uses the single Treasury overview and supporting task views described below.
 Each area retains its own agent, policy, grant, balance and access permissions. The shared Home
 routes attention to the relevant area; it does not combine balances or authorize money actions.
 Payables opens on Payments, with Agreements as its other task; Portfolio opens on Overview, with Strategy
@@ -74,8 +83,8 @@ Owner actions still require the owner's verified signature, obtained through the
 when it owns the agent. Historical records retain `operator` as the label for a manually triggered run.
 
 **Portfolio**:
-The product-facing label for the Treasury area across the public overview and
-signed-in workspace.
+The historical product-facing label for the Treasury area in the shared workspace.
+The standalone product uses **Treasury** in its default interface.
 It covers allocations, rebalancing and strategy limits; the underlying treasury agent, purpose,
 grant labels and routes retain their existing names.
 
@@ -133,7 +142,8 @@ until the plan is executed.
 
 **Steward**:
 An experimental LLM that proposes a plan in conversation, its responses verified against its TEE. It only
-proposes; the plan executes like any other.
+proposes; the plan executes like any other. It is retained for demos at `/a/<agent-name>/steward`
+(or `/steward` on a standalone server), hidden from navigation.
 
 ## Money actions
 
@@ -204,13 +214,13 @@ gaps, unknown timing and later observations explicit. The inspector and export a
 tested offline, not mainnet-observed.
 
 **Public overview**:
-A static explanation of Payables and Portfolio, with requirement stages from the canonical inventory.
+The default Treasury landing page is a static explanation of delegated rebalancing with requirement stages from the canonical inventory. The inherited shared presentation explains Payables and Portfolio only when explicitly selected for compatibility.
 It reads no agent records, shows no private evidence and submits no money actions. Earlier example-page
 hashes open the corresponding area's overview. It requires no wallet and never mounts the authenticated
 dashboard or its reads. Simulated approval, execution and playback are retired.
 
-**Guided walkthrough**:
-A guided walkthrough in the signed-in workspace that uses the agent's actual balances, policy and
+**Guided walkthrough (historical shared interface)**:
+The retained guided walkthrough in the signed-in workspace that uses the agent's actual balances, policy and
 grant. It reuses the existing payment and rebalance controls, including their explicit confirmations
 and owner approvals. Its prerequisite observations do not authorize a send. Outcomes come from
 operation and payment records selected by the exact confirmed plan or returned payment identity;
@@ -232,8 +242,16 @@ A hosted dashboard call classified by the gateway's intervention list, recorded 
 (or not run). The unattended-run report counts them. The existing record format and historical
 classification are retained when dashboard permissions change.
 
-## Treasury-only presentation candidate
+## Treasury interface
 
-The optional `PUBLIC_TREASURY_ONLY=true` web build presents brief 02 on one Treasury screen: allocations, signed monthly caps, budget headroom, quoted rebalancing, targets and schedule, and confidential sweep. It reuses the existing agent-scoped server controls. The presentation flag does not restrict server permissions or start another executor. Public copy contains no private observations. Exact public-payout unshielding remains outside the implemented behavior. This isolated candidate is not deployed.
+A manually confirmed plan stays selected on the overview while its exact operation records are
+followed. The last successful budget observation before confirmation is retained beside subsequent
+provider observations. Neither the difference nor a returned execution stream establishes settlement,
+plan-specific charges or atomic budget accounting. A changed policy prevents headroom comparison;
+failed reads remain unavailable. This local selection is not a durable money record: reload clears
+it without replaying execution. Signed monthly caps and each USD budget window are shown together;
+recorded refusal codes are read on demand, never produced by a live probe.
+
+The default web build presents brief 02 on one Treasury screen: allocations, signed monthly caps, budget headroom, quoted rebalancing, targets and schedule, and confidential sweep. It reuses the existing agent-scoped server controls. The presentation flag does not restrict server permissions or start another executor. Public copy contains no private observations. Exact public-payout unshielding remains outside the implemented behavior. This cleanup has not been deployed. The historical two-area UI requires explicit `PUBLIC_TREASURY_ONLY=false` for compatibility tests.
 
 **Registered treasury workspace**: An optional self-service gateway entry for one owner, before or after its Agent API agent is created. Wallet registration is bound to the signed-in NEAR account. Sputnik DAO registration requires a group member with permission to propose owner actions. Registration creates no provider intent and signs nothing. The existing owner-intent flow creates the agent after explicit wallet signing or DAO approval. Each workspace keeps its settings and all state in its own directory under `.treasuries/`; the gateway registry is additional private state. One treasury workspace per owner, with at most 16 on this prototype host. Schedules start off. This is offline-tested candidate behavior, not deployed.

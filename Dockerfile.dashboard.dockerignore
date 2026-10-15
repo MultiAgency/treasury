@@ -22,3 +22,12 @@ web/node_modules
 
 # Self-service treasury registry and private per-owner state
 .treasuries/
+
+# Retained private state and local verification artifacts never enter the build context.
+.agreements/
+.notify/
+.work-orders/
+.intake/
+.test-artifacts/
+.impeccable/
+.codex/

@@ -7,8 +7,9 @@ const root = new URL("../", import.meta.url);
 const cell = (value: string) => value.replace(/\|/g, "&#124;").replace(/\r?\n/g, "<br>");
 const row = (values: string[]) => `| ${values.map(cell).join(" | ")} |`;
 
-export function requirementsMarkdown(kind: Kind): string {
-  return PROTOTYPES[kind].briefs.map((brief, index) => [
+export function requirementsMarkdown(kind: Kind, runningOnly = false): string {
+  const briefs = runningOnly ? PROTOTYPES[kind].briefs.slice(0, 1) : PROTOTYPES[kind].briefs;
+  return briefs.map((brief, index) => [
     `## ${brief.catalog} ${brief.title}${index ? " (roadmap)" : ""}`,
     "",
     REQUIREMENTS_CONTEXT,
@@ -32,6 +33,13 @@ export function verificationMarkdown(): string {
   ].join("\n");
 }
 
+/** Treasury demo evidence, without the inherited invoice walkthrough or roadmap briefs. */
+export function treasuryVerificationMarkdown(): string {
+  return [REQUIREMENTS_CONTEXT, "", "| Target | Evidence stage | Supporting evidence |", "|---|---|---|",
+    ...PROTOTYPES.treasury.briefs[0].requirements.map(entry => row([entry.text, knownLabel(entry), entry.evidence])),
+  ].join("\n");
+}
+
 /** Replace only an explicitly marked section; missing/duplicate markers must never swallow prose. */
 export function replaceGenerated(source: string, section: string, body: string): string {
   const begin = `<!-- BEGIN GENERATED: ${section} -->`;
@@ -44,9 +52,11 @@ export function replaceGenerated(source: string, section: string, body: string):
 
 export function documentationUpdates() {
   return [
-    { path: "docs/facilitator.md", section: "requirements", body: requirementsMarkdown("facilitator") },
-    { path: "docs/treasury.md", section: "requirements", body: requirementsMarkdown("treasury") },
-    { path: "DEMO.md", section: "verification", body: verificationMarkdown() },
+    { path: "docs/legacy/facilitator.md", section: "requirements", body: requirementsMarkdown("facilitator") },
+    { path: "docs/legacy/treasury.md", section: "requirements", body: requirementsMarkdown("treasury") },
+    { path: "docs/legacy/DEMO.md", section: "verification", body: verificationMarkdown().replace(/\]\(docs\//g, "](../../docs/") },
+    { path: "docs/treasury.md", section: "requirements", body: requirementsMarkdown("treasury", true) },
+    { path: "DEMO.md", section: "verification", body: treasuryVerificationMarkdown() },
   ].map(({ path, section, body }) => {
     const url = new URL(path, root);
     const current = readFileSync(url, "utf8");

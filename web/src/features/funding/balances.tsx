@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { TREASURY_ONLY } from "../../treasury-surface";
 import { Link } from "@tanstack/react-router";
 import { amount, exactPayment, fromUnits, queries } from "../../shared/lib";
 import { useAgent } from "../../app/agent-context";
@@ -10,7 +11,7 @@ export function Balances() {
   const balances = useQuery({ ...queries.overview, enabled: false });
   const held = useQuery({ ...queries.held, retry: false });
   const unresolved = useQuery({ ...queries.unresolved, retry: false });
-  return <Section title="Balances" description="Reported amounts for this agent. The confidential balance includes funds held for approval; it is not the amount available for new payments.">
+  return <Section title="Balances" description={TREASURY_ONLY ? "Reported public and confidential amounts. These balances do not establish what is available for a new operation." : "Reported amounts for this agent. The confidential balance includes funds held for approval; it is not the amount available for new payments."}>
     <p className="text-sm text-muted-foreground">{balances.error ? "Last reported balances; the latest refresh failed." : "Reported balances"}{balances.dataUpdatedAt ? ` · read ${new Date(balances.dataUpdatedAt).toLocaleString()}` : ""}. Public and confidential balances are separate observations.</p>
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm tabular-nums">
@@ -35,8 +36,8 @@ export function Balances() {
       </li>)}</ul>
     </div>}
     <Card>
-      <h3 className="font-medium">Held payouts</h3>
-      <p className="text-sm text-muted-foreground">Amounts in the held payout records, read separately from balances. These are not additional funds.</p>
+      <h3 className="font-medium">{TREASURY_ONLY ? "Balance checks" : "Held payouts"}</h3>
+      {(!TREASURY_ONLY || held.isPending || held.error || Boolean(held.data?.length)) && <p className="text-sm text-muted-foreground">Amounts in the held payout records, read separately from balances. These are not additional funds.</p>}
       {held.isPending && <Loading label="Checking held payouts…" />}
       {held.error && <><p className="text-sm">Held payout amounts are unavailable.</p><QueryError error={held.error} retry={() => held.refetch()} /></>}
       {!held.error && held.data && (held.data.length ? <ul aria-label="Held payout records" className="divide-y text-sm">
@@ -44,9 +45,9 @@ export function Balances() {
           <span>{exactPayment(payout.request, data.book)}</span>
           <Link to="/follow/payment" search={{ payment: payout.correlationId }} className="self-start underline">Review payment <span className="break-all">{payout.correlationId}</span></Link>
         </li>)}
-      </ul> : <p className="text-sm">No held payouts found in the records checked.</p>)}
+      </ul> : !TREASURY_ONLY && <p className="text-sm">No held payouts found in the records checked.</p>)}
       <dl className="border-t pt-4"><dt className="font-medium">Available to spend</dt><dd className="mt-1">Not established</dd></dl>
-      <p className="text-sm text-muted-foreground">These reads do not establish a spendable balance. Subtracting held payouts from reported balances would not account for all in-flight operations or prove that a new payment is permitted. Every send still requires current policy, grant and operation checks.</p>
+      <p className="text-sm text-muted-foreground">{TREASURY_ONLY ? "A reported balance does not account for every in-flight operation or establish that a new operation is permitted." : "These reads do not establish a spendable balance. Subtracting held payouts from reported balances would not account for all in-flight operations or prove that a new payment is permitted."} Every send still requires current policy, grant and operation checks.</p>
       {unresolved.isPending && <Loading label="Checking unresolved operations…" />}
       {unresolved.error && <><p className="text-sm">Unresolved operations could not be checked.</p><QueryError error={unresolved.error} retry={() => unresolved.refetch()} /></>}
       {!unresolved.error && Boolean(unresolved.data?.length) && <p className="text-sm text-warning-muted-foreground">New sends are blocked by unresolved operations. <Link to="/activity" className="underline">Review unresolved operations</Link>.</p>}

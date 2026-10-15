@@ -1,4 +1,5 @@
 import { accessDenied, ReadFailure } from "../../shared/read-failure";
+import { TREASURY_ONLY } from "../../treasury-surface";
 import { OwnerActions } from "../owner/owner-actions";
 import { DownloadSimple } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -15,7 +16,7 @@ import { BASE } from "../../shared/client";
 
 /** Preserve scoped recovery URLs while returning history browsing to the workspace. */
 export function ActivityReturn() {
-  return BASE ? <a href="/#activity" className="inline-flex min-h-11 items-center self-start text-sm underline">Back to Activity</a> : null;
+  return BASE && !TREASURY_ONLY ? <a href="/#activity" className="inline-flex min-h-11 items-center self-start text-sm underline">Back to Activity</a> : null;
 }
 
 type OperationCheck = Awaited<ReturnType<typeof client.recover>>[number];
@@ -127,7 +128,7 @@ export const isProbe = (op: { kind: string }) => PROBE_KINDS.has(op.kind);
 
 type ActivityRow = Awaited<ReturnType<typeof client.activity>>[number];
 
-export function Row({ op, book, nameOf, idPrefix = "" }: { op: ActivityRow; book: Overview["book"]; nameOf: (account: string) => string; idPrefix?: string }) {
+export function Row({ op, book, nameOf, idPrefix = "", showRefusalCode = false }: { op: ActivityRow; book: Overview["book"]; nameOf: (account: string) => string; idPrefix?: string; showRefusalCode?: boolean }) {
   const probe = isProbe(op);
   return (
     <li id={op.correlationId ? `${idPrefix}operation-${op.correlationId}` : undefined} className="scroll-mt-48 flex flex-wrap items-center gap-x-4 gap-y-1 border-b py-3 text-sm last:border-0">
@@ -164,6 +165,7 @@ export function Row({ op, book, nameOf, idPrefix = "" }: { op: ActivityRow; book
           {op.planId && <span className="font-mono text-xs text-muted-foreground">plan {op.planId}</span>}
         </Details>
       )}
+      {showRefusalCode && op.refused && <p className="order-last basis-full break-all text-xs text-muted-foreground">Refusal code: <code>{op.refused}</code></p>}
     </li>
   );
 }

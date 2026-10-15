@@ -12,7 +12,15 @@ import { totalUsd } from "./valuation.js";
 
 const BASE = new URL(required("DASHBOARD_URL"));
 const COOKIE = readFileSync(required("REPORT_COOKIE_FILE"), "utf8").trim();
-const rpc = <T>(agent: string, path: string) => hostedRpc<T>(BASE, COOKIE, agent, path);
+const meResponse = await fetch(new URL("/gw/me", BASE), { headers: { cookie: COOKIE }, redirect: "manual" });
+if (!meResponse.ok) throw new Error(`Treasury discovery failed (${meResponse.status})`);
+const me = await meResponse.json() as { viewer: unknown; agents: { name: string; area?: string }[] };
+if (!me.viewer) throw new Error("A signed-in owner session is required");
+const treasuries = me.agents.filter(agent => agent.area === "treasury" || !agent.area && agent.name === "treasury");
+const requested = process.env.REPORT_AGENT;
+const selected = requested ? treasuries.find(agent => agent.name === requested) : treasuries.length === 1 ? treasuries[0] : undefined;
+if (!selected) throw new Error("Select one accessible Treasury agent with REPORT_AGENT");
+const rpc = <T>(path: string) => hostedRpc<T>(BASE, COOKIE, selected.name, path);
 
 /** Raw balances arrive as strings (the JSON form of the API's bigints). */
 type Holding = { symbol: string; usd: number | null; asset: string; decimals: number; confidential: string };
@@ -20,20 +28,15 @@ type Window = { limit_usd: string | null; spent_usd: string; remaining_usd: stri
 type Period = "daily" | "weekly" | "monthly";
 type Overview = { book: Holding[]; target: Record<string, number>; rebalance: { minLegUsd: number }; policy: { usage: { budget: Record<Period, Window> } } };
 
-/** A facilitator demo invoice, and roughly what the treasury demo (a steward swap, then the correction) spends. */
-const INVOICE_USD = 1;
-const TREASURY_DEMO_USD = 5;
-
-const [payout, held, treasury, autopilot] = await Promise.all([
-  rpc<Overview>("payout", "overview"),
-  rpc<unknown[]>("payout", "held"),
-  rpc<Overview>("treasury", "overview"),
-  rpc<{ on: boolean; nextRun: string | null }>("treasury", "autopilot/get"),
+/** An observation for rehearsal, never authorization or a promise of settlement. */
+const expectedUsd = Number(process.env.REPORT_EXPECTED_USD ?? "5");
+if (!Number.isFinite(expectedUsd) || expectedUsd <= 0) throw new Error("REPORT_EXPECTED_USD must be positive and finite");
+const [treasury, autopilot, unresolved] = await Promise.all([
+  rpc<Overview>("overview"),
+  rpc<{ on: boolean; nextRun: string | null }>("autopilot/get"),
+  rpc<unknown[]>("unresolved"),
 ]);
 
-// A payout is paid only from the confidential balance: public USDC can't pay an invoice.
-const payable = payout.book.find((h) => h.symbol === "USDC");
-const usdc = payable ? Number(payable.confidential) / 10 ** payable.decimals : 0;
 // The window that refuses first, as the Overview shows it.
 const binding = bindingWindow(treasury.policy.usage.budget);
 const left = Number(binding?.remaining_usd ?? Infinity);
@@ -43,14 +46,13 @@ const largest = legs.reduce((a, b) => (Math.abs(b.off) > Math.abs(a.off) ? b : a
 
 const checks: [boolean, string][] = [
   [total !== null, total === null ? "Treasury valuation unavailable: a managed holding lacks a usable USD value; allocation cannot be checked" : "Treasury valuation available"],
-  [usdc >= INVOICE_USD, `Payout wallet: ${usdc.toFixed(2)} confidential USDC (a demo invoice needs $${INVOICE_USD}; top up from the treasury's Funding page)`],
-  [held.length === 0, `Payments already waiting for approval: ${held.length}`],
-  [left >= TREASURY_DEMO_USD, binding
-    ? `Treasury ${binding.period} budget left: $${left.toFixed(2)} of $${binding.limit_usd} (the treasury demo spends about $${TREASURY_DEMO_USD}${binding.resets_at ? `; resets ${binding.resets_at}` : ""})`
-    : "Treasury budget: no USD limit set"],
-  [autopilot.on, `Autopilot ${autopilot.on ? `on, next tick ${autopilot.nextRun}` : "off"}`],
+  [unresolved.length === 0, `Unresolved operations: ${unresolved.length}`],
+  [Boolean(binding) && left >= expectedUsd, binding
+    ? `Treasury ${binding.period} budget left: $${left.toFixed(2)} of $${binding.limit_usd} (rehearsal estimate $${expectedUsd}${binding.resets_at ? `; resets ${binding.resets_at}` : ""})`
+    : "Treasury budget: no USD limit reported; review the signed policy"],
+  [process.env.REPORT_REQUIRE_SCHEDULE !== "true" || autopilot.on, `Schedule ${autopilot.on ? `on, next recorded tick ${autopilot.nextRun ?? "not reported"}` : "off (manual preview remains available)"}`],
 ];
 for (const [ok, line] of checks) console.log(`${ok ? "ok  " : "FIX "} ${line}`);
-// Not a check: any drift is fine, but it says whether the next tick will rebalance on camera.
-if (total !== null) console.log(`     Treasury book $${total.toFixed(2)}; furthest from target: ${largest.symbol} ${largest.off >= 0 ? "+" : ""}$${largest.off.toFixed(2)} (the autopilot acts from $${treasury.rebalance.minLegUsd} a leg)`);
+// Drift is context only; a fresh quote and authorization still decide whether an action can run.
+if (total !== null) console.log(`     Treasury book $${total.toFixed(2)}; furthest from target: ${largest.symbol} ${largest.off >= 0 ? "+" : ""}$${largest.off.toFixed(2)} (minimum planned leg $${treasury.rebalance.minLegUsd})`);
 process.exitCode = checks.every(([ok]) => ok) ? 0 : 1;

@@ -1,4 +1,5 @@
 import { Details } from "../../shared/ui";
+import { TREASURY_ONLY } from "../../treasury-surface";
 
 const evidence = {
   agreements: {
@@ -19,7 +20,10 @@ const evidence = {
   },
 } as const;
 export function TaskEvidence({ task }: { task: keyof typeof evidence }) {
-  const { summary, detail } = evidence[task];
+  const { summary, detail } = task === "funding" && TREASURY_ONLY ? {
+    summary: "Reported balances do not establish what is available for a new operation.",
+    detail: "Unresolved operations and current policy and grant checks can restrict new sends. Deposit instructions do not prove that a credit arrived; review refreshed balances and operation records.",
+  } : evidence[task];
   return <aside aria-label="Evidence and limitations" className="flex flex-col gap-2 border-l-2 border-brand pl-4 text-sm">
     <p>{summary}</p>
     <Details summary="Evidence and limitations"><p className="max-w-prose text-muted-foreground">{detail}</p></Details>

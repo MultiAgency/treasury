@@ -1,4 +1,4 @@
-# Only package files, tsconfig.json and src/ are copied; this keeps secrets and state out of the build context.
+# Treasury image: frontend sources are required to build the dashboard. Secrets and state stay out of the build context.
 .env
 .env.*
 .ops
@@ -10,13 +10,23 @@
 .agents
 .playwright-mcp
 node_modules
-web
 research
 test
 .inbox
 .strategy
 .DS_Store
+web/dist
+web/node_modules
 .evidence
 
 # Self-service treasury registry and private per-owner state
 .treasuries/
+
+# Retained private state and local verification artifacts never enter the build context.
+.agreements/
+.notify/
+.work-orders/
+.intake/
+.test-artifacts/
+.impeccable/
+.codex/

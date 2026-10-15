@@ -299,7 +299,7 @@ async function configuredArea(browser, root) {
           setup: { agentId: 'fixture', executor: false, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' }, grant: null, dao: null },
           overview: { area, agentId: 'fixture', digest: 'fixture', notInForce: null, agreed: [], unmanaged: [], book: [], target: {},
             rebalance: { minLegUsd: 1, maxCostBps: 100 }, policy: { policy: { actions: ['transfer'], frozen: false, assets: 'any', destinations: { mode: 'only', list: [] } }, usage: { budget: {} }, cooldowns: {} } },
-          'treasury/get': null, held: [], unresolved: [], 'inbox/list': [], 'agreements/list': [], activity: [],
+          'treasury/get': null, held: [], unresolved: [], 'inbox/list': [], 'agreements/list': [], activity: [], invoices: [],
           'owner/actions': [], 'owner/pending': [], paymentHistory: { items: [], complete: true },
           'autopilot/get': { on: false, everyMin: 60, maxUsd: 0 }, 'autopilot/evidence': { ticks: [], corrupt: [] },
         };

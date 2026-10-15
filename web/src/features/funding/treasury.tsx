@@ -1,4 +1,5 @@
 import { paymentAssets } from "../payables/payment-assets";
+import { TREASURY_ONLY } from "../../treasury-surface";
 import { ConfirmButton } from "../owner/confirm-button";
 import { ArrowUUpLeft, Bank, LockKey, UsersThree } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
@@ -38,8 +39,7 @@ function LinkTreasury() {
   return (
     <Card>
       <p className="text-sm text-muted-foreground">
-        Link the account this agent works for. Fund from it, review returns to it, and review its suggested payees
-        for policy approval. A DAO votes through Trezu.
+        {TREASURY_ONLY ? "Link the account that funds this treasury. A DAO votes through Trezu." : "Link the account this agent works for. Fund from it, review returns to it, and review its suggested payees for policy approval. A DAO votes through Trezu."}
       </p>
       <div className="flex flex-wrap gap-3">
         <Button
@@ -354,7 +354,7 @@ export function TreasurySection() {
     {!treasury && <Deposit empty={empty} />}
     <Section
       title={treasury ? "Receive funds" : "Treasury account"}
-      description={treasury ? "Fund this agent from its linked account." : "Optional: link an account for funding, returns and suggested payees."}
+      description={treasury ? "Fund this agent from its linked account." : TREASURY_ONLY ? "Optional: link the account that funds this treasury." : "Optional: link an account for funding, returns and suggested payees."}
     >
       {!treasury ? (
         <Details summary="Link a treasury account"><LinkTreasury /></Details>
@@ -392,7 +392,7 @@ export function TreasurySection() {
             )}
             <div>
               <ConfirmButton path="treasury/unlink" label="Unlink this treasury" title="Unlink this treasury?"
-                description={`Unlink ${treasury.accountId} from this dashboard. Funding and its suggested payees will no longer be shown here. This does not move funds or change the signed policy.`}
+                description={`Unlink ${treasury.accountId} from this dashboard. ${TREASURY_ONLY ? "Its funding controls" : "Funding and its suggested payees"} will no longer be shown here. This does not move funds or change the signed policy.`}
                 confirm="Unlink treasury" disabled={unlink.busy} onConfirm={() => unlink.attempt(() => client.treasury.unlink())} />
             </div>
             <ErrorBox error={unlink.error} />
@@ -401,7 +401,7 @@ export function TreasurySection() {
       )}
     </Section>
     <div className="flex flex-wrap gap-4 text-sm">
-      <Link to={kindOf(data) === "treasury" ? "/automations" : "/payees"} hash={kindOf(data) === "treasury" ? "rebalance" : undefined} className="underline">
+      <Link to={TREASURY_ONLY ? "/" : kindOf(data) === "treasury" ? "/automations" : "/payees"} hash={TREASURY_ONLY || kindOf(data) === "treasury" ? "rebalance" : undefined} className="underline">
         {kindOf(data) === "treasury" ? "Continue to rebalance preview" : "Continue to agreements"}
       </Link>
     </div>

@@ -3,6 +3,7 @@ import { TreasuryBrand } from "../app/treasury-brand";
 import { PrototypeCard } from "../features/evidence/showcase";
 import { SignIn } from "../app/session";
 import { Details } from "../shared/ui";
+import { PROTOTYPES } from "../features/evidence/beats";
 
 /** Public brief only. No balances, private evidence or operation requests. */
 export function TreasuryHome({ daos, selfService = false }: { daos: string[]; selfService?: boolean }) {
@@ -20,6 +21,7 @@ export function TreasuryHome({ daos, selfService = false }: { daos: string[]; se
     <section aria-label="Get started" className="flex flex-col items-start gap-4">
       <p className="text-sm text-muted-foreground">{selfService ? "Connect your NEAR wallet to create or open a treasury for yourself or an existing DAO." : "Connect your NEAR wallet to open your treasury."}</p>
     </section>
+    <p className="text-sm text-muted-foreground">{PROTOTYPES.treasury.briefs[0].limitations?.[0]}</p>
     <Details summary="Prototype progress">
       <PrototypeCard kind="treasury" stagesOnly compact />
     </Details>

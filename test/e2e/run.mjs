@@ -13,7 +13,7 @@ for (const name of ['src', 'web', 'evidence', 'scripts', 'test/e2e', 'test/offli
   cpSync(join(root, name), target, { recursive: true, filter: path => !path.endsWith('/node_modules') && !path.endsWith('/dist') });
 }
 symlinkSync(join(root, 'node_modules'), join(snapshot, 'node_modules'), 'dir');
-const env = { ...offlineEnvironment(), NODE_ENV: 'production', PROTO_E2E_ISOLATED: '1', PROTO_E2E_ARTIFACTS: artifacts,
+const env = { ...offlineEnvironment(), NODE_ENV: 'production', PUBLIC_TREASURY_ONLY: 'false', PROTO_E2E_ISOLATED: '1', PROTO_E2E_ARTIFACTS: artifacts,
   NODE_OPTIONS: `--require ${JSON.stringify(join(snapshot, 'test/fixtures/offline-network.cjs'))}` };
 for (const key of ['BROWSER_EXECUTABLE', 'PLAYWRIGHT_BROWSERS_PATH']) if (process.env[key]) env[key] = process.env[key];
 function digest(dir) {

@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 /**
@@ -36,7 +37,7 @@ const Config = z.object({
 type Config = z.infer<typeof Config>;
 export type AgentEntry = Config["agents"][number];
 
-export function loadConfig(file = process.env.DASHBOARD_FILE ?? "dashboard.json"): Config {
+export function loadConfig(file = process.env.DASHBOARD_FILE ?? fileURLToPath(new URL("../../deploy/treasury.json", import.meta.url))): Config {
   const config = Config.parse(JSON.parse(readFileSync(file, "utf8")));
   if (!config.agents.length && process.env.TREASURY_SELF_SERVICE !== "true") throw new Error("Configure an agent or explicitly enable Treasury self-service");
   const names = new Set(config.agents.map((a) => a.name));

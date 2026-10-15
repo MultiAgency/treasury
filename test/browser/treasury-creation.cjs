@@ -36,7 +36,7 @@ async function treasuryCreation(browser,root){
   await walletButton.click();await page.getByRole('menuitem',{name:'Disconnect',exact:true}).waitFor();await page.keyboard.press('Escape');
   assert.equal(await page.getByRole('button',{name:'Connect wallet',exact:true}).count(),0);
   if(kind==='dao'){await page.getByRole('radio',{name:'A DAO',exact:true}).click();await page.getByLabel('DAO account').fill(owner);}
-  const out=resolve('.impeccable/review');mkdirSync(out,{recursive:true});
+  const out=resolve(process.env.PROTO_BROWSER_ARTIFACTS || '.test-artifacts/treasury-ui');mkdirSync(out,{recursive:true});
   await page.screenshot({path:join(out,kind==='wallet'?'create-desktop.png':'create-mobile.png'),fullPage:true});
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   const create=page.getByRole('button',{name:kind==='dao'?'Propose creating the agent':'Create agent',exact:true});

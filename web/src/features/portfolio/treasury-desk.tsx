@@ -1,43 +1,57 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import { useCanCall } from "../../app/viewer";
 import { queries } from "../../shared/queries";
 import { client, useAttempt } from "../../shared/lib";
-import { Button, ErrorBox, QueryError } from "../../shared/ui";
+import { Button, Details, ErrorBox, QueryError } from "../../shared/ui";
+import { PROTOTYPES } from "../evidence/beats";
+import { WhatThisShows } from "../evidence/showcase";
 import { SCHEDULE_STOP_SCOPE, SCHEDULE_STOPPED } from "../../shared/schedule-copy";
 import { Link } from "@tanstack/react-router";
 import { useAgent } from "../../app/agent-context";
 import { Section } from "../../shared/ui";
-import { amountOf, swaps } from "../../shared/lib";
+import { swaps } from "../../shared/lib";
 import { useValuedBook } from "../../shared/valuation";
 import { Unresolved } from "../activity/activity";
 import { Sweep } from "../funding/sweep";
 import { Rebalance } from "./automations";
 import { Allocation, Figures } from "./overview";
+import { TreasuryLimits } from "./treasury-limits";
+import { PlanOutcome, type ConfirmedPlan } from "./plan-outcome";
 
 /** Brief 02 only. Existing controls retain provider checks and explicit confirmations. */
 export function TreasuryDesk() {
   const { data: raw } = useAgent();
   const data = useValuedBook(raw);
-  const policy = data.policy.policy;
-  const caps = Object.entries(policy?.limits?.monthly ?? {});
+  const observation = useQuery({ ...queries.overview, enabled: false });
+  const cache = useQueryClient();
+  const [selected, setSelected] = useState<ConfirmedPlan>();
+  const refreshResult = useCallback(() => { void Promise.all([queries.overview, queries.activity, queries.unresolved].map(query => cache.invalidateQueries({ queryKey: query.queryKey, exact: true }))); }, [cache]);
+  const followPlan = (planId: string) => setSelected({ planId, confirmedAt: Date.now(), observedAt: observation.dataUpdatedAt,
+    policyDigest: raw.digest, budget: observation.error ? null : structuredClone(raw.policy.usage.budget) });
   return <>
     <Unresolved />
     <Figures data={data} />
     <Allocation data={data} />
-    <Section title="Signed limits">
-      <dl className="grid gap-5 text-sm sm:grid-cols-2">
-        <div><dt className="text-muted-foreground">Allowed assets</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => data.book.find(h => h.asset === asset)?.symbol ?? asset).join(", ") || "None"}</dd></div>
-        <div><dt className="text-muted-foreground">Per-asset monthly caps</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : caps.length ? caps.map(([asset, raw]) => amountOf(raw, asset, data.book)).join(" · ") : "No monthly caps reported"}</dd></div>
-      </dl>
-      <Button asChild variant="outline" className="self-start"><Link to="/policy">Edit policy</Link></Button>
-    </Section>
+    <TreasuryLimits />
     <section id="rebalance" aria-label="Quoted rebalance" className="scroll-mt-8">
-      {swaps(data) ? <Rebalance /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
+      {swaps(data) ? <Rebalance onExecute={followPlan} onResult={refreshResult} /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
     </section>
+    {selected && <PlanOutcome selected={selected} />}
     <ScheduleStatus />
-    <Button asChild variant="outline" className="self-start"><Link to="/automations">Set targets and schedule</Link></Button>
+    <nav aria-label="Treasury tools" className="flex flex-wrap gap-3">
+      <Button asChild variant="outline"><Link to="/automations">Set targets and schedule</Link></Button>
+      <Button asChild variant="outline"><Link to="/follow/run">View treasury runs</Link></Button>
+      <Button asChild variant="outline"><Link to="/funding">Balances and funding</Link></Button>
+    </nav>
     <section id="sweep" aria-label="Confidential sweep" className="scroll-mt-8"><Sweep /></section>
     <Button asChild variant="outline" className="self-start"><Link to="/activity">View activity</Link></Button>
+    <Section title="Known limitations">
+      <ul className="flex max-w-prose flex-col gap-2 text-sm text-muted-foreground">
+        {PROTOTYPES.treasury.briefs[0].limitations?.map(limitation => <li key={limitation}>{limitation}</li>)}
+      </ul>
+      <Details summary="Requirements and evidence"><WhatThisShows kind="treasury" openRunning /></Details>
+    </Section>
   </>;
 }
 

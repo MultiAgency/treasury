@@ -3,10 +3,11 @@ import { hostedRpc, required } from "./remote.js";
 import type { Access } from "./gateway/roles.js";
 
 /**
- * Checks a deployed dashboard and invoice page from outside, changing nothing: health, security
+ * Checks a deployed Treasury dashboard and, only when configured, a legacy invoice page from outside, changing nothing: health, security
  * headers, the sign-in host each signs for, and that nothing is reachable without a session.
  *
- *   DASHBOARD_URL=https://… INVOICES_URL=https://… pnpm smoke
+ *   DASHBOARD_URL=https://… pnpm smoke
+ * Legacy invoice checks are opt-in through INVOICES_URL.
  *
  * With SMOKE_COOKIE_FILE (a file holding a signed-in `dao_session=…`) it also reads as that account.
  * With SMOKE_SNAPSHOT (a file path) it records what must survive a restart, and on the next run compares
@@ -20,7 +21,7 @@ import type { Access } from "./gateway/roles.js";
  */
 
 const DASHBOARD = new URL(required("DASHBOARD_URL"));
-const INVOICES = new URL(required("INVOICES_URL"));
+const INVOICES = process.env.INVOICES_URL ? new URL(process.env.INVOICES_URL) : undefined;
 const COOKIE = process.env.SMOKE_COOKIE_FILE ? readFileSync(process.env.SMOKE_COOKIE_FILE, "utf8").trim() : undefined;
 const SNAPSHOT = process.env.SMOKE_SNAPSHOT;
 const ELSEWHERE = "https://elsewhere.example";
@@ -67,8 +68,8 @@ const rpc = <T>(agent: string, path: string) => hostedRpc<T>(DASHBOARD, COOKIE!,
   check("dashboard refuses cross-site writes", status === 403, String(status));
 }
 
-// The invoice page, without a session.
-{
+// Optional legacy invoice page, without a session.
+if (INVOICES) {
   const health = await get(at(INVOICES, "/health"));
   check("invoices /health", health.ok, String(health.status));
   const challenge = (await (await post(at(INVOICES, "/api/signin/challenge"))).json()) as { recipient?: string };
@@ -90,35 +91,35 @@ if (COOKIE) {
   for (const dao of new Set(me.agents.filter((a) => a.dao).map((a) => a.owner)))
     check(`proposals of ${dao} read`, (await get(at(DASHBOARD, `/gw/proposals?dao=${dao}`), { cookie: COOKIE })).ok);
 
-  if (SNAPSHOT) {
+  if (SNAPSHOT && me.viewer) {
     type Overview = { digest: string | null; grants: { label: string }[] };
     type Autopilot = { on: boolean; everyMin: number; maxUsd: number; lastRun: string | null };
-    const [overview, autopilot, ledger, payout, payoutLedger] = await Promise.all([
-      rpc<Overview>("treasury", "overview"),
-      rpc<Autopilot>("treasury", "autopilot/get"),
-      rpc<unknown[]>("treasury", "ledger"),
-      rpc<Overview>("payout", "overview"),
-      rpc<unknown[]>("payout", "ledger"),
-    ]);
-    const labels = (o: Overview) => o.grants.map((g) => g.label).sort();
-    const now = {
-      treasury: { digest: overview.digest, grants: labels(overview), autopilot: { on: autopilot.on, everyMin: autopilot.everyMin, maxUsd: autopilot.maxUsd }, lastRun: autopilot.lastRun, ledger: ledger.length },
-      payout: { digest: payout.digest, grants: labels(payout), ledger: payoutLedger.length },
-    };
+    const now: Record<string, { digest: string | null; grants: string[]; autopilot?: Pick<Autopilot, "on" | "everyMin" | "maxUsd">; lastRun?: string | null; ledger: number }> = {};
+    for (const agent of me.agents) {
+      const [overview, autopilot, ledger] = await Promise.all([
+        rpc<Overview>(agent.name, "overview"),
+        rpc<Autopilot>(agent.name, "autopilot/get"),
+        rpc<unknown[]>(agent.name, "ledger"),
+      ]);
+      now[agent.name] = { digest: overview.digest, grants: overview.grants.map(grant => grant.label).sort(),
+        autopilot: { on: autopilot.on, everyMin: autopilot.everyMin, maxUsd: autopilot.maxUsd }, lastRun: autopilot.lastRun, ledger: ledger.length };
+    }
     if (!existsSync(SNAPSHOT)) {
       writeFileSync(SNAPSHOT, JSON.stringify(now, null, 2));
       console.log(`     recorded ${SNAPSHOT}: restart the service, then run again`);
     } else {
       const before = JSON.parse(readFileSync(SNAPSHOT, "utf8")) as typeof now;
-      const [b, n] = [before.treasury, now.treasury];
-      check("treasury mandate digest kept", n.digest === b.digest, `${b.digest} → ${n.digest}`);
-      check("treasury grants kept", JSON.stringify(n.grants) === JSON.stringify(b.grants), JSON.stringify(n.grants));
-      check("autopilot settings kept", JSON.stringify(n.autopilot) === JSON.stringify(b.autopilot), JSON.stringify(n.autopilot));
-      check("autopilot history kept", (n.lastRun ?? "") >= (b.lastRun ?? ""), `${b.lastRun} → ${n.lastRun}`);
-      check("treasury ledger kept", n.ledger >= b.ledger, `${b.ledger} → ${n.ledger}`);
-      check("payout mandate digest kept", now.payout.digest === before.payout.digest, `${before.payout.digest} → ${now.payout.digest}`);
-      check("payout grants kept", JSON.stringify(now.payout.grants) === JSON.stringify(before.payout.grants), JSON.stringify(now.payout.grants));
-      check("payout ledger kept", now.payout.ledger >= before.payout.ledger, `${before.payout.ledger} → ${now.payout.ledger}`);
+      check("snapshot agent identities kept", JSON.stringify(Object.keys(now).sort()) === JSON.stringify(Object.keys(before).sort()));
+      for (const [name, n] of Object.entries(now)) {
+        const b = before[name];
+        if (!b) { check(`${name} previous snapshot exists`, false); continue; }
+        check(`${name} mandate digest kept`, n.digest === b.digest, `${b.digest} → ${n.digest}`);
+        check(`${name} grants kept`, JSON.stringify(n.grants) === JSON.stringify(b.grants), JSON.stringify(n.grants));
+        // Older payout snapshots did not include schedule fields; retain compatibility without inventing them.
+        if (b.autopilot) check(`${name} autopilot settings kept`, JSON.stringify(n.autopilot) === JSON.stringify(b.autopilot));
+        if (b.lastRun !== undefined) check(`${name} autopilot history kept`, (n.lastRun ?? "") >= (b.lastRun ?? ""));
+        check(`${name} ledger kept`, n.ledger >= b.ledger, `${b.ledger} → ${n.ledger}`);
+      }
     }
   }
 }

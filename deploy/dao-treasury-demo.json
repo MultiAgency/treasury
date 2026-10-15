@@ -1,0 +1,22 @@
+{
+  "host": "treasury.multiagency.ai",
+  "invoices": "https://invoices.multiagency.ai",
+  "agents": [
+    {
+      "name": "treasury",
+      "area": "treasury",
+      "owner": "agentic.sputnik-dao.near",
+      "envFile": ".env.dao",
+      "port": 8789,
+      "executor": true
+    },
+    {
+      "name": "payout",
+      "area": "payables",
+      "owner": "agentic.sputnik-dao.near",
+      "envFile": ".env.payout",
+      "port": 8790,
+      "executor": false
+    }
+  ]
+}

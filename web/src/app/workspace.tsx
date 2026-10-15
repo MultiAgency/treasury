@@ -11,8 +11,8 @@ import { type Gateway, type GatewayAgent, ownersOf, ViewerBadge } from "./sessio
 const WorkspaceContext = createContext(false);
 export const useWorkspace = () => useContext(WorkspaceContext);
 export function areaName(agent: GatewayAgent) {
-  if (agent.area) return agent.area === "payables" ? "Payables" : "Portfolio";
-  return agent.name === "payout" || agent.name === "payables" ? "Payables" : agent.name === "treasury" ? "Portfolio" : agent.name;
+  if (agent.area) return agent.area === "payables" ? "Payables" : TREASURY_ONLY ? "Treasury" : "Portfolio";
+  return agent.name === "payout" || agent.name === "payables" ? "Payables" : agent.name === "treasury" ? TREASURY_ONLY ? "Treasury" : "Portfolio" : agent.name;
 }
 const desktopQuery = matchMedia("(min-width: 1024px)");
 const subscribeDesktop = (notify: () => void) => { desktopQuery.addEventListener("change", notify); return () => desktopQuery.removeEventListener("change", notify); };

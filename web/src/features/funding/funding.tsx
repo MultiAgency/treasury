@@ -1,4 +1,5 @@
 import { TaskEvidence } from "../evidence/task-evidence";
+import { TREASURY_ONLY } from "../../treasury-surface";
 import { Sweep } from "./sweep";
 import { PayablesSchedule } from "../portfolio/automations";
 import { Link, useLocation } from "@tanstack/react-router";
@@ -20,12 +21,12 @@ export function Funding() {
       {kindOf(data) === "facilitator" && <PayablesSchedule />}
       <Details summary="Shield public funds" open={hash === "sweep"}><Sweep /></Details>
     </section>
-    <Section title="Send funds" description="Outgoing payments use this agent’s policy and grant. Reported balances do not establish how much can be sent.">
+    {!TREASURY_ONLY && <Section title="Send funds" description="Outgoing payments use this agent’s policy and grant. Reported balances do not establish how much can be sent.">
       <ReturnFunds />
       {kindOf(data) === "treasury" ? <TreasuryPayees /> : <div className="flex flex-wrap gap-4 text-sm">
         <Link to="/" className="underline">Review held payouts</Link>
         <Link to="/payees" className="underline">Review agreements and payees</Link>
       </div>}
-    </Section>
+    </Section>}
   </>;
 }

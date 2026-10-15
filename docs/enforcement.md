@@ -1,5 +1,25 @@
 # Enforcement: what the signed policy guarantees today
 
+This assessment retains shared money-path and historical Payables findings because they describe
+custody and recovery dependencies. The active product is **Agentic Treasury Management**;
+[repository scope](scope.md) and [Treasury requirements](treasury.md) define its demo.
+
+## Treasury brief: target versus established behavior
+
+| Brief target | Current evidence boundary |
+|---|---|
+| Never exceed the signed spending envelope | Not fully established. Output-asset checks are local; spending limits do not bound market exposure. |
+| Per-asset monthly caps | Individual cap refusals are observed; strict cumulative enforcement under concurrency remains unverified. |
+| USD budget charged atomically with dispatch | Budget refusals and headroom changes are observed, plus one simultaneous-swap trial. These do not independently establish atomicity for all executions. |
+| Unshield exactly what a public payout needs | Not implemented. The current sweep shields managed public balances; it does not calculate an idle-surplus reserve. |
+| Untraceable resting position | Confidential balances have been observed. Universal protection against tracing is not established. |
+
+The catalog example's policy schema and stated address-whitelist conflict differ from the pinned
+SDK configuration used here. This cleanup does not change the policy, add an authorization rule,
+change budget accounting or assert that the deployed provider matches that example. Provider
+schema, counter behavior and shield/unshield budget treatment require specific evidence before
+implementing the missing choreography.
+
 Scheduling is not settlement evidence: the timer counts from the latest inbox `run` summary, which
 precedes the final after-observation and tick end. An interrupted evidence start alone does not pause
 that timer. Unresolved operations still block sends at the money lock. A dedicated durable scheduler

@@ -54,7 +54,7 @@ test("open sign-in challenges are capped, so a flood can't grow memory without b
 });
 
 for (const secret of ["", "short"]) test(`the gateway refuses to start with SESSION_SECRET=${JSON.stringify(secret)}`, async () => {
-  const child = spawn(TSX, [GATEWAY], { env: { ...process.env, DASHBOARD_FILE: "deploy/dashboard.json", SESSION_SECRET: secret, PORT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(TSX, [GATEWAY], { env: { ...process.env, DASHBOARD_FILE: "deploy/legacy-dashboard.json", SESSION_SECRET: secret, PORT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (d) => { stderr += d; });
   const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));

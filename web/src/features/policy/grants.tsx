@@ -1,4 +1,5 @@
 import { queries } from "../../shared/queries";
+import { TREASURY_ONLY } from "../../treasury-surface";
 import { ConfirmButton } from "../owner/confirm-button";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
@@ -48,7 +49,7 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
     setIssuing(false);
   };
 
-  const issueButton = kindOf(data) === "treasury" ? <Link to="/automations" className="text-sm underline">Review and authorize the Portfolio strategy</Link> : (
+  const issueButton = kindOf(data) === "treasury" ? <Link to="/automations" className="text-sm underline">{TREASURY_ONLY ? "Review strategy authorization" : "Review and authorize the Portfolio strategy"}</Link> : (
     <div className="flex flex-wrap items-center gap-2">
       {(needsWallet || connectedNotOwner) && <><WalletButton /><span className="text-sm">Connect {ownerName(setup)} to issue a grant.</span></>}
       <Button size="sm" variant="outline" disabled={action.busy || !canSign || needsWallet} onClick={issue}>

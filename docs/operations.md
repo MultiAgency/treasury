@@ -1,493 +1,158 @@
-# Operations
+# Treasury operations
 
-These instructions describe the repository configuration. Deploys, restarts and money actions are
-performed by the owner. For the product and recorded results, see [README](../README.md).
-
-Preserve the complete state when moving an executor: `.ops/`, `.invoices/` (including SQLite journals),
-`.owner-intents/`, `.strategy/`, `.plans/`, `.evidence/`, `.inbox/`, `.agreements/`, `.notify/` (which alerts were sent: losing it re-sends them), any legacy `.intake/` files, and its
-settings file. Stop writers before copying state; never start the destination before stopping the
-source. The lease coordinates processes on one host only.
-
-## Settings and record-read hardening
-
-Settings updates now lock the canonical settings-file target before reading and replacing it.
-Symlink aliases share that lock. A competing update returns a retry error without changing settings;
-retry the action after the current writer completes. This is single-host coordination, not distributed
-fencing. A CLI edit does not refresh another running process's environment. After a writer crash,
-the settings lock must age past its 60-second stale threshold; never delete a live writer's lock.
-
-Before upgrading, stop all writers, including CLI processes using the same settings file. Old writers
-do not participate in this lock. Preserve the full state listed above and the settings files. The saved
-formats are unchanged, so there is no record conversion. Offline child-process tests cover competing
-settings updates, retry, and symlink aliases; this is not a mainnet observation.
-
-Inbox and agreement readers reject damaged records, including a torn final append, rather than hide
-them. Unreadable inbox history defers scheduled ticks and logs an error without crashing the server.
-The peer owner-intent scan similarly refuses a new DAO delegate when the fields needed to check
-pending actions cannot be read. Preserve the damaged file, stop writers before repair, and restore
-only from verified records. Do not delete evidence merely to resume a schedule or prepare an action.
-Manual ticks and operation-journal authorization retain their existing behavior.
-
-Own and peer owner-intent readers now reject malformed or contradictory lifecycle records. A missing
-stage is compatible only with an unsigned legacy preparation; a retained signature must never be
-converted back to a first submission. Keep the original file intact, stop writers, and investigate
-against verified outcome evidence. This is validation of existing records, not a format conversion.
-Onboarding now acquires the executor lease and starts its background loops without a restart. If
-ownership is unavailable, recover the original creation action after resolving executor ownership;
-do not create another agent or submit the signature again.
-The cumulative autopilot ceiling reads existing per-operation `planId` and `usdIn` records; it adds no
-counter or state conversion. Preserve those records with the full state above. Missing valuation
-evidence refuses a new swap rather than resetting the amount already submitted, and a claimed plan
-remains single-use after restart. These local checks do not resume partially executed plans.
-
-Gateway configuration rejects duplicate agent ports before starting listeners or child processes.
-Distinct names must point to distinct loopback servers, including externally started servers.
-
-DAO delegate preparation also uses an owner-scoped lock in the shared `.owner-intents/` directory.
-Stop every instance and CLI writer sharing that directory before upgrading; older versions do not
-take this lock. Keep the entire state listed above unchanged. There is no record-format conversion.
-A competing preparation refuses for retry. A dead holder's lock becomes eligible for takeover after
-10 seconds; do not delete a live lock. Instances on different hosts or using separate state directories
-are not coordinated by this lock.
-
-An unresolved submitted delegate keeps other preparations blocked until the original instance's
-owner-intent recovery records an outcome. Expiry alone is insufficient. Owner success permits a
-later preparation even when the released payout is still settling. Preserve older settled records
-without outcome evidence and investigate them; do not fabricate a result or delete them to unblock.
-
-## Combined UI, strategy and recovery candidate
-
-This is the locally prepared candidate based on `5cd6cc9fbb584a3174b6d7586fbdda8633cf4d45`,
-not a deployment record. The base commit alone does not identify its uncommitted changes: retain
-the reviewed file-hash manifest and the final release commit or source-archive checksum in the
-private release record. Recheck changes made after validation before shipping. Local browser
-fixtures and offline tests do not establish hosted behavior or actual screen-reader speech.
-
-### What ships where
-
-| Service | Candidate changes | Persistent state |
-|---|---|---|
-| `dao` (`Dockerfile.dashboard`) | Dashboard simplification; reviewed policy/payment confirmations; strategy save, authorization and enable controls; payment/owner-action recovery views; private AG-UI recording inspector/export. Treasury executes here; payout remains approve-only. | Existing `/data/state`, including both agents' settings and this host's owner intents |
-| `invoices` (`Dockerfile`) | Invoice agreements precede amount fields; stable focus during refresh; continuation of unchanged, never-submitted invoices; shared payout/backend changes. Payout executes here. | Existing `/data`, including invoice SQLite, agreements and payout settings |
-
-The dashboard image must copy `evidence/` before building the web bundle: its UI imports the
-canonical inventory. `test/dashboard-build.test.ts` builds only the Dockerfile’s declared source
-inputs offline; it does not validate a Linux image or hosted runtime.
-
-Both services must use the same reviewed source candidate and frozen lockfile. Rebuilding `dao`
-alone does not update the public invoice page. Preserve `AGREEMENTS_URL` and matching
-`AGREEMENTS_SECRET` configuration so the approve-only dashboard continues reading the executor's
-agreements; do not copy its store to the dashboard as a substitute.
-
-Invoice refreshes display only the latest requested read. Superseded responses cannot restore old
-invoice controls or clear a newer read failure (`test/browser/invoices.cjs`, offline fixtures).
-
-The subsequent [live run view](live-run.md) integrates automatic AG-UI snapshot refresh into recent run timelines in the
-dashboard, using the existing private recording endpoint. It introduces no stream endpoint or
-state migration. The shared FastNear helper now reports read failures explicitly and rejects
-malformed JSON; ship that correction to both services with the same reviewed candidate.
-
-The recording adapter now exports envelope version 3 with AG-UI protocol 1.0 lifecycle validation.
-The dashboard continues to read archived versions 1/2. Exports are derived from existing records;
-this envelope change needs no stored-record conversion and adds no directory. Preserve the run
-progress and evidence stores described below. Verify the reader and exporter together from the
-same candidate; this compatibility is offline-tested, not a deployed-host observation.
-
-### FastNear access for this candidate
-
-Keep `FASTNEAR_API_KEY` configured server-side on both services. `src/chain.ts` already sends it
-as a Bearer header to FastNear RPC, Transactions and Transfers APIs. With a key and no
-`NEAR_RPC_URL` override, RPC uses `https://rpc.mainnet.fastnear.com`. Check the effective override
-privately: an empty value breaks the default, and a custom host receives the same authorization
-header. Use the intended FastNear host; never put the backend key in browser code or copied URLs.
-
-The integration already uses canonical RPC for account, DAO policy and access-key reads;
-Transactions for DAO execution discovery (including relayed transactions) and deposit receipts;
-and Transfers for public `intents.near` books. This matches FastNear's documented separation of
-[RPC and indexed APIs](https://docs.fastnear.com/agents/choosing-surfaces), checked 2026-10-14.
-The [authentication guide](https://docs.fastnear.com/auth) documents one key across these APIs.
-Key presence alone does not prove deployed access or indexer freshness. During owner-run
-verification, distinguish authentication/rate-limit failures from missing records and inspect the
-relevant indexed service's `/status` when investigating lag. Indexed public history does not prove
-confidential settlement, authorize a retry, or replace provider evidence for an unresolved operation.
-
-No additional FastNear UI or API feature is introduced here. Future read-performance work should
-measure existing calls first, then consider batching deposit receipt lookups by transaction hash;
-DAO discovery already batches those lookups. Keep missing evidence explicit and validate any
-change to recovery or authorization separately.
-
-### Compatibility and state
-
-- Dashboard `pay` and `owner/prepare` policy updates now require `expectedPolicy` (revision and
-  mandate digest). Old requests without it fail validation before provider reads. A changed review
-  is refused; reload the page and review again rather than replaying the old request.
-- Treasury grant preparation requires the saved `expectedStrategyDigest` and the schedule off.
-  New `strategy/get`, `strategy/save`, `autopilot/enable` and `autopilot/stop` routes support the
-  workflow. Legacy `autopilot/set` can stop unchanged settings without a digest, but refuses
-  unreviewed changes/enablement and combined change-and-enable requests. A stale settings form
-  may therefore fail even when its button says Turn off: refresh and use the new stop control.
-- `owner/actions`, `paymentHistory` and `autopilot/log` are private member reads. Strategy writes
-  require settings permission; enabling scheduling requires execution permission. Approve-only instances refuse strategy changes
-  and recording export. Owner-action history is local to its instance; payout discovery is bounded
-  to 250 provider records from the past day and reports incomplete scans. Missing reads are not
-  proof that no payout or owner action exists.
-- `POST /api/invoices/:id/continue` uses the authenticated payee's stored terms and identity.
-  It refuses revised or submission-attempted invoices; it is not a retry for unknown outcomes.
-  The `/internal/agreements` contract is unchanged. Old/new mixed builds are not a validated
-  operating configuration; keep activity paused until both services are upgraded.
-- No SQLite, journal, owner-intent or strategy schema changes are introduced relative to this
-  candidate's base. The invoice SQLite and journal-v2 migrations below already exist in that base
-  (and in recorded source `9b2941a`). Do not rerun migration or initialize empty stores merely
-  because this release adds recovery views. If the actual deployed source/state is older or
-  unknown, establish compatibility and apply the relevant stopped-writer procedure first.
-- Strategy controls add a transient single-host control lock beside the existing strategy file;
-  strategy saves persist schedule-off before replacement. This is not distributed fencing.
-  AG-UI exports read existing evidence/journal files and add no durable recording store.
-
-### Owner-run rollout
-
-1. Confirm no unattended observation or freeze window is in progress. Coordinate a maintenance
-   window with all sessions and stop new invoice submissions, approvals and dashboard/CLI money
-   actions. Turn schedules off and retain that setting for validation. If a provider-enforced stop
-   is required, the owner must freeze the policy; schedule-off alone does not block invoice or
-   manual sends, and already-submitted operations may still finish.
-2. Record each service's deployment/source identity and retained unresolved/owner-action records
-   privately. Stop both services and every other writer before backing up. Preserve the complete
-   state listed at the top of this guide, including `.notify/`, legacy `.intake/`, settings, SQLite
-   journals and `.sqlite.initialized` markers. Use consistent backups and retain checksums; never
-   delete a marker, rewrite legacy uncertainty, or discard an owner intent to clear a blocker.
-3. Deploy the reviewed candidate to `invoices` first, reusing its existing `/data` volume and
-   configuration, with one replica and no old executor still running. Keep new submissions paused;
-   check `/health`. Startup reconciliation may update records, so preserve any new state even if
-   the next deployment fails. Before restarting, review retained prepared and submitted owner
-   actions: the owner-intent watcher can submit a signature already produced by a passed DAO vote.
-   Pausing new approvals and schedules does not make startup status-only, and a policy freeze
-   does not block every kind of owner action. Record any automatic progression without deleting
-   or replacing the retained action.
-4. Deploy the same candidate to `dao`, reusing `/data/state`, one replica, and the existing
-   treasury-executor/payout-approve-only mapping. Every other copy of either agent stays
-   `EXECUTOR=off`. Do not use restore/bootstrap variables to overwrite existing state. Check
-   `/health` before reopening use; do not enable schedules as part of a health check.
-5. Reload dashboard and invoice tabs after both services are ready. Discard stale confirmation
-   dialogs, not durable prepared/submitted actions. Follow existing owner-action records after
-   reload; an attempted owner signature remains poll-only, never resubmitted as a fresh action.
-
-### Verification and recovery
-
-The owner runs the read-only smoke command before and after the rollout:
-
-```sh
-DASHBOARD_URL=https://proto.multiagency.ai INVOICES_URL=https://invoices.multiagency.ai pnpm smoke
-```
-
-For signed-in checks, use `SMOKE_COOKIE_FILE` and `SMOKE_SNAPSHOT` paths in the private release
-record, not tracked files. Compare the same snapshot before and after. Smoke deliberately avoids
-`setup`, `held` and invoice-list reads that may update records, and does not prove all new routes
-work. A subsequent owner-run screen walkthrough is non-money-moving but can refresh local records:
-check agreements/invoice ordering, funding disclosure, retained payment and owner-action states,
-strategy readiness, and a retained recording with source gaps. Do not submit invoices, approve
-payouts, enable schedules, continue prepared invoices or choose Run now just to verify the UI.
-An unavailable read must remain explicit; never replace an unresolved payment to make the check pass.
-
-If health, access, state comparison or contract checks fail, keep activity paused and retain the
-new state and logs. Do not restore an older snapshot over post-startup records or downgrade writers
-without reviewing state compatibility and reconciling operations. The preferred recovery is a
-reviewed forward correction. Record UTC verification times, deployment IDs and source identity;
-operation IDs, hashes, amounts and payees stay private. Reopening submissions, unfreezing and
-resuming schedules are separate owner decisions. `pnpm test:live` requires separate authorization.
+This runbook covers the Treasury gateway and executors. Deployment, restarts and live money actions
+are performed by the owner. Local validation is not a deployment observation.
 
 ## Dashboard
 
-**Deploy the dashboard on Railway** (service `dao`: `Dockerfile.dashboard`, one replica, a volume at
-`/data`). One container runs the public gateway (`src/gateway/server.ts`) and, on loopback beside it,
-each agent server listed in `deploy/dashboard.json`. An agent with `"executor": false` runs approve-only.
-Each agent names its `owner` (a Sputnik DAO, whose members sign in, or a wallet account, which signs in
-itself). Dashboard permissions come from that owner or the DAO's policy; legacy `operators` fields are
-ignored and should be removed from configuration. The gateway closes an agent whose own server reports a different owner, so
-a wrong `owner` locks the agent rather than opening it.
-Ownership verification uses the agent server's `ownerIdentity` read. Deploy matching gateway and
-agent-server code together, or update agent servers first; older servers without that read deny
-access when the gateway has no cached ownership evidence. This change needs no state migration.
-Ship the capability-based gateway with its matching frontend. Old cached frontends have no compatible
-role response and must be reloaded; server checks still deny unauthorized calls. A previously configured
-DAO operator needs actual group membership and the relevant onchain permissions. Existing schedules
-continue under their current signed policy and grant; removing dashboard access does not stop them.
-All state lives on the volume in `/data/state`; the app stays in `/app`.
+Both the default `Dockerfile` and compatibility `Dockerfile.dashboard` build the Treasury interface.
+`railway.json` selects `Dockerfile.dashboard`. The default gateway configuration is
+`deploy/treasury.json`, with host `treasury.multiagency.ai` and no preconfigured agents.
 
-1. Create the service and attach a volume at `/data`. Point it at its Dockerfile with the variable
-   `RAILWAY_DOCKERFILE_PATH=Dockerfile.dashboard`. The repository’s `railway.json` selects the payout
-   `Dockerfile`; the dashboard uses its own Dockerfile. Set the healthcheck path to `/health`.
-2. Set `NEAR_INTENTS_AGENT_API_KEY`, `NEAR_INTENTS_AGENT_API_URL`, `NEARAI_API_KEY`, `FASTNEAR_API_KEY`,
-   and `SESSION_SECRET` (random, 32+ characters). `TRUST_PROXY=true` is set in the image.
-3. For the first boot only, give each agent its settings file as a base64 variable: `DAO_ENV` and
-   `PAYOUT_ENV` for `.env.dao` and `.env.payout`. To move an existing executor's state, also set
-   `RESTORE_ARCHIVE` (a base64 gzipped tar of its complete state, listed above) and `RESTORE_SHA256`
-   (that tar's SHA-256). `deploy/dashboard-entrypoint.sh` restores only
-   when the checksum matches and no state exists, and writes a settings file only if it is missing.
-   Delete these four variables once the service has started: they hold grant tokens and owner intents,
-   which from then on live only on the volume.
-4. Deploy with `railway up --service dao`. To test before DNS is in place, set `DASHBOARD_HOST` to the
-   service's Railway domain. Sign-in is bound to that host instead of `host` in `deploy/dashboard.json`.
-   Then point a CNAME at the target `railway domain status <domain> --service dao` shows, and remove
-   `DASHBOARD_HOST`.
+For self-service registration, configure the backend Agent API key, `SESSION_SECRET` (at least
+32 characters), `TREASURY_SELF_SERVICE=true`, and the correct sign-in host. Set `TRUST_PROXY=true`
+behind Railway. With self-service off, configure explicit Treasury agent entries and their separate
+settings files instead; an empty configuration intentionally refuses startup. `deploy/dashboard.json`
+is also Treasury-only. `deploy/legacy-dashboard.json` is historical regression input.
 
-Each agent has exactly one executor, and nothing enforces that across machines: the executor lease
-covers one host. Every other copy of an agent, such as the owner's laptop, sets `EXECUTOR=off`. Such a
-copy needs no grant token (it shows the executor's grant, read from the API) and refuses to issue grants,
-since the new token would be saved on the wrong machine. To move an executor back, stop the `dao`
-service, copy the agent's state files out of `/data/state`, and remove `EXECUTOR=off` from the laptop's
-settings file before starting it there.
+Use one replica and a persistent `/data` volume. The entrypoint runs the gateway from `/data/state`;
+registered treasury state is under its `.treasuries/` directory. Never populate a new service with
+another running executor's agent ID or grant. A frontend build does not establish executor ownership.
 
-To stop an agent's sends, freeze its policy by owner vote: the provider refuses every send while the
-executor keeps reconciling. To stop one host from sending, set `EXECUTOR=off` there.
+The copied Treasury release record is `07c31669-3ebe-4cc2-ba93-a87009e16c51`, service `treasury`,
+2026-10-15. This cleanup has not been deployed or observed on that host. Earlier `dao` and `invoices`
+deployment records describe the historical shared workspace; see [the mainnet log](mainnet-log.md)
+and [legacy operations](legacy/operations.md).
 
-## Payout executor
+## Owner release handoff
 
-The payout executor now serves both the private dashboard and public invoice page. Stop an existing
-payout server before starting `ENV_FILE=.env.payout pnpm invoices`: the dashboard listens on loopback
-port 8790 and invoices on 8791. Both use the payout agent's existing grant, money lock and recovery
-loop. One host is the agent's executor; any other instance of the same agent, such as the owner's
-local dashboard while the executor runs on Railway, sets `EXECUTOR=off`: it reads and approves as the
-owner but never sends, reconciles or serves invoices. A lifetime lease prevents a second
-current-version executor on the same host/user; it is not distributed fencing.
-For an existing `pnpm server` or gateway-managed worker, set `INVOICES_PORT=8791` in that worker's
-settings instead. A gateway can point at the already-running loopback worker without `envFile`.
+For the selected DAO demo, use the prepared [routing rollout](treasury-rollout.md) and
+`deploy/dao-treasury-demo.json`. It keeps the DAO executor and volume on the existing **dao**
+service while making `treasury.multiagency.ai` its entry point. This plan has not been applied.
 
-**Agreements across hosts.** Agreement requests and offers live with the invoice page, in the payout
-executor's `.agreements/`. The hosted dashboard's approve-only payout instance reads and answers them on
-that host: set the same random `AGREEMENTS_SECRET` (32+ characters) on the invoices service and in the
-dashboard's `.env.payout`, and `AGREEMENTS_URL=https://invoices.multiagency.ai` in `.env.payout`. Without
-the secret on the invoices service, its `/internal/agreements` endpoint doesn't exist; without both on
-the dashboard, its Agreements list reads its own (empty) store.
+Before deploying this cleanup, review the exact source revision and run `pnpm verify`. Include the
+new Treasury browser fixtures and retained legacy files in the release; a tracked-only diff omits
+new files. Confirm that concurrent edits have finished before treating the verification as final.
 
-## Invoice migration and deployment
+In Railway, verify the intended project and **treasury** service before deploying. Keep one replica,
+the existing `/data` volume, sign-in host, explicit gateway configuration and executor assignments.
+The new default configuration has no preconfigured agents: preserve the current configuration or
+the existing self-service setting rather than accidentally starting with an empty configuration.
+Use the state-preservation procedure below for backup or executor movement. Do not deploy this
+Treasury image to the historical invoice executor.
 
-**Upgrade and migration:** stop old invoice/payout writers first and back up the complete persistent
-state listed above before starting the new executor. Existing JSONL invoice history is imported read-only: recorded outcomes (paid, failed, refused) are shown as
-they were, open ones as needing review, and missing business-to-payment links are never guessed. Non-invoice operations continue using their existing `.ops/` JSONL log;
-new invoice operations are authoritative in SQLite and projected into the same activity/recovery
-views. Each legacy file is moved to `.invoices/legacy/` once imported, so a stale writer can only start a new
-file, which is imported in turn; its ids are never filed again. The `.sqlite.initialized` marker
-prevents a missing database from silently becoming an empty one; restore the database rather than
-removing the marker. Preserve SQLite journals and use a consistent backup. Do not roll back to an
-old writer after new SQLite payments without reconciling/exporting the new records.
+The selected `agentic.sputnik-dao.near` Treasury currently uses the existing **dao** service at
+`proto.multiagency.ai`, not the separate self-service **treasury** service. For this target, preserve
+its existing Treasury executor and payout approve-only assignment. Both `deploy/dashboard.json`
+and the image's default configuration now contain no agents, so do not rely on either for the
+existing DAO rollout. Preserve an explicit host configuration; the retained
+`deploy/legacy-dashboard.json` describes the inherited host and assignments. Review that mapping
+against the actual service before selecting it. The Treasury interface can hide Payables while
+the server preserves the existing state and executor responsibilities.
 
-**Deploy on Railway** (`Dockerfile`, `railway.json`, one replica, one executor host per agent):
+After the owner's deployment:
 
-1. Move the payout executor and its persistent state together. Any other instance of this agent, such
-   as the owner's local dashboard, runs with `EXECUTOR=off`. The database cannot coordinate with an
-   independent volume.
-2. Attach `/data` with the migrated state. Keep the existing payout agent's `AGENT_ID`,
-   `AGENT_GRANT_TOKEN`, `NEAR_INTENTS_AGENT_API_KEY` and `NEAR_INTENTS_AGENT_API_URL` in the environment.
-   These variables are its settings: what the service saves itself (a new grant token, the treasury link)
-   isn't read back after a restart, so rotate its grant by changing `AGENT_GRANT_TOKEN` here.
-3. Set `INVOICES_PUBLIC_HOST`, `INVOICES_SESSION_SECRET` (random, 32+ bytes), and optionally
-   `INVOICES_TITLE`. Railway's `PORT` is the public invoice port; `AGENT_PORT` defaults to 8790 for
-   private dashboard/RPC access inside the host. The public invoice listener exposes no dashboard RPC.
-4. Review imported and unresolved records before submitting new invoices. An outcome without a
-   correlation ID requires provider/operator investigation; there is no assumed lookup-by-key API.
+1. Record the source revision, deployment ID and UTC time privately. Check `/health` and run the
+   read-only `pnpm smoke` command below against the intended host.
+2. Sign in normally and inspect the Treasury overview, policy, targets and schedule, balances,
+   Activity and one selected retained run. Verify the intended schedule state without changing it.
+3. Confirm Payables and Steward are absent from navigation. Steward remains available by its
+   direct experimental route; opening it is separate from proposing or executing a plan.
+4. Rehearse the presenter fallback in [DEMO.md](../DEMO.md#presenter-fallback). Keep this hosted
+   inspection read-only; quotes, confirmations and any low-value mainnet demonstration are separate
+   owner actions.
 
+If startup or private reads fail, retain state and investigate the configuration or access evidence.
+Rollback changes the application image while preserving all operation and owner-action records;
+it must not create a second executor. A successful health check alone does not establish a safe
+executor assignment or a settled operation.
 
-## Journal v2 and owner-intent locking upgrade
+## Optional self-service Treasury registration
 
-The journal reader also recognizes standalone version-1 authorization snapshots attached to an
-unversioned preparation. These historical records remain unchanged and are ignored for lifecycle
-decisions: they never establish that an operation was submitted, settled or safe to retry. Unknown
-versions, orphan snapshots and snapshots mixed with lifecycle fields still refuse. No conversion
-is required. Validate the retained journal with the candidate reader on a disposable backup copy
-before starting the executor; source-only tests do not establish compatibility with every history.
+A signed-in NEAR account can register a workspace for itself. A Sputnik DAO additionally requires
+current group proposal permission. Registration creates local state, signs no provider intent and
+moves no funds. Agent creation, policy updates, strategy authorization and schedule enablement retain
+separate explicit actions. Unavailable ownership or permission evidence refuses access.
 
-This is an additive state-format migration. Stop the executor and every server/CLI that writes this
-agent's operations or this instance's owner intents before installing the new build. Do not perform
-an overlapping rollout with old writers: they do not participate in the owner-intent lock or write
-journal submission claims.
+The current prototype permits one workspace per owner and at most 16 per host. It has no workspace
+deletion, ownership transfer, distributed provisioning or cross-host executor fencing. Each registered
+owner gets an isolated working directory and settings file. Shared provider and RPC credentials remain
+server-side; child processes do not receive parent agent grants, owner private keys or invoice ports.
 
-1. Back up the complete state listed at the top of this guide, including `.ops/`, `.invoices/`,
-   `.owner-intents/`, `.strategy/`, `.plans/` and `.evidence/`. Preserve SQLite journals and settings.
-2. Keep existing JSONL and owner-intent JSON files in place. No rewrite or backfill is needed:
-   unversioned operation records remain legacy, and missing submission evidence remains ambiguous.
-   Never add `journalVersion: 2` to an old request to clear an unresolved operation.
-3. Start only the new build. New non-invoice request lines carry `journalVersion: 2`; a separate
-   `SUBMISSION_ATTEMPTED` line commits before the provider call. Startup/reconciliation acquires the
-   money lock and may append `never_submitted` only to an unclaimed v2 preparation. Existing invoice
-   records keep their SQLite schema and continuation rules.
-4. Owner-intent JSON retains its format. All new writers lock its per-instance path and reload it
-   before updating; expired preparations and settled-token cleanup run under that lock too. A dead
-   writer's lock must become stale before takeover. Do not delete a live writer's lock.
-5. Review unresolved operations before resuming work. An attempted operation without an ID still
-   requires investigation. Do not downgrade to writers that ignore v2 claims or owner-intent locking;
-   stop and review state compatibility before any rollback.
+Registration and access isolation have offline tests. Those tests do not establish that a real owner
+created an agent through the current hosted build.
 
-This migration preserves historical evidence and does not reinterpret legacy uncertainty as proof
-of non-execution. The fixes have offline process-crash and concurrency coverage; deployment remains
-a separate owner action.
+## Executor migration and state preservation
 
-## Unattended run: observing the treasury autopilot
+Stop the gateway, every child executor and all CLI writers before backup, copying, upgrade or moving
+an executor. Start the destination only after the source is stopped. `EXECUTOR=off` is required on
+every other instance of the same agent. The lease and money lock coordinate a single host only.
 
-How a 24-hour observation of the scheduled autopilot is started, recorded and reported. It answers one
-question: does the scheduler run on its own without missed ticks, duplicate execution, actions outside its
-schedule, or manual recovery? It says nothing about custody guarantees or economic benefit
-([enforcement](enforcement.md)).
+Preserve the entire state directory and all settings, including:
 
-### What records the evidence
-- **The scheduler itself**, not a watcher, appends synced lines to `.evidence/<agent id>.jsonl` in the
-  agent's state directory (on `dao`, `/data/state/.evidence/`, a volume with backups enabled). See
-  src/evidence.ts.
-  - **`start`, written before the tick acts:** a unique tick id, the trigger (`schedule` or `operator`),
-    the scheduler's recorded settings (on, interval, limit, and the run its schedule counts from), and the
-    build: Railway's deployment id plus sha256 digests of the `src/` tree, `pnpm-lock.yaml` and
-    `package.json`. Also the policy revision and digest, the strategy digest, and the live grant's id and
-    label (never the token).
-  - **`end`, written after:** the book, drift, budget usage and unresolved operations before and after;
-    the plan with its legs and quotes; each step's and shield's status and correlation id; rejection
-    reasons; a proven refusal's code; and the tick's own summary.
-- **Write failures:**
-  - If the start can't be written, the tick doesn't run and the inbox says so.
-  - If the end can't be written, the inbox says so.
-  - A start without an end is reported as incomplete (interrupted, or outcome unknown), never as success
-    or failure.
-  - A line that doesn't parse, such as a torn final line, is counted as unreadable, not trusted.
-  - Every log here appends through one function (`src/synced.ts`). After a torn final line, the next
-    record starts its own line, so a crash mid-append loses only the torn line (offline-tested,
-    `test/synced.test.ts`).
-- **Interventions:** the gateway records every call classified by `isIntervention` in
-  `.evidence/interventions.jsonl` (account, agent, procedure, time) before forwarding it. If the record
-  can't be written, the call isn't run. Calls made on a host directly (CLI, shell) are not in this record.
-  An unreadable line in the record is counted and fails the "no operator interventions" criterion, since
-  it may have been a call. Builds up to c25b61b skipped such lines instead; `pnpm run-report` refuses a
-  gateway that doesn't count them.
-- **Reading the records:** `autopilot/evidence` on the treasury agent server, and `/gw/interventions`
-  (execution or settings permission). In the build under observation (fe3330c), `autopilot/evidence` is operator-only too, so
-  the gateway records each read of it in the intervention record; the report lists those reads separately as
-  operator reads, not interventions. Later builds make it a member read, which the gateway doesn't record.
-- **The report:** `pnpm run-report` (src/run-report.ts, logic in src/report.ts, tests in
-  test/report.test.ts). It reads the evidence, the intervention record and the books, and reports:
-  - each criterion;
-  - configuration segments (build, mandate or scheduler settings);
-  - every tick's outcome: executed, no-op, refused, failed, skipped or incomplete;
-  - the incident behind each failed criterion.
+- `.treasuries/registry.json` and every registered child's `.env.instance` and complete working directory.
+- `.ops/`, `.invoices/` including SQLite journals, `.owner-intents/`, `.strategy/`, `.plans/`,
+  `.evidence/`, `.inbox/`, `.agreements/`, `.notify/`, `.work-orders/` and legacy `.intake/` state.
+- Existing grant tokens, staged grant settings, journal identities and owner-action records.
 
-Nothing depends on a chat session or a laptop staying up. Collection runs only while a build containing
-src/evidence.ts runs on `dao`.
+Do not discard inherited directories because the Treasury UI no longer exposes their workflows.
+Never initialize a fresh registry over retained child state. A corrupt registry or missing registered
+settings must be investigated; do not replace them merely to resume execution.
 
-### How the report judges
-- **Scheduled work:**
-  - Only completed scheduled ticks count. Operator, skipped and incomplete ticks are named inside any gap
-    they fall in.
-  - Each gap is judged by the interval the later tick recorded, plus 3 minutes.
-  - Records are sorted, and both window bounds apply.
-- **Duplicates:**
-  - "Duplicate references" (an operation or plan named by two ticks) is reported apart from duplicate
-    execution.
-  - Duplicate execution is confirmed only when one plan leg settled twice. An execution no tick recorded
-    with the same terms as one a tick recorded is a suspected duplicate: separate operations can share
-    terms.
-  - If executions no tick recorded exist without such a match, the answer is "cannot be established",
-    not "yes".
-- **Unresolved operations** seen at a tick are reported as an observation. Interventions come only from
-  the gateway's record and operator-triggered ticks, so "none" means none recorded there.
-- **Refusals** show a control was invoked, not that it refused correctly. A failed shield or step, or an error, is a failure.
+This cleanup changes product defaults, routing, documentation and read-only tools. It changes no stored
+money records, policy schema, dispatch authorization or executor locking, and requires no state-format
+migration. Changing defaults is still a reviewed rollout: preserve explicit existing environment and
+executor settings. Rollback must retain all records and avoid starting another executor.
 
-### Starting a window
-1. Deploy a build whose `src/` contains authorization, evidence collection and the execution-mode
-   removal, from a reviewed snapshot. Record the deployment id, image digest, and the snapshot's `src/`,
-   lockfile and `package.json` digests.
-2. Confirm the autopilot is on and hourly, and that the live grant approves the strategy in force.
-3. Wait for the first scheduled tick. Its start line must match the deployment id and all three digests.
-   Its end line fixes the starting book, budget and mandate.
-4. The window starts at that tick, in UTC, and ends 24 h later.
+## Settings and record-read hardening
 
-### During the window
-- Don't press "Run now".
-- Don't force imbalances, raise limits or manufacture trades.
-- A correct no-op or refusal is a valid outcome.
-- Any operator action, payment or approval in the window is reported as an incident, not hidden.
-- If the build, policy, strategy or grant changes, the report starts a new segment. Evidence from earlier
-  segments still counts for its own configuration.
-
-### Generating the report
-Sign in to the dashboard with execution or settings permission. Save the `dao_session` cookie to a 0600 file, never
-pasted anywhere. Then run:
-
-    DASHBOARD_URL=https://proto.multiagency.ai REPORT_COOKIE_FILE=<file> \
-    SINCE=<window start> UNTIL=<window end> OUT=<report.md> pnpm run-report
-
-### Success
-- **The run succeeds when** it has, with incidents recorded honestly:
-  - no unexplained missed ticks;
-  - no duplicate execution;
-  - no execution outside scheduled ticks;
-  - no unresolved operation needing manual recovery;
-  - every tick able to read its book and mandate.
-- **No particular number of swaps is required.**
-- **Reported separately from the result:** operational reliability is one thing. Custody guarantees (atomic
-  budgets, strict monthly caps, the bought asset) and economic benefit are separate claims that one day
-  doesn't support.
-
-
-## Run progress rollout
-
-The writer creates `.evidence/progress/<agent-id>/` when it records the first observation.
-No migration command or existing-state conversion is needed. New start lines optionally identify
-progress format 1; new end lines may flag incomplete progress. Recording exports use envelope
-version 2 for these ticks. Historical version 1 recordings remain supported.
-
-1. Stop the executor for the agent and confirm that no unattended observation or freeze window
-   is active. Keep all other instances approve-only. The executor lease is single-host,
-   not distributed fencing; it cannot detect an executor on another host.
-2. Back up the entire state volume, preserving `.ops/`, `.invoices/`, `.owner-intents/`, `.strategy/`,
-   `.plans/`, `.evidence/`, `.inbox/`, `.agreements/` and `.notify/` together.
-3. Deploy the reader, dashboard and executor from the same release, then restart the single executor.
-   Check a private recording for stage events and confirm unknown outcomes remain unresolved.
-   This rollout and any mainnet action are the owner's actions; they have not been performed here.
-
-For rollback, stop the executor again and retain every state directory, including progress files.
-Older code ignores the optional start/end fields and does not read the progress directory; it cannot
-show the intermediate history. Keep the newer reader available for version 2 downloads. Never
-convert a version 2 file to version 1 by relabeling it.
-`test/run-progress.test.ts` verifies automatic initialization and existing-state preservation offline;
-the recording tests cover historical ticks without progress.
+Settings writers lock the canonical settings-file target. Symlink aliases share that lock; contention
+returns a retry error without replacing settings. A CLI edit does not refresh another process's
+environment. Do not remove a live writer's lock. Unreadable journal, owner-intent, inbox and agreement
+records require investigation against verified evidence; never erase them to unblock sending.
+Detailed historical upgrade notes remain in [legacy operations](legacy/operations.md#settings-and-record-read-hardening).
 
 ## Scheduling cadence and local refactoring
 
-The scheduler currently counts its interval from the latest inbox `run` summary, written before the
-final after-observation and tick evidence end. Warnings and dismissals do not change that timestamp.
-An interrupted evidence start does not itself advance the schedule; an unresolved operation still
-blocks sends through the existing money lock. `test/autopilot.test.ts` checks these distinctions offline.
-Keep `.inbox/` alongside `.evidence/` during preservation and migration. No new scheduler checkpoint or
-state migration is introduced by the planning extraction; switching scheduling sources would require
-separate restart semantics and compatibility tests.
+Saving a strategy persists scheduling off. The owner authorizes its exact digest-bound grant, then
+explicitly enables the schedule. Stop prevents future scheduled ticks; an already started tick can
+submit further operations and submitted operations may finish.
 
-The planning extraction keeps `.plans/` filenames, JSON, content digests and execution claims unchanged.
-It changes the source digest, so identify any deployed build with its own release record. The optional
-`DASHBOARD_AREA` setting changes presentation, not authorization. Configure an external agent server's
-area explicitly as well as its gateway entry; gateway-managed children receive it from `area`.
+Cadence is counted from the latest recorded inbox `run` summary. That summary precedes the final
+after-observation and evidence end. A missing end can mean an interrupted or unknown run; it does
+not independently pause cadence. Unresolved operations still block new sends. A separate durable
+scheduler checkpoint is not implemented.
 
-## Task-flow and RPC extraction candidate
+## Unattended run: observing the Treasury autopilot
 
-The task-flow extraction adds a private, member-readable `instance` procedure and preserves existing
-RPC paths and action permissions. Ship the gateway allowlist, agent server and frontend from the same
-reviewed build so the provider-independent schedule-stop view can read instance mode. This work
-changes no state formats and requires no conversion. Preserve all existing state directories as usual.
-The lazy application entrypoints and recovery views are verified locally with intercepted browser
-requests; deployment, restarts and hosted verification remain separate owner actions.
+Use the existing `pnpm run-report` with its configured dashboard URL, session file and agent name.
+Keep reports and real recordings outside the repo. A scheduled run, provider acceptance, operation
+settlement and an absence of dashboard interventions are separate observations. The report's
+historical intervention classification is retained. Multi-day unattended operation remains a gap.
+See [the detailed report procedure](legacy/operations.md#unattended-run-observing-the-treasury-autopilot).
 
-An inherited `EXECUTOR=off` remains a process-lifetime restriction even if the instance settings file
-contains `EXECUTOR=on` or settings are saved at runtime. Changing executor ownership requires the
-existing stopped-executor procedure; instance-file loading cannot lift that restriction.
+## Read-only checks
 
-## Isolated Treasury-only interface candidate
+```sh
+DASHBOARD_URL=https://treasury.multiagency.ai pnpm smoke
+DASHBOARD_URL=https://treasury.multiagency.ai REPORT_COOKIE_FILE=/private/session pnpm demo-check
+```
 
-Build the brief 02 presentation with `PUBLIC_TREASURY_ONLY=true pnpm build:web`; the dashboard Dockerfile accepts the same build argument. Default builds retain the shared workspace. The flag scopes presentation only; gateway permissions and the existing dispatch path remain authoritative. It does not create an executor, migrate state, configure DNS or authorize a rollout. The intended hostname is `treasury.multiagency.ai`; sign-in must use the matching gateway host when deployed.
+Smoke checks health, headers, host-bound sign-in and signed-out access refusal. With a private session
+and `SMOKE_SNAPSHOT`, it checks preservation for the actual accessible agent names, including registered
+Treasuries. An old two-agent snapshot is not silently rewritten; identity differences fail the check.
+`INVOICES_URL` is optional and only enables historical invoice-host checks.
 
-The interface is prepared in an isolated source copy while other sessions continue. Preserve the one-executor mapping and follow the coordinated rollout above before pointing this interface at the existing live services. Do not deploy this full source candidate while its unrelated work-order access-classification tests fail.
+Demo preflight discovers the accessible Treasury. Set `REPORT_AGENT` when more than one is accessible.
+It reads valuations, budget headroom, unresolved operations and schedule state. A manual preview does
+not require scheduling on; set `REPORT_REQUIRE_SCHEDULE=true` for a scheduled-run demonstration.
+`REPORT_EXPECTED_USD` is a rehearsal estimate, default 5, not authorization or a spendable-balance
+claim. A missing USD budget fails the check rather than proving an unlimited budget is acceptable.
+These commands do not create a quote, recover an operation, sign or send funds.
 
-## Optional self-service Treasury registration (isolated candidate)
+## Historical compatibility
 
-Set `TREASURY_SELF_SERVICE=true` on the gateway and build with `PUBLIC_TREASURY_ONLY=true` (a Docker build argument). `DASHBOARD_FILE=/app/deploy/treasury.json` supplies the intended host and an empty initial agent list. A signed-in NEAR account can register its own workspace; a Sputnik DAO additionally requires current group proposal permission. Registration creates local state only. Agent creation, policy, grant and schedule enablement retain their separate existing owner controls. An unavailable ownership or permission read refuses access. Default gateway builds retain configured-owner admission.
-
-This candidate can run as a separate service for newly created agents; it must never be populated with another executor's agent ID or grant. The gateway starts one child per registered owner with a separate working directory and settings file, and does not pass parent agent credentials, owner private keys, invoice ports or schedule settings. Shared Agent API and RPC service credentials remain server-side. The prototype has a fixed capacity of 16 registered treasuries and one per owner; it has no workspace deletion, ownership transfer, distributed provisioning or cross-host fencing. Provider account quota remains shared.
-
-Preserve the entire `.treasuries/` directory, including `registry.json`, every `.env.instance`, and every child’s `.ops/`, `.invoices/`, `.owner-intents/`, `.strategy/`, `.plans/`, `.evidence/`, `.inbox/`, `.agreements/`, `.notify/`, `.work-orders/` and legacy state. Stop the gateway and all child writers before backup, copying or migration. Never initialize a new registry over retained child state. Missing registered settings and a corrupt registry fail startup. New empty installations initialize additively; existing state needs no conversion. Offline tests cover retry/restart preservation. Rollback with self-service disabled must retain all these directories and stops serving their workspaces; do not restart their executors elsewhere without the stopped-writer procedure. The gateway lease coordinates only one host.
-
-Registration and access isolation are tested with loopback fixtures, and both owner choices are browser-tested through preparation with signing intercepted. No real account or DAO was created for this candidate, and no live service was changed.
+`PUBLIC_TREASURY_ONLY=false` selects the inherited UI for regression tests only. Payables execution
+requires the explicitly named `Dockerfile.legacy-invoices` or `pnpm legacy:invoices`; it is outside
+the Treasury product. Its state and recovery obligations remain documented in
+[legacy operations](legacy/operations.md#payout-executor).

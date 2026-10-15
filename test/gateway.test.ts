@@ -211,8 +211,21 @@ test("an approve-only agent server starts with EXECUTOR=off; gateway secrets nev
   assert.equal(approver.SESSION_SECRET, undefined);
 });
 
-test("the deployed configuration: both agents owned by the DAO, the treasury agent executed here, the payout agent approve-only", () => {
-  const config = loadConfig("deploy/dashboard.json");
+test("default gateway configuration is the standalone Treasury host", () => {
+  const previous = process.env.TREASURY_SELF_SERVICE;
+  process.env.TREASURY_SELF_SERVICE = "true";
+  try {
+    const config = loadConfig();
+    assert.equal(config.host, "treasury.multiagency.ai");
+    assert.deepEqual(config.agents, []);
+  } finally {
+    if (previous === undefined) delete process.env.TREASURY_SELF_SERVICE;
+    else process.env.TREASURY_SELF_SERVICE = previous;
+  }
+});
+
+test("historical shared configuration: both agents owned by the DAO, the treasury agent executed here, the payout agent approve-only", () => {
+  const config = loadConfig("deploy/legacy-dashboard.json");
   assert.equal(config.host, "proto.multiagency.ai");
   assert.deepEqual(
     config.agents.map((a) => [a.name, a.owner, a.envFile, a.executor]),
@@ -221,6 +234,15 @@ test("the deployed configuration: both agents owned by the DAO, the treasury age
       ["payout", "agentic.sputnik-dao.near", ".env.payout", false],
     ],
   );
+});
+
+test("DAO demo routing preserves existing agent settings and executor assignments", () => {
+  const previous = loadConfig("deploy/legacy-dashboard.json");
+  const candidate = loadConfig("deploy/dao-treasury-demo.json");
+  assert.equal(candidate.host, "treasury.multiagency.ai");
+  assert.deepEqual(candidate.agents, previous.agents);
+  assert.equal(candidate.invoices, previous.invoices);
+  assert.equal(childEnv(candidate.agents[1] as typeof candidate.agents[1] & { envFile: string }, {}).EXECUTOR, "off");
 });
 
 test("legacy operators in dashboard configuration are ignored and cannot grant access", () => {

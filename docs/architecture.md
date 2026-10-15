@@ -1,5 +1,7 @@
 # Architecture
 
+The active product is Agentic Treasury Management. This document also maps retained shared backend and historical Payables code; those modules are compatibility and recovery dependencies, not additional product areas. See [repository scope](scope.md).
+
 Two areas, Payables and Treasury, share one core. Each agent runs in its own instance of the server (`src/server.ts`),
 with its own wallet, grant, money lock and logs; the hosted gateway signs members in and forwards
 their calls to those instances. Files are listed under `src/` unless a path says otherwise.

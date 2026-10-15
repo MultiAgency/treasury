@@ -26,7 +26,7 @@ async function treasuryOnly(browser, root) {
   assert(!calls.some(c=>['executePlan','sweep','rebalance','autopilot/enable','owner/prepare'].includes(c)),'opening must not act');
   await page.getByRole('button',{name:'Turn off schedule',exact:true}).waitFor();
   assert(await page.getByRole('region',{name:'Schedule status'}).innerText().then(t=>t.includes('on · every 60 minutes')));
-  const shots=resolve('.impeccable/review');mkdirSync(shots,{recursive:true});
+  const shots=resolve(process.env.PROTO_BROWSER_ARTIFACTS || '.test-artifacts/treasury-ui');mkdirSync(shots,{recursive:true});
   await page.screenshot({path:resolve(shots,'desktop.png'),fullPage:true});
   await page.setViewportSize({width:390,height:844});
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile overflow');

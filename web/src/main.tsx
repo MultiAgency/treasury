@@ -96,7 +96,7 @@ const subscribeHash = (notify: () => void) => {
 function App() {
   const hash = useSyncExternalStore(subscribeHash, () => location.hash);
   const example = hash.match(/^#\/explore\/(payables|treasury)(?:\/([^/?#]+))?\/?$/);
-  if (example) return <PrototypeExplorer key={example[1]} area={example[1] as "payables" | "treasury"} page={example[2] || "overview"} />;
+  if (example && !TREASURY_ONLY) return <PrototypeExplorer key={example[1]} area={example[1] as "payables" | "treasury"} page={example[2] || "overview"} />;
   return <GatewayPage activity={hash === "#activity"} />;
 }
 
