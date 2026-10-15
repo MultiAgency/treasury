@@ -26,29 +26,22 @@ and [legacy operations](legacy/operations.md).
 
 ## Owner release handoff
 
-For the selected DAO demo, use the prepared [routing rollout](treasury-rollout.md) and
-`deploy/dao-treasury-demo.json`. It keeps the DAO executor and volume on the existing **dao**
-service while making `treasury.multiagency.ai` its entry point. This plan has not been applied.
+For the DAO reference, review the [release gates](treasury-rollout.md) and candidate
+`deploy/dao-treasury-demo.json`. The candidate preserves the historical Treasury executor and
+payout approve-only settings, and contains no Proto redirect. It is not a live topology record
+or permission to replace either existing service's configuration.
 
-Before deploying this cleanup, review the exact source revision and run `pnpm verify`. Include the
-new Treasury browser fixtures and retained legacy files in the release; a tracked-only diff omits
-new files. Confirm that concurrent edits have finished before treating the verification as final.
+Before deployment, finish concurrent edits, identify the exact candidate and run `pnpm verify`.
+Include required untracked files; a tracked-only diff is incomplete. Verify project, services,
+domains, volumes, host-bound sign-in and executor assignments read-only. Resolve the DAO reference
+and separate wallet installation's access destinations before any domain reassignment. Proto stays
+the umbrella showcase; do not deploy the focused Treasury image over it or the invoice executor.
 
-In Railway, verify the intended project and **treasury** service before deploying. Keep one replica,
-the existing `/data` volume, sign-in host, explicit gateway configuration and executor assignments.
-The new default configuration has no preconfigured agents: preserve the current configuration or
-the existing self-service setting rather than accidentally starting with an empty configuration.
-Use the state-preservation procedure below for backup or executor movement. Do not deploy this
-Treasury image to the historical invoice executor.
-
-The selected `agentic.sputnik-dao.near` Treasury currently uses the existing **dao** service at
-`proto.multiagency.ai`, not the separate self-service **treasury** service. For this target, preserve
-its existing Treasury executor and payout approve-only assignment. Both `deploy/dashboard.json`
-and the image's default configuration now contain no agents, so do not rely on either for the
-existing DAO rollout. Preserve an explicit host configuration; the retained
-`deploy/legacy-dashboard.json` describes the inherited host and assignments. Review that mapping
-against the actual service before selecting it. The Treasury interface can hide Payables while
-the server preserves the existing state and executor responsibilities.
+Keep one executor per agent, one replica and the existing state. The default gateway configuration
+has no preset agents, so preserve explicit settings or the existing self-service setting rather
+than accidentally starting with an empty configuration. Use the stopped-writer preservation
+procedure below for backups or executor movement. Historical mappings in
+`deploy/legacy-dashboard.json` require verification against the actual services.
 
 After the owner's deployment:
 

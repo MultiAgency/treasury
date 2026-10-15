@@ -8,7 +8,8 @@ names the concepts that the code, tests and reviews share.
 This standalone repo focuses on **Agentic Treasury Management**: allowed assets, per-asset monthly
 caps, a cross-asset USD budget, quoted rebalancing, a strategy-bound schedule, confidential sweep and
 private operation evidence. Treasury is the default interface. Payables and the shared workspace
-terms below describe retained compatibility code and historical evidence, not active product areas.
+terms below describe retained compatibility code and historical evidence. Payables and Invoices are
+future sibling experiences outside this Treasury phase.
 Exact public-payout unshielding, an idle-surplus reserve and the complete signed-envelope guarantee
 remain gaps; see `docs/scope.md` and `docs/enforcement.md`. Spending caps do not cap market exposure.
 
@@ -244,6 +245,18 @@ classification are retained when dashboard permissions change.
 
 ## Treasury interface
 
+**Canonical Treasury host**: One gateway can accept both Treasury and its explicitly configured
+legacy page host. The legacy host redirects GET/HEAD page visits to the canonical HTTPS host with
+the path and query preserved. Sign-in and API requests and all other methods on the legacy host
+are refused, never forwarded or replayed. Health reads remain available on both. Sessions stay
+host-local; the owner signs in at the canonical host. This routing is offline-tested and not deployed.
+
+**Reference Treasury frontend (candidate)**: The focused Treasury assets can be served by the
+shared gateway for its existing DAO Treasury, under a separately reviewed host assignment.
+The wallet Treasury retains its own host, onboarding, registry and executor. Sharing frontend
+assets does not share sessions, authority or state, or start another executor. The integration
+is offline-tested against the evolving Proto candidate, not deployed.
+
 A manually confirmed plan stays selected on the overview while its exact operation records are
 followed. The last successful budget observation before confirmation is retained beside subsequent
 provider observations. Neither the difference nor a returned execution stream establishes settlement,
@@ -251,6 +264,10 @@ plan-specific charges or atomic budget accounting. A changed policy prevents hea
 failed reads remain unavailable. This local selection is not a durable money record: reload clears
 it without replaying execution. Signed monthly caps and each USD budget window are shown together;
 recorded refusal codes are read on demand, never produced by a live probe.
+
+The signed-in Treasury header shows the owner from the existing setup observation, including the
+DAO’s proposal route when applicable. This identity is separate from the connected wallet and is
+absent from the public entry. It adds no read or authorization decision.
 
 The default web build presents brief 02 on one Treasury screen: allocations, signed monthly caps, budget headroom, quoted rebalancing, targets and schedule, and confidential sweep. It reuses the existing agent-scoped server controls. The presentation flag does not restrict server permissions or start another executor. Public copy contains no private observations. Exact public-payout unshielding remains outside the implemented behavior. This cleanup has not been deployed. The historical two-area UI requires explicit `PUBLIC_TREASURY_ONLY=false` for compatibility tests.
 

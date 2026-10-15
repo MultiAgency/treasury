@@ -5,13 +5,18 @@ current authorization, and records the outcomes and remaining budget. Use the Tr
 not the inherited Payables workspace. This is a walkthrough for the current source; it is not a
 record that this cleanup has been deployed.
 
-The selected demo owner is `agentic.sputnik-dao.near`. Its existing Treasury was configured at
-`https://proto.multiagency.ai/a/treasury/`; that historical location does not determine the final
-demo host. The separate wallet workspace on `treasury.multiagency.ai` is not the selected demo.
-Confirm the displayed owner before any action. This choice does not migrate the executor or
-authorize a new one.
-The prepared [rollout](docs/treasury-rollout.md) makes `treasury.multiagency.ai` the demo entry
-point while retaining the existing DAO executor and state. It has not been applied.
+The reference owner is `agentic.sputnik-dao.near`; the intended focused destination is
+`https://treasury.multiagency.ai`. Historical DAO records used `https://proto.multiagency.ai/a/treasury/`.
+That history does not establish the current host/service assignment. Confirm the displayed owner
+and retained records before presenting; the separate wallet installation is not the DAO reference.
+Proto remains the umbrella showcase for all three ideas and must not redirect to Treasury.
+The [release review](docs/treasury-rollout.md) leaves live topology decisions to the owner.
+
+Creation is a separate journey: on a registration-enabled Treasury host, sign in, choose wallet
+or DAO ownership, and continue into an isolated workspace. Registration signs nothing. Explicitly
+authorize agent creation and policy, save and authorize the strategy, fund the agent, then enable
+scheduling. A DAO uses its owner proposal/approval flow. Current offline creation fixtures stop
+before real signing; historical reference evidence does not certify another owner's agent.
 
 ## Prepare before presenting
 

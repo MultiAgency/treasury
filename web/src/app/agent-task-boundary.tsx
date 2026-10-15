@@ -251,7 +251,16 @@ export function AgentTaskBoundary() {
       </header>}
 
       <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
-        {TREASURY_ONLY ? <header className="flex items-center justify-between gap-2 border-b pb-5"><TreasuryBrand /><WalletButton /></header> : workspace ? <header className="flex flex-wrap items-start justify-between gap-4">
+        {TREASURY_ONLY ? <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
+          <div className="flex min-w-0 flex-1 flex-col gap-3">
+            <TreasuryBrand />
+            <section aria-label="Treasury owner"><dl className="text-sm">
+              <dt className="text-muted-foreground">Owner</dt>
+              <dd className="break-words">{ownerName(setup.data)}</dd>
+            </dl></section>
+          </div>
+          <WalletButton />
+        </header> : workspace ? <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-2">
             <h1 className="text-2xl font-semibold">{name ?? "Agentic Treasury"} · {pageTitle}</h1>
             <p className="break-all text-sm text-muted-foreground">{ownerName(setup.data)}</p>

@@ -29,7 +29,7 @@ async function treasuryCreation(browser,root){
    }
    return route.fulfill({path:p.startsWith('/static/')?join(root,p):join(root,'index.html'),contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':p.startsWith('/static/')?'font/woff2':'text/html'});
   });
-  await page.goto('http://frontend.test/');await page.getByRole('heading',{name:'New treasury',exact:true}).waitFor();
+  await page.goto('http://frontend.test/');await page.getByRole('heading',{name:'Create your Treasury',exact:true}).waitFor();
   assert.deepEqual(requests,[]);
   const walletButton=page.getByRole('button',{name:'Wallet: owner.near',exact:true});
   await walletButton.waitFor();

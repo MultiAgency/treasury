@@ -9,6 +9,8 @@ import { z } from "zod";
 const Config = z.object({
   /** The public host users sign in to, e.g. "dao.example.com". Bound into every sign-in signature. */
   host: z.string().min(0),
+  /** Legacy page hosts redirect to host; API requests on them are refused, never replayed. */
+  redirect_hosts: z.array(z.hostname()).default([]),
   /** Where payees submit invoices, linked from the public page. */
   invoices: z.url().optional(),
   /**

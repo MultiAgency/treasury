@@ -1,6 +1,9 @@
 # Architecture
 
-The active product is Agentic Treasury Management. This document also maps retained shared backend and historical Payables code; those modules are compatibility and recovery dependencies, not additional product areas. See [repository scope](scope.md).
+This repository focuses on Treasury and retains compatible idea-1 and idea-3 code. The
+[domain mapping](scope.md#domain-to-responsibility-mapping) is authoritative for destination
+responsibilities and distinguishes intended topology from current source and historical deployment.
+Proto remains the three-idea showcase; it is not a canonical-host alias for Treasury.
 
 Two areas, Payables and Treasury, share one core. Each agent runs in its own instance of the server (`src/server.ts`),
 with its own wallet, grant, money lock and logs; the hosted gateway signs members in and forwards
@@ -491,3 +494,24 @@ modules; opening it reads no private records and displays no private evidence.
 These changes require no RPC or state-format migration. They are local frontend changes, not a new
 mainnet observation or provider-enforcement claim. Offline validation includes feature-boundary and
 payment-stage tests plus the workspace, payment, recovery, strategy and public browser fixtures.
+
+## Idea-3 candidate integration
+
+`router.ts` includes `rpc/work-orders.ts`; gateway permissions classify its read, prepare and
+signature submission calls. `work-orders.ts` bridges the configured payout parent to the invoice
+executor's private `/internal/work-orders` endpoint. `invoice-http.ts` also exposes payee-scoped
+order APIs. `work-order-pool.ts` starts isolated subprocesses; `work-order-runtime.ts` coordinates
+owner intents and fixed invoice filing; `work-order-binding.ts` checks immutable order terms.
+Store, pool, protocol and binding tests cover local behavior. There is no connected work-order
+React interface, no complete hosted lifecycle evidence and no supplier settlement implementation.
+Keep each child settings file, initialization marker, owner intents, invoices and operation journal
+with its immutable order record; do not reuse the parent's grant or owner private key.
+
+### Focused Treasury owner identity (offline-tested)
+
+The focused header displays `ownerName(setup)` beside the existing wallet control, so the owner
+can distinguish the DAO reference from another Treasury before reviewing actions. DAO identity
+retains the existing proposal label; long account names wrap. Missing owner evidence retains the
+existing generic wallet label rather than inferring identity from the connected account or gateway.
+The public entry renders no owner observation. Treasury browser fixtures cover these cases; this
+presentation adds no RPC, signing, authorization or state-format change.

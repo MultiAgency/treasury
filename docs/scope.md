@@ -1,63 +1,82 @@
-# Repository scope
+# Repository scope and destinations
 
-This checkout implements **02 Agentic Treasury Management**. The user-facing idea is delegated
-rebalancing inside owner-signed asset and spending limits, with confidential resting balances and
-reviewable operation evidence. The primary interface, quick start, deployment defaults and demo
-must tell that same story.
+This repository focuses on **idea 2 — Agentic Treasury Management** at
+`treasury.multiagency.ai`, retaining compatible **idea 1 — SputnikDAO Confidential Treasury
+Facilitator** and **idea 3 — Invoicing & Purchase-Order Management** code. Payables and Invoices
+are future sibling experiences outside this Treasury quality phase. `proto.multiagency.ai`
+remains the umbrella showcase for all three ideas and must never redirect to Treasury.
 
-## In scope
+The actual sibling checkout is `/Users/jlwaugh/agencies/proto`, a separate Git working tree
+with origin `MultiAgency/agentic-treasury-private`; this checkout's origin is `MultiAgency/treasury`.
+Both contain related gateway, owner-intent and executor code. Proto has evolving shared-infrastructure
+and routing work of its own; its candidate architecture does not determine Treasury's product scope.
+No code synchronization, platform extraction or Proto modification is part of this cleanup.
+Local directory inspection establishes these source boundaries, not deployed service ownership.
 
-- Read balances and fresh valuation; target allocations; quote every planned swap before execution.
-- Signed allowed assets and per-asset monthly caps; cross-asset USD budget headroom and refusals.
-- Strategy-bound grants, explicit authorization, scheduled execution and manual quoted rebalancing.
-- Shield managed public balances; preserve confidentiality limitations.
-- Durable operation identities, fail-safe unknown outcomes, one send site and private audit history.
-- Wallet or Sputnik DAO ownership; isolated self-service registration when configured.
+A hostname names a product destination; it does not confer authority or create an executor.
 
-## Missing parts of the brief
+The canonical local definitions are the catalog mapping and buyer/supplier workflows in
+[Agent Connect audit](agent-connect-audit.md#scope-and-the-four-audit-gates). Requirement stages
+come from [evidence/inventory.ts](../evidence/inventory.ts), not domain names. The inventory's
+short label “Purchase orders” denotes idea 3, whose full catalog title is above.
 
-Exact unshielding for a public payout, a calculated idle-surplus reserve, independent proof of atomic
-USD-budget charging and strict cumulative asset caps under concurrency remain gaps. The current
-three-asset strategy needs at most two swap legs. Adding invoice collection or manufacturing a
-third leg does not close these gaps.
+## Domain-to-responsibility mapping
 
-The catalog example is design input, not executable configuration for the pinned SDK. It uses
-`capabilities`/`rules`, separate `budget_set`, camelCase swap arguments and a stated
-`policy_confidential_whitelist_conflict`. This repo's SDK policy uses `actions`, `assets`, `limits`,
-`budget` and `destinations`; its treasury policy currently has an empty `only` destination list.
-Do not silently replace that policy or infer the deployed provider's schema from the example.
-A future policy/choreography change needs pinned provider evidence, offline fault tests and an
-explicit owner-signed update. No policy or authorization rule changes are part of this cleanup.
+| Destination | Purpose, audience and primary flow | Current frontend and backend | Agent, executor and persistent state |
+|---|---|---|---|
+| payables.multiagency.ai — idea 1 | DAO owners/members review external requests, separately agree payees, then approve held confidential payouts | Shared React Payables area (`PUBLIC_TREASURY_ONLY=false`), gateway and `rpc/payables.ts`; intake is currently served by the invoice host. No dedicated Payables host configuration is tracked | Existing payout agent, its own owner-signed policy and payout grant. Historical `dao` gateway instance is approve-only; `invoices` service is its sole executor. Payout settings and `.ops/`, SQLite `.invoices/`, `.owner-intents/`, `.agreements/`, `.inbox/`, `.notify/` remain at their existing locations |
+| invoices.multiagency.ai — idea 3 | Buyer creates and explicitly authorizes/funds one isolated order; supplier files its fixed invoice; owner reviews payout; observe outcome and retire authority. Separately owned supplier agent converts receipts and forwards proceeds | Current `invoice-page.ts` / `invoice-browser.js` and `invoice-http.ts` serve general idea-1 intake. Work-order RPC, private bridge and payee APIs exist; no work-order frontend is connected. Supplier settlement is absent | Current host runs the idea-1 payout executor via `invoices-server.ts`, not a separate invoice grant. Candidate order subprocesses use their own agent, fixed policy, expiring `invoices` grant and state under `.work-orders/<parent-agent>/`; supplier agent lifecycle remains unimplemented |
+| treasury.multiagency.ai — idea 2 | Owners delegate quoted rebalancing within signed limits; authorize strategy, explicitly enable scheduling, inspect operations and sweep | Default Treasury React build; gateway plus treasury RPC, plans and autopilot. `deploy/treasury.json` has no preset agents; optional self-service registry | Separate Treasury agent/policy/strategy grant and sole executor per agent. `/data/state`, `.treasuries/registry.json`, isolated child settings and complete state. Existing DAO Treasury remains associated with historical `dao` until an owner-reviewed topology change |
+| proto.multiagency.ai — umbrella | Public reviewers discover all three ideas and their evidence stages; signed-in members follow scoped tasks | Historical shared React build and gateway (`deploy/legacy-dashboard.json`). Its current public presentation covers two areas; a complete three-idea showcase remains a UI gap | No umbrella wallet, pooled policy or shared money authority. Historical gateway starts Treasury executor and payout approve-only instance, with separate settings. It must reuse those assignments rather than duplicate executors |
 
-## Future integration and hidden experiment
+This is a source/configuration inspection, not a fresh live deployment inspection. Historical
+`dao` and `invoices` observations retain their dates, proposals and deployment references in
+[mainnet log](mainnet-log.md). The copied Treasury release was recorded as
+`07c31669-3ebe-4cc2-ba93-a87009e16c51` on 2026-10-15; that does not certify this candidate.
+No deployment of a dedicated Payables destination or complete idea-3 destination is established here.
 
-Payables is a future integration. The current prototype first demonstrates Treasury rebalancing,
-limits, budget observations and confidential sweep. Retained payout code preserves a foundation
-for that integration without adding invoice or agreement tasks to the present demo.
+## Shared infrastructure and authority boundaries
 
-Steward is a hidden experimental demo feature at `/a/<agent-name>/steward`, or `/steward` on a
-standalone server. It is not listed in navigation or required by the 60-second Treasury story.
-Opening it makes no inference request and submits no operation. Propose requires the existing
-permission and backend NEAR AI configuration; it prepares a plan, not a send. Execution retains
-its explicit confirmation and the same saved-plan authorization and dispatch checks.
+Share the TypeScript server, gateway sign-in and per-agent permissions, provider adapter, owner-intent
+verification, dispatch, reconciliation, journal formats and frontend components. Never pool agents'
+wallets, policies, grant tokens, permissions or operation records. A shared owner or provider key
+does not authorize another agent's purpose. An agreement on the payout agent is not an isolated
+order agent. Supplier authority belongs to its own owner and policy, not the buyer or main Treasury.
 
-## Retained compatibility code
+Every send retains the single dispatch site, mandate digest, money lock, write-ahead record and
+unresolved-operation refusal. Keep exactly one executor per agent and `EXECUTOR=off` elsewhere.
+Locks and leases coordinate one host only. Explicit owner signing, payout approval and plan/sweep
+confirmations remain separate steps. Presentation flags and hidden routes do not restrict backend
+authorization. No money-path or state-format change is part of this documentation update.
 
-`src/` retains payout/invoice modules because they share dispatch, owner signatures, recovery,
-notification and access-control code and may be needed to interpret existing records. Their tests
-remain offline regression coverage. This cleanup does not remove RPC capabilities or change server
-permissions; hiding a route is not a security boundary.
+## Implementation and evidence gaps
 
-`PUBLIC_TREASURY_ONLY=false` exists solely to exercise the inherited frontend regressions. Normal
-`pnpm web`, `pnpm build:web`, `pnpm demo` and the dashboard Docker build use Treasury. The default
-surface redirects the old payee, payment and guided-demo routes; it has no invoice or
-manual payout entry point. The legacy overview hashes open the Treasury landing flow.
+- Decide whether Payables and Proto use separate gateway services or a host-aware shared gateway;
+  define host-bound sessions, scoped frontend builds and read/approval access before rollout.
+  Current single-host configuration does not implement that destination split.
+- Decide the DAO Treasury's eventual host/service assignment without displacing Proto or losing
+  the separate Treasury wallet workspace. The previous Proto redirect rollout is superseded.
+- Connect idea-3 order controls and payee UI; verify full creation, funding, payment, restart,
+  authority retirement and residual-fund handling. Candidate modules and offline tests are not
+  evidence of a deployed order lifecycle. Partial invoices and amendments need separate designs.
+- Implement separately owned supplier receipt discovery, conversion and forwarding with durable
+  operation identities and interrupted-run recovery. No supplier settlement flow is established.
+- Complete idea-1 acceptance evidence for a new payee. Agreement ceilings/deadlines are review
+  context in the general payout flow, not universal automatic enforcement.
+- Treasury still lacks exact public-payout unshielding, an idle-surplus reserve, multi-day unattended
+  evidence and independent proof of strict cumulative caps/atomic USD charging under concurrency.
+  Spending caps do not bound market exposure; confidentiality is not universal untraceability.
 
-Historical docs live in `docs/legacy/`; the dated mainnet log and enforcement assessment keep their
-original evidence scope. Roadmap experiments there are not active product requirements. Never
-remove retained state or historical outcomes to make the code or demo look simpler.
+## Build and demo boundaries
 
-A later backend extraction must first map every import and record reader, reproduce recovery and
-concurrency behavior, preserve old state, and verify a stopped-executor upgrade. Until then,
-retaining tested shared safety code is deliberate; it is not a claim that the repo contains only
-Treasury source files.
+Ordinary `pnpm web`, `pnpm build:web`, `pnpm demo` and dashboard images currently default to
+Treasury. `PUBLIC_TREASURY_ONLY=false` selects the implemented shared Payables/Portfolio interface
+for retained sibling regression checks and separately scoped future work.
+The default Treasury frontend redirects payment routes and cannot serve the intended Payables
+or complete Proto experience. Keep the idea-2 minute focused; do not add invoice tasks to it.
+Steward remains hidden at `/a/<agent-name>/steward` or `/steward`, with explicit plan execution.
+
+Historical documents and generated evidence remain under `docs/legacy/`; their location does not
+make idea 1 or idea 3 out of scope. Preserve every record and its original evidence attribution.
+Any future extraction or state conversion requires recovery/concurrency validation and a
+stopped-executor preservation procedure; no such migration is authorized here.

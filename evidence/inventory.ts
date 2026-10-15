@@ -147,7 +147,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
             text: "Each order is its own agent and grant: created, funded, paid, expired",
             known: "not-yet",
             evidence:
-              "Not built: an offer records a payee, a ceiling and a deadline, but there is no agent or grant per order",
+              "Incomplete: isolated work-order store, subprocess, owner-intent and invoice APIs exist with offline tests; full created/funded/paid/retired lifecycle acceptance and frontend remain outstanding. General offers still share the payout agent",
           },
           {
             type: "guarantee",
@@ -170,7 +170,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
             stoppedBy: "nothing",
             known: "not-yet",
             evidence:
-              "Not built per order: a wrong payee is refused by the destination list, but an amount over the order or a late invoice only shows a badge to voters",
+              "Candidate order binding has offline tests for immutable terms, grant deadline and dispatch refusal (test/work-order-binding.test.ts); complete order lifecycle and deployed enforcement remain unverified. General agreement amount/deadline breaches remain review badges",
           },
         ],
       },

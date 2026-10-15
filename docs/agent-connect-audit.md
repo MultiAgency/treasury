@@ -1,6 +1,6 @@
 # Agent Connect audit and delivery plan
 
-Historical multi-brief audit. The active scope is brief 02 Agentic Treasury Management; see [repository scope](scope.md) and [Treasury evidence](treasury.md).
+Canonical local catalog mapping and delivery audit for ideas 1, 2 and 3. See [repository scope](scope.md) for destination responsibilities and [Treasury evidence](treasury.md) for idea 2.
 
 Agentic Treasury covers three catalog briefs through two areas: Payables holds briefs 01 and 03;
 Portfolio, the product label for Treasury, holds brief 02. Each brief needs its own demonstration
@@ -225,12 +225,13 @@ rules or change deployment configuration.
 
 ### Local implementation status
 
-The new `work-order-*` modules are an unfinished integration. Offline tests cover immutable terms,
-distinct invoice identities, corrupt-record refusals, subprocess startup and separation from the
-parent's grant and owner key. No work-order route or interface is connected to them yet. Creating
-the signed order policy, issuing the order's expiring grant, and checking the order binding immediately
-before dispatch still need integration with the existing money path. These modules are not ready
-for a hosted rollout or a mainnet demonstration.
+The `work-order-*` modules are a partial integration. Offline tests cover immutable terms,
+distinct invoice identities, corrupt-record refusals, subprocess startup, separation from the
+parent's grant and owner key, fixed owner policy/grant requests and dispatch binding.
+`rpc/work-orders.ts` is composed into the router and classified by gateway permissions;
+`invoice-http.ts` exposes a private bridge and payee-scoped order APIs. No work-order frontend
+is connected. Full creation/funding/payment/restart/retirement acceptance and supplier settlement
+remain outstanding; these modules are not established as ready for hosted or mainnet use.
 
 Work-order state is additive: `.work-orders/<parent-agent>/<order-id>.json` records immutable terms;
 the accompanying instance `.env` and `.initialized` marker must be preserved together. Also preserve

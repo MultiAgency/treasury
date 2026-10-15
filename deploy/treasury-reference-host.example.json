@@ -1,0 +1,8 @@
+{
+  "reference.treasury.multiagency.ai": {
+    "demo": "treasury",
+    "agents": ["treasury"],
+    "hostedAreas": [],
+    "frontendDist": "/app/treasury-reference/frontend"
+  }
+}

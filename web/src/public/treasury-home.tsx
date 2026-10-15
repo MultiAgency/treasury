@@ -11,15 +11,15 @@ export function TreasuryHome({ daos, selfService = false }: { daos: string[]; se
     <header className="flex items-center justify-between gap-2 border-b pb-5"><TreasuryBrand /><SignIn daos={daos} compact create={selfService} /></header>
     <div className="flex flex-col gap-4 border-l-2 border-primary py-4 pl-5">
       <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">Your treasury.<br />Your limits.</h1>
-      <p className="max-w-xl text-lg leading-relaxed text-muted-foreground">Delegate treasury rebalancing to an agent. You choose the assets, allocations, budget, and schedule.</p>
+      <p className="max-w-xl text-lg leading-relaxed text-muted-foreground">Create a Treasury agent, sign its spending envelope, and delegate quoted rebalancing with inspectable outcomes.</p>
     </div>
     <ul className="flex flex-col gap-3 text-sm leading-relaxed">
       <li><strong className="font-semibold">Set policy.</strong> Approve allowed assets, per-asset monthly caps, and a shared USD budget.</li>
-      <li><strong className="font-semibold">Rebalance.</strong> Quote swaps before execution and track remaining budget.</li>
-      <li><strong className="font-semibold">Keep balances confidential.</strong> Sweep supported idle funds and review recorded activity.</li>
+      <li><strong className="font-semibold">Delegate a strategy.</strong> Save allocation targets, authorize that strategy, then explicitly enable its schedule. Spending limits do not cap market exposure.</li>
+      <li><strong className="font-semibold">Inspect outcomes.</strong> Quote swaps before execution, review recorded operations and budget observations, and sweep managed public balances into confidential balances.</li>
     </ul>
     <section aria-label="Get started" className="flex flex-col items-start gap-4">
-      <p className="text-sm text-muted-foreground">{selfService ? "Connect your NEAR wallet to create or open a treasury for yourself or an existing DAO." : "Connect your NEAR wallet to open your treasury."}</p>
+      <p className="text-sm text-muted-foreground">{selfService ? "Sign in with your NEAR wallet to create or open a Treasury for yourself or an existing DAO. Registration signs nothing; scheduling starts off." : "Sign in with your NEAR wallet to open your Treasury. Creation is available only on hosts with registration enabled."}</p>
     </section>
     <p className="text-sm text-muted-foreground">{PROTOTYPES.treasury.briefs[0].limitations?.[0]}</p>
     <Details summary="Prototype progress">

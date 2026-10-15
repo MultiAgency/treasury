@@ -69,10 +69,10 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 
 | Type | Requirement | Control or limitation | Evidence stage | Evidence |
 |---|---|---|---|---|
-| Capability target | Each order is its own agent and grant: created, funded, paid, expired | — | Not yet | Not built: an offer records a payee, a ceiling and a deadline, but there is no agent or grant per order |
+| Capability target | Each order is its own agent and grant: created, funded, paid, expired | — | Not yet | Incomplete: isolated work-order store, subprocess, owner-intent and invoice APIs exist with offline tests; full created/funded/paid/retired lifecycle acceptance and frontend remain outstanding. General offers still share the payout agent |
 | Safety target | Supplier payments can't be traced to the business | The signed policy | Tested offline | Payouts are confidential transfers under the policy (test/authorize.test.ts); no order paid on mainnet |
 | Capability target | Inbound payments are swapped to stables and forwarded to the supplier's treasury | — | Not yet | Not built |
-| Safety target | A tampered order (wrong supplier, changed amount, late) is refused | Nothing yet | Not yet | Not built per order: a wrong payee is refused by the destination list, but an amount over the order or a late invoice only shows a badge to voters |
+| Safety target | A tampered order (wrong supplier, changed amount, late) is refused | Nothing yet | Not yet | Candidate order binding has offline tests for immutable terms, grant deadline and dispatch refusal (test/work-order-binding.test.ts); complete order lifecycle and deployed enforcement remain unverified. General agreement amount/deadline breaches remain review badges |
 
 ## 17 Campaign payouts (roadmap)
 

@@ -12,6 +12,7 @@ import { type AgentEntry, childEnv, hostOf, loadConfig } from "./config.js";
 import { recentSignProposals } from "./proposals.js";
 import { ownerOf, resolveAccess, resolveAgentAccess } from "./roles.js";
 import { appendSynced } from "../synced.js";
+import { canonicalHostAnswer } from "./canonical-host.js";
 
 /**
  * The hosted dashboard: the one public process. It signs members in, decides per request what each
@@ -106,6 +107,9 @@ createServer(async (req, res) => {
     const url = URL.parse(req.url ?? "/", "http://gateway");
     if (!url) throw new BadRequest("Malformed request.");
     const { pathname } = url;
+    const canonical = canonicalHostAnswer(req, url, HOST, config.redirect_hosts);
+    if (canonical?.status === 302) return res.writeHead(302, { location: canonical.location, "cache-control": "no-store" }).end();
+    if (canonical) return json(res, 421, { error: `Use https://${HOST} for sign-in and API requests.` });
     // State-changing requests must come from this site's own pages.
     if (req.method !== "GET" && crossSite(req)) return json(res, 403, { error: "Cross-site request" });
 

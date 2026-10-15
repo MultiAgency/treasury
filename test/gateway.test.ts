@@ -240,6 +240,7 @@ test("DAO demo routing preserves existing agent settings and executor assignment
   const previous = loadConfig("deploy/legacy-dashboard.json");
   const candidate = loadConfig("deploy/dao-treasury-demo.json");
   assert.equal(candidate.host, "treasury.multiagency.ai");
+  assert.deepEqual(candidate.redirect_hosts ?? [], [], "the Treasury candidate must not redirect Proto");
   assert.deepEqual(candidate.agents, previous.agents);
   assert.equal(candidate.invoices, previous.invoices);
   assert.equal(childEnv(candidate.agents[1] as typeof candidate.agents[1] & { envFile: string }, {}).EXECUTOR, "off");

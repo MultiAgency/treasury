@@ -1,4 +1,4 @@
-# Agentic Treasury — agent guide
+# NEAR Intents prototypes — agent guide
 
 An AI agent moves a DAO's or wallet's funds on NEAR Intents mainnet, only inside a policy the owner
 signed. The product is **credibility**: a reviewer must be able to check every claim we make. Real
@@ -8,10 +8,10 @@ Vocabulary is in `CONTEXT.md`: use its terms in code, tests, docs and conversati
 policy, grant, purpose, authorization, operation, unresolved, held payout, refusal). Read it first.
 
 ## Where things are
-- `README.md` — what runs, how to start it, the Treasury product scope, and **Not done yet**.
+- `README.md` — what runs, how to start it, the three-idea repository scope, and **Not done yet**.
 - `docs/treasury.md` — brief 02 requirements, evidence and gaps.
-- `docs/scope.md` — active Treasury scope and retained historical compatibility.
-- `docs/legacy/` — inherited Payables/workspace docs and roadmap briefs, outside product scope.
+- `docs/scope.md` — domain responsibilities, implementation status and open topology decisions.
+- `docs/legacy/` — retained Payables/workspace evidence and roadmap briefs; ideas 1 and 3 remain in scope.
 - `docs/architecture.md` — which files are shared core, facilitator or treasury; the one send site; how
   the money path stays safe on one host (journal, reconciliation, checks before each send, invoices).
 - `docs/operations.md` — deployment, executor migration, state preservation, the unattended-run report.
@@ -40,10 +40,12 @@ Files: `src/agent.ts` (dispatch), `authorize.ts`, `lock.ts`, `ops.ts`, `plans.ts
 
 ## Live systems
 - Treasury host: https://treasury.multiagency.ai, Railway service `treasury`, one replica, state on `/data`.
-  Earlier `proto` and `invoices` hosts belong to the inherited shared workspace; preserve their evidence scope.
+  This repo also owns idea 1 at payables.multiagency.ai and idea 3 at invoices.multiagency.ai.
+  Proto is the umbrella showcase for all three ideas and must not redirect to Treasury.
+  Host/service mappings are recorded in docs/scope.md; intended destinations are not deployment evidence.
 - Deploys, restarts and dashboard money actions are the user's. Prepare and verify; let them ship.
-- The signed-out public page shows Treasury and each requirement's stage, never the evidence,
-  and reads nothing from the server: no balances, amounts, payees, policies, invoices, roster or
+- Signed-out destination pages show their ideas and requirement stages, never the evidence,
+  and read nothing from the server: no balances, amounts, payees, policies, invoices, roster or
   proposals. `test/public.test.ts` pins the inherited public boundary; Treasury browser fixtures check no private reads.
 - `pnpm test:live` moves or touches real funds: run only when asked, never scheduled. `pnpm smoke` checks the Treasury host read-only; legacy invoice checks require an explicit `INVOICES_URL`.
 - An unattended run or freeze may be in progress: ask the user before editing money-path files.
@@ -65,8 +67,8 @@ Every sentence in README, DEMO.md and docs states exactly what was shown, and ho
 - A claim the code no longer supports is fixed or removed in the same change.
 
 ## Product focus
-- Ordinary builds, development and Docker images use Treasury. `PUBLIC_TREASURY_ONLY=false` is only for inherited regressions.
-- Payables is a future integration. Do not add invoice collection, agreement management or DCA to the current Treasury demo.
+- Ordinary builds, development and Docker images use Treasury. `PUBLIC_TREASURY_ONLY=false` selects the shared Payables/Portfolio UI and regressions.
+- Payables (idea 1) and Invoicing & Purchase-Order Management (idea 3) are active repo responsibilities. Keep their flows separate from the focused idea-2 Treasury demo; do not expand features during documentation cleanup.
 - Steward remains a hidden experimental demo feature at `/steward`; keep it out of navigation and retain explicit plan execution.
 - Exact public-payout unshielding is a brief-02 gap, not an implemented Payables flow.
 - Shared backend compatibility code is retained deliberately. UI route hiding does not restrict server authorization.

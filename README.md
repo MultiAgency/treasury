@@ -1,6 +1,14 @@
 # Agentic Treasury Management
 
-Delegate rebalancing to a treasury agent under an owner-signed policy: allowed assets,
+This repo focuses on idea 2 — Agentic Treasury Management. It retains compatible Payables
+(idea 1) and Invoicing & Purchase-Order Management (idea 3) code for future sibling experiences.
+The evolving sibling Proto checkout provides context for shared infrastructure and the umbrella showcase.
+See the [domain-to-responsibility mapping](docs/scope.md#domain-to-responsibility-mapping)
+for audiences, flows, agents, executors, state and implementation gaps. Proto must not redirect
+to Treasury. Destination architecture is intended; current defaults still present Treasury.
+
+**Create a Treasury agent, sign its spending envelope, and delegate quoted rebalancing with
+inspectable outcomes.** The policy includes allowed assets,
 per-asset monthly caps and a cross-asset USD budget. The agent reads balances, quotes swaps
 before execution, rebalances toward target allocations and shields managed public balances.
 
@@ -28,7 +36,11 @@ Creating an agent, signing its policy and issuing its grant require explicit own
 Saving a strategy leaves scheduling off. The owner authorizes the saved strategy, then explicitly
 enables its schedule. Opening a page or preparing a quote moves no funds.
 
-## One product, one demo
+## Focused Treasury demo
+
+The existing DAO Treasury is the reference demonstration. Wallet and DAO owners can create
+their own Treasury through optional self-service registration and the existing owner-action flow.
+Registration signs nothing; offline fixtures do not establish a new hosted creation lifecycle.
 
 The Treasury overview puts allocations, signed monthly caps, budget headroom, quoted rebalancing,
 schedule status and confidential sweep together. A confirmed manual plan’s outcomes stay on that
@@ -44,12 +56,13 @@ three-asset rebalance needs at most two swap legs. Do not invent a third swap to
 example. Exact unshielding for a public payout is a missing part of the brief, not a reason to add
 an invoice or agreement demo.
 
-Payables is a future integration. Invoice collection, agreement management, campaign payments,
-DCA and Bitcoin checking are outside the current Treasury demo. Inherited payment routes are
-redirected out of the Treasury interface. Steward remains available as a hidden experiment at
+Payables retains existing payout and invoice intake code for a future sibling experience; idea 3
+has partial isolated-order backend support and missing supplier settlement. These belong to
+their own demonstrations, not the focused Treasury minute. The default Treasury frontend
+redirects payment routes; use the shared build for the implemented Payables interface. Steward remains available as a hidden experiment at
 `/a/<agent-name>/steward` (or `/steward` on a standalone server): it proposes plans for explicit
 review and execution, and is absent from navigation. Shared backend modules and regression fixtures remain where they support authorization,
-owner actions, journal recovery or historical compatibility; their presence is not a product feature.
+owner actions, journal recovery or historical compatibility; their evidence and current limits are described in the scope mapping.
 See [repository scope](docs/scope.md).
 
 ## Verification
@@ -62,7 +75,7 @@ pnpm evidence:check
 ```
 
 `pnpm verify` also runs the inherited browser and application regressions. Those explicitly select
-the historical presentation; their invoice and payout cases protect retained shared code.
+the shared presentation; their invoice and payout cases protect idea-1 flows and shared code.
 `pnpm test:live` touches real funds and runs only when explicitly requested.
 
 Requirements and supporting observations live in [evidence/inventory.ts](evidence/inventory.ts).
@@ -72,18 +85,22 @@ They do not establish behavior of a new source build or every registered treasur
 
 ## Hosting and state
 
-This standalone checkout was copied from the Treasury release recorded on 2026-10-15:
+The checkout baseline was copied from the Treasury release recorded on 2026-10-15:
 `07c31669-3ebe-4cc2-ba93-a87009e16c51`, Railway service `treasury`,
 https://treasury.multiagency.ai. This cleanup has not been deployed or checked on that host.
 The gateway configuration is [deploy/treasury.json](deploy/treasury.json). Self-service registration
 is optional and requires `TREASURY_SELF_SERVICE=true`; registration signs nothing and starts with
-scheduling off. See [operations](docs/operations.md).
+scheduling off. See [operations](docs/operations.md). The [reference frontend integration](docs/treasury-reference-integration.md) prepares focused access to the existing DAO executor while retaining the wallet installation.
 
 Deploys, restarts and live money actions are the owner's. There must be exactly one executor per
 agent. The executor lease and money lock coordinate one host; they are not distributed fencing.
 Preserve all agent state before any executor move, including inherited record directories.
 
 ## Not done yet
+
+- Dedicated Payables hosting, a complete three-idea Proto showcase, idea-3 frontend and full
+  order lifecycle acceptance, and supplier settlement remain gaps. Gateway/session topology
+  and the DAO Treasury host assignment need explicit architectural decisions; see [scope](docs/scope.md).
 
 - Atomic USD-budget charging under all concurrent dispatches is not independently established.
   One simultaneous-swap trial is supporting evidence, not a proof.
@@ -99,4 +116,4 @@ Preserve all agent state before any executor move, including inherited record di
 
 The [architecture](docs/architecture.md) describes the one send site, durable journal, reconciliation,
 owner intents and trust boundaries. Historical two-area instructions are retained under
-[docs/legacy](docs/legacy/README.md), outside the primary demo and product scope.
+[docs/legacy](docs/legacy/README.md), outside the focused Treasury demo; their evidence remains applicable to Payables.
