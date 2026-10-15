@@ -1,0 +1,4 @@
+allowBuilds:
+  esbuild: false
+# Verification shares installed dependencies read-only; install explicitly before source capture.
+verifyDepsBeforeRun: false

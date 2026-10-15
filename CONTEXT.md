@@ -1,0 +1,239 @@
+# Agentic Treasury
+
+An AI agent moves an owner's funds on NEAR Intents, only inside a policy the owner signed. This glossary
+names the concepts that the code, tests and reviews share.
+
+## Parties
+
+**Owner**:
+The wallet or Sputnik DAO that signs the agent's policy, issues its grants and approves held payouts.
+_Avoid_: admin, user
+
+**Agent**:
+One Agent API agent with its own wallet, policy and grant, run by one instance of this server.
+_Avoid_: bot, worker
+
+**Treasury agent**:
+An agent that swaps and shields toward a strategy without a vote per action. It runs the **Treasury**
+area (docs/treasury.md).
+
+**Payout agent**:
+An agent that only makes confidential USDC transfers to agreed payees, each held for the owner's approval.
+It runs the **Payables** area (docs/facilitator.md).
+
+**Area** / **Brief**:
+An area is what one agent shows: **Payables** (the payout agent) or **Treasury** (the treasury agent). A
+brief is an experiment from the Agent Connect catalog that an area runs or plans, keeping its catalog
+number and title (01 Confidential Treasury Facilitator, 02 Agentic Treasury Management). Each brief's
+requirements distinguish mainnet observations, offline tests, pinned provider source with deployed
+behavior unverified, and requirements not yet demonstrated.
+_Avoid_: prototype (for an area), use case
+
+**Workspace**:
+The signed-in owner's interface, with a shared Home, Payables and Portfolio sections, and Activity.
+Each area retains its own agent, policy, grant, balance and access permissions. The shared Home
+routes attention to the relevant area; it does not combine balances or authorize money actions.
+Payables opens on Payments, with Agreements as its other task; Portfolio opens on Overview, with Strategy
+as its other task. These tasks appear in the content area's navigation.
+Payment queue rows include local invoices and link to one selected record; an invoice joins a payment
+only through its recorded provider correlation ID. Approval and payment completion remain separate.
+Payments defaults to **Needs review**: held payouts, changed or prepared invoices, owner-action recovery,
+and unknown or conflicting retained outcomes. **All records** includes recorded terminal outcomes;
+local recipient/reference search never fetches per-payment status or authorizes an action. Read failures
+and incomplete coverage remain visible with either filter.
+The desktop navigation rail and mobile drawer share the four workspace destinations. Payments includes manual payment
+creation and invoice review; Agreements groups terms and separate policy inclusion by recipient.
+Shared Activity retains each agent's returned operation, owner-action and run history, with links to
+scoped **Operation status** controls and individual run details. Shared history supports local search and
+expandable record type, recorded status and date filters. Unresolved operations, failed reads and
+incomplete run records remain above the filters across all areas. Dates use local time; undated records,
+including owner actions, remain included. A run ending, owner action or proposal vote does not establish
+payment settlement. Operation status retains scoped URLs and links back to shared Activity.
+Funding and policy are content-area utilities;
+Guided walkthrough is under Help. Home keeps its real-funds entry under Guided walkthrough. Sweep is in
+Balances & funding. Entry pages retain known limitations and expandable requirement evidence.
+_Avoid_: entering a prototype or switching dashboards for navigation within the workspace.
+
+**Executor**:
+The one instance that sends, reconciles and serves invoices for an agent. Any other instance of the same
+agent is **approve-only**: it reads and approves as the owner, and never sends.
+_Avoid_: primary, leader
+
+**Member**:
+An account named in one of the owner DAO's group roles. Members may read the agent's private records;
+public `Everyone` permissions and token-weighted roles do not establish private workspace membership.
+For wallet-owned agents, only the owner account has access.
+
+**Dashboard permissions**:
+Per-agent capabilities derived from wallet ownership or the DAO's onchain policy, with no configured
+operator list. For admitted DAO members, applicable Group and Everyone permissions combine. FunctionCall
+proposal permission allows preparing requests; both FunctionCall proposal and approval permissions allow
+execution controls under the existing signed policy and grant. Both policy proposal and approval permissions
+allow local settings changes. These are application mappings, not proof of a passed DAO proposal.
+Owner actions still require the owner's verified signature, obtained through the DAO's voting threshold
+when it owns the agent. Historical records retain `operator` as the label for a manually triggered run.
+
+**Portfolio**:
+The product-facing label for the Treasury area across the public overview and
+signed-in workspace.
+It covers allocations, rebalancing and strategy limits; the underlying treasury agent, purpose,
+grant labels and routes retain their existing names.
+
+## Mandate
+
+**Policy**:
+The owner-signed rules that the provider enforces: allowed actions, assets, caps, budget and destinations.
+A policy is **in force** when it is applied, synchronized, not frozen, and bound to the agent's wallet.
+_Avoid_: rules, config
+
+**Mandate digest**:
+The sha256 of a policy's canonical JSON, recorded with every plan and every money action.
+
+**Grant**:
+The owner's permission for this server to act for the agent, named by its **grant label**.
+_Avoid_: token, credential (the grant token is only the secret that proves the grant)
+
+**Grant label**:
+What a grant is for, signed by the owner: `treasury`, `payout` or `invoices`, optionally followed by a
+suffix such as a strategy digest (`treasury:<digest>`). Each purpose names the labels that may act for it.
+
+**Purpose**:
+Why a send or approval happens: `treasury`, `autopilot`, `payout`, `invoice` or `approval`. A purpose
+decides which rules apply and which grant labels may act for it.
+_Avoid_: kind, type
+
+**Authorization**:
+The single decision of whether a send or approval, with a given purpose, may go ahead, covering what
+the provider can't check itself. It decides; it never fetches, sends or records.
+_Avoid_: guard, gate, check
+
+**Agreed payee**:
+A recipient listed as a confidential transfer destination in a policy whose destinations mode is
+`only`. A policy in `except` mode has no agreed payees.
+_Avoid_: allowlisted address, destination
+
+**Agreement**:
+An owner's consent to pay a payee, with **terms**: an amount ceiling per invoice and a deadline. A payee
+*requests* one from the invoice page (an **agreement request**), or the owner *offers* one first (a
+purchase order, a bounty or grant award). Agreeing makes the payee an agreed payee by policy update;
+the terms are this server's record, shown beside each held payout, and enforced by the vote on it.
+_Avoid_: whitelist entry, PO (unless it is one)
+
+**Strategy**:
+The owner's target allocation and limits for a treasury agent. The autopilot acts only while its live
+grant's label carries the digest of the strategy in force.
+
+**Plan**:
+A saved, expiring list of swaps and shields, bound to the policy and strategy it was made under.
+
+**Rebalance**:
+Planning swaps toward the strategy's target allocation: legs under its minimum are left alone, legs that
+could cost more than its cap at their floor are left out, and the rest are saved as a plan. Nothing moves
+until the plan is executed.
+
+**Steward**:
+An experimental LLM that proposes a plan in conversation, its responses verified against its TEE. It only
+proposes; the plan executes like any other.
+
+## Money actions
+
+**Operation**:
+One money action in the agent's log, identified by its idempotency key from the write-ahead record
+through its outcome. New non-invoice operations record preparation and then a durable submission
+claim before the provider call. A preparation without a claim proves it was never submitted; a claim
+without an outcome remains unresolved. Legacy records without this distinction remain unresolved.
+_Avoid_: transaction, job
+
+**Unresolved operation**:
+An operation without a proven outcome that blocks new sends: any but a held payout or a prepared
+invoice, which are open but can't be lost. While one exists, no new operation may be sent.
+_Avoid_: pending, stuck
+
+**Held payout**:
+A payout the provider holds for the owner's approval. Its outcome is open, but it can't be lost, so it
+does not block new sends.
+_Avoid_: pending approval (as a noun)
+
+**Refusal**:
+A proven outcome that nothing was sent, recorded with a code.
+
+**Sweep**:
+Shielding the managed USDC, wNEAR and ETH public balances into their confidential balances. Other assets are not included.
+
+**Money lock**:
+The lock every money action runs under: one money-moving run at a time across this host's processes,
+refused while an unresolved operation exists. It is single-host, not distributed fencing.
+
+**Owner intent**:
+An owner action (create, grant, freeze, policy update, approval vote) prepared by the server and signed
+by the owner's wallet or a DAO vote, kept `prepared → submitted → settled` so a restart follows it.
+
+**Invoice**:
+A payee's request to be paid, which becomes one payout operation with a stable key and immutable terms. Until it is
+submitted it is **prepared**: nothing is in flight, so it is not an unresolved operation.
+
+## Autopilot and records
+
+**Autopilot**:
+The treasury agent acting on its own schedule, off by default: each **tick** reads the status of open
+operations, sweeps, and executes a rebalance whose preview fits the strategy's auto-execute limit.
+Each planned swap also requires fresh valuation and must keep the plan's gross submitted swap value
+within that limit; shields are excluded from the sum. These are local checks using observed prices,
+as described in `docs/enforcement.md`. A tick whose
+start can't be recorded does not run; a missing end means it was interrupted or its outcome is unknown.
+_Avoid_: bot, cron job
+
+**Tick**:
+One autopilot run: sweep, then rebalance if the strategy's grant approves it and the plan fits the
+limit. Scheduled on the strategy's interval, counted from the latest recorded `run` summary in the
+inbox, or started manually by an account with execution permission. That summary is written before the final after-observation and evidence
+end; it is not proof that the tick or its operations settled. Each records a start and an end in the evidence. New ticks also record intermediate stage
+starts/returns and provider-accepted submissions in a supplementary progress file. These observations
+never authorize a send or establish settlement; older ticks have no reconstructed stages.
+
+**Run log / Recording**:
+A private, versioned projection of a tick's recorded observations into AG-UI events. It preserves the
+tick's outcome separately from later journal observations. Missing timing stays unknown; a recorded
+tick end does not prove every operation settled. It never authorizes a money action. The adapter is
+offline-tested. Members can export a recording from its executor and inspect its recorded observations
+in the dashboard. New exports use envelope version 3 and declare AG-UI protocol 1.0. A recorded end
+with an unclosed stage or an explicitly failed run emits `RUN_ERROR`; a missing end stays open.
+Older version 1/2 recordings remain readable without rewriting their events. The inspector is read-only,
+with no timed playback or live stream; it keeps source
+gaps, unknown timing and later observations explicit. The inspector and export access controls are
+tested offline, not mainnet-observed.
+
+**Public overview**:
+A static explanation of Payables and Portfolio, with requirement stages from the canonical inventory.
+It reads no agent records, shows no private evidence and submits no money actions. Earlier example-page
+hashes open the corresponding area's overview. It requires no wallet and never mounts the authenticated
+dashboard or its reads. Simulated approval, execution and playback are retired.
+
+**Guided walkthrough**:
+A guided walkthrough in the signed-in workspace that uses the agent's actual balances, policy and
+grant. It reuses the existing payment and rebalance controls, including their explicit confirmations
+and owner approvals. Its prerequisite observations do not authorize a send. Outcomes come from
+operation and payment records selected by the exact confirmed plan or returned payment identity;
+a walkthrough can finish without a swap, wait for approval, be refused, or leave an unresolved
+operation. Opening or reloading it submits nothing. Reload clears the local selection, and existing
+records remain accessible through Payments and Activity.
+
+**Inbox**:
+What the agent tells its owner while no one is watching: a record of each tick, and warnings or
+requests that stay open until the owner dismisses them.
+
+**Books**:
+The agent's balances checked against outside records: public balances against chain transfers,
+confidential balances against the API's recorded executions. A difference is unexplained: it can reflect
+outside credits or incomplete records.
+
+**Intervention**:
+A hosted dashboard call classified by the gateway's intervention list, recorded before it runs
+(or not run). The unattended-run report counts them. The existing record format and historical
+classification are retained when dashboard permissions change.
+
+## Treasury-only presentation candidate
+
+The optional `PUBLIC_TREASURY_ONLY=true` web build presents brief 02 on one Treasury screen: allocations, signed monthly caps, budget headroom, quoted rebalancing, targets and schedule, and confidential sweep. It reuses the existing agent-scoped server controls. The presentation flag does not restrict server permissions or start another executor. Public copy contains no private observations. Exact public-payout unshielding remains outside the implemented behavior. This isolated candidate is not deployed.
+
+**Registered treasury workspace**: An optional self-service gateway entry for one owner, before or after its Agent API agent is created. Wallet registration is bound to the signed-in NEAR account. Sputnik DAO registration requires a group member with permission to propose owner actions. Registration creates no provider intent and signs nothing. The existing owner-intent flow creates the agent after explicit wallet signing or DAO approval. Each workspace keeps its settings and all state in its own directory under `.treasuries/`; the gateway registry is additional private state. One treasury workspace per owner, with at most 16 on this prototype host. Schedules start off. This is offline-tested candidate behavior, not deployed.

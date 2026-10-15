@@ -1,0 +1,24 @@
+# For Dockerfile.dashboard (BuildKit uses this instead of .dockerignore): the same exclusions, but the web
+# app's sources are needed to build the dashboard. Secrets and state stay out of the build context.
+.env
+.env.*
+.ops
+.invoices
+.plans
+.owner-intents
+.git
+.claude
+.agents
+.playwright-mcp
+node_modules
+research
+test
+.inbox
+.strategy
+.DS_Store
+web/dist
+web/node_modules
+.evidence
+
+# Self-service treasury registry and private per-owner state
+.treasuries/

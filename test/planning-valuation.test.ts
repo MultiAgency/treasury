@@ -1,0 +1,270 @@
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, mock, test } from "node:test";
+import { api } from "../src/api.js";
+import { dispatch } from "../src/agent.js";
+import { withMoneyLock } from "../src/lock.js";
+import { executePlan, observe, savePlan, type Plan, type PlanEvent, type PlannedAction } from "../src/plans.js";
+import { ASSETS, treasuryPolicy } from "../src/policy.js";
+import { claimSubmission, readOps, record, submittedSwapValues, type Method } from "../src/ops.js";
+import { loadStrategy, saveStrategy } from "../src/strategy.js";
+import { withinRunCeiling } from "../src/strategy-value.js";
+import { authorityFixture, balanceView, policyView, timedPrices } from "./fixtures/authority.js";
+import { freshDirectory, offline } from "./fixtures/harness.js";
+
+const input = ASSETS.USDC, output = ASSETS.wNEAR;
+let balances: Record<string, { public: bigint; confidential: bigint }>;
+let sends: string[];
+let price: number;
+let priceReads: number;
+let afterSend: () => void;
+let prices: () => ReturnType<typeof timedPrices<{ asset_id: string; symbol: string; decimals: number; price: number }>>;
+freshDirectory("planning-valuation");
+beforeEach(() => {
+  offline();
+  process.env.AGENT_GRANT_TOKEN = "ngt_test";
+  balances = Object.fromEntries(Object.values(ASSETS).map(asset => [asset, { public: 0n, confidential: 20n }]));
+  sends = []; price = 1; priceReads = 0; afterSend = () => {};
+  prices = () => timedPrices(Object.entries(ASSETS).map(([symbol, asset_id]) => ({
+    symbol, asset_id, decimals: 0, price: asset_id === input ? price : 1,
+  })));
+  const strategy = loadStrategy();
+  saveStrategy({ ...strategy, autopilot: { ...strategy.autopilot, maxUsd: 10 } });
+  const authority = authorityFixture("treasury");
+  mock.method(api, "listGrants", authority.listGrants);
+  mock.method(api, "getPolicy", async () => policyView(treasuryPolicy));
+  mock.method(api, "getTokens", async () => { priceReads++; return prices(); });
+  mock.method(api, "getBalances", async (_id: string, { source }: { source: "public" | "confidential" }) =>
+    balanceView(source, Object.entries(balances).map(([asset_id, balance]) => ({ asset_id, balance_raw: String(balance[source]) }))));
+  mock.method(api, "getStatus", async (correlation_id: string) => ({ correlation_id, status: "SUCCESS" }));
+  mock.method(api, "forGrant", () => ({
+    shield: async (_id: string, request: { asset: string; amount: string }) => {
+      sends.push("shield");
+      balances[request.asset]!.public -= BigInt(request.amount);
+      balances[request.asset]!.confidential += BigInt(request.amount);
+      afterSend();
+      return { correlation_id: String(sends.length) };
+    },
+    swap: async (_id: string, request: { dry?: boolean; origin_asset: string; destination_asset: string; amount: string }) => {
+      if (request.dry) return { quote: { amount_out: request.amount, min_amount_out: request.amount } };
+      sends.push("swap");
+      balances[request.origin_asset]!.confidential -= BigInt(request.amount);
+      balances[request.destination_asset]!.confidential += BigInt(request.amount);
+      afterSend();
+      return { correlation_id: String(sends.length) };
+    },
+  }));
+});
+afterEach(() => mock.restoreAll());
+
+const swap = (): PlannedAction => ({ type: "swap", from: input, to: output, amount: "5", amountOut: "5", minAmountOut: "5", costBps: 0 });
+const execute = async (plan: Plan, autopilot = true) => {
+  const events: PlanEvent[] = [];
+  for await (const event of executePlan(plan.id, undefined, { autopilot })) events.push(event);
+  return events;
+};
+const run = async (actions: PlannedAction[], autopilot = true) =>
+  execute(savePlan((await observe()).snapshot, "rebalance", "offline valuation regression", actions), autopilot);
+
+for (const asset of [input, output]) test(`expired ${asset === input ? "input" : "output"} price during dispatch preflight refuses before sending`, async () => {
+  const fresh = prices;
+  prices = () => fresh().map(token => priceReads >= 4 && token.asset_id === asset
+    ? { ...token, price_updated_at: "2000-01-01T00:00:00Z", price_expires_at: "2000-01-02T00:00:00Z" } : token);
+  const events = await run([swap()]);
+  assert.deepEqual(sends, []);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps()[0]?.refused, "valuation_unavailable");
+});
+
+test("a later swap cannot take submission-time run value above the autopilot ceiling", async () => {
+  afterSend = () => { price = 1.01; };
+  const events = await run([swap(), swap()]);
+  assert.deepEqual(sends, ["swap"]);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.deepEqual(readOps().map(op => ({ usd: op.usdIn, refusal: op.refused ?? null })), [
+    { usd: 5, refusal: null }, { usd: 5.05, refusal: "autopilot_limit_exceeded" },
+  ]);
+});
+
+test("automatic execution refuses decimal excess that floating addition rounds down to the ceiling", async () => {
+  const strategy = loadStrategy();
+  saveStrategy({ ...strategy, autopilot: { ...strategy.autopilot, maxUsd: 1 } });
+  price = 0.9;
+  afterSend = () => { price = 0.10000000000000005; };
+  const leg = { ...swap(), amount: "1", amountOut: "1", minAmountOut: "1" };
+  const events = await run([leg, leg]);
+  assert.deepEqual(sends, ["swap"]);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.refused, "autopilot_limit_exceeded");
+});
+
+test("cumulative authorization preserves every previously recorded decimal estimate", async () => {
+  const strategy = loadStrategy();
+  saveStrategy({ ...strategy, autopilot: { ...strategy.autopilot, maxUsd: 2 } });
+  price = 0.9;
+  afterSend = () => { price = sends.length === 1 ? 0.10000000000000005 : 1; };
+  const leg = { ...swap(), amount: "1", amountOut: "1", minAmountOut: "1" };
+  const events = await run([leg, leg, leg]);
+  assert.deepEqual(sends, ["swap", "swap"]);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.refused, "autopilot_limit_exceeded");
+});
+
+test("decimal equality stays executable at an integer strategy ceiling", async () => {
+  const strategy = loadStrategy();
+  saveStrategy({ ...strategy, autopilot: { ...strategy.autopilot, maxUsd: 1 } });
+  price = 0.05;
+  const leg = { ...swap(), amount: "1", amountOut: "1", minAmountOut: "1" };
+  const events = await run(Array.from({ length: 20 }, () => ({ ...leg })));
+  assert.deepEqual(sends, Array(20).fill("swap"));
+  assert.equal(events.filter(event => event.type === "action" && event.status === "SUCCESS").length, 20);
+});
+
+for (const afterShield of [false, true]) test(`fractional ceiling excess ${afterShield ? "after" : "before"} a prerequisite shield refuses its swap`, async () => {
+  const strategy = loadStrategy();
+  saveStrategy({ ...strategy, autopilot: { ...strategy.autopilot, maxUsd: 1 } });
+  balances[input] = { public: 2n, confidential: 0n };
+  price = 0.9;
+  afterSend = () => {
+    if (sends.filter(method => method === "swap").length === 1)
+      price = !afterShield || sends.at(-1) === "shield" ? 0.10000000000000005 : 0.1;
+  };
+  const leg = { ...swap(), amount: "1", amountOut: "1", minAmountOut: "1" };
+  const events = await run([leg, leg]);
+  assert.deepEqual(sends, afterShield ? ["shield", "swap", "shield"] : ["shield", "swap"]);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.method, afterShield ? "swap" : "shield");
+  assert.equal(readOps().at(-1)?.refused, "autopilot_limit_exceeded");
+});
+
+test("expired prices cannot produce a treasury plan", async () => {
+  const fresh = prices;
+  prices = () => fresh().map(token => ({ ...token, price_updated_at: "2000-01-01T00:00:00Z", price_expires_at: "2000-01-02T00:00:00Z" }));
+  await assert.rejects(observe(), /fresh price/i);
+  assert.deepEqual(sends, []);
+});
+
+test("an exact-ceiling run counts swaps once and leaves shields outside the ceiling", async () => {
+  balances[input] = { public: 10n, confidential: 0n };
+  const events = await run([swap(), swap()]);
+  assert.deepEqual(sends, ["shield", "swap", "shield", "swap"]);
+  assert.equal(events.filter(event => event.type === "action" && event.status === "SUCCESS").length, 2);
+});
+
+test("manual plan execution remains available above the automatic ceiling", async () => {
+  afterSend = () => { price = 1.01; };
+  const events = await run([swap(), swap()], false);
+  assert.deepEqual(sends, ["swap", "swap"]);
+  assert.equal(events.at(-1)?.type, "action");
+});
+
+for (const afterShield of [false, true]) test(`expired output price ${afterShield ? "after" : "before"} an automatic shield prevents its swap`, async () => {
+  balances[input] = { public: 5n, confidential: 0n };
+  const fresh = prices;
+  prices = () => fresh().map(token => priceReads >= (afterShield ? 5 : 4) && token.asset_id === output
+    ? { ...token, price_updated_at: "2000-01-01T00:00:00Z", price_expires_at: "2000-01-02T00:00:00Z" } : token);
+  const events = await run([swap()]);
+  assert.deepEqual(sends, afterShield ? ["shield"] : []);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.refused, "valuation_unavailable");
+});
+
+test("an automatic swap above the remaining ceiling is refused before its prerequisite shield", async () => {
+  balances[input] = { public: 10n, confidential: 0n };
+  afterSend = () => { if (sends.at(-1) === "swap") price = 1.01; };
+  const events = await run([swap(), swap()]);
+  assert.deepEqual(sends, ["shield", "swap"]);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.method, "shield");
+  assert.equal(readOps().at(-1)?.refused, "autopilot_limit_exceeded");
+});
+
+test("dispatch values and authorizes against one clock observation after provider reads", async () => {
+  const plan = savePlan((await observe()).snapshot, "rebalance", "one observation time", [swap()]);
+  const observedAt = Date.now() + 100;
+  let clockReads = 0;
+  prices = () => timedPrices(Object.entries(ASSETS).map(([symbol, asset_id]) => ({ symbol, asset_id, decimals: 0, price: 1 })), observedAt);
+  await withMoneyLock(lock => dispatch(lock, "rebalance", { method: "swap", request: {
+    origin_asset: input, destination_asset: output, amount: "5", min_amount_out: "5", confidential: true,
+  } }, { planned: { plan, leg: plan.actions[0]! }, autopilot: true, now: () => {
+    clockReads++;
+    return new Date(observedAt);
+  } }));
+  assert.equal(clockReads, 1);
+  assert.deepEqual(sends, ["swap"]);
+  assert.equal(readOps()[0]?.usdIn, 5, "journal valuation uses the authorization clock, not wall time");
+});
+
+type PriorState = "PREPARED" | "CLAIMED" | "LOCAL_REFUSED" | "REFUSED" | "SUCCESS" | "FAILED" | "REFUNDED";
+function prior(key: string, usdIn: number | null | undefined, state: PriorState, { planId = "accounted", legacy = false, method = "swap" }: {
+  planId?: string; legacy?: boolean; method?: Method;
+} = {}) {
+  const request = method === "swap" ? { origin_asset: input, destination_asset: output, amount: "5", confidential: true }
+    : { asset: input, amount: "5" };
+  record({ at: new Date().toISOString(), idempotencyKey: key, kind: "rebalance", request, planId,
+    ...(legacy ? {} : { journalVersion: 2 as const, method }), ...(usdIn === undefined ? {} : { usdIn }) });
+  if (state === "PREPARED") return;
+  if (state === "LOCAL_REFUSED") { record({ idempotencyKey: key, refused: "valuation_unavailable" }); return; }
+  if (!legacy) claimSubmission(key, request);
+  if (state === "CLAIMED") return;
+  if (state === "REFUSED") { record({ idempotencyKey: key, refused: "policy_denied" }); return; }
+  record({ idempotencyKey: key, correlation_id: key, status: "SENT" });
+  record({ idempotencyKey: key, correlation_id: key, status: state });
+}
+
+test("journal accounting counts submitted swaps once, retains failed/refunded value, and excludes non-submissions", () => {
+  prior("success", 2, "SUCCESS");
+  record({ idempotencyKey: "success", correlation_id: "success", status: "SUCCESS" });
+  prior("failed", 3, "FAILED");
+  prior("refunded", 4, "REFUNDED");
+  prior("legacy", 1, "SUCCESS", { legacy: true });
+  prior("local-refusal", null, "LOCAL_REFUSED");
+  prior("provider-refusal", 99, "REFUSED");
+  prior("preparation", 99, "PREPARED");
+  prior("shield", 99, "SUCCESS", { method: "shield" });
+  prior("other-plan", 99, "SUCCESS", { planId: "other" });
+  assert.deepEqual(submittedSwapValues(readOps(), "accounted"), [2, 3, 4, 1]);
+  assert.deepEqual(submittedSwapValues(readOps(), "accounted"), [2, 3, 4, 1], "rereading durable evidence never resets or duplicates its value");
+  assert.equal(withinRunCeiling(submittedSwapValues(readOps(), "accounted"), 10), true);
+});
+
+for (const value of [undefined, null, -1]) test(`a submitted legacy swap with ${String(value)} valuation leaves cumulative value unknown`, () => {
+  prior("legacy", value, "SUCCESS", { legacy: true });
+  assert.equal(withinRunCeiling(submittedSwapValues(readOps(), "accounted"), 10), null);
+});
+
+test("finite journal values exceeding Number capacity are still provably above the ceiling", () => {
+  prior("first", 1e308, "SUCCESS");
+  prior("second", 1e308, "SUCCESS");
+  assert.deepEqual(submittedSwapValues(readOps(), "accounted"), [1e308, 1e308]);
+  assert.equal(withinRunCeiling(submittedSwapValues(readOps(), "accounted"), Number.MAX_VALUE), false);
+});
+
+test("unknown historical plan valuation refuses automatic continuation instead of implying unused capacity", async () => {
+  const plan = savePlan((await observe()).snapshot, "rebalance", "missing historical valuation", [swap()]);
+  prior("legacy", undefined, "SUCCESS", { legacy: true, planId: plan.id });
+  const events = await execute(plan);
+  assert.deepEqual(sends, []);
+  assert.equal(events.at(-1)?.type, "rejected");
+  assert.equal(readOps().at(-1)?.refused, "valuation_unavailable");
+});
+
+test("an unresolved submission blocks new execution regardless of cumulative valuation", async () => {
+  prior("unknown", 1, "CLAIMED");
+  assert.deepEqual(submittedSwapValues(readOps(), "accounted"), [1]);
+  await assert.rejects(run([swap()]), /earlier money action/);
+  assert.deepEqual(sends, []);
+  assert.equal(readOps()[0]?.submissionState, "SUBMISSION_ATTEMPTED");
+  assert.equal(readOps()[0]?.refused, undefined);
+});
+
+test("a plan refused for valuation stays claimed after prices recover and is never resubmitted", async () => {
+  const plan = savePlan((await observe()).snapshot, "rebalance", "claim survives refusal", [swap()]);
+  const fresh = prices;
+  prices = () => fresh().map(token => priceReads >= 4
+    ? { ...token, price_updated_at: "2000-01-01T00:00:00Z", price_expires_at: "2000-01-02T00:00:00Z" } : token);
+  assert.equal((await execute(plan)).at(-1)?.type, "rejected");
+  prices = fresh;
+  assert.deepEqual(await execute(plan), [{ type: "rejected", problems: ["the plan was already executed"] }]);
+  assert.deepEqual(sends, []);
+  assert.equal(readOps().length, 1);
+});

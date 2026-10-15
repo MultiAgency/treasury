@@ -1,0 +1,6 @@
+{
+  "message": "{\"agent_id\":\"01365a4b32454d1faf835f2126171448d0434be6fbeacdb47f19c4c8837f6115\",\"credential\":\"20f3fa97b5b891f1bcfaead26c6d4e2b1be7696276b65d323b4dd21dc8541c03\",\"domain\":\"near-intents-agent-api.agent-grant.v6\",\"expires_at_ms\":1792280878227,\"issued_at_ms\":1791676078457,\"label\":\"dao-intake-test\",\"network\":\"mainnet\",\"nonce\":\"8d7d580de727a36413b52a238f3457785184702c25a307c99b7911bb96b3cfce\",\"owner\":{\"account_id\":\"c1bec849b125187a98f7672c52caf0d66115f88a19e55adb6f363e82dfeceb45\",\"public_key\":\"ed25519:E3JR3c1Aw2y5YaDp6hgG1RfNcqLZBKtUHXydqBpwphJt\",\"type\":\"near\"},\"owner_epoch\":1,\"recipient\":\"api.demo.agentsonintents.com\",\"tenant_id\":\"b5b29220c6599f4aaef82f6075ffa7bda2137215351952df4d692b9c9fbdf27e\",\"wallet_id\":\"19c4d7d8-c9fd-411f-ad21-c818c22a2e54\"}",
+  "nonce": "jX1YDecno2QTtSojjzRXeFGEcCwlowfJm3kRu5azz84=",
+  "recipient": "api.demo.agentsonintents.com",
+  "hash": "39d7459926cf84072d9dcc03b2279528c07c17a9eef937209fa97b150c527973"
+}

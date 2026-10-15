@@ -1,0 +1,25 @@
+.env
+.env.*
+!.env.example
+.claude
+.agents
+research/
+node_modules/
+.ops/
+.invoices/
+.inbox/
+web/dist/
+.plans/
+.playwright-mcp/
+.test-artifacts/
+.owner-intents/
+.strategy/
+.DS_Store
+/dashboard.json
+.evidence
+.agreements/
+.notify/
+.work-orders/
+
+# Self-service treasury registry and private per-owner state
+.treasuries/

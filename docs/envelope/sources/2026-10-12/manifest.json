@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-10-12T23:07:31.281820+00:00",
+  "local_commit": "9b9fe64f7669d82eb4a5a133c2f04ea6f32c0592",
+  "scope": "Unauthenticated public documentation and pinned source inspection; no live execution or deployment attestation",
+  "snapshots": [
+    {
+      "file": "llms.txt",
+      "url": "https://api.agentsonintents.com/llms.txt",
+      "sha256": "b499322506d0c62f93c6634b06dbd200161608e3cc413036ee8504d5923decc1",
+      "bytes": 17074
+    },
+    {
+      "file": "openapi.json",
+      "url": "https://api.agentsonintents.com/openapi.json",
+      "sha256": "c4ad1b829e297c3c714e88a59bc20fca9f4cc5bf8bf28b616db8506b96f7aa7f",
+      "bytes": 157697
+    },
+    {
+      "file": "policy.md",
+      "url": "https://raw.githubusercontent.com/NEAR-Intents-Agent-API/skills/2e68162a0cb136c28194e49330345a78064761c0/near-intents-agent-api/references/policy.md",
+      "sha256": "0d47603157e9c4e7e7e501006cbee6a0eaac359fc993cea4ccd2630df735e631",
+      "bytes": 10099
+    }
+  ],
+  "pinned_sources": [
+    {
+      "repository": "https://github.com/out-layer/shared-tee-helpers",
+      "commit": "f75a74e5bcffb5434feeb5da6a0078a43d712622",
+      "path": "src/wallet_policy.rs",
+      "url": "https://github.com/out-layer/shared-tee-helpers/blob/f75a74e5bcffb5434feeb5da6a0078a43d712622/src/wallet_policy.rs",
+      "sha256": "609fe27644b11f2281b3abee6a97a4b66d83e1146240bb580e06f8aa2494bfc3",
+      "bytes": 213747,
+      "inspection": "Pinned source, not deployed-version evidence"
+    },
+    {
+      "repository": "https://github.com/out-layer/outlayer",
+      "commit": "b8c58c00be33d83c7c60769b646e0ba11e8a39ec",
+      "path": "CUSTODY.md",
+      "url": "https://github.com/out-layer/outlayer/blob/b8c58c00be33d83c7c60769b646e0ba11e8a39ec/CUSTODY.md",
+      "sha256": "6d6a6a9ba2162518e54cda59060fd93972e63cdced62a084d13068034aa06ab7",
+      "bytes": 69247,
+      "inspection": "Pinned source, not deployed-version evidence"
+    }
+  ]
+}
