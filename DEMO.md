@@ -37,7 +37,7 @@ before real signing; historical reference evidence does not certify another owne
 | 10–25s | Rebalance preview | “The agent reads balances and quotes every planned route. Here are estimated and minimum received amounts and the cost limits.” |
 | 25–40s | Review and explicitly confirm, if authorized for this demonstration | “This executes the exact saved plan. Each send is checked again; unknown outcomes block further sends.” |
 | 40–50s | Follow the outcome on the same overview: that plan’s operations and budget observations | “These records show what the provider reported. Compare budget headroom before and after; a finished run alone does not establish settlement.” |
-| 50–60s | Confidential balances and Sweep | “Managed public balances can be shielded. The resting book is held confidentially; this is not proof against every form of tracing.” |
+| 50–60s | Confidential balances and Sweep | “Sweep shields the public USDC, wNEAR and ETH balances. Here are the reported public and confidential balances.” |
 
 With the current USDC/wNEAR/ETH strategy, show at most two swap legs. The catalog's three-swap
 example is not a requirement to manufacture a third leg. Provider settlement may take longer
@@ -72,18 +72,18 @@ proof of atomic accounting. Exact unshielding remains unimplemented.
 <!-- BEGIN GENERATED: verification -->
 <!-- Generated from evidence/inventory.ts. Run pnpm evidence:write; do not edit here. -->
 
-These are catalog targets, not established guarantees. Evidence stages describe the supporting observations or tests; known limitations still apply.
+Selected Treasury capabilities and recorded observations, not a complete acceptance record for brief 02.
 
-| Target | Evidence stage | Supporting evidence |
+| Claim | Evidence stage | Supporting evidence |
 |---|---|---|
-| Rebalances to target allocations on a schedule | Observed on mainnet | The autopilot executed a rebalance alone, its plan bound to the strategy digest, 2026-10-12 16:17Z (test/autopilot.test.ts, test/rebalance.test.ts) |
-| Can't exceed per-asset limits | Observed on mainnet | The policy caps every asset per transaction, hour, day and month. On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13 |
-| Quotes every route before executing | Observed on mainnet | Two quoted legs executed on the treasury agent, 2026-10-12 20:36Z (test/rebalance.test.ts, test/plans.test.ts) |
-| Shows budget headroom ticking down with each dispatch | Observed on mainnet | On the treasury agent, a Run now swap took the daily budget left down by its value, shown as before and after under Automations' Latest run, 2026-10-14 00:50Z. The Overview and each run show the window with least left (test/budget-window.test.ts) |
-| An over-budget operation is refused; earlier operations in its run may complete | Observed on mainnet | Refused with spend_budget_exceeded, nothing moved, on the treasury agent, 2026-10-12 13:57Z and 14:06Z |
-| Can't spend more than the USD budget, even with simultaneous requests | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
-| Sweeps idle stables into the confidential balance | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
-| Keeps managed resting balances confidential | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Kept so by our deposits' and swaps' requests: the policy allows public swaps and unshield (docs/enforcement.md). Funds still can't leave: the destination list is empty |
+| Rebalances toward allocation targets on a schedule | Observed on mainnet | The autopilot executed a rebalance alone, its plan bound to the strategy digest, 2026-10-12 16:17Z (test/autopilot.test.ts, test/rebalance.test.ts) |
+| Over-limit requests were refused | Observed on mainnet | On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13 |
+| Quotes swaps before sending | Observed on mainnet | Two quoted legs executed on the treasury agent, 2026-10-12 20:36Z (test/rebalance.test.ts, test/plans.test.ts) |
+| Shows remaining budget | Observed on mainnet | On the treasury agent, a Run now swap took the daily budget left down by its value, shown as before and after under Automations' Latest run, 2026-10-14 00:50Z. The Overview and each run show the window with least left (test/budget-window.test.ts) |
+| Over-budget requests were refused | Observed on mainnet | Refused with spend_budget_exceeded, nothing moved, on the treasury agent, 2026-10-12 13:57Z and 14:06Z |
+| One simultaneous-request test stayed within budget | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
+| Shields public USDC, wNEAR and ETH balances | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
+| Managed balances were confidential when checked | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Deposits and swaps requested confidential execution; the observed policy also permitted public swaps and unshield, with an empty destination list (docs/enforcement.md). This is a recorded balance observation, not a continuing guarantee |
 
 <!-- END GENERATED: verification -->
 

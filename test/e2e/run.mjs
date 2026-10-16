@@ -8,7 +8,7 @@ import { offlineEnvironment } from '../../scripts/test-environment.mjs';
 const root = resolve(import.meta.dirname, '../..');
 const parent = join(root, '.test-artifacts/e2e'); mkdirSync(parent, { recursive: true });
 const artifacts = mkdtempSync(join(parent, 'run-')), snapshot = join(artifacts, 'snapshot'); mkdirSync(snapshot);
-for (const name of ['src', 'web', 'evidence', 'scripts', 'test/e2e', 'test/offline.env', 'test/fixtures/offline-network.cjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json']) {
+for (const name of ['src', 'web', 'evidence', 'scripts', 'skills', 'test/e2e', 'test/offline.env', 'test/fixtures/offline-network.cjs', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json']) {
   const target = join(snapshot, name); mkdirSync(resolve(target, '..'), { recursive: true });
   cpSync(join(root, name), target, { recursive: true, filter: path => !path.endsWith('/node_modules') && !path.endsWith('/dist') });
 }

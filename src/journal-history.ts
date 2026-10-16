@@ -7,7 +7,7 @@ const MAX_BYTES = 8_000_000;
 const MAX_LINES = 20_000;
 const safeAgent = z.string().regex(/^[a-zA-Z0-9_-]{1,200}$/, "Invalid agent ID");
 const request = z.object({ request: z.record(z.string(), z.unknown()), kind: id,
-  method: z.enum(["swap", "transfer", "shield", "unshield"]).optional(), planId: id.optional() });
+  method: z.enum(["swap", "transfer", "shield", "unshield", "withdraw"]).optional(), planId: id.optional() });
 
 /** Pure parsing of a bounded, agent-scoped journal snapshot. Never return raw input in errors. */
 export function parseJournalHistory(agentId: string, source: string): JournalHistory {

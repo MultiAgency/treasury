@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { knownLabel, REQUIREMENTS_CONTEXT, PROTOTYPES, STOPPER_LABEL, VERIFICATION_CONTEXT, VERIFICATIONS, type Kind } from "../evidence/inventory.js";
+import { knownLabel, REQUIREMENTS_CONTEXT, TREASURY_EVIDENCE_CONTEXT, PROTOTYPES, STOPPER_LABEL, VERIFICATION_CONTEXT, VERIFICATIONS, type Kind } from "../evidence/inventory.js";
 
 const root = new URL("../", import.meta.url);
 const cell = (value: string) => value.replace(/\|/g, "&#124;").replace(/\r?\n/g, "<br>");
@@ -12,7 +12,7 @@ export function requirementsMarkdown(kind: Kind, runningOnly = false): string {
   return briefs.map((brief, index) => [
     `## ${brief.catalog} ${brief.title}${index ? " (roadmap)" : ""}`,
     "",
-    REQUIREMENTS_CONTEXT,
+    kind === "treasury" && index === 0 ? TREASURY_EVIDENCE_CONTEXT : REQUIREMENTS_CONTEXT,
     "",
     "| Type | Requirement | Control or limitation | Evidence stage | Evidence |",
     "|---|---|---|---|---|",
@@ -24,6 +24,7 @@ export function requirementsMarkdown(kind: Kind, runningOnly = false): string {
       requirement.evidence + (requirement.proposals?.length ? ` (proposals ${requirement.proposals.map((id) => `#${id}`).join(", ")})` : ""),
     ])),
     ...(brief.limitations?.length ? ["", "### Known limitations", "", ...brief.limitations.map((limitation) => `- ${limitation}`)] : []),
+    ...(brief.scopeNotes?.length ? ["", "### Scope and provider verification", "", ...brief.scopeNotes.map((note) => `- ${note}`)] : []),
   ].join("\n")).join("\n\n");
 }
 
@@ -35,7 +36,7 @@ export function verificationMarkdown(): string {
 
 /** Treasury demo evidence, without the inherited invoice walkthrough or roadmap briefs. */
 export function treasuryVerificationMarkdown(): string {
-  return [REQUIREMENTS_CONTEXT, "", "| Target | Evidence stage | Supporting evidence |", "|---|---|---|",
+  return [TREASURY_EVIDENCE_CONTEXT, "", "| Claim | Evidence stage | Supporting evidence |", "|---|---|---|",
     ...PROTOTYPES.treasury.briefs[0].requirements.map(entry => row([entry.text, knownLabel(entry), entry.evidence])),
   ].join("\n");
 }

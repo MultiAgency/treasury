@@ -40,7 +40,7 @@ const OWNER_PROPOSALS = new Set([
   "workOrders/create",
   "workOrders/prepare",
 ]);
-const PREPARE = new Set([...OWNER_PROPOSALS, "rebalance", "steward/propose", "deposit", "treasury/fund"]);
+const PREPARE = new Set([...OWNER_PROPOSALS, "rebalance", "externalPlan", "steward/propose", "deposit", "treasury/fund"]);
 const EXECUTE = new Set(["pay", "sweep", "executePlan", "autopilot/tick", "autopilot/enable"]);
 const MANAGE = new Set(["strategy/save", "treasury/link", "treasury/unlink", "treasury/setConfidential", "agreements/decline"]);
 const MAINTAIN = new Set(["autopilot/stop", "recover", "inbox/dismiss", "cancelPreparedInvoice"]);

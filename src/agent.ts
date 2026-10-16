@@ -26,6 +26,7 @@ type Grant = ReturnType<typeof agent>;
 export type Action =
   | { method: "swap"; request: Parameters<Grant["swap"]>[1] }
   | { method: "transfer"; request: Parameters<Grant["transfer"]>[1] }
+  | { method: "withdraw"; request: Parameters<Grant["withdraw"]>[1] }
   | { method: "shield"; request: Parameters<Grant["shield"]>[1] }
   | { method: "unshield"; request: Parameters<Grant["unshield"]>[1] };
 
@@ -51,6 +52,8 @@ export async function send(action: Action, idempotencyKey: string, lock: MoneyLo
       return (await grant.swap(id, action.request, options)) as { correlation_id: string };
     case "transfer":
       return grant.transfer(id, action.request, options);
+    case "withdraw":
+      return grant.withdraw(id, action.request, options);
     case "shield":
       return grant.shield(id, action.request, options);
     case "unshield":

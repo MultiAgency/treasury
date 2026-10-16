@@ -136,7 +136,20 @@ function Requirements({ requirements }: { requirements: Requirement[] }) {
 }
 
 /** Public-safe coverage and limitations from the running brief, also visible on compact cards. */
-function ProgressSummary({ brief, name }: { brief: Brief; name: string }) {
+function ProgressSummary({ brief, name, compact }: { brief: Brief; name: string; compact: boolean }) {
+  if (brief.catalog === "02" && compact) return (
+    <div role="group" aria-label={`Evidence coverage for ${name}`} className="flex flex-col gap-3 border-t pt-4">
+      <h3 className="text-sm font-medium">What Treasury does</h3>
+      <dl className="flex flex-col gap-3 text-sm">
+        {brief.requirements.map(requirement => (
+          <div key={requirement.text} className="flex flex-col gap-1">
+            <dt>{requirement.text}</dt>
+            <dd className="text-muted-foreground">{knownLabel(requirement)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
   const summary = summarizeRequirements(brief.requirements);
   const categories = [
     ["Observed on mainnet", summary.agent + summary.other],
@@ -146,7 +159,7 @@ function ProgressSummary({ brief, name }: { brief: Brief; name: string }) {
   ] as const;
   return (
     <div role="group" aria-label={`Evidence coverage for ${name}`} className="flex flex-col gap-3 border-t pt-4">
-      <h3 className="text-sm font-medium">{brief.catalog === "02" ? "Treasury capabilities and safeguards" : "What has been demonstrated"} <span className="font-normal text-muted-foreground">· {summary.total} requirements</span></h3>
+      <h3 className="text-sm font-medium">What has been demonstrated <span className="font-normal text-muted-foreground">· {summary.total} requirements</span></h3>
       <p className="text-sm text-muted-foreground">Counts describe recorded observations across our agents, not live checks or proof of every guarantee.</p>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
         {categories.map(([label, count]) => (
@@ -240,7 +253,7 @@ export function PrototypeCard({ kind, open, invoices, status, compact = false, s
           </a>
         )}
       </div>}
-      <ProgressSummary brief={running} name={name} />
+      <ProgressSummary brief={running} name={name} compact={compact} />
       {!compact && (
         <>
           <Details summary="View requirements">

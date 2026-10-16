@@ -60,7 +60,7 @@ export function tickLog(tick: Tick, history: JournalHistory, options: Options): 
     const submissions = (options.progress ?? []).flatMap(row =>
       row.event.type === "CUSTOM" ? [row.event.value] : []);
     const used = new Set<string>();
-    const joinHistory = (cid: string, method: "swap" | "shield" | "transfer" | "unshield", ref: string): { history: JournalRecord[]; untimedHistory: JournalRecord[] } => {
+    const joinHistory = (cid: string, method: "swap" | "shield" | "transfer" | "unshield" | "withdraw", ref: string): { history: JournalRecord[]; untimedHistory: JournalRecord[] } => {
       const empty = { history: [], untimedHistory: [] };
       if (!cid) { gap("correlation_missing", ref); return empty; }
       const receipts = correlations.filter(id => id === cid);

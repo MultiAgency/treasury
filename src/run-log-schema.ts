@@ -19,7 +19,7 @@ export type Gap = z.infer<typeof GapSchema>;
 export const JournalRecordSchema = z.strictObject({
   line: z.number().int().positive(), recordedAt: iso.nullable(), idempotencyKey: id,
   type: z.enum(["request", "submission-claim", "status", "refusal"]),
-  method: z.enum(["swap", "transfer", "shield", "unshield"]).optional(),
+  method: z.enum(["swap", "transfer", "shield", "unshield", "withdraw"]).optional(),
   planId: id.optional(), correlationId: id.optional(), status: id.optional(), refusal: id.optional(),
 });
 export type JournalRecord = z.infer<typeof JournalRecordSchema>;

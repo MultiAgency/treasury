@@ -38,18 +38,18 @@ These layout changes are prepared locally; see DEMO.md for the last verified dep
 
 ## 02 Agentic Treasury Management
 
-These are catalog targets, not established guarantees. Evidence stages describe the supporting observations or tests; known limitations still apply.
+Selected Treasury capabilities and recorded observations, not a complete acceptance record for brief 02.
 
 | Type | Requirement | Control or limitation | Evidence stage | Evidence |
 |---|---|---|---|---|
-| Capability target | Rebalances to target allocations on a schedule | — | Observed on mainnet | The autopilot executed a rebalance alone, its plan bound to the strategy digest, 2026-10-12 16:17Z (test/autopilot.test.ts, test/rebalance.test.ts) |
-| Safety target | Can't exceed per-asset limits | The signed policy | Observed on mainnet | The policy caps every asset per transaction, hour, day and month. On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13 |
-| Capability target | Quotes every route before executing | — | Observed on mainnet | Two quoted legs executed on the treasury agent, 2026-10-12 20:36Z (test/rebalance.test.ts, test/plans.test.ts) |
-| Capability target | Shows budget headroom ticking down with each dispatch | — | Observed on mainnet | On the treasury agent, a Run now swap took the daily budget left down by its value, shown as before and after under Automations' Latest run, 2026-10-14 00:50Z. The Overview and each run show the window with least left (test/budget-window.test.ts) |
-| Safety target | An over-budget operation is refused; earlier operations in its run may complete | The signed policy | Observed on mainnet | Refused with spend_budget_exceeded, nothing moved, on the treasury agent, 2026-10-12 13:57Z and 14:06Z |
-| Safety target | Can't spend more than the USD budget, even with simultaneous requests | The signed policy | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
-| Capability target | Sweeps idle stables into the confidential balance | — | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
-| Safety target | Keeps managed resting balances confidential | Our server | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Kept so by our deposits' and swaps' requests: the policy allows public swaps and unshield (docs/enforcement.md). Funds still can't leave: the destination list is empty |
+| Capability target | Rebalances toward allocation targets on a schedule | — | Observed on mainnet | The autopilot executed a rebalance alone, its plan bound to the strategy digest, 2026-10-12 16:17Z (test/autopilot.test.ts, test/rebalance.test.ts) |
+| Safety target | Over-limit requests were refused | The signed policy | Observed on mainnet | On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13 |
+| Capability target | Quotes swaps before sending | — | Observed on mainnet | Two quoted legs executed on the treasury agent, 2026-10-12 20:36Z (test/rebalance.test.ts, test/plans.test.ts) |
+| Capability target | Shows remaining budget | — | Observed on mainnet | On the treasury agent, a Run now swap took the daily budget left down by its value, shown as before and after under Automations' Latest run, 2026-10-14 00:50Z. The Overview and each run show the window with least left (test/budget-window.test.ts) |
+| Safety target | Over-budget requests were refused | The signed policy | Observed on mainnet | Refused with spend_budget_exceeded, nothing moved, on the treasury agent, 2026-10-12 13:57Z and 14:06Z |
+| Safety target | One simultaneous-request test stayed within budget | The signed policy | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
+| Capability target | Shields public USDC, wNEAR and ETH balances | — | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
+| Safety target | Managed balances were confidential when checked | Our server | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Deposits and swaps requested confidential execution; the observed policy also permitted public swaps and unshield, with an empty destination list (docs/enforcement.md). This is a recorded balance observation, not a continuing guarantee |
 
 ### Known limitations
 
@@ -57,7 +57,13 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 - This server checks which assets can be bought; the provider does not.
 - This server requests confidential swaps, but the policy also permits public swaps and moving funds back to a public balance. A confidential balance does not establish protection against every form of tracing.
 - The agent has not yet run unattended for days.
-- Public payouts are planned for Payables. Exact unshielding for a public payout is not implemented. The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.
+- The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.
+
+### Scope and provider verification
+
+- Exact unshielding for a public payout is not implemented. The independent withdrawal tests add no dashboard payout controls or new Payables flow.
+- An isolated confidential withdrawal to NEAR was held for owner approval, then rejected on 2026-10-16 UTC; the provider reported FAILED with never_executed. No payment release or delivery was observed. Provider deployment identity is unknown (docs/mainnet-log.md). This does not establish a public payout flow.
+- In an isolated mainnet test, a confidential USDC withdrawal to a NEAR account settled after owner approval. 2026-10-16 17:11–17:12 UTC. Destination transfer evidence, recipient balance change and provider output agreed and matched the quote. No hosted deployment was performed; provider code deployment identity is unknown (docs/mainnet-log.md, docs/withdrawal-dispatch.md). Exact-output guarantees and final-artifact binding remain unverified.
 
 ## 09 Adaptive DCA (roadmap)
 

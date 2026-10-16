@@ -83,6 +83,19 @@ allow local settings changes. These are application mappings, not proof of a pas
 Owner actions still require the owner's verified signature, obtained through the DAO's voting threshold
 when it owns the agent. Historical records retain `operator` as the label for a manually triggered run.
 
+**Machine credential**:
+A revocable, expiring bearer credential bound to one Treasury workspace, signing host and provider
+agent ID. Only an established wallet owner can issue one after fresh chain/provider ownership checks.
+DAO machine delegation is refused until a verified DAO consent mechanism exists. Every request
+requires fresh ownership evidence; failed reads, missing agents or changed identities refuse access.
+The `read`, `prepare`, `execute-plan` and `sweep` scopes are independent and expose a limited procedure
+list. They delegate access to the existing executor, not a new provider grant or an owner signature.
+Execution uses the existing dispatch path. Secrets are returned once, stored only as hashes, and
+stripped before forwarding. Private records and access attribution live in `.machine-auth/`.
+New storage-version-2 records bind the agent ID; earlier experimental records remain listable and
+revocable but cannot authenticate. No conversion of money state is needed. This is offline-tested
+candidate behavior, not deployed.
+
 **Portfolio**:
 The historical product-facing label for the Treasury area in the shared workspace.
 The standalone product uses **Treasury** in its default interface.
@@ -136,6 +149,16 @@ grant's label carries the digest of the strategy in force.
 **Plan**:
 A saved, expiring list of swaps and shields, bound to the policy and strategy it was made under.
 
+**External plan**:
+An authorized outside agent's chosen swaps, quoted and saved by Treasury through `externalPlan`.
+The outside agent supplies decisions, not routes, signatures or provider credentials. Preparation
+moves no funds and refuses the complete plan if its quotes, cost, feasibility or observed mandate
+checks fail. Saved plans record `source: external` and use the existing expiry, strategy/policy binding,
+execution claim and dispatch path. Existing source labels remain readable without conversion.
+This uses Treasury plan-execution authority; the scheduled autopilot's auto-execute ceiling does not
+apply and there is no separate per-client budget. Offline-tested through the packaged Treasury skill;
+not deployed. Provider concurrency guarantees remain unverified.
+
 **Rebalance**:
 Planning swaps toward the strategy's target allocation: legs under its minimum are left alone, legs that
 could cost more than its cap at their floor are left out, and the rest are saved as a plan. Nothing moves
@@ -153,6 +176,9 @@ One money action in the agent's log, identified by its idempotency key from the 
 through its outcome. New non-invoice operations record preparation and then a durable submission
 claim before the provider call. A preparation without a claim proves it was never submitted; a claim
 without an outcome remains unresolved. Legacy records without this distinction remain unresolved.
+Internal provider-verification withdrawals use the same journal and dispatch path. Their approval
+verifies declared source terms; it does not establish exact recipient receipt or final-artifact
+binding. This verification work adds no product payout flow; see `docs/provider-acceptance.md`.
 _Avoid_: transaction, job
 
 **Unresolved operation**:

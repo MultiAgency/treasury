@@ -102,7 +102,19 @@ Deploys, restarts and live money actions are the owner's. There must be exactly 
 agent. The executor lease and money lock coordinate one host; they are not distributed fencing.
 Preserve all agent state before any executor move, including inherited record directories.
 
+The [machine interface v1](docs/machine-api.md) is an offline-tested candidate for scoped,
+expiring and revocable access to the existing Treasury executor. It supports reads, planning of
+externally chosen swaps and separately delegated plan/sweep execution for established
+wallet owners; it is not deployed. A [Treasury skill](skills/treasury/SKILL.md) packages the workflow
+and client helper; its prepare/execute/evidence/revoke flow is tested against an offline simulated provider.
+DAO machine delegation is refused until a verified DAO approval mechanism exists.
+
 ## Not done yet
+
+- Machine access has no hosted acceptance, credential-management UI, standalone public SDK,
+  verified DAO delegation or complete external-client fault acceptance yet. Bearer credentials are
+  not sender-constrained; see
+  [machine-interface limits](docs/machine-api.md#failure-and-evidence-semantics).
 
 - The Proto/domain release still requires its own review and authorization. Treasury's standalone
   fallback sign-in/private-access gate passed on 2026-10-16 UTC, deployment

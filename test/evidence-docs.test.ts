@@ -45,6 +45,8 @@ test("primary Treasury docs contain only brief 02 and retain exact-unshielding a
   assert.doesNotMatch(primary, /Adaptive DCA|House Money|Bitcoin treasury/);
   assert.doesNotMatch(primary, /Unshields exactly what a public payout needs/);
   assert.match(primary, /Exact unshielding for a public payout is not implemented/);
+  assert.match(primary, /not a complete acceptance record for brief 02/);
+  assert.doesNotMatch(primary, /Public payouts are planned for Payables/);
   assert.match(primary, /atomic|simultaneous requests/);
   const updates = documentationUpdates();
   assert.ok(updates.some(entry => entry.path === "docs/legacy/facilitator.md"));

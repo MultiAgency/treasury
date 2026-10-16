@@ -5,6 +5,68 @@ prototype's doc says which of these back which claim: [facilitator](facilitator.
 [treasury](treasury.md). Operation ids, amounts, payees and the strategy's settings are kept in a private
 release record, not here, since the treasury is confidential; they are available to reviewers on request.
 
+## Isolated approved withdrawal settles, 2026-10-16 17:11–17:12 UTC
+
+With the owner's explicit authorization and a stated source-debit ceiling, submitted one confidential
+USDC withdrawal to the isolated agent's NEAR owner. A fresh quote preceded submission. The candidate's
+single dispatch path recorded the operation, and the separate withdrawal approval verifier checked
+provider terms, canonical hash, local journal and current policy before the owner-intent flow signed
+and submitted approval. No DAO proposal applied; no hosted deployment was performed. Provider code
+deployment identity is unknown (`provider_version: 1` is only a returned field).
+
+The withdrawal went `PENDING_APPROVAL` → `SUCCESS`, with approval `APPROVED`. Recipient balance
+increase, provider output and one deduplicated successful destination-chain USDC transfer event
+agreed. Receipt matched the fresh quote estimate and met its minimum; source debit matched the request.
+Reported budget usage increased equally across all three windows, already charged in the held read,
+with no further change at settlement. This does not prove atomic accounting or an exact-output
+guarantee. Journal and owner-action records are terminal; no replacement request or signature replay
+was submitted. Full evidence is private; see [the acceptance record](provider-acceptance.md#isolated-observations).
+
+## Isolated confidential withdrawal dry request, 2026-10-16 UTC
+
+An owner-authorized confidential USDC withdrawal preview on the existing isolated test agent returned
+HTTP 409 `policy_denied`, with no quote or correlation ID. The request used `dry: true`, no grant token
+and no idempotency key. A subsequent applied, synchronized policy read showed no withdrawal action or
+matching withdrawal destination. The generic refusal does not identify a specific rule. No policy was
+changed, no owner proposal was needed, and no funds-moving request was submitted. The provider build
+was not identified; this is not an observation of payout execution or fees. The
+[acceptance record](provider-acceptance.md#isolated-observations) describes the boundary.
+Request and response details are retained privately, outside tracked documentation.
+
+The owner then authorized a narrow policy update on that isolated agent: add withdrawal and a single
+NEAR owner destination, keeping all other policy fields. The wallet-owner intent reached `SUCCESS`;
+the subsequent applied, synchronized policy matched the reviewed candidate. No DAO proposal applied.
+A dry retry was refused; its amount exceeded the configured monthly asset cap, without the generic
+error proving that attribution. One smaller dry request below the configured asset caps returned HTTP
+200 with a confidential USDC withdrawal quote to NEAR: positive estimated and minimum output and a
+time estimate, no correlation ID. No grant token, idempotency key or live withdrawal was submitted.
+The withdrawal permission remains enabled on the test agent. This observes quote availability only;
+receipt, fees actually charged, approval binding and provider deployment identity remain unverified.
+Full request, policy and owner-intent evidence is private.
+
+## Isolated withdrawal held for owner approval, 2026-10-16 UTC
+
+With the owner's explicit authorization, enabled owner approval on the isolated test agent, preserving
+its existing caps, budget and owner withdrawal destination. The wallet-owner intent succeeded; no DAO
+proposal applied. Submitted one capped confidential USDC withdrawal to NEAR through the candidate's
+single journaled dispatch path, after offline checks and verification of the exact applied policy.
+
+The execution returned `PENDING_APPROVAL` with a pending approval for the expected wallet. Readable
+recipient, chain, source asset and amount matched the request and reproduced the provider's approval
+hash under the pinned confidential-withdrawal recipe. Mutation checks changed that hash. The response's
+destination-asset field is absent from the reproduced hash, so this does not establish output binding.
+At that observation no approval release had been submitted and the withdrawal was held. Receipt and
+settlement were unobserved; rejection is recorded below. Provider deployment identity is unknown; the local candidate is not deployed
+to a hosted executor. Private captures retain operation identity, signed policy action and terms.
+See [the acceptance record](provider-acceptance.md#isolated-observations).
+
+The owner later authorized rejecting the exact held withdrawal. The verified owner-intent rejection
+returned `SUCCESS`; the approval became `REJECTED`, and the withdrawal became `FAILED` with
+`details.never_executed: true`. Local reconciliation closed the operation and settled the rejection
+record. No payment-release approval was submitted. This observes rejection and reported non-execution,
+not delivery or budget-release accounting. The isolated approval-enabled policy remains in force.
+
+
 ## A swap into an unlisted asset, 2026-10-10
 
 A direct-API swap into an asset outside the policy's `assets` succeeded: the provider checks only the

@@ -109,7 +109,7 @@ export async function tick(trigger: TickStart["trigger"]): Promise<string> {
 
 /** What a tick does, also recorded in the inbox. */
 async function run(found: Found, progress: (event: ProgressEvent) => void): Promise<string> {
-  const onSubmitted = (method: "swap" | "shield" | "transfer" | "unshield", correlationId: string) =>
+  const onSubmitted = (method: "swap" | "shield" | "transfer" | "unshield" | "withdraw", correlationId: string) =>
     progress({ type: "CUSTOM", name: "treasury.observation", value: { stage: "submission", method, correlationId } });
   // The ceiling and the grant must describe the same strategy as the plan. An owner can
   // replace and authorize a strategy while this tick awaits provider observations.

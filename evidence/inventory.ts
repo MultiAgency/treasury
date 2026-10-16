@@ -10,6 +10,12 @@
  */
 
 export const REQUIREMENTS_CONTEXT = "These are catalog targets, not established guarantees. Evidence stages describe the supporting observations or tests; known limitations still apply.";
+export const TREASURY_EVIDENCE_CONTEXT = "Selected Treasury capabilities and recorded observations, not a complete acceptance record for brief 02.";
+/** Public-safe provider observation, separate from implemented Treasury controls and coverage counts. */
+export const TREASURY_WITHDRAWAL_OBSERVATION = {
+  publicClaim: "In an isolated mainnet test, a confidential USDC withdrawal to a NEAR account settled after owner approval.",
+  when: "2026-10-16 UTC",
+} as const;
 
 export type Kind = "facilitator" | "treasury";
 
@@ -35,7 +41,7 @@ export type Requirement = {
 };
 
 /** A brief from the Agent Connect experiment catalog, by its catalog number. An area lists the brief it runs first, then its roadmap. */
-export type Brief = { catalog: string; title: string; requirements: Requirement[]; limitations?: string[] };
+export type Brief = { catalog: string; title: string; requirements: Requirement[]; limitations?: string[]; scopeNotes?: string[] };
 
 /** A demo step; `on` says which site it happens on. */
 export type Step = { text: string; on: "invoices" | "dashboard" };
@@ -228,22 +234,27 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
   treasury: {
     name: "Treasury",
     tagline:
-      "The treasury agent rebalances toward its target on its own, quoting every swap, inside per-asset caps and a USD budget the DAO signed. Idle funds stay in the confidential balance.",
+      "Set allocation targets, sign spending limits and authorize scheduled rebalancing. The agent quotes swaps, requests confidential execution and records operation outcomes and remaining budget.",
     briefs: [
       {
         catalog: "02",
         title: "Agentic Treasury Management",
+        scopeNotes: [
+          "Exact unshielding for a public payout is not implemented. The independent withdrawal tests add no dashboard payout controls or new Payables flow.",
+          "An isolated confidential withdrawal to NEAR was held for owner approval, then rejected on 2026-10-16 UTC; the provider reported FAILED with never_executed. No payment release or delivery was observed. Provider deployment identity is unknown (docs/mainnet-log.md). This does not establish a public payout flow.",
+          `${TREASURY_WITHDRAWAL_OBSERVATION.publicClaim} 2026-10-16 17:11–17:12 UTC. Destination transfer evidence, recipient balance change and provider output agreed and matched the quote. No hosted deployment was performed; provider code deployment identity is unknown (docs/mainnet-log.md, docs/withdrawal-dispatch.md). Exact-output guarantees and final-artifact binding remain unverified.`,
+        ],
         limitations: [
           "Whether simultaneous requests can exceed asset limits or the USD budget remains unverified.",
           "This server checks which assets can be bought; the provider does not.",
           "This server requests confidential swaps, but the policy also permits public swaps and moving funds back to a public balance. A confidential balance does not establish protection against every form of tracing.",
           "The agent has not yet run unattended for days.",
-          "Public payouts are planned for Payables. Exact unshielding for a public payout is not implemented. The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.",
+          "The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.",
         ],
         requirements: [
           {
             type: "capability",
-            text: "Rebalances to target allocations on a schedule",
+            text: "Rebalances toward allocation targets on a schedule",
             known: "mainnet",
             where: "agent",
             evidence:
@@ -251,16 +262,16 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "guarantee",
-            text: "Can't exceed per-asset limits",
+            text: "Over-limit requests were refused",
             stoppedBy: "policy",
             known: "mainnet",
             where: "agent",
             evidence:
-              "The policy caps every asset per transaction, hour, day and month. On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13",
+              "On the treasury agent, a transfer over its hourly cap was refused with policy_denied (policy revision 8, 2026-10-11); a swap over the monthly cap was refused on an isolated test agent, 2026-10-13",
           },
           {
             type: "capability",
-            text: "Quotes every route before executing",
+            text: "Quotes swaps before sending",
             known: "mainnet",
             where: "agent",
             evidence:
@@ -268,7 +279,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "capability",
-            text: "Shows budget headroom ticking down with each dispatch",
+            text: "Shows remaining budget",
             known: "mainnet",
             where: "agent",
             evidence:
@@ -276,7 +287,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "guarantee",
-            text: "An over-budget operation is refused; earlier operations in its run may complete",
+            text: "Over-budget requests were refused",
             stoppedBy: "policy",
             known: "mainnet",
             where: "agent",
@@ -285,7 +296,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "guarantee",
-            text: "Can't spend more than the USD budget, even with simultaneous requests",
+            text: "One simultaneous-request test stayed within budget",
             stoppedBy: "policy",
             known: "mainnet",
             where: "other",
@@ -294,7 +305,7 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "capability",
-            text: "Sweeps idle stables into the confidential balance",
+            text: "Shields public USDC, wNEAR and ETH balances",
             known: "mainnet",
             where: "agent",
             evidence:
@@ -302,12 +313,12 @@ export const PROTOTYPES: Record<Kind, { name: string; tagline: string; briefs: [
           },
           {
             type: "guarantee",
-            text: "Keeps managed resting balances confidential",
+            text: "Managed balances were confidential when checked",
             stoppedBy: "server",
             known: "mainnet",
             where: "agent",
             evidence:
-              "No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Kept so by our deposits' and swaps' requests: the policy allows public swaps and unshield (docs/enforcement.md). Funds still can't leave: the destination list is empty",
+              "No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Deposits and swaps requested confidential execution; the observed policy also permitted public swaps and unshield, with an empty destination list (docs/enforcement.md). This is a recorded balance observation, not a continuing guarantee",
           },
         ],
       },

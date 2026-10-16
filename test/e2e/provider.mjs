@@ -37,7 +37,9 @@ export async function provider(directory, { treasury = false, account = OWNER } 
       wallet_id: wallet.wallet_id, label: 'invoices', credential: credential.commitment, network: 'mainnet',
       issued_at_ms: Date.now(), expires_at_ms: Date.parse(expires), owner_epoch: 1, nonce: 'local', recipient: 'local' } };
   const grants = [grant];
-  const requests = [], errors = [], transfers = [], intents = [];
+  const requests = [], errors = [], transfers = [], intents = [], swaps = [];
+  const treasuryBalances = new Map([[USDC, 100000000n], ['nep141:wrap.near', 0n], ['nep141:eth.omft.near', 0n]]);
+  if (treasury) { grant.label = 'treasury'; grant.owner_message.label = 'treasury'; }
   let unavailable = false;
   const status = payment => ({ correlation_id: payment.correlation, agent_id: id, type: 'transfer', status: payment.status,
     created_at: payment.at, updated_at: payment.at, failure_code: null, details: { approval_id: payment.approval } });
@@ -72,7 +74,8 @@ export async function provider(directory, { treasury = false, account = OWNER } 
           usage: { budget: Object.fromEntries(['daily', 'weekly', 'monthly'].map(window => [window, { limit_usd: policy.budget[`${window}_usd`], spent_usd: '0', remaining_usd: policy.budget[`${window}_usd`], resets_at: null }])), timelock: { delay_ms: 0, scheduled_count: 0 } } });
         if (url.pathname === `${base}/policy/history`) return json(res, { data: [], next_cursor: null });
         if (url.pathname === `${base}/balances`) return json(res, { near_account_id: wallet.near_account_id, source: url.searchParams.get('source'),
-          balances: [{ asset_id: USDC, balance_raw: url.searchParams.get('source') === 'public' ? '0' : (100000000n - transfers.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + BigInt(p.body.amount), 0n)).toString() }] });
+          balances: treasury ? [...treasuryBalances].map(([asset_id, balance]) => ({ asset_id, balance_raw: url.searchParams.get('source') === 'public' ? '0' : balance.toString() }))
+            : [{ asset_id: USDC, balance_raw: url.searchParams.get('source') === 'public' ? '0' : (100000000n - transfers.filter(p => p.status === 'SUCCESS').reduce((sum, p) => sum + BigInt(p.body.amount), 0n)).toString() }] });
         if (url.pathname === '/v1/tokens') return json(res, { data: [
           { asset_id: USDC, symbol: 'USDC', decimals: 6, price: 1 },
           { asset_id: 'nep141:wrap.near', symbol: 'wNEAR', decimals: 24, price: 2 },
@@ -83,12 +86,26 @@ export async function provider(directory, { treasury = false, account = OWNER } 
           const correlation = url.searchParams.get('correlation_id');
           const payment = transfers.find(p => p.correlation === correlation);
           if (payment) return json(res, status(payment));
+          const swap = swaps.find(s => s.correlation_id === correlation);
+          if (swap) return json(res, { correlation_id: correlation, agent_id: id, type: 'swap', status: 'SUCCESS' });
           const intent = intents.find(i => i.correlation_id === correlation);
           if (intent && ownerOutcomeUnavailable) return json(res, { error: 'Local scenario withholds owner outcome' }, 503);
           if (intent) return json(res, { correlation_id: correlation, agent_id: id, type: intent.type, status: intent.submitted ? 'SUCCESS' : 'PENDING_SIGNATURE' });
         }
         const payment = transfers.find(p => url.pathname === `${base}/approvals/${p.approval}`);
         if (payment) return json(res, approval(payment));
+      }
+      if (treasury && req.method === 'POST' && url.pathname === `/v1/agents/${id}/swap`) {
+        if (req.headers['x-grant-token'] !== credential.token) throw new Error('Missing swap grant');
+        if (body.origin_asset !== USDC || body.destination_asset !== 'nep141:wrap.near' || body.confidential !== true) throw new Error('Unexpected offline swap terms');
+        const amountOut = BigInt(body.amount) * 500000000000000000n;
+        if (body.dry) return json(res, { quote: { amount_out: amountOut.toString(), min_amount_out: (amountOut * 999n / 1000n).toString() } });
+        if (!entry.key || swaps.some(s => s.key === entry.key)) throw new Error('Missing or repeated swap identity');
+        if (BigInt(body.amount) > treasuryBalances.get(USDC) || BigInt(body.min_amount_out) > amountOut) throw new Error('Infeasible swap');
+        treasuryBalances.set(USDC, treasuryBalances.get(USDC) - BigInt(body.amount));
+        treasuryBalances.set('nep141:wrap.near', treasuryBalances.get('nep141:wrap.near') + amountOut);
+        const swap = { correlation_id: randomUUID(), key: entry.key, body }; swaps.push(swap);
+        return json(res, { correlation_id: swap.correlation_id });
       }
       if (req.method === 'POST' && url.pathname === `/v1/agents/${id}/transfer`) {
         if (req.headers['x-grant-token'] !== credential.token || !entry.key) throw new Error('Missing grant or operation identity');
@@ -129,7 +146,7 @@ export async function provider(directory, { treasury = false, account = OWNER } 
     } catch (error) { errors.push(String(error)); json(res, { error: String(error) }, 500); }
   });
   const port = await listen(server);
-  return { id, token: credential.token, url: `http://127.0.0.1:${port}`, requests, errors, transfers, intents, grants,
+  return { id, token: credential.token, url: `http://127.0.0.1:${port}`, requests, errors, transfers, intents, grants, swaps,
     setUnavailable(value) { unavailable = value; },
     dropTransferResponse() { dropNextTransfer = true; },
     dropSignatureResponse() { dropNextSignature = true; ownerOutcomeUnavailable = true; },

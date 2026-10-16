@@ -104,6 +104,24 @@ export function authorize(action: Action, c: Case): Refusal | null {
   const buys = outputAssetRefusal(action, policy);
   if (buys) return refuse("asset_out_not_allowed", buys);
 
+  // Like transfer approval, re-check the current policy before an owner releases held work.
+  if (purpose === "approval" && action.method === "withdraw") {
+    if (action.request.confidential !== true || action.request.asset !== ASSETS.USDC || action.request.chain !== "near" || action.request.memo !== undefined)
+      return refuse("withdrawal_not_allowed", "Withdrawal approval supports confidential USDC to NEAR without a memo");
+    if (!policy.owner_approval || !policy.confidential)
+      return refuse("owner_approval_required", "Withdrawal approval needs a confidential policy holding outgoing actions for the owner");
+    if (!policy.actions.includes("withdraw")) return refuse("action_not_allowed", "The current policy does not permit withdrawals");
+    const { asset, amount, chain, recipient, memo } = action.request;
+    if (policy.assets !== "any" && !policy.assets.includes(asset)) return refuse("asset_not_allowed", "The current policy does not permit this withdrawal asset");
+    if (policy.destinations.mode !== "only" || !policy.destinations.list.some(d =>
+      d.action === "withdraw" && d.chain === chain && d.address === recipient && d.memo === (memo ?? null)))
+      return refuse("withdrawal_destination_denied", "The current policy does not explicitly permit this withdrawal destination");
+    const cap = policy.limits.per_transaction?.[asset];
+    if (cap !== undefined && BigInt(amount) > BigInt(cap))
+      return refuse("per_transaction_exceeded", "The withdrawal exceeds the current per-transaction limit");
+    return null;
+  }
+
   if (purpose === "payout" || purpose === "invoice" || purpose === "approval") {
     if (action.method !== "transfer" || action.request.asset !== ASSETS.USDC || !action.request.confidential)
       return refuse("transfer_not_allowed", "Payouts are confidential USDC transfers");

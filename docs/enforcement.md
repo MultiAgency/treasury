@@ -14,11 +14,17 @@ custody and recovery dependencies. The active product is **Agentic Treasury Mana
 | Unshield exactly what a public payout needs | Not implemented. The current sweep shields managed public balances; it does not calculate an idle-surplus reserve. |
 | Untraceable resting position | Confidential balances have been observed. Universal protection against tracing is not established. |
 
+Independent provider verification also observed a confidential USDC withdrawal to a public NEAR
+recipient settle after owner approval on an isolated agent, 2026-10-16 17:11–17:12 UTC. A separate
+held withdrawal was rejected with reported non-execution. These demonstrate the tested provider route,
+not exact unshielding, an exact-output guarantee or a new product payout flow. No hosted deployment
+was performed and provider code deployment identity is unknown. See [verification](provider-acceptance.md)
+and [the mainnet log](mainnet-log.md).
+
 The catalog example's policy schema and stated address-whitelist conflict differ from the pinned
-SDK configuration used here. This cleanup does not change the policy, add an authorization rule,
-change budget accounting or assert that the deployed provider matches that example. Provider
-schema, counter behavior and shield/unshield budget treatment require specific evidence before
-implementing the missing choreography.
+SDK configuration used here. The local withdrawal approval branch checks declared terms and the
+current policy before owner signature submission; it does not change provider budget accounting or
+establish deployed-source correspondence. Exact unshield choreography remains unimplemented.
 
 Scheduling is not settlement evidence: the timer counts from the latest inbox `run` summary, which
 precedes the final after-observation and tick end. An interrupted evidence start alone does not pause
@@ -267,6 +273,23 @@ Token-weighted `Member` roles are not supported for private workspace admission;
 verified delegated voting balances. Public `Everyone` permissions contribute only after Group admission.
 The gateway caches DAO policy for up to a minute, so removal may take that long to affect access.
 
+The candidate [machine interface](machine-api.md) accepts only wallet-owner delegations, bound to
+one host, workspace and provider agent ID. It requires fresh chain/provider ownership observations
+on every request; failures refuse access without using dashboard ownership caches. DAO delegation is
+refused until verified DAO consent exists. Plan execution and sweep scopes are independent. This
+neither issues a provider grant nor signs for the owner, and execution uses the existing executor.
+Older experimental credentials remain listable/revocable but cannot authenticate. Offline regressions
+reproduced and fixed DAO issuance without consent, stale-identity access during failure, and credential
+reuse after agent replacement. Hosted acceptance, independent security review, sender-constrained
+credentials and a DAO delegation mechanism remain gaps.
+
+The candidate external planner quotes chosen swaps and saves `source: external` plans for the existing
+execution path. Its skill helper completes an offline real-stack prepare/execute/evidence/revoke flow.
+This does not establish provider atomicity or full external-client crash/timeout acceptance. External
+plan execution uses Treasury authority, not scheduled autopilot; the schedule's auto-execute ceiling
+is not a machine-credential spending limit. There is no separate per-client budget. Those limits
+must remain explicit when an owner delegates autonomous execution.
+
 An explicit session or agent-access denial hides retained private records in the shared Home and agent
 views and refreshes gateway permissions. This includes decoded proposals cached for a DAO shared by
 multiple agents: denied-agent payloads are removed while permitted sibling proposals remain, and late
@@ -345,7 +368,7 @@ across hosts or prove remote exactly-once execution. See the
      since the provider checked them under the policy when the payment was requested.
    - Verified in current local source. Deployed-source correspondence was not established by the public-documentation review; do not infer deployment from these tests.
 2. **One grant-using send site, enforced.** Done: test/send-path.test.ts fails if anything but
-   `dispatch` → `send` (src/agent.ts) calls swap, transfer, shield or unshield on a grant, or if
+   `dispatch` → `send` (src/agent.ts) calls swap, transfer, withdraw, shield or unshield on a grant, or if
    the quote in src/treasury.ts `quoteLeg` stops being `dry: true`.
 3. **Verify execution routes.** The credential and route inventory (M1) is
    kept locally, outside the repository (research/enforcement/M1-CREDENTIALS.md). Check which rules
@@ -520,11 +543,12 @@ outcome; it does not promise a hold. Closing this interval requires a provider-e
 precondition, whose deployed behavior has not been established. Existing invoice and plan paths
 retain their own bindings; they do not use the dashboard confirmation contract.
 
-**Proposed scope change, pending acceptance: no unshield for payouts.** Payouts are confidential
-transfers between confidential balances, so the treasury keeps no public reserve and exact-shortfall
-unshielding isn't built. The
-provider documents that a confidential transfer's recipient must have confidential intents enabled; a
-payee without it would need an explicit public payout, built then and bound to its approved terms.
+**Provider verification scope.** Existing payout flows remain confidential transfers between
+confidential balances. Independent isolated testing also verified direct confidential withdrawal to
+a public NEAR recipient, without separate unshielding or an intermediate public reserve. This does not
+implement exact-shortfall unshielding, a reserve strategy or product payout controls. The withdrawal
+approval hash covers declared source terms; final artifact correspondence remains coordinator-trusted.
+See [the current verification record](provider-acceptance.md).
 
 
 ### Dashboard strategy configuration (offline-tested)

@@ -6,6 +6,8 @@ import { api } from "../src/api.js";
 import { acquireMoneyLock, type MoneyLock, UnresolvedOperations } from "../src/lock.js";
 import { provenRefusal, readOps, record } from "../src/ops.js";
 import { mandateDigest } from "../src/mandate.js";
+import { parseJournalHistory } from "../src/journal-history.js";
+import { methodOf } from "../src/recover.js";
 import { ASSETS, payoutPolicy, treasuryPolicy } from "../src/policy.js";
 import { authorityFixture, policyView } from "./fixtures/authority.js";
 import { freshDirectory, offline } from "./fixtures/harness.js";
@@ -30,9 +32,68 @@ beforeEach(() => {
     calls.push(options.idempotencyKey);
     return answer();
   };
-  mock.method(api, "forGrant", () => ({ transfer: method, swap: method, shield: method, unshield: method }));
+  mock.method(api, "forGrant", () => ({ transfer: method, withdraw: method, swap: method, shield: method, unshield: method }));
 });
 afterEach(() => mock.restoreAll());
+
+const withdrawal: Action = { method: "withdraw", request: { asset: ASSETS.USDC, amount: "1", chain: "near", recipient: "fixture.near", confidential: true } };
+
+test("withdrawal persists its terms, mandate and submission claim before sending and retains a held outcome", async () => {
+  for (const [name, method] of Object.entries(authorityFixture("treasury"))) mock.method(api, name as keyof typeof api, method as never);
+  const view = policyView({ ...treasuryPolicy, actions: ["withdraw"], owner_approval: true });
+  mock.method(api, "getPolicy", async () => view);
+  status = "PENDING_APPROVAL";
+  answer = async () => {
+    const op = readOps()[0]!;
+    assert.equal(op.method, "withdraw");
+    assert.deepEqual(op.request, withdrawal.request);
+    assert.equal(op.policyDigest, mandateDigest(view.policy));
+    assert.equal(op.submissionState, "SUBMISSION_ATTEMPTED");
+    return { correlation_id: "fixture-withdrawal" };
+  };
+  const lock = await acquireMoneyLock();
+  try { await dispatch(lock, "withdrawal-test", withdrawal); } finally { await lock.release(); }
+  assert.equal(calls.length, 1);
+  assert.equal(readOps()[0]?.status, "PENDING_APPROVAL");
+  assert.equal(readOps()[0]?.correlationId, "fixture-withdrawal");
+});
+
+test("a withdrawal with an unknown submission outcome blocks a replacement", async () => {
+  for (const [name, method] of Object.entries(authorityFixture("treasury"))) mock.method(api, name as keyof typeof api, method as never);
+  mock.method(api, "getPolicy", async () => policyView({ ...treasuryPolicy, actions: ["withdraw"] }));
+  answer = async () => { throw new Error("lost withdrawal response"); };
+  const lock = await acquireMoneyLock();
+  try {
+    await assert.rejects(dispatch(lock, "withdrawal-test", withdrawal), /lost withdrawal response/);
+    assert.equal(readOps()[0]?.method, "withdraw");
+    assert.equal(readOps()[0]?.submissionState, "SUBMISSION_ATTEMPTED");
+    await assert.rejects(dispatch(lock, "withdrawal-test", withdrawal), UnresolvedOperations);
+    assert.equal(calls.length, 1);
+  } finally { await lock.release(); }
+});
+
+test("a payout grant cannot use withdrawal as treasury work", async () => {
+  const lock = await acquireMoneyLock();
+  try {
+    await assert.rejects(dispatch(lock, "withdrawal-test", withdrawal), /grant_purpose_denied/);
+    assert.deepEqual(calls, []);
+  } finally { await lock.release(); }
+});
+
+test("legacy operations and new withdrawals remain readable together without rewriting state", () => {
+  const at = new Date().toISOString();
+  const legacy = { at, idempotencyKey: "legacy-transfer", kind: "payout", request: action.request };
+  const next = { at, idempotencyKey: "new-withdrawal", kind: "withdrawal-test", method: "withdraw" as const, journalVersion: 2 as const, request: withdrawal.request };
+  record(legacy);
+  record(next);
+  const ops = readOps();
+  assert.equal(methodOf(ops[0]!), "transfer");
+  assert.equal(methodOf(ops[1]!), "withdraw");
+  const history = parseJournalHistory(process.env.AGENT_ID!, [legacy, next].map(line => JSON.stringify(line)).join("\n"));
+  assert.deepEqual(history.gaps, []);
+  assert.equal(history.records.length, 2);
+  assert.equal(history.records[1]?.method, "withdraw");
+});
 
 test("only recognized, consistent, non-retryable provider errors prove refusal", () => {
   const error = (status: number, code: string, retryable = false) => new AgentApiError(status, {

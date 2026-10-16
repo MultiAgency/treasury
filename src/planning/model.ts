@@ -15,7 +15,7 @@ export type Snapshot = {
 };
 
 /** What proposed the plan; its actions are logged under this kind. */
-export type PlanSource = "steward" | "rebalance";
+export type PlanSource = "steward" | "rebalance" | "external";
 
 export type Plan = Snapshot & {
   id: string;
