@@ -16,6 +16,8 @@ async function treasuryOnly(browser, root) {
   const context = await browser.newContext({viewport:{width:1280,height:1000},reducedMotion:'reduce'});
   const {page,calls,requests,errors} = await open(context,'/a/treasury/');
   await page.getByRole('heading',{name:'Signed limits',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Treasury overview',level:1,exact:true}).waitFor();
+  assert(await page.getByRole('region',{name:'Schedule status'}).evaluate(e => Boolean(e.compareDocumentPosition(document.querySelector('[aria-label="Quoted rebalance"]')) & Node.DOCUMENT_POSITION_FOLLOWING)), 'schedule controls precede rebalance');
   assert.equal(await page.getByRole('region',{name:'Treasury owner',exact:true}).innerText(),'Owner\nowner.near','show the observed owner before reviewing Treasury actions');
   await page.getByRole('heading',{name:'Rebalance',exact:true}).waitFor();
   await page.getByRole('heading',{name:'Sweep',exact:true}).waitFor();

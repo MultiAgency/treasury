@@ -262,7 +262,7 @@ export function Allocation({ data }: { data: Book }) {
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground whitespace-normal">
                       {priceState(h, Date.now()) === "fresh" ? "Fresh price" : priceState(h, Date.now()) === "stale" ? "Stale price" : "Price or freshness unavailable"}
-                      {h.priceUpdatedAt && Number.isFinite(Date.parse(h.priceUpdatedAt)) && <> · updated <time dateTime={h.priceUpdatedAt}>{h.priceUpdatedAt}</time></>}
+                      {h.priceUpdatedAt && Number.isFinite(Date.parse(h.priceUpdatedAt)) && <> · updated <time dateTime={h.priceUpdatedAt} title={h.priceUpdatedAt}>{new Date(h.priceUpdatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></>}
                     </p>
                   </td>
                   <td className="py-4 pr-4 text-right font-medium">{usd(h.usd)}</td>

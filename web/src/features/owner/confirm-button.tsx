@@ -15,6 +15,7 @@ export function ConfirmButton({
   path,
   permitted,
   reviewKey,
+  summary,
 }: {
   label: ReactNode;
   title: string;
@@ -23,6 +24,8 @@ export function ConfirmButton({
   onConfirm: () => void;
   /** Bind this confirmation to a reviewed version; changes require reopening it. */
   reviewKey?: string;
+  /** Exact reviewed details, retained with the confirmation snapshot. */
+  summary?: ReactNode;
   disabled?: boolean;
 } & ({ path: string; permitted?: never } | {
   path?: never;
@@ -35,7 +38,7 @@ export function ConfirmButton({
   const titleId = useId();
   const descriptionId = useId();
   const trigger = useRef<HTMLButtonElement>(null);
-  const [review, setReview] = useState<{ key: string; title: string; description: string; confirm: () => void }>();
+  const [review, setReview] = useState<{ key: string; title: string; description: string; summary?: ReactNode; confirm: () => void }>();
   const [invalidated, setInvalidated] = useState(false);
   const changed = Boolean(review && (review.key !== reviewKey || disabled || !allowed));
   const invalidReview = invalidated || changed;
@@ -46,7 +49,7 @@ export function ConfirmButton({
     <>
       <Button ref={trigger} disabled={disabled || !allowed} title={allowed ? undefined : "Your account cannot perform this action"} onClick={() => {
         setInvalidated(false);
-        setReview(reviewKey === undefined ? undefined : { key: reviewKey, title, description, confirm: onConfirm });
+        setReview(reviewKey === undefined ? undefined : { key: reviewKey, title, description, summary, confirm: onConfirm });
         dialog.current?.showModal();
       }}>
         {label}
@@ -69,6 +72,7 @@ export function ConfirmButton({
           <div className="flex flex-col gap-2">
             <h3 id={titleId} className="text-lg font-medium">{review?.title ?? title}</h3>
             <p id={descriptionId} className="text-sm text-muted-foreground">{review?.description ?? description}</p>
+            {reviewKey === undefined ? summary : review?.summary}
             {invalidReview && <p role="alert" className="text-sm">This review is no longer current. Cancel and review the action again.</p>}
           </div>
           <div className="flex flex-wrap justify-end gap-3">

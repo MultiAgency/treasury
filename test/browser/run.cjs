@@ -7,7 +7,8 @@ const { spawnSync } = require('node:child_process');
 
 const suites = readdirSync(__dirname).filter(name => name.endsWith('.cjs') && name !== 'run.cjs').sort();
 if (!suites.length) throw new Error('No browser suites found');
-const requested = process.argv.slice(2);
+const keepArtifacts = process.argv.includes('--keep-artifacts');
+const requested = process.argv.slice(2).filter(arg => arg !== '--keep-artifacts');
 for (const name of requested) {
   if (!suites.includes(name)) throw new Error(`Unknown browser suite: ${name}. Available: ${suites.join(', ')}`);
 }
@@ -49,7 +50,7 @@ try {
   const manifest = { node: process.version, assets: digest(join(snapshot, 'dist')),
     source: { server: digest(join(snapshot, 'src')), web: digest(join(snapshot, 'web')), evidence: digest(join(snapshot, 'evidence')) },
     fixtures: digest(join(snapshot, 'test/browser')), lockfile: createHash('sha256').update(readFileSync(join(snapshot, 'pnpm-lock.yaml'))).digest('hex'),
-    suites: requested.length ? requested : suites };
+    keepArtifacts, suites: requested.length ? requested : suites };
   writeFileSync(join(artifacts, 'manifest.json'), JSON.stringify(manifest, null, 2));
   console.log(`Browser run manifest: ${join(artifacts, 'manifest.json')}`);
   for (const name of manifest.suites) {
@@ -63,13 +64,13 @@ try {
     if (result.error || result.status !== 0) {
       failures++;
       console.error(`${name} failed: ${result.error?.message ?? result.signal ?? result.status}`);
-    } else rmSync(suiteArtifacts, { recursive: true, force: true });
+    } else if (!keepArtifacts) rmSync(suiteArtifacts, { recursive: true, force: true });
   }
 } finally {
   writeFileSync(join(artifacts, 'results.json'), JSON.stringify(results, null, 2));
-  if (failures) {
+  if (failures || keepArtifacts) {
     cpSync(snapshot, join(artifacts, 'snapshot'), { recursive: true, filter: path => !path.endsWith('/node_modules') });
-    console.error(`Failure traces, screenshots and snapshot retained at ${artifacts}`);
+    console.log(`Review traces, screenshots and snapshot retained at ${artifacts}`);
   }
   rmSync(snapshot, { recursive: true, force: true });
 }

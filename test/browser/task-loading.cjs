@@ -19,7 +19,7 @@ const { makeTick, recordingFor } = require('./fixtures/run.cjs');
   await page.route('**/*', async route => {
    const { hostname, pathname: p } = new URL(route.request().url());
    if (hostname !== 'frontend.test') return route.abort();
-   if (p === '/gw/me') return route.fulfill({json:{agents:[{name:'treasury',owner:'owner.near',dao:false}],viewer:{account:'owner.near',access:{treasury:{canSign:profile !== 'member',canPropose:profile !== 'member',canVote:profile !== 'member',canExecute:profile !== 'member',canManage:profile !== 'member'}}}}});
+   if (p === '/gw/me') return route.fulfill({json:{ invoices: null,agents:[{name:'treasury',owner:'owner.near',dao:false}],viewer:{account:'owner.near',access:{treasury:{canSign:profile !== 'member',canPropose:profile !== 'member',canVote:profile !== 'member',canExecute:profile !== 'member',canManage:profile !== 'member'}}}}});
    if (p.includes('/rpc/')) {
     const method = p.split('/rpc/')[1]; calls.push(method);
     if (method === failure && mode === 'pending') return; // Leave this unrelated read unanswered.

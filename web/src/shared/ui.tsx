@@ -147,7 +147,7 @@ export function QueryError({ error, retry }: { error: { message: string }; retry
   return (
     <Alert variant="destructive" className="flex flex-wrap items-center justify-between gap-3">
       <AlertDescription>{error.message}</AlertDescription>
-      <Button variant="ghost" size="sm" onClick={retry}>
+      <Button variant="outline" size="sm" onClick={retry}>
         Check again
       </Button>
     </Alert>

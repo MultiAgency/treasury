@@ -14,6 +14,7 @@ export default defineConfig({
   plugins: [pluginReact()],
   source: { entry: { index: "./src/main.tsx" }, define: { "process.env.PUBLIC_TREASURY_ONLY": JSON.stringify(process.env.PUBLIC_TREASURY_ONLY ?? "true") } },
   html: {
+    template: "./index.html",
     title: "Agentic Treasury",
     // The Vault mark inline: no image file to ship.
     tags: [{ tag: "link", attrs: { rel: "icon", type: "image/svg+xml", href: `data:image/svg+xml,${encodeURIComponent(VAULT)}` } }],

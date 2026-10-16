@@ -30,7 +30,9 @@ export function TreasuryDesk() {
   const followPlan = (planId: string) => setSelected({ planId, confirmedAt: Date.now(), observedAt: observation.dataUpdatedAt,
     policyDigest: raw.digest, budget: observation.error ? null : structuredClone(raw.policy.usage.budget) });
   return <>
+    <h1 className="text-2xl font-semibold">Treasury overview</h1>
     <Unresolved />
+    <ScheduleStatus />
     <Figures data={data} />
     <Allocation data={data} />
     <TreasuryLimits />
@@ -38,7 +40,6 @@ export function TreasuryDesk() {
       {swaps(data) ? <Rebalance onExecute={followPlan} onResult={refreshResult} /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
     </section>
     {selected && <PlanOutcome selected={selected} />}
-    <ScheduleStatus />
     <nav aria-label="Treasury tools" className="flex flex-wrap gap-3">
       <Button asChild variant="outline"><Link to="/automations">Set targets and schedule</Link></Button>
       <Button asChild variant="outline"><Link to="/follow/run">View treasury runs</Link></Button>

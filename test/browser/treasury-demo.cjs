@@ -5,6 +5,7 @@ const { mkdirSync } = require('node:fs');
 const { runTask } = require('./fixtures/task.cjs');
 const { workspaceEvidence } = require('./fixtures/workspace.cjs');
 const { rpcValue } = require('./fixtures/rpc.cjs');
+const { assertAccessible } = require('./fixtures/accessibility.cjs');
 
 async function treasuryDemo(browser, root) {
   const { budget, setup, overview } = workspaceEvidence({ policyDetails: true, grants: true });
@@ -87,6 +88,16 @@ async function treasuryDemo(browser, root) {
       await rebalance.getByRole('button', { name: 'Execute', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: 'Execute the previewed rebalance on mainnet?' });
       assert.deepEqual(writes, ['rebalance'], 'opening confirmation does not execute');
+      const summary = dialog.getByRole('region', { name: 'Saved plan summary', exact: true });
+      assert.equal(await summary.getByText('1 USDC → wNEAR', { exact: true }).count(), 2, 'confirmation repeats each saved swap');
+      assert.equal(await summary.getByText('Minimum received 0.99 wNEAR', { exact: true }).count(), 2, 'confirmation includes the quoted floors');
+      assert.equal(await summary.locator('time').getAttribute('datetime'), '2030-01-01T00:00:00Z');
+      await assertAccessible(page, `confirmation-${scenario}`);
+      if (process.env.PROTO_BROWSER_ARTIFACTS) await page.screenshot({ path: join(process.env.PROTO_BROWSER_ARTIFACTS, `confirmation-${scenario}.png`) });
+      await page.keyboard.press('Escape');
+      assert.deepEqual(writes, ['rebalance'], 'cancelling the detailed review never executes');
+      assert.equal(await rebalance.getByRole('button', { name: 'Execute', exact: true }).evaluate(e => e === document.activeElement), true, 'cancel restores focus');
+      await rebalance.getByRole('button', { name: 'Execute', exact: true }).click();
       await dialog.getByRole('button', { name: 'Execute swaps', exact: true }).click();
       const outcome = page.getByRole('region', { name: 'Confirmed plan outcome', exact: true });
       await outcome.waitFor();

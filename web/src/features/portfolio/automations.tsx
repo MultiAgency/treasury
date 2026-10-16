@@ -130,6 +130,23 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
             title="Execute the previewed rebalance on mainnet?"
             description="Runs the previewed swaps under the agent's grant, each requiring at least the minimum received shown. Swaps run in sequence with checks before each action. If execution stops, earlier completed actions remain."
             confirm="Execute swaps"
+            reviewKey={saved?.plan.id}
+            summary={saved && plan && <section aria-label="Saved plan summary" className="flex min-w-0 flex-col gap-3 border-t pt-4 text-sm">
+              <h4 className="font-medium">Swaps in this saved plan</h4>
+              <ul className="flex flex-col gap-3">{plan.legs.map((leg, i) => {
+                if (saved.steps[i] === undefined) return null;
+                const quote = preview.events.find(e => e.type === "quote" && e.leg === i);
+                return <li key={i} className="flex flex-col gap-1">
+                  <p className="font-medium">{amount(leg.amount, leg.from)} → {leg.to.symbol}</p>
+                  {quote?.type === "quote" && <>
+                    <p>Estimated received {amount(quote.amountOut, leg.to)}</p>
+                    <p>Minimum received {amount(quote.minAmountOut, leg.to)}</p>
+                    <p className="text-muted-foreground">Estimated cost {quote.costBps / 100}% · Maximum cost {quote.worstCostBps / 100}%</p>
+                  </>}
+                </li>;
+              })}</ul>
+              <p>Valid until <time dateTime={saved.plan.expiresAt}>{new Date(saved.plan.expiresAt).toLocaleString()}</time></p>
+            </section>}
             onConfirm={() => {
               if (saved && !busy && !executed && !blocked && canExecute) {
                 // Selection follows explicit confirmation; it never establishes an operation outcome.
@@ -172,7 +189,8 @@ export function Automations() {
   const treasury = kindOf(data) === "treasury";
   const hash = useLocation({ select: location => location.hash });
   return (
-    <Section title={treasury ? "Strategy" : "Shield public funds"} description={treasury ? "Configure, authorize and schedule the strategy, or preview a manual rebalance." : "Preview a sweep to shield public balances."}>
+    <Section title={treasury ? "Strategy" : "Shield public funds"} description={treasury ? "Configure, authorize and schedule the strategy." : "Preview a sweep to shield public balances."}>
+      {treasury && TREASURY_ONLY && <Button asChild variant="outline" className="self-start"><Link to="/" hash="rebalance">Preview a manual rebalance on the overview</Link></Button>}
       {treasury && !TREASURY_ONLY && <TaskEvidence task="strategy" />}
       {!treasury && <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/policy" hash="grants">Review or renew the grant</Link></Button>}
       {!executor && <Note>Preview, execution and automation settings are available on the executor with the corresponding account permissions.</Note>}

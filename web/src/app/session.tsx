@@ -25,7 +25,7 @@ export async function signOut() {
   location.assign("/");
 }
 
-export function SignIn({ daos, compact = false, create = false }: { daos: string[]; compact?: boolean; create?: boolean }) {
+export function SignIn({ daos, compact = false, create = false, primary = false }: { daos: string[]; compact?: boolean; create?: boolean; primary?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const signIn = async () => {
@@ -49,7 +49,7 @@ export function SignIn({ daos, compact = false, create = false }: { daos: string
   const action = <>
     <ErrorBox error={error} />
     <span role="status" className="sr-only">{busy ? "Complete sign-in in your NEAR wallet." : ""}</span>
-    <Button variant="outline" size="sm" className="w-fit" onClick={signIn} disabled={busy}>
+    <Button variant={primary ? "default" : "outline"} size={primary ? "default" : "sm"} className="w-fit" onClick={signIn} disabled={busy}>
       {busy ? <Spinner /> : <SignInIcon size={16} aria-hidden="true" />} {busy ? "Connecting…" : "Connect wallet"}
     </Button>
   </>;

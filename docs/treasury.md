@@ -30,7 +30,6 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 | Safety target | Can't spend more than the USD budget, even with simultaneous requests | The signed policy | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
 | Capability target | Sweeps idle stables into the confidential balance | — | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
 | Safety target | Keeps managed resting balances confidential | Our server | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Kept so by our deposits' and swaps' requests: the policy allows public swaps and unshield (docs/enforcement.md). Funds still can't leave: the destination list is empty |
-| Capability target | Unshields exactly what a public payout needs | — | Not yet | Not implemented: exact public-payout unshielding is outside the current rebalance and sweep flow. No live payout choreography has been demonstrated. |
 
 ### Known limitations
 
@@ -38,7 +37,7 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 - This server checks which assets can be bought; the provider does not.
 - This server requests confidential swaps, but the policy also permits public swaps and moving funds back to a public balance. A confidential balance does not establish protection against every form of tracing.
 - The agent has not yet run unattended for days.
-- Exact unshielding for a public payout is not implemented. The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.
+- Public payouts are planned for Payables. Exact unshielding for a public payout is not implemented. The current sweep shields managed USDC, wNEAR and ETH; it does not calculate an idle-surplus reserve.
 
 <!-- END GENERATED: requirements -->
 

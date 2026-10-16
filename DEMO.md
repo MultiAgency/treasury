@@ -84,7 +84,6 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 | Can't spend more than the USD budget, even with simultaneous requests | Observed on mainnet, on another agent | Five simultaneous swaps on an isolated test agent: one settled, the rest refused, no overshoot, 2026-10-13 (one trial) |
 | Sweeps idle stables into the confidential balance | Observed on mainnet | A small USDC deposit to a public deposit address landed in the treasury agent's public balance; the dashboard's Sweep (the same sweep the autopilot runs each tick) shielded it, and nothing was left public, 2026-10-14 00:33Z to 00:39Z (test/autopilot.test.ts) |
 | Keeps managed resting balances confidential | Observed on mainnet | No public NEAR Intents balance on chain and all three assets confidential, read-only check, 2026-10-13T23:03Z. Kept so by our deposits' and swaps' requests: the policy allows public swaps and unshield (docs/enforcement.md). Funds still can't leave: the destination list is empty |
-| Unshields exactly what a public payout needs | Not yet | Not implemented: exact public-payout unshielding is outside the current rebalance and sweep flow. No live payout choreography has been demonstrated. |
 
 <!-- END GENERATED: verification -->
 

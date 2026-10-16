@@ -14,7 +14,7 @@ async function setupAndReturn(browser, root) {
    await page.route('**/*', async route => {
     const { hostname, pathname: p } = new URL(route.request().url());
     if (hostname !== 'frontend.test') return route.abort();
-    if (p === '/gw/me') return route.fulfill({ json: { agents: [{ name: 'fixture', area: treasury ? 'treasury' : 'payables', owner: 'owner.near', dao: true }], viewer: { account: 'owner.near', access: { fixture: { canSign: false, canPropose: true, canVote: true, canExecute: true, canManage: true } } } } });
+    if (p === '/gw/me') return route.fulfill({ json: { invoices: null, agents: [{ name: 'fixture', area: treasury ? 'treasury' : 'payables', owner: 'owner.near', dao: true }], viewer: { account: 'owner.near', access: { fixture: { canSign: false, canPropose: true, canVote: true, canExecute: true, canManage: true } } } } });
     if (p.includes('/rpc/')) {
      const method = p.split('/rpc/')[1]; calls.push(method);
      if (scenario === 'records-error' && method === 'owner/actions') return route.fulfill({ status: 503, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: 'Setup records unavailable' } } });

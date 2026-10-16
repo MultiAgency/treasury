@@ -5,7 +5,7 @@ import { offlineEnvironment } from './test-environment.mjs';
 
 // Retained shared-workspace regressions use an explicit historical build, never the product default.
 const root = fileURLToPath(new URL('../', import.meta.url));
-const treasury = new Set(['treasury-prototype.cjs', 'treasury-creation.cjs', 'treasury-scope.cjs', 'treasury-demo.cjs']);
+const treasury = new Set(['treasury-prototype.cjs', 'treasury-creation.cjs', 'treasury-scope.cjs', 'treasury-demo.cjs', 'treasury-accessibility.cjs']);
 const available = readdirSync(new URL('../test/browser/', import.meta.url)).filter(name => name.endsWith('.cjs') && name !== 'run.cjs' && !treasury.has(name)).sort();
 const requested = process.argv.slice(2);
 for (const name of requested) if (!available.includes(name)) throw new Error(`Unknown legacy browser suite: ${name}`);

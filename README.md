@@ -71,11 +71,17 @@ See [repository scope](docs/scope.md).
 pnpm typecheck
 pnpm test
 pnpm test:browser          # Treasury UI, registration and scope fixtures; no real provider
+pnpm review:treasury       # Isolated UI review; retain screenshots, traces and axe reports
 pnpm evidence:check
 ```
 
 `pnpm verify` also runs the inherited browser and application regressions. Those explicitly select
 the shared presentation; their invoice and payout cases protect idea-1 flows and shared code.
+`pnpm verify:candidate` captures the Git-visible working files and runs `pnpm verify` in that
+snapshot, recording its source hash and whether the working tree still matches afterward. Finish
+concurrent edits before capturing a candidate. Review artifacts under `.test-artifacts/` are local
+and ignored by Git. Automated accessibility scans cover selected Treasury fixture states in both
+themes; they supplement keyboard and visual checks and do not establish full WCAG conformance.
 `pnpm test:live` touches real funds and runs only when explicitly requested.
 
 Requirements and supporting observations live in [evidence/inventory.ts](evidence/inventory.ts).

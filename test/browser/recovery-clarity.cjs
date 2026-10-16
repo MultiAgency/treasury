@@ -27,7 +27,7 @@ const root = path.resolve(process.argv[2] || 'web/dist');
       await page.route('**/*', async route => {
         const { hostname, pathname: p } = new URL(route.request().url());
         if (hostname !== 'frontend.test') return route.abort();
-        if (p === '/gw/me') return route.fulfill({ json: {
+        if (p === '/gw/me') return route.fulfill({ json: { invoices: null,
           agents: [{ name: 'treasury', area: 'treasury', owner: 'owner.near', dao: false }],
           viewer: { account: 'owner.near', access: { treasury: { canSign: true, canPropose: true, canVote: true, canExecute: true, canManage: true } } },
         } });

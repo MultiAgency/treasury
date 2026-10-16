@@ -14,7 +14,7 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
   await page.route('**/*', async route => {
    const { hostname, pathname: p } = new URL(route.request().url());
    if (hostname !== 'frontend.test') return route.abort();
-   if (p === '/gw/me') return route.fulfill({ json: { agents: [{ name: 'treasury', owner: 'owner.near', dao: false }], viewer: { account: 'owner.near', access: { treasury: { canSign: !options.member, canPropose: !options.member, canVote: !options.member, canExecute: !options.member, canManage: !options.member } } } } });
+   if (p === '/gw/me') return route.fulfill({ json: { invoices: null, agents: [{ name: 'treasury', owner: 'owner.near', dao: false }], viewer: { account: 'owner.near', access: { treasury: { canSign: !options.member, canPropose: !options.member, canVote: !options.member, canExecute: !options.member, canManage: !options.member } } } } });
    if (p.includes('/rpc/')) {
     const method = p.split('/rpc/')[1]; calls.push(method);
     if (method === state.denied) return route.fulfill({ status: options.denialStatus || 403, json: { error: 'Access denied' } });
