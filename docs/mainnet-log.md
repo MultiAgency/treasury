@@ -221,3 +221,21 @@ An agreed payee who isn't a DAO member filed an invoice on invoices.multiagency.
 Reading the code afterwards found why the payment timeline can't follow it to the end there: it lists held
 payments, and a settled payment sent from the invoice host isn't in the approve-only copy's activity, so it drops
 out once paid. The next build keeps a payment in view through to Paid.
+
+## Standalone Treasury sign-in release, 2026-10-16 (UTC; infrastructure only)
+
+Railway deployment `e2c237bf-7d8b-4c4e-9e5d-b43030e14117` reached SUCCESS. A stopped-writer
+whole-volume backup and isolated local restore passed before release, using an owner-approved
+non-executing maintenance reader on the original volume. The reader's temporary source/start
+override was restored; no writer overlap was observed at the verified transition gates.
+
+At 02:43Z–02:44Z, owner-controlled wallet sign-in and existing private-agent/record access were
+verified on both treasury.multiagency.ai and treasury-production-c98c.up.railway.app. Identity,
+executor assignment and retained records matched the private baseline; all seven state files
+still matched the stopped backup. Neither authenticated workspace was empty. No proposal,
+provider owner action, grant issuance or money action was submitted; proposal number is not applicable.
+No domain moved and no registration/grant was imported into Proto.
+
+This is hosted access/preservation evidence, not a new money-path observation or provider-enforcement
+claim. Details and calibrated limits are in [release acceptance](treasury-release-acceptance.md);
+identities, record IDs, secret settings and backup evidence remain in the private release record.

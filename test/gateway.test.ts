@@ -10,6 +10,7 @@ import { BadRequest } from "../src/http.js";
 import { CHALLENGE_TTL_MS, issueChallenge, type KeyLookup, parseSignIn, SESSION_TTL_MS, sessionAccount, sessions, sessionToken, verifySignIn } from "../src/signin.js";
 import { accessOf } from "../src/gateway/roles.js";
 import { council } from "../src/chain.js";
+import { signingHost } from "../src/gateway/canonical-host.js";
 
 const HOST = "dao.test";
 
@@ -22,6 +23,29 @@ async function signIn(account = "alice.near", host = HOST, callbackUrl?: string)
   return { accountId: account, publicKey: signed.publicKey, signature: signed.signature, nonce: challenge.nonce, callbackUrl };
 }
 const fullAccess: KeyLookup = async () => "FullAccess";
+
+test("standalone fallback signs on its own origin, preserves canonical sign-in and refuses cross-host replay", async () => {
+  const fallback = "treasury-production-c98c.up.railway.app";
+  const request = (host: string, forwarded = HOST) => ({ headers: { host, "x-forwarded-host": forwarded } });
+  assert.equal(signingHost(request("evil.test", fallback), HOST, [fallback]), undefined);
+  assert.equal(signingHost(request(HOST), HOST, [fallback]), HOST);
+  assert.equal(signingHost(request(fallback.toUpperCase()), HOST, [fallback]), fallback);
+  const key = generateKey();
+  const near = new Near({ network: "mainnet", privateKey: key.secretKey as PrivateKey, defaultSignerId: "alice.near" });
+  const attempt = async (host: string, callback = true) => {
+    const challenge = issueChallenge(host);
+    const signed = await near.signMessage({ ...challenge, nonce: Buffer.from(challenge.nonce, "base64"), ...(callback && { callbackUrl: `https://${host}/` }) });
+    return { accountId: "alice.near", publicKey: signed.publicKey, signature: signed.signature, nonce: challenge.nonce,
+      callbackUrls: [`https://${host}/`, `https://${host}/a/retained/`] };
+  };
+  // Reproduce the old frontend/server mismatch, even for a wallet signing without a callback.
+  await assert.rejects(verifySignIn({ ...await attempt(HOST, false), callbackUrls: [`https://${fallback}/`] }, HOST, fullAccess), /callback URL is not this site/);
+  for (const host of [HOST, fallback])
+    for (const callback of [true, false]) assert.equal(await verifySignIn(await attempt(host, callback), host, fullAccess), "alice.near");
+  await assert.rejects(verifySignIn(await attempt(fallback), HOST, fullAccess), /callback URL is not this site/);
+  await assert.rejects(verifySignIn(await attempt(HOST), fallback, fullAccess), /callback URL is not this site/);
+  await assert.rejects(verifySignIn({ ...await attempt(fallback, false), callbackUrls: [] }, HOST, fullAccess), /doesn't match/);
+});
 
 test("a wallet's signature over a fresh challenge signs the account in", async () => {
   assert.equal(await verifySignIn(await signIn(), HOST, fullAccess), "alice.near");
@@ -217,11 +241,22 @@ test("default gateway configuration is the standalone Treasury host", () => {
   try {
     const config = loadConfig();
     assert.equal(config.host, "treasury.multiagency.ai");
+    assert.deepEqual(config.signin_hosts, ["treasury-production-c98c.up.railway.app"]);
     assert.deepEqual(config.agents, []);
   } finally {
     if (previous === undefined) delete process.env.TREASURY_SELF_SERVICE;
     else process.env.TREASURY_SELF_SERVICE = previous;
   }
+});
+
+test("configuration refuses a signing host that also redirects, including case variants", () => {
+  const dir = mkdtempSync(join(tmpdir(), "signin-host-config-"));
+  try {
+    const file = join(dir, "dashboard.json");
+    writeFileSync(file, JSON.stringify({ host: HOST, signin_hosts: ["fallback.test"], redirect_hosts: ["FALLBACK.test"],
+      agents: [{ name: "treasury", owner: "owner.test", port: 8789 }] }));
+    assert.throws(() => loadConfig(file), /signing host cannot also redirect/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("historical shared configuration: both agents owned by the DAO, the treasury agent executed here, the payout agent approve-only", () => {

@@ -1,4 +1,5 @@
 {
   "host": "treasury.multiagency.ai",
+  "signin_hosts": ["treasury-production-c98c.up.railway.app"],
   "agents": []
 }

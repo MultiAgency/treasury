@@ -11,6 +11,8 @@ const Config = z.object({
   host: z.string().min(0),
   /** Legacy page hosts redirect to host; API requests on them are refused, never replayed. */
   redirect_hosts: z.array(z.hostname()).default([]),
+  /** Additional standalone hosts that sign in on their own origin; never inferred from proxy headers. */
+  signin_hosts: z.array(z.hostname()).default([]),
   /** Where payees submit invoices, linked from the public page. */
   invoices: z.url().optional(),
   /**
@@ -41,6 +43,8 @@ export type AgentEntry = Config["agents"][number];
 
 export function loadConfig(file = process.env.DASHBOARD_FILE ?? fileURLToPath(new URL("../../deploy/treasury.json", import.meta.url))): Config {
   const config = Config.parse(JSON.parse(readFileSync(file, "utf8")));
+  if (config.signin_hosts.some(host => config.redirect_hosts.some(alias => alias.toLowerCase() === host.toLowerCase())))
+    throw new Error("A signing host cannot also redirect");
   if (!config.agents.length && process.env.TREASURY_SELF_SERVICE !== "true") throw new Error("Configure an agent or explicitly enable Treasury self-service");
   const names = new Set(config.agents.map((a) => a.name));
   if (names.size !== config.agents.length) throw new Error("Agent names must be unique");

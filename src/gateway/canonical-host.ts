@@ -1,5 +1,10 @@
 import type { IncomingMessage } from "node:http";
 
+/** Select only an explicitly configured signing host, preserving the configured spelling. */
+export function signingHost(req: Pick<IncomingMessage, "headers">, canonical: string, additional: readonly string[]) {
+  return [canonical, ...additional].find(host => host.toLowerCase() === req.headers.host?.toLowerCase());
+}
+
 /** Only configured legacy hosts redirect. API calls and bodies never cross origins. */
 export function canonicalHostAnswer(req: IncomingMessage, url: URL, canonical: string, aliases: readonly string[]) {
   const host = req.headers.host?.toLowerCase();

@@ -12,7 +12,7 @@ import { type AgentEntry, childEnv, hostOf, loadConfig } from "./config.js";
 import { recentSignProposals } from "./proposals.js";
 import { ownerOf, resolveAccess, resolveAgentAccess } from "./roles.js";
 import { appendSynced } from "../synced.js";
-import { canonicalHostAnswer } from "./canonical-host.js";
+import { canonicalHostAnswer, signingHost } from "./canonical-host.js";
 
 /**
  * The hosted dashboard: the one public process. It signs members in, decides per request what each
@@ -115,9 +115,12 @@ createServer(async (req, res) => {
 
     if (pathname === "/health") return json(res, 200, { ok: true });
 
-    if (pathname === "/gw/challenge" && req.method === "GET") return json(res, ...challengeAnswer(HOST, mayChallenge(clientAddress(req))));
+    const signHost = signingHost(req, HOST, config.signin_hosts);
+    if (["/gw/challenge", "/gw/session"].includes(pathname) && !signHost)
+      return json(res, 421, { error: "Use a configured signing host." });
+    if (pathname === "/gw/challenge" && req.method === "GET") return json(res, ...challengeAnswer(signHost!, mayChallenge(clientAddress(req))));
     if (pathname === "/gw/session" && req.method === "POST") {
-      const account = await verifySignIn(parseSignIn(await readJson(req)), HOST, chainKeyLookup).catch((error: Error) => error);
+      const account = await verifySignIn(parseSignIn(await readJson(req)), signHost!, chainKeyLookup).catch((error: Error) => error);
       if (account instanceof Error) return json(res, 401, { error: account.message });
       const access = await resolveAccess(account, config.agents);
       if (!selfService && !Object.keys(access).length) return json(res, 403, { error: `${account} doesn't own any agent here, nor is a member of a DAO that does` });

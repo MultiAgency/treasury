@@ -98,6 +98,10 @@ Preserve all agent state before any executor move, including inherited record di
 
 ## Not done yet
 
+- The Proto/domain release still requires its own review and authorization. Treasury's standalone
+  fallback sign-in/private-access gate passed on 2026-10-16 UTC, deployment
+  `e2c237bf-7d8b-4c4e-9e5d-b43030e14117`; see [release acceptance](docs/treasury-release-acceptance.md).
+
 - Dedicated Payables hosting, a complete three-idea Proto showcase, idea-3 frontend and full
   order lifecycle acceptance, and supplier settlement remain gaps. Gateway/session topology
   and the DAO Treasury host assignment need explicit architectural decisions; see [scope](docs/scope.md).

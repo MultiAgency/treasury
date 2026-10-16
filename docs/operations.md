@@ -24,6 +24,12 @@ The copied Treasury release record is `07c31669-3ebe-4cc2-ba93-a87009e16c51`, se
 deployment records describe the historical shared workspace; see [the mainnet log](mainnet-log.md)
 and [legacy operations](legacy/operations.md).
 
+A separate minimal standalone signing backport was released as
+`e2c237bf-7d8b-4c4e-9e5d-b43030e14117`, 2026-10-16 UTC, preserving the original frontend, volume,
+settings and executor assignment. Both-host owner sign-in and existing private records passed
+[release acceptance](treasury-release-acceptance.md). This is not a deployment of the mutable
+checkout or Proto's shared-infrastructure candidate.
+
 ## Owner release handoff
 
 For the DAO reference, review the [release gates](treasury-rollout.md) and candidate
