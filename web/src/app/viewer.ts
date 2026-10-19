@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
-import type { Access } from "../../../src/gateway/roles.js";
-import { mayCall } from "../../../src/gateway/allowlist.js";
+import { useIsFetching } from "@tanstack/react-query";
+import type { Access } from "@multiagency/sdk";
+import { mayCall } from "@multiagency/sdk";
 
 /**
  * Who is looking, when the dashboard is hosted behind the gateway (src/gateway). Locally there is
@@ -20,8 +21,13 @@ export function viewerOf({ account, access }: GatewayViewer, agent: string | nul
 export const ViewerContext = createContext<Viewer | null>(null);
 export const useViewer = () => useContext(ViewerContext);
 
-/** Authority for one RPC on the selected agent. The gateway enforces the same rule. */
+/**
+ * Authority for one RPC on the selected agent. The gateway enforces the same rule. While the hosted
+ * session is being reread (the tab returned, or another tab signed in or out), no control is offered:
+ * the previous account's permissions are not confirmed for whoever is now signed in.
+ */
 export const useCanCall = (path: string) => {
   const viewer = useViewer();
-  return viewer === null || (viewer.access !== null && mayCall(viewer.access, path));
+  const confirming = useIsFetching({ queryKey: ["gateway"], exact: true }) > 0;
+  return viewer === null || (!confirming && viewer.access !== null && mayCall(viewer.access, path));
 };

@@ -12,7 +12,6 @@ import { useOwnerAction, useSigner, WalletButton } from "../owner/owner";
 import { StrategyEditor, StrategySummary } from "./strategy-editor";
 import { strategyProgress } from "./strategy-progress";
 import { strategyPresentation } from "./strategy-presentation";
-import { strategyQuery } from "./strategy-readiness";
 import { Badge, Button, Card, Details, ErrorBox, Loading, QueryError } from "../../shared/ui";
 
 type Snapshot = Awaited<ReturnType<typeof client.strategy.get>>;
@@ -23,13 +22,14 @@ export function StrategyWorkflow() {
   const canSchedule = useCanCall("autopilot/enable");
   const executor = setup.executor !== false;
   const queryClient = useQueryClient();
-  const status = useQuery(strategyQuery);
+  // Shared private observation; server controls recheck authorization before enabling.
+  const status = useQuery(queries.strategy);
   // Kept independently so stop remains available when strategy/provider reads fail.
   const schedule = useQuery({ ...queries.autopilot, retry: false, refetchInterval: 30_000 });
   const actions = useQuery({ ...queries.ownerActions, retry: false, refetchInterval: 5_000 });
   const owner = useOwnerAction(setup);
   const signer = useSigner(setup);
-  const operation = useAttempt([["strategy"], ["autopilot"]]);
+  const operation = useAttempt([queries.orpc.strategy.key(), queries.orpc.autopilot.key()]);
   const editTrigger = useRef<HTMLButtonElement>(null);
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
@@ -102,7 +102,7 @@ export function StrategyWorkflow() {
             saved = await client.strategy.save({ strategy, expectedDigest });
             setSavedMessage("Strategy saved. Schedule off; review authorization before enabling.");
           } finally {
-            const [fresh] = await Promise.all([status.refetch(), queryClient.invalidateQueries({ queryKey: ["autopilot"] }), queryClient.invalidateQueries({ queryKey: ["overview"] })]);
+            const [fresh] = await Promise.all([status.refetch(), queryClient.invalidateQueries({ queryKey: queries.orpc.autopilot.key() }), queryClient.invalidateQueries({ queryKey: queries.overview.queryKey, exact: true })]);
             // Continue only with the exact saved strategy observed again; never sign or enable here.
             if (saved && !fresh.error && fresh.data?.digest === saved.digest) setReview(fresh.data);
           }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { displayedUsd } from "../../../src/valuation.js";
+import { displayedUsd } from "./prices";
 import type { Overview } from "./lib";
 
 /** Prices age even when a refresh fails or a tab remains open. No executor state is changed. */

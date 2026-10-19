@@ -1,14 +1,21 @@
 # Agentic Treasury gateway and isolated Treasury executors in one container.
 # Secrets come from the host environment and the volume, never from this image.
-FROM node:24-slim
+FROM node:24.22.0-slim
 
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Images are built only from a release candidate: a development SDK link stops the build here.
+COPY scripts/release-mode.mjs ./scripts/release-mode.mjs
+RUN node scripts/release-mode.mjs
+# The pinned Proto contract tarball (sha256 beside it) is a lockfile dependency.
+COPY vendor ./vendor
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json ./
 COPY src ./src
 COPY web ./web
+# The focused build serves the Treasury skill at /skill.md.
+COPY skills ./skills
 COPY evidence ./evidence
 ARG PUBLIC_TREASURY_ONLY=true
 RUN pnpm build:web

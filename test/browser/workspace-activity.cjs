@@ -3,7 +3,8 @@ const { assertResponsive } = require('./fixtures/layout.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcAnswer, rpcBody, UNAVAILABLE } = require('./fixtures/rpc.cjs');
+const { workspaceEvidence } = require('./fixtures/workspace.cjs');
 const { makeTick } = require('./fixtures/run.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 const at = '2026-10-15T12:00:00Z';
@@ -45,18 +46,19 @@ const at = '2026-10-15T12:00:00Z';
           if (method === 'ledgerCsv' && ledgerFail) return route.fulfill({ status: 503, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: 'Fixture ledger unavailable' } } });
           if (booksFail && method === 'reconcileBooks') return route.fulfill({ status: 503, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: 'Fixture books unavailable' } } });
           const values = {
-            overview: { agentId: agent, book: [{ asset: 'usdc', symbol: agent === 'payables' ? 'PAY' : 'TRE', decimals: agent === 'payables' ? 6 : 3 }] },
+            overview: { agentId: agent, book: [{ asset: 'usdc', symbol: agent === 'payables' ? 'PAY' : 'TRE', decimals: agent === 'payables' ? 6 : 3, price: null, usd: null, priceUpdatedAt: null, priceExpiresAt: null, public: 0n, confidential: 0n }], digest: null, grants: [], rebalance: { minLegUsd: 1, maxCostBps: 100 }, unmanaged: [], target: {}, notInForce: null, agreed: [],
+              policy: workspaceEvidence().overview(agent === 'payables' ? 'payables' : 'treasury').policy },
             activity: [
               ...Array.from({ length: 12 }, (_, i) => ({ at, kind: 'payout', request: { asset: 'usdc', amount: '1000000', recipient: `${agent}-private.near` }, correlationId: `${agent}-operation-${i}`, status: 'SUCCESS' })),
               { at, kind: 'probe', request: {}, correlationId: `${agent}-retired-probe`, refused: 'spend_budget_exceeded' },
             ],
-            'owner/actions': Array.from({ length: 7 }, (_, i) => ({ correlationId: `${agent}-owner-${i}`, type: 'approval_vote', signer: 'wallet', stage: i ? 'settled' : 'submitted', ownerSucceeded: Boolean(i), status: i ? 'SUCCESS' : null, payment: { correlationId: `${agent}-operation-${i}`, verdict: 'approve' } })),
-            unresolved: [{ key: `${agent}-unresolved`, kind: 'payout', at, status: 'PROCESSING', sent: true }],
-            reconcileBooks: [{ asset: 'usdc', symbol: agent === 'payables' ? 'PAY' : 'TRE', public: { api: '1000000', drift: '0' }, confidential: { api: '1000000', unattributed: '0' } }],
+            'owner/actions': Array.from({ length: 7 }, (_, i) => ({ correlationId: `${agent}-owner-${i}`, type: 'approval_vote', signer: 'wallet', stage: i ? 'settled' : 'submitted', ownerSucceeded: Boolean(i), status: i ? 'SUCCESS' : null, expiresAt: '2030-01-01T00:00:00Z', failureCode: null, payment: { correlationId: `${agent}-operation-${i}`, verdict: 'approve' } })),
+            unresolved: [{ key: `${agent}-unresolved`, kind: 'payout', at, status: 'PROCESSING', sent: true, request: {} }],
+            reconcileBooks: [{ asset: 'usdc', symbol: agent === 'payables' ? 'PAY' : 'TRE', public: { api: '1000000', chain: '1000000', drift: '0' }, confidential: { api: '1000000', recorded: '1000000', unattributed: '0' } }],
             ledgerCsv: 'agent,amount\n' + agent + ',1000000\n',
             'autopilot/evidence': { ticks: runs, corrupt: [16] },
           };
-          return route.fulfill({ json: { json: rpcValue(values, method) } });
+          return route.fulfill({ json: rpcBody(values, method) });
         }
         if (p.startsWith('/static/')) return route.fulfill({ path: root + p, contentType: p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : 'font/woff2' });
         return route.fulfill({ path: path.join(root, 'index.html'), contentType: 'text/html' });
@@ -161,19 +163,22 @@ const at = '2026-10-15T12:00:00Z';
       assert.match((await download).suggestedFilename(), /^ledger-payables-/);
       assert.ok(calls.includes('payables/ledgerCsv'));
       ledgerFail = true;
+      const exportFailure = page.locator('details', { has: page.getByText('Compare balances with records', { exact: true }) }).getByRole('alert').filter({ hasText: UNAVAILABLE });
       await page.getByRole('button', { name: 'Ledger CSV', exact: true }).click();
-      await page.getByText('Fixture ledger unavailable', { exact: true }).waitFor();
+      await exportFailure.waitFor();
+      assert.equal(await page.getByText(/^Books could not be/).count(), 0, 'the failure is the export, not the books read');
       ledgerFail = false;
       const retriedDownload = page.waitForEvent('download');
       await page.getByRole('button', { name: 'Ledger CSV', exact: true }).click();
       assert.match((await retriedDownload).suggestedFilename(), /^ledger-payables-/);
-      assert.equal(await page.getByText('Fixture ledger unavailable', { exact: true }).count(), 0, 'a retry clears the previous export failure');
+      assert.equal(await exportFailure.count(), 0, 'a retry clears the previous export failure');
       await page.getByText('Owner action reference', { exact: true }).first().click();
       assert.match(await page.getByRole('link', { name: 'Open this owner action', exact: true }).first().getAttribute('href'), /^\/a\/payables\/activity#owner-payables-owner-/);
       assert.match(await page.getByRole('link', { name: 'Follow the payment outcome', exact: true }).first().getAttribute('href'), /^\/a\/payables\/follow\/payment\?payment=/);
       booksFail = true;
       await page.evaluate(() => { window.dispatchEvent(new Event('offline')); window.dispatchEvent(new Event('online')); });
-      await page.getByText(/Fixture books unavailable/).waitFor();
+      await page.getByText(/^Books could not be refreshed\./).waitFor();
+      await page.locator('details', { has: page.getByText('Compare balances with records', { exact: true }) }).getByRole('alert').filter({ hasText: UNAVAILABLE }).first().waitFor();
       assert.equal(await page.getByText('Public 1 PAY', { exact: true }).count(), 0, 'failed books read does not display cached comparison as current');
       booksFail = false;
       await page.getByRole('button', { name: 'Check again', exact: true }).click();
@@ -188,7 +193,7 @@ const at = '2026-10-15T12:00:00Z';
       await page.getByText('Access to an agent changed. Its private records are hidden while permissions refresh.', { exact: true }).waitFor();
       assert.doesNotMatch(await page.locator('body').textContent(), /payables-(?:operation|owner|retired-probe|unresolved|private)/, 'denial removes private content even inside closed disclosures');
       const lateDownload = page.waitForEvent('download', { timeout: 750 }).then(download => download, () => null);
-      await pendingLedger.fulfill({ json: { json: 'agent,amount\npayables,1000000\n' } });
+      await pendingLedger.fulfill({ json: rpcAnswer('ledgerCsv', 'agent,amount\npayables,1000000\n') });
       assert.equal(await lateDownload, null, 'a ledger response released after access denial must not download');
       await page.getByLabel('Area', { exact: true }).selectOption('treasury');
       await page.locator('#treasury-operation-treasury-operation-11').waitFor();

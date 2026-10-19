@@ -1,0 +1,17 @@
+{
+  "title": "Move 5 USDC into wNEAR in two chosen swaps",
+  "strategy": {
+    "targetBps": {
+      "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1": 7500,
+      "nep141:wrap.near": 2500,
+      "nep141:eth.omft.near": 0
+    },
+    "minLegUsd": 2,
+    "maxCostBps": 250
+  },
+  "access": { "label": "Treasury strategy demo" },
+  "swaps": [
+    { "from": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", "to": "nep141:wrap.near", "amount": "3000000" },
+    { "from": "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", "to": "nep141:wrap.near", "amount": "2000000" }
+  ]
+}

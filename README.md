@@ -51,13 +51,14 @@ not a new hosted or mainnet observation. Supporting views cover targets and sche
 policy and grants, balances and funding, run details and operation history.
 
 The [60-second walkthrough](DEMO.md) follows one plan from balances through quotes to recorded
-operation outcomes and budget changes. The current strategy manages USDC, wNEAR and ETH; a
+operation outcomes and budget changes. The guided run at `/a/<agent-name>/demo` takes the same story
+as three numbered steps, for rehearsal; see [Rehearse with the guided run](DEMO.md#rehearse-with-the-guided-run). The current strategy manages USDC, wNEAR and ETH; a
 three-asset rebalance needs at most two swap legs. Do not invent a third swap to match the catalog's
 example. Exact unshielding for a public payout is a missing part of the brief, not a reason to add
 an invoice or agreement demo.
 
 Payables retains existing payout and invoice intake code for a future sibling experience; idea 3
-has partial isolated-order backend support and missing supplier settlement. These belong to
+has partial isolated-order backend support and missing payee settlement. These belong to
 their own demonstrations, not the focused Treasury minute. The default Treasury frontend
 redirects payment routes; use the shared build for the implemented Payables interface. Steward remains available as a hidden experiment at
 `/a/<agent-name>/steward` (or `/steward` on a standalone server): it proposes plans for explicit
@@ -71,9 +72,28 @@ See [repository scope](docs/scope.md).
 pnpm typecheck
 pnpm test
 pnpm test:browser          # Treasury UI, registration and scope fixtures; no real provider
+pnpm check:frontend       # Focused build: no shared Payables modules; calls only declared capabilities
 pnpm review:treasury       # Isolated UI review; retain screenshots, traces and axe reports
 pnpm evidence:check
 ```
+
+The web app builds against Proto's published owner contract, `@multiagency/sdk`, not
+the copied backend router. The contract is vendored as a tarball in `vendor/`, with its sha256 and
+provenance.
+- **Calls:** every call goes through its `ownerClient`, which validates answers against the published
+  output schemas and never retries.
+- **Recovery:** the client's typed failure kinds decide what the UI does. A lost or unverifiable
+  money-moving call is shown as an unknown outcome and is not resent. A lost plan preview re-reads
+  the observations.
+- **Manifest:** the default build ships `contract.json` (P2 owner-app manifest v1), naming the
+  platform capabilities it needs.
+- **`pnpm check:frontend`** checks the contract pin and the build's actual module graph. That graph
+  must contain no shared Payables or Portfolio module and no file from `src/`. The check also
+  type-checks the graph against only the declared procedures.
+- **Browser fixtures** pass through the same published schemas and oRPC's encoder. Runtime compatibility grants no
+authority: the gateway and agent still authorize every call. The check covers typed client calls,
+not untyped HTTP. No release has been published or deployed; local release notes are in
+[treasury releases](docs/treasury-releases.md).
 
 `pnpm verify` also runs the inherited browser and application regressions. Those explicitly select
 the shared presentation; their invoice and payout cases protect idea-1 flows and shared code.
@@ -121,7 +141,7 @@ DAO machine delegation is refused until a verified DAO approval mechanism exists
   `e2c237bf-7d8b-4c4e-9e5d-b43030e14117`; see [release acceptance](docs/treasury-release-acceptance.md).
 
 - Dedicated Payables hosting, a complete three-idea Proto showcase, idea-3 frontend and full
-  order lifecycle acceptance, and supplier settlement remain gaps. Gateway/session topology
+  order lifecycle acceptance, and payee settlement remain gaps. Gateway/session topology
   and the DAO Treasury host assignment need explicit architectural decisions; see [scope](docs/scope.md).
 
 - Atomic USD-budget charging under all concurrent dispatches is not independently established.

@@ -1,5 +1,5 @@
 /** Client-side feedback only. Server/provider authorization remains authoritative. */
-import { intentsAccount, validIntentsAccount } from "../../../src/intents-account.js";
+import { intentsAccount, validIntentsAccount } from "@multiagency/sdk";
 
 export const payeeError = (value: string) => validIntentsAccount(intentsAccount(value))
   ? undefined : "Enter a NEAR Intents account or near.com address, for example nearcom:payee.near.";

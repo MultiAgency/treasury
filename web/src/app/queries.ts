@@ -1,7 +1,8 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { clientFor, gw } from "../shared/client";
-import type { Decoded } from "../../../src/gateway/proposals.js";
+import type { Decoded } from "@multiagency/sdk";
 import { loadGateway } from "./session";
+import { scopeOf } from "../shared/queries";
 import { visibleProposals } from "../shared/access";
 
 export function redactProposalCaches(client: QueryClient) {
@@ -27,12 +28,13 @@ export function clearAgentCapabilities(client: QueryClient, base: string) {
 
 export const gatewayQueries = {
   // The shell, sibling actions and invoice links observe one session. Later mounts retain the
-  // metadata refresh window; explicit denials invalidate this same snapshot immediately.
-  session: queryOptions({ queryKey: ["gateway"], queryFn: loadGateway, retry: false, staleTime: 60_000, refetchOnReconnect: false }),
+  // metadata refresh window; explicit denials invalidate this same snapshot immediately. Returning
+  // to this tab always rereads it: another tab may have signed in a different account meanwhile.
+  session: queryOptions({ queryKey: ["gateway"], queryFn: loadGateway, retry: false, staleTime: 60_000, refetchOnReconnect: false, refetchOnWindowFocus: "always" }),
   proposals: (dao: string | undefined) => queryOptions({ queryKey: ["gw", "proposals", dao],
     queryFn: async () => visibleProposals(await gw<Decoded[]>(`/gw/proposals?dao=${encodeURIComponent(dao!)}`)), enabled: Boolean(dao), refetchInterval: 15_000,
     retry: (failures, error) => !["UNAUTHORIZED", "FORBIDDEN"].includes((error as { code?: string }).code ?? "") && failures < 3 }),
-  sibling: (name: string) => queryOptions({ queryKey: ["sibling", name], staleTime: 60_000, queryFn: async () => {
+  sibling: (name: string) => queryOptions({ queryKey: [scopeOf(`/a/${name}`), ["sibling"]], staleTime: 60_000, queryFn: async () => {
     const api = clientFor(`/a/${name}`);
     const [setup, overview] = await Promise.all([api.setup(), api.overview()]);
     return { setup, overview };

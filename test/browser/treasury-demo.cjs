@@ -4,12 +4,13 @@ const { join, resolve } = require('node:path');
 const { mkdirSync } = require('node:fs');
 const { runTask } = require('./fixtures/task.cjs');
 const { workspaceEvidence } = require('./fixtures/workspace.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody, rpcEvents } = require('./fixtures/rpc.cjs');
+const { planEvent, savedEvent, actionEvent } = require('./fixtures/plans.cjs');
 const { assertAccessible } = require('./fixtures/accessibility.cjs');
 
 async function treasuryDemo(browser, root) {
-  const { budget, setup, overview } = workspaceEvidence({ policyDetails: true, grants: true });
-  for (const scenario of ['streamed', 'unknown', 'refused']) {
+  const { budget, setup, overview } = workspaceEvidence();
+  for (const scenario of ['streamed', 'unknown', 'refused', 'blocked']) {
     const context = await browser.newContext({ viewport: { width: scenario === 'streamed' ? 1280 : 390, height: 900 }, reducedMotion: 'reduce' });
     const page = await context.newPage(); page.setDefaultTimeout(8000);
     const book = overview('treasury');
@@ -19,7 +20,7 @@ async function treasuryDemo(browser, root) {
     const from = book.book[0], to = { asset: 'near', symbol: 'wNEAR', decimals: 24 };
     book.policy.policy.limits = { monthly: { usdc: '100000000' } };
     book.policy.policy.budget = { daily_usd: '100', weekly_usd: '100', monthly_usd: '100' };
-    const planId = `selected-${scenario}`, calls = [], writes = [], errors = [];
+    const planId = `00000000-0000-4000-8000-00000000000${['streamed', 'unknown', 'refused', 'blocked'].indexOf(scenario)}`, calls = [], writes = [], errors = [];
     const state = { started: false, results: 0, budgetError: false, recordsError: false, policyChanged: false, policyUnknown: false };
     const oldRefusal = { at: '2026-10-01T00:00:00Z', kind: 'swap', refused: 'spend_budget_exceeded', planId: 'older-plan', request: { origin_asset: 'usdc', destination_asset: 'near', amount: '1000000' } };
     const records = () => [oldRefusal, { at: '2026-10-15T12:00:00Z', kind: 'swap', status: 'SUCCESS', planId: 'unrelated-plan', correlationId: 'unrelated-operation', request: {} },
@@ -34,10 +35,10 @@ async function treasuryDemo(browser, root) {
       if (request.url !== '/a/treasury/rpc/executePlan' || request.method !== 'POST') { response.writeHead(404).end(); return; }
       response.writeHead(200, { 'content-type': 'text/event-stream', 'access-control-allow-origin': '*' });
       state.started = true; state.results = 1;
-      response.write(`data: ${JSON.stringify({ json: { type: 'action', index: 0, status: 'SUCCESS', correlationId: 'selected-operation-one' } })}\n\n`);
+      response.write(rpcEvents('executePlan', [actionEvent({ index: 0, status: 'SUCCESS', correlationId: 'selected-operation-one' })]));
       await continuation;
       state.results = 2;
-      response.end(`data: ${JSON.stringify({ json: { type: 'action', index: 1, status: 'SUCCESS', correlationId: 'selected-operation-two' } })}\n\n`);
+      response.end(rpcEvents('executePlan', [actionEvent({ index: 1, status: 'SUCCESS', correlationId: 'selected-operation-two' })]));
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const origin = `http://127.0.0.1:${server.address().port}`;
@@ -52,14 +53,17 @@ async function treasuryDemo(browser, root) {
           const method = pathname.split('/rpc/')[1]; calls.push(method);
           if (method === 'rebalance') {
             writes.push(method);
-            const events = [{ type: 'plan', legs: [0, 1].map(() => ({ from, to, amount: '1000000', usd: 1 })), budget: '90' },
-              ...[0, 1].map(leg => ({ type: 'quote', leg, amountOut: '1000000000000000000000000', minAmountOut: '990000000000000000000000', costBps: 5, worstCostBps: 100, skipped: false })),
-              { type: 'saved', plan: { id: planId, expiresAt: '2030-01-01T00:00:00Z' }, steps: [0, 1] }];
-            return route.fulfill({ contentType: 'text/event-stream', body: events.map(json => `data: ${JSON.stringify({ json })}\n\n`).join('') });
+            const legs = [0, 1].map(() => ({ from, to, amount: '1000000', usd: 1 }));
+            const quotes = [0, 1].map(leg => ({ type: 'quote', leg, amountOut: '1000000000000000000000000', minAmountOut: '990000000000000000000000', costBps: 5, worstCostBps: 100, skipped: false }));
+            const events = [planEvent({ legs, budget: '90' }), ...quotes, savedEvent({ id: planId, expiresAt: '2030-01-01T00:00:00Z', legs, quotes, steps: [0, 1] })];
+            return route.fulfill({ contentType: 'text/event-stream', body: rpcEvents(method, events) });
           }
           if (method === 'executePlan') {
             writes.push(method); assert.deepEqual(route.request().postDataJSON().json, { planId });
             if (scenario === 'streamed') return route.continue();
+            // The platform refuses before sending: an earlier operation has no proven outcome (typed CONFLICT, as the server answers).
+            if (scenario === 'blocked') return route.fulfill({ status: 409, json: { json: { defined: false, code: 'CONFLICT',
+              message: '1 earlier money action(s) have no proven outcome: earlier-operation. Run `pnpm reconcile` before sending new ones.', data: { kind: 'unresolved' } } } });
             state.started = true;
             return route.fulfill({ status: 500, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: scenario === 'unknown' ? 'Execution response interrupted' : 'spend_budget_exceeded' } } });
           }
@@ -69,9 +73,10 @@ async function treasuryDemo(browser, root) {
           if (state.policyUnknown) current.digest = null;
           current.policy.usage.budget = Object.fromEntries(Object.entries(budget).map(([period, window]) => [period, { ...window, remaining_usd: String(90 - state.results), spent_usd: String(10 + state.results) }]));
           const values = { setup: { ...setup, executor: true }, instance: { agentId: 'fixture', executor: true }, overview: current, 'treasury/get': null,
-            unresolved: state.started && scenario === 'unknown' ? [{ key: 'unknown-operation', kind: 'swap', sent: true, at: new Date().toISOString() }] : [],
-            activity: records(), 'owner/actions': [], 'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 } };
-          return route.fulfill({ json: { json: rpcValue(values, method) } });
+            unresolved: state.started && scenario === 'unknown' ? [{ key: 'unknown-operation', kind: 'swap', sent: true, at: new Date().toISOString(), request: {}, status: null }]
+              : scenario === 'blocked' ? [{ key: 'earlier-operation', kind: 'swap', sent: true, at: '2026-10-15T11:00:00Z', request: {}, status: null }] : [],
+            activity: records(), 'owner/actions': [], 'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null } };
+          return route.fulfill({ json: rpcBody(values, method) });
         }
         if (pathname.startsWith('/static/')) return route.fulfill({ path: join(root, pathname), contentType: pathname.endsWith('.js') ? 'application/javascript' : pathname.endsWith('.css') ? 'text/css' : 'font/woff2' });
         return route.fulfill({ path: join(root, 'index.html'), contentType: 'text/html' });
@@ -105,6 +110,9 @@ async function treasuryDemo(browser, root) {
       await outcome.getByText(planId, { exact: true }).waitFor();
       const operations = outcome.getByRole('heading', { name: 'This plan’s operations', exact: true });
       await operations.waitFor();
+      // When this plan's operations were last read is shown beside them; a read time is not settlement.
+      await outcome.getByText(/^Operations last read: /).waitFor();
+      assert.equal(await outcome.getByText(/^Operations last read: not yet/).count(), 0, 'a completed records read reports its time');
       assert.equal(await outcome.getByText('unrelated-operation', { exact: true }).count(), 0, 'never substitutes another plan');
       if (scenario === 'streamed') {
         await outcome.getByText('$89.00', { exact: true }).first().waitFor();
@@ -135,6 +143,15 @@ async function treasuryDemo(browser, root) {
       } else if (scenario === 'unknown') {
         await page.getByRole('heading', { name: 'Unresolved operations', exact: true }).waitFor();
         assert.equal(await outcome.getByText(/completed|settled successfully/i).count(), 0, 'stream error never establishes settlement');
+      } else if (scenario === 'blocked') {
+        // Recovery follows the typed kind, not the server's operator wording.
+        const hint = rebalance.getByRole('status').filter({ hasText: 'Unresolved operations block new sends.' });
+        await hint.waitFor();
+        await hint.getByText('Nothing was sent. Follow their outcomes before another action.', { exact: false }).waitFor();
+        assert.equal(await hint.getByRole('link', { name: 'Review unresolved operations', exact: true }).getAttribute('href'), '/a/treasury/activity');
+        assert.equal(await page.getByText(/outcome is unknown/i).count(), 0, 'a refusal before sending is not an unknown outcome');
+        assert.equal(await page.getByText('Run `pnpm reconcile`', { exact: false }).count(), 0, 'operator CLI guidance is not shown to the owner');
+        assert.equal(state.started, false);
       } else await outcome.getByText('refused · over the USD budget', { exact: true }).waitFor();
       assert.deepEqual(writes, ['rebalance', 'executePlan'], 'refresh and outcomes never replay a send');
       assert.deepEqual(errors, []);
@@ -146,10 +163,42 @@ async function treasuryDemo(browser, root) {
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
         await page.screenshot({ path: join(shots, 'outcome-mobile.png'), fullPage: true });
       }
+      assert.equal(new URL(page.url()).searchParams.get('plan'), planId, 'confirmation records the exact plan in the page address');
       await page.reload();
       await page.getByRole('heading', { name: 'Rebalance', exact: true }).waitFor();
-      assert.equal(await page.getByRole('region', { name: 'Confirmed plan outcome', exact: true }).count(), 0, 'reload clears local plan selection without replay');
-      assert.deepEqual(writes, ['rebalance', 'executePlan']);
+      const reopened = page.getByRole('region', { name: 'Confirmed plan outcome', exact: true });
+      await reopened.getByText('Following the exact plan named in this page’s address.', { exact: false }).waitFor();
+      await reopened.getByRole('heading', { name: 'This plan’s operations', exact: true }).waitFor();
+      await reopened.getByText('Before confirmation: not retained after reload.', { exact: false }).waitFor();
+      assert.equal(await reopened.getByText('Policy identity is unavailable.', { exact: false }).count(), 0, 'a reopened plan is not described as an unknown policy');
+      assert.equal(await reopened.getByText('unrelated-operation', { exact: true }).count(), 0, 'reload never substitutes another plan');
+      if (scenario === 'streamed') {
+        await reopened.locator('#operation-selected-operation-two').waitFor({ state: 'attached' });
+        assert.equal(await reopened.locator('[id^="operation-"]').count(), 2, 'reload follows both of the exact plan\u2019s operations');
+        await reopened.getByText('$88.00', { exact: true }).first().waitFor();
+        assert.equal(await reopened.getByText('$90.00', { exact: true }).count(), 0, 'no pre-confirmation baseline is invented after reload');
+      } else if (scenario === 'unknown') {
+        await page.getByRole('heading', { name: 'Unresolved operations', exact: true }).waitFor();
+        assert.equal(await reopened.getByText(/completed|settled successfully/i).count(), 0, 'reload never establishes settlement');
+      } else if (scenario === 'blocked') {
+        await reopened.getByText('No operations for this plan are recorded here yet.', { exact: false }).waitFor();
+        await page.getByRole('heading', { name: 'Unresolved operations', exact: true }).waitFor();
+      } else await reopened.getByText('refused · over the USD budget', { exact: true }).waitFor();
+      await assertAccessible(page, `reopened-${scenario}`);
+      assert.deepEqual(writes, ['rebalance', 'executePlan'], 'reload follows records and never replays a send');
+      await reopened.getByRole('button', { name: 'Stop following this plan', exact: true }).click();
+      await page.getByRole('region', { name: 'Confirmed plan outcome', exact: true }).waitFor({ state: 'detached' });
+      assert.equal(new URL(page.url()).searchParams.get('plan'), null, 'stopping removes the plan from the page address');
+      await page.reload();
+      await page.getByRole('heading', { name: 'Rebalance', exact: true }).waitFor();
+      assert.equal(await page.getByRole('region', { name: 'Confirmed plan outcome', exact: true }).count(), 0, 'a stopped plan stays unselected after reload');
+      assert.deepEqual(writes, ['rebalance', 'executePlan'], 'stopping follows nothing new and sends nothing');
+      if (scenario === 'refused') {
+        await page.goto(origin + '/a/treasury/?plan=..%2Fselected');
+        await page.getByRole('heading', { name: 'Rebalance', exact: true }).waitFor();
+        assert.equal(await page.getByRole('region', { name: 'Confirmed plan outcome', exact: true }).count(), 0, 'a malformed plan reference selects nothing');
+        assert.deepEqual(writes, ['rebalance', 'executePlan']);
+      }
     } catch (error) {
       console.error('Treasury fixture failure:', { scenario, state, calls, writes }, await page.locator('body').innerText());
       throw error;

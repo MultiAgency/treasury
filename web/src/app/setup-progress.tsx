@@ -35,7 +35,7 @@ export function SetupActions({ state, compact = false }: { state: ReturnType<typ
         : `Recorded outcome: ${a.status ?? "not available"}. Review this result before starting again.`}</p>
       <p className="break-all font-mono text-xs">{a.correlationId}</p>
     </li>)}</ul>}
-    <Button variant="outline" size="sm" className="self-start" disabled={query.isFetching} onClick={() => { void query.refetch(); void cache.invalidateQueries({ queryKey: ["setup"] }); }}>Check setup status</Button>
+    <Button variant="outline" size="sm" className="self-start" disabled={query.isFetching} onClick={() => { void query.refetch(); void cache.invalidateQueries({ queryKey: queries.setup.queryKey, exact: true }); }}>Check setup status</Button>
   </Section>;
 }
 

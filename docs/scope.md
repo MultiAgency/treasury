@@ -15,7 +15,7 @@ Local directory inspection establishes these source boundaries, not deployed ser
 
 A hostname names a product destination; it does not confer authority or create an executor.
 
-The canonical local definitions are the catalog mapping and buyer/supplier workflows in
+The canonical local definitions are the catalog mapping and buyer/payee workflows in
 [Agent Connect audit](agent-connect-audit.md#scope-and-the-four-audit-gates). Requirement stages
 come from [evidence/inventory.ts](../evidence/inventory.ts), not domain names. The inventory's
 short label “Purchase orders” denotes idea 3, whose full catalog title is above.
@@ -25,9 +25,9 @@ short label “Purchase orders” denotes idea 3, whose full catalog title is ab
 | Destination | Purpose, audience and primary flow | Current frontend and backend | Agent, executor and persistent state |
 |---|---|---|---|
 | payables.multiagency.ai — idea 1 | DAO owners/members review external requests, separately agree payees, then approve held confidential payouts | Shared React Payables area (`PUBLIC_TREASURY_ONLY=false`), gateway and `rpc/payables.ts`; intake is currently served by the invoice host. No dedicated Payables host configuration is tracked | Existing payout agent, its own owner-signed policy and payout grant. Historical `dao` gateway instance is approve-only; `invoices` service is its sole executor. Payout settings and `.ops/`, SQLite `.invoices/`, `.owner-intents/`, `.agreements/`, `.inbox/`, `.notify/` remain at their existing locations |
-| invoices.multiagency.ai — idea 3 | Buyer creates and explicitly authorizes/funds one isolated order; supplier files its fixed invoice; owner reviews payout; observe outcome and retire authority. Separately owned supplier agent converts receipts and forwards proceeds | Current `invoice-page.ts` / `invoice-browser.js` and `invoice-http.ts` serve general idea-1 intake. Work-order RPC, private bridge and payee APIs exist; no work-order frontend is connected. Supplier settlement is absent | Current host runs the idea-1 payout executor via `invoices-server.ts`, not a separate invoice grant. Candidate order subprocesses use their own agent, fixed policy, expiring `invoices` grant and state under `.work-orders/<parent-agent>/`; supplier agent lifecycle remains unimplemented |
+| invoices.multiagency.ai — idea 3 | Buyer creates and explicitly authorizes/funds one isolated order; payee files its fixed invoice; owner reviews payout; observe outcome and retire authority. Separately owned payee agent converts receipts and forwards proceeds | Current `invoice-page.ts` / `invoice-browser.js` and `invoice-http.ts` serve general idea-1 intake. Work-order RPC, private bridge and payee APIs exist; no work-order frontend is connected. Payee settlement is absent | Current host runs the idea-1 payout executor via `invoices-server.ts`, not a separate invoice grant. The tracked `Dockerfile.legacy-invoices` no longer starts it (it forces `EXECUTOR=off`), so a redeploy from this repo would not; Proto's payout executor replaces it. Candidate order subprocesses use their own agent, fixed policy, expiring `invoices` grant and state under `.work-orders/<parent-agent>/`; payee agent lifecycle remains unimplemented |
 | treasury.multiagency.ai — idea 2 | Owners delegate quoted rebalancing within signed limits; authorize strategy, explicitly enable scheduling, inspect operations and sweep | Default Treasury React build; gateway plus treasury RPC, plans and autopilot. `deploy/treasury.json` has no preset agents; optional self-service registry | Separate Treasury agent/policy/strategy grant and sole executor per agent. `/data/state`, `.treasuries/registry.json`, isolated child settings and complete state. Existing DAO Treasury remains associated with historical `dao` until an owner-reviewed topology change |
-| proto.multiagency.ai — umbrella | Public reviewers discover all three ideas and their evidence stages; signed-in members follow scoped tasks | Historical shared React build and gateway (`deploy/legacy-dashboard.json`). Its current public presentation covers two areas; a complete three-idea showcase remains a UI gap | No umbrella wallet, pooled policy or shared money authority. Historical gateway starts Treasury executor and payout approve-only instance, with separate settings. It must reuse those assignments rather than duplicate executors |
+| proto.multiagency.ai — umbrella | Public reviewers discover all three ideas and their evidence stages; signed-in members follow scoped tasks | Historical shared React build and gateway (`deploy/legacy-dashboard.json`). Its current public presentation covers two areas; a complete three-idea showcase remains a UI gap | No umbrella wallet, pooled policy or shared money authority. The tracked historical gateway configuration runs both the Treasury and payout agents approve-only, with separate settings; Proto executes for them, and no tracked configuration duplicates that executor |
 
 This is a source/configuration inspection, not a fresh live deployment inspection. Historical
 `dao` and `invoices` observations retain their dates, proposals and deployment references in
@@ -41,7 +41,7 @@ Share the TypeScript server, gateway sign-in and per-agent permissions, provider
 verification, dispatch, reconciliation, journal formats and frontend components. Never pool agents'
 wallets, policies, grant tokens, permissions or operation records. A shared owner or provider key
 does not authorize another agent's purpose. An agreement on the payout agent is not an isolated
-order agent. Supplier authority belongs to its own owner and policy, not the buyer or main Treasury.
+order agent. Payee authority belongs to its own owner and policy, not the buyer or main Treasury.
 
 Every send retains the single dispatch site, mandate digest, money lock, write-ahead record and
 unresolved-operation refusal. Keep exactly one executor per agent and `EXECUTOR=off` elsewhere.
@@ -59,8 +59,8 @@ authorization. No money-path or state-format change is part of this documentatio
 - Connect idea-3 order controls and payee UI; verify full creation, funding, payment, restart,
   authority retirement and residual-fund handling. Candidate modules and offline tests are not
   evidence of a deployed order lifecycle. Partial invoices and amendments need separate designs.
-- Implement separately owned supplier receipt discovery, conversion and forwarding with durable
-  operation identities and interrupted-run recovery. No supplier settlement flow is established.
+- Implement separately owned payee receipt discovery, conversion and forwarding with durable
+  operation identities and interrupted-run recovery. No payee settlement flow is established.
 - Complete idea-1 acceptance evidence for a new payee. Agreement ceilings/deadlines are review
   context in the general payout flow, not universal automatic enforcement.
 - Treasury still lacks exact public-payout unshielding, an idle-surplus reserve, multi-day unattended
@@ -73,7 +73,9 @@ Ordinary `pnpm web`, `pnpm build:web`, `pnpm demo` and dashboard images currentl
 Treasury. `PUBLIC_TREASURY_ONLY=false` selects the implemented shared Payables/Portfolio interface
 for retained sibling regression checks and separately scoped future work.
 The default Treasury frontend redirects payment routes and cannot serve the intended Payables
-or complete Proto experience. Keep the idea-2 minute focused; do not add invoice tasks to it.
+or complete Proto experience. The shared surface enters only through the `@legacy` build seam
+(`web/src/legacy/`): the default build resolves it to nothing, so it bundles no Payables, legacy
+overview or live-demo module (`pnpm check:frontend`). Keep the idea-2 minute focused; do not add invoice tasks to it.
 Steward remains hidden at `/a/<agent-name>/steward` or `/steward`, with explicit plan execution.
 
 Historical documents and generated evidence remain under `docs/legacy/`; their location does not

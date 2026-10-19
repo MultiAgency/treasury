@@ -1,3 +1,4 @@
+const {rpcAnswer}=require('./fixtures/rpc.cjs');
 const {runTask}=require('./fixtures/task.cjs');
 const assert=require('node:assert/strict');
 const {join,resolve}=require('node:path');
@@ -25,7 +26,7 @@ async function treasuryCreation(browser,root){
     const method=p.split('/rpc/')[1];requests.push(method);
     if(method==='owner/prepare'){prepared=route.request().postDataJSON().json;return route.fulfill({status:400,json:{json:{defined:false,code:'BAD_REQUEST',message:'Offline check stopped before signing.'}}});}
     const values={setup:{executor:true,agentId:null,wallet:null,owner:null,grant:null,dao:kind==='dao'?{id:owner,funded:true,owner:{type:'near',account_id:'dao-signer',public_key:'fixture'}}:null},'owner/actions':[]};
-    assert(method in values,`Unexpected RPC ${method}`);return route.fulfill({json:{json:values[method]}});
+    assert(method in values,`Unexpected RPC ${method}`);return route.fulfill({json: rpcAnswer(method, values[method])});
    }
    return route.fulfill({path:p.startsWith('/static/')?join(root,p):join(root,'index.html'),contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':p.startsWith('/static/')?'font/woff2':'text/html'});
   });

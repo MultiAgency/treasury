@@ -1,5 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useCanCall } from "../../app/viewer";
 import { queries } from "../../shared/queries";
 import { client, useAttempt } from "../../shared/lib";
@@ -15,20 +14,15 @@ import { useValuedBook } from "../../shared/valuation";
 import { Unresolved } from "../activity/activity";
 import { Sweep } from "../funding/sweep";
 import { Rebalance } from "./automations";
-import { Allocation, Figures } from "./overview";
+import { Allocation, Figures } from "./book";
 import { TreasuryLimits } from "./treasury-limits";
-import { PlanOutcome, type ConfirmedPlan } from "./plan-outcome";
+import { PlanOutcome, useFollowedPlan } from "./plan-outcome";
 
 /** Brief 02 only. Existing controls retain provider checks and explicit confirmations. */
 export function TreasuryDesk() {
   const { data: raw } = useAgent();
   const data = useValuedBook(raw);
-  const observation = useQuery({ ...queries.overview, enabled: false });
-  const cache = useQueryClient();
-  const [selected, setSelected] = useState<ConfirmedPlan>();
-  const refreshResult = useCallback(() => { void Promise.all([queries.overview, queries.activity, queries.unresolved].map(query => cache.invalidateQueries({ queryKey: query.queryKey, exact: true }))); }, [cache]);
-  const followPlan = (planId: string) => setSelected({ planId, confirmedAt: Date.now(), observedAt: observation.dataUpdatedAt,
-    policyDigest: raw.digest, budget: observation.error ? null : structuredClone(raw.policy.usage.budget) });
+  const { followed, followPlan, stopFollowing, refreshResult } = useFollowedPlan();
   return <>
     <h1 className="text-2xl font-semibold">Treasury overview</h1>
     <Unresolved />
@@ -39,7 +33,7 @@ export function TreasuryDesk() {
     <section id="rebalance" aria-label="Quoted rebalance" className="scroll-mt-8">
       {swaps(data) ? <Rebalance onExecute={followPlan} onResult={refreshResult} /> : <p>The reported policy does not allow swaps. <Button asChild variant="outline"><Link to="/policy">Review policy</Link></Button>.</p>}
     </section>
-    {selected && <PlanOutcome selected={selected} />}
+    {followed && <PlanOutcome key={followed.planId} selected={followed} onStop={stopFollowing} />}
     <nav aria-label="Treasury tools" className="flex flex-wrap gap-3">
       <Button asChild variant="outline"><Link to="/automations">Set targets and schedule</Link></Button>
       <Button asChild variant="outline"><Link to="/follow/run">View treasury runs</Link></Button>
@@ -60,7 +54,7 @@ function ScheduleStatus() {
   const { setup } = useAgent();
   const canStop = useCanCall("autopilot/stop");
   const status = useQuery({ ...queries.autopilot, retry: false, refetchInterval: 30_000 });
-  const stop = useAttempt([["autopilot"], ["strategy"]]);
+  const stop = useAttempt([queries.orpc.autopilot.key(), queries.orpc.strategy.key()]);
   const known = !status.error && status.data;
   return <section aria-label="Schedule status" className="flex flex-col gap-3 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-3">

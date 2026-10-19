@@ -1,3 +1,6 @@
+import type { OwnerOutput } from "@multiagency/sdk";
+
+type Agreement = OwnerOutput<"agreements/list">[number];
 import { ago, amountOf, kindOf, type client, type Overview } from "../../shared/lib";
 import type { Setup } from "../owner/owner";
 import type { Tone } from "../../shared/ui";
@@ -22,7 +25,7 @@ type Reads = {
   overview: Overview;
   held: Awaited<ReturnType<typeof client.held>>;
   unresolved: Awaited<ReturnType<typeof client.unresolved>>;
-  agreements: Awaited<ReturnType<typeof client.agreements.list>>;
+  agreements: Agreement[];
   inbox: Awaited<ReturnType<typeof client.inbox.list>>;
 };
 

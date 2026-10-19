@@ -5,11 +5,11 @@ const assert = require('node:assert/strict');
 const { mkdirSync } = require('node:fs');
 const { resolve, join } = require('node:path');
 const { runTask } = require('./fixtures/task.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcAnswer, rpcBody, UNAVAILABLE } = require('./fixtures/rpc.cjs');
 const { workspaceEvidence } = require('./fixtures/workspace.cjs');
 const { makeTick, recordingFor } = require('./fixtures/run.cjs');
 
-const { budget, setup, overview } = workspaceEvidence({ policyDetails: true, grants: true });
+const { budget, setup, overview } = workspaceEvidence();
 // The runner executes a frozen copy in /tmp. Its artifact path identifies the original project.
 const project = process.env.PROTO_BROWSER_ARTIFACTS
   ? resolve(process.env.PROTO_BROWSER_ARTIFACTS, '../../../..') : resolve(__dirname, '../..');
@@ -39,7 +39,7 @@ async function open(browser, root, routePath, options = {}) {
   const ticks = options.ticks || [];
   const currentOverview = overview(agent);
   if (options.frozen) currentOverview.policy.policy.frozen = true;
-  const held = options.held ? [{ correlationId: 'held-loading-fixture', approvalId: 'approval-loading-fixture',
+  const held = options.held ? [{ correlationId: 'held-loading-fixture', kind: 'payout', approvalId: 'approval-loading-fixture',
     at: '2026-10-14T12:00:00Z', request: { recipient: 'payee.near', asset: 'usdc', amount: '1000000', confidential: true } }] : [];
   const values = {
     instance: { agentId: 'fixture', executor: !options.approveOnly },
@@ -47,11 +47,11 @@ async function open(browser, root, routePath, options = {}) {
       grant: options.noGrant ? null : { ...setup.grant, label: agent === 'payables' ? 'payout' : 'treasury' } },
     overview: currentOverview,
     'treasury/get': null, held,
-    unresolved: options.unresolved ? [{ key: 'unresolved-loading-fixture', at: '2026-10-14T12:00:00Z' }] : [],
+    unresolved: options.unresolved ? [{ kind: agent === 'payables' ? 'payout' : 'swap', key: 'unresolved-loading-fixture', at: '2026-10-14T12:00:00Z', request: {}, status: null, sent: false }] : [],
     'inbox/list': [], 'agreements/list': [], 'owner/pending': [], 'owner/actions': [],
     activity: [], invoices: [], policyHistory: [], reconcileBooks: [],
     paymentHistory: { items: [], complete: true },
-    'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 },
+    'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
     'autopilot/evidence': { ticks, corrupt: options.corrupt || [] },
     'strategy/get': null,
   };
@@ -81,9 +81,9 @@ async function open(browser, root, routePath, options = {}) {
         const id = route.request().postDataJSON().json.tickId;
         const tick = ticks.find(tick => tick.id === id);
         assert.ok(tick, 'recording reads must select a retained run');
-        return route.fulfill({ json: { json: recordingFor(tick) } });
+        return route.fulfill({ json: rpcAnswer(method, recordingFor(tick)) });
       }
-      return route.fulfill({ json: { json: rpcValue(values, method) } });
+      return route.fulfill({ json: rpcBody(values, method) });
     }
     if (pathname.startsWith('/static/')) return route.fulfill({ path: join(root, pathname),
       contentType: pathname.endsWith('.js') ? 'application/javascript' : pathname.endsWith('.css') ? 'text/css' : 'font/woff2' });
@@ -207,7 +207,8 @@ scenario('payments failed read is not empty', async (browser, root) => {
   await loading(page, 'Checking payments and owner actions…');
   gates.get('held').release();
   // The same failed source is surfaced by both area attention and the payment queue.
-  await page.getByText('Fixture read unavailable: held', { exact: true }).first().waitFor();
+  await page.locator('section').filter({ hasText: 'Attention checks are incomplete.' }).getByText(UNAVAILABLE, { exact: true }).waitFor();
+  await page.locator('section').filter({ hasText: 'checks incomplete.' }).filter({ hasNotText: 'Attention checks' }).getByText(UNAVAILABLE, { exact: true }).waitFor();
   await page.getByText('The available records show no matching items. Some checks are incomplete; review the notices above.', { exact: true }).waitFor();
   assert.equal(await page.getByText(noPayments, { exact: true }).count(), 0);
   assert.equal(await page.getByText('No records need review.', { exact: true }).count(), 0);
@@ -233,7 +234,7 @@ scenario('run failed read retries without an empty claim', async (browser, root)
   const { page, gates, state } = test;
   await loading(page, 'Loading recorded runs…');
   gates.get('autopilot/evidence').release();
-  await page.getByText('Fixture read unavailable: autopilot/evidence', { exact: true }).waitFor();
+  await page.locator('section', { has: page.getByRole('heading', { name: 'Follow this run', exact: true }) }).getByText(UNAVAILABLE, { exact: true }).waitFor();
   await page.getByRole('heading', { name: 'Follow this run', exact: true }).waitFor();
   assert.equal(await page.getByText(noRuns, { exact: true }).count(), 0);
   const retry = page.getByRole('button', { name: 'Check again', exact: true });

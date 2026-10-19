@@ -1,7 +1,7 @@
 import { gatewayQueries } from "../../app/queries";
 import { CheckCircle, WarningOctagon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import type { Decoded } from "../../../../src/gateway/proposals.js";
+import type { Decoded } from "@multiagency/sdk";
 import { ago, minutesSeconds, useCountdown } from "../../shared/lib";
 import { Badge, Card, Details, Section, Spinner, type Tone } from "../../shared/ui";
 import { visibleProposals, useAccessState } from "../../shared/access";

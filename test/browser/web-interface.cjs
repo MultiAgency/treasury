@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { assertResponsive } = require('./fixtures/layout.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody, rpcMalformed, UNAVAILABLE } = require('./fixtures/rpc.cjs');
 const { openWorkspaceNavigation } = require('./fixtures/navigation.cjs');
 /**
  * Offline UI regressions. Every request is fulfilled locally or aborted; no executor runs.
@@ -12,15 +12,17 @@ const {chromium}=require('./fixtures/browser.cjs');
 const root=require('node:path').resolve(process.argv[2]||'web/dist');
 const results=[];
 let pageErrors=[];
-const budget=Object.fromEntries(['daily','weekly','monthly'].map(p=>[p,{limit_usd:'100',remaining_usd:'90',spent_usd:'10'}]));
-const setup={executor:true,agentId:'fixture',wallet:'agent.near',owner:{type:'near',account_id:'owner.near'},grant:{id:'grant',label:'treasury',expiresAt:'2030-01-01T00:00:00Z'},dao:{id:'owner.sputnik-dao.near',owner:{account_id:'owner.near'}}};
-const overview=kind=>({agentId:'fixture',digest:'sha256:'+'a'.repeat(64),grants:[],rebalance:{minLegUsd:1,maxCostBps:100},notInForce:null,agreed:['payee.near'],unmanaged:[],target:{usdc:1},book:[{asset:'usdc',symbol:'USDC',decimals:6,public:'0',confidential:'10000000',usd:10,price:1}],policy:{status:'APPLIED',revision:1,policy:{actions:kind==='treasury'?['swap','transfer']:['transfer'],owner_approval:false,frozen:false,destinations:{mode:'only',list:[{action:'transfer',address:'payee.near',confidential:true},{action:'transfer',address:'treasury.near',confidential:true}]},assets:'any',budget:{},limits:{}},usage:{budget},cooldowns:{}}});
+const budget=Object.fromEntries(['daily','weekly','monthly'].map(p=>[p,{limit_usd:'100',remaining_usd:'90',spent_usd:'10',resets_at:null}]));
+const setup={executor:true,agentId:'fixture',wallet:'agent.near',owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},grant:{id:'grant',label:'treasury',expiresAt:'2030-01-01T00:00:00Z'},dao:{id:'owner.sputnik-dao.near',owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},funded:false}};
+const overview=kind=>({agentId:'fixture',digest:'sha256:'+'a'.repeat(64),grants:[],rebalance:{minLegUsd:1,maxCostBps:100},notInForce:null,agreed:['payee.near'],unmanaged:[],target:{usdc:1},book:[{asset:'usdc',symbol:'USDC',decimals:6,public:0n,confidential:10000000n,usd:10,price:1,priceUpdatedAt:null,priceExpiresAt:null}],policy:{status:'APPLIED',revision:1,policy:{actions:kind==='treasury'?['swap','transfer']:['transfer'],owner_approval:false,frozen:false,destinations:{mode:'only',list:[{action:'transfer',address:'payee.near',confidential:true},{action:'transfer',address:'treasury.near',confidential:true}]},assets:'any',budget:{daily_usd:null,weekly_usd:null,monthly_usd:null},limits:{},confidential:false,max_actions_per_hour:10,timelock_ms:0},usage:{budget,timelock:{delay_ms:0,scheduled_count:0}},cooldowns:{policy_change_available_at:null,unfreeze_available_at:null},wallet_id:'agent.near',provider_policy_synced:true}});
 (async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE});
 async function pageFor(path,options={}){const page=await browser.newPage({viewport:{width:options.width||390,height:900},reducedMotion:'reduce'});page.setDefaultTimeout(5000);page.on('pageerror',error=>pageErrors.push(error.message));if(options.clock)await page.clock.install();const calls=[];const requests=[];let failedGateway=!!options.gatewayError;let releaseDelayed;const delayed=new Promise(resolve=>{releaseDelayed=resolve;});
 await page.route('**/*',async r=>{const u=new URL(r.request().url()),p=u.pathname;if(u.hostname!=='frontend.test')return r.abort();
 if(p==='/gw/me'){if(options.gatewayDelay)await new Promise(ok=>setTimeout(ok,1200));if(failedGateway)return r.fulfill({status:503,json:{error:'Fixture gateway unavailable'}});return r.fulfill({json:{agents:options.public?[]:[{name:'treasury',area:'treasury',owner:'owner.near',dao:false},{name:'payables',area:'payables',owner:options.dao?setup.dao.id:'owner.near',dao:!!options.dao}],invoices:null,viewer:options.public?null:{account:'owner.near',access:{treasury:{canSign:true,canPropose:true,canVote:true,canExecute:true,canManage:true},payables:{canSign:!options.dao,canPropose:true,canVote:true,canExecute:true,canManage:true}}}}});}
 if(p==='/gw/proposals')return r.fulfill({json:[]});
-if(p.includes('/rpc/')){const m=p.split('/rpc/')[1];calls.push(m);requests.push({method:m,body:r.request().postDataJSON()});if(options.hold===m)await delayed;if(options.delay===m)await new Promise(ok=>setTimeout(ok,1200));if(options.error===m)return r.fulfill({status:500,json:{json:{defined:false,code:'INTERNAL_SERVER_ERROR',message:'Fixture read unavailable'}}});const values={get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup,overview:overview(path.includes('payables')?'payables':'treasury'),'treasury/get':options.linked?{accountId:'treasury.near',dao:null,confidential:false,balances:{near:'0',usdc:'0'},payees:[]}:null,held:[],unresolved:[],'inbox/list':[],'agreements/list':options.agreements?[{id:'a',payee:'payee.near',amount:'1000000',status:'requested',origin:'payee',at:new Date().toISOString()}]:[],activity:[],'owner/pending':[],'owner/actions':[],policyHistory:[],'autopilot/get':{on:false,everyMin:60,maxUsd:10},'autopilot/evidence':{ticks:[]},'strategy/get':options.ready?{strategy:{targetBps:{usdc:10000},minLegUsd:1,maxCostBps:100,autopilot:{everyMin:60,maxUsd:10}},digest:'fixture-strategy',grantSuffix:'fixture',executor:true,on:false,grantMatches:true,unresolved:0,grant:setup.grant,observedAt:new Date().toISOString(),readiness:{state:'off',canEnable:true,reasons:[]}}:{},pay:{outcome:'sent',status:'PENDING_APPROVAL'},'treasury/unlink':null,'agreements/decline':null};if(options.values)Object.assign(values,options.values);if(options.notInForce)values.overview.notInForce=options.notInForce;if(options.policy)values.overview.policy.policy={...values.overview.policy.policy,...options.policy};if(options.revision)values.overview.policy.revision=options.revision;if(options.digest)values.overview.digest=options.digest;if(options.approvalUnknown)values.overview.policy.policy.owner_approval=undefined;return r.fulfill({json:{json:rpcValue(values, m)}});}
+if(p.includes('/rpc/')){const m=p.split('/rpc/')[1];calls.push(m);requests.push({method:m,body:r.request().postDataJSON()});if(options.hold===m)await delayed;if(options.delay===m)await new Promise(ok=>setTimeout(ok,1200));if(options.error===m)return r.fulfill({status:500,json:{json:{defined:false,code:'INTERNAL_SERVER_ERROR',message:'Fixture read unavailable'}}});const values={get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup,overview:overview(path.includes('payables')?'payables':'treasury'),'treasury/get':options.linked?{accountId:'treasury.near',dao:null,confidential:false,balances:{near:'0',usdc:'0'},payees:[]}:null,held:[],unresolved:[],'inbox/list':[],'agreements/list':options.agreements?[{id:'a',payee:'payee.near',amount:'1000000',status:'requested',origin:'payee',at:new Date().toISOString(), note: ''}]:[],activity:[],'owner/pending':[],'owner/actions':[],policyHistory:[],'autopilot/get':{on:false,everyMin:60,maxUsd:10,lastRun:null,nextRun:null},'autopilot/evidence':{ticks:[],corrupt:[]},'strategy/get':options.ready?{strategy:{targetBps:{usdc:10000},minLegUsd:1,maxCostBps:100,autopilot:{everyMin:60,maxUsd:10}},digest:'fixture-strategy',grantSuffix:'fixture',executor:true,on:false,grantMatches:true,unresolved:0,grant:setup.grant,observedAt:new Date().toISOString(),readiness:{state:'off',canEnable:true,reasons:[]}}:{strategy:{targetBps:{usdc:10000},minLegUsd:1,maxCostBps:100,autopilot:{everyMin:60,maxUsd:10}},digest:'fixture-strategy',grantSuffix:'fixture',executor:true,on:false,grantMatches:false,unresolved:0,grant:setup.grant,observedAt:new Date().toISOString(),readiness:{state:'authorization-required',canEnable:false,reasons:[]}},pay:{outcome:'settled',status:'PENDING_APPROVAL',correlationId:'payment-fixture',failureCode:null},'treasury/unlink':null,'agreements/decline':null};if(options.values)Object.assign(values,options.values);if(options.notInForce)values.overview.notInForce=options.notInForce;if(options.policy)values.overview.policy.policy={...values.overview.policy.policy,...options.policy};if(options.revision)values.overview.policy.revision=options.revision;if(options.digest)values.overview.digest=options.digest;if(options.approvalUnknown)values.overview.policy.policy.owner_approval=undefined;
+// A malformed answer is rejected client-side; nothing can be confirmed.
+if(options.approvalUnknown&&m==='overview')return r.fulfill({json:rpcMalformed(m,values.overview)});return r.fulfill({json: rpcBody(values, m)});}
 if(p.startsWith('/static/'))return r.fulfill({path:root+p,contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'font/woff2'});return r.fulfill({path:root+'/index.html',contentType:'text/html'});});await page.goto('http://frontend.test'+path);if(options.gatewayError)await page.getByRole('alert').waitFor();else if(!options.fast)await page.getByRole('heading',{level:1}).waitFor();return {page,calls,requests,release:()=>releaseDelayed(),recover:()=>failedGateway=false};}
 async function recipient(page) {
  const summary=page.locator('summary').filter({hasText:/^Send money to a payee$/});
@@ -56,9 +58,9 @@ await check('5 named modal and cancel focus',async()=>{const {page}=await pageFo
 await check('narrow DAO confirmation keeps both actions visible and cancellation restores focus',async()=>{
  const at=new Date().toISOString(),request={amount:'1000000',asset:'usdc',recipient:'payee.near',confidential:true};
  const {page,calls}=await pageFor('/a/payables/follow/payment?payment=payment-one',{width:320,dao:true,values:{
-  held:[{correlationId:'payment-one',approvalId:'approval-one',at,request}],invoices:[],
+  held:[{correlationId:'payment-one',approvalId:'approval-one',at,request,kind:'payout'}],invoices:[],
   paymentHistory:{items:[{correlationId:'payment-one',at}],complete:true},
-  paymentStatus:{status:'PENDING_APPROVAL',request,approvalId:'approval-one',createdAt:at,expiresAt:'2030-01-01T00:00:00Z'},
+  paymentStatus:{status:'PENDING_APPROVAL',request,approvalId:'approval-one',createdAt:at,expiresAt:'2030-01-01T00:00:00Z', failureCode: null, updatedAt: null, detailError: null, evidence: { txHash: null, destinationTxHash: null, refundTxHash: null, refundTo: null, refundedAmount: null } },
  }});
  const trigger=page.getByRole('button',{name:'Propose rejection',exact:true});await trigger.click();
  const modal=page.getByRole('dialog',{name:'Reject this held payout?',exact:true});await modal.waitFor();
@@ -74,7 +76,7 @@ await check('narrow DAO confirmation keeps both actions visible and cancellation
 });
 await check('long failure code wraps outside its short status badge',async()=>{
  const failureCode='PROVIDER_REPORTED_A_FAILURE_WITH_AN_UNBROKEN_REFERENCE_'+ 'x'.repeat(100);
- const {page}=await pageFor('/a/treasury/funding',{width:320,values:{pay:{outcome:'sent',status:'FAILED',failureCode}}});
+ const {page}=await pageFor('/a/treasury/funding',{width:320,values:{pay:{outcome:'settled',status:'FAILED',correlationId:'payment-fixture',failureCode}}});
  await (await recipient(page)).fill('payee.near');await page.getByLabel('Amount',{exact:true}).fill('1');
  await page.getByRole('button',{name:'Review payment',exact:true}).click();
  await page.getByRole('dialog',{name:'Review payment'}).getByRole('button',{name:'Send payment',exact:true}).click();
@@ -174,9 +176,11 @@ await check('expanded agreement, funding and policy forms fit mobile and desktop
  }return true;
 });
 await check('missing approval requirement cannot confirm a payment',async()=>{
+ // A malformed answer is rejected client-side; nothing can be confirmed.
  const {page,calls}=await pageFor('/a/treasury/funding',{approvalUnknown:true});
- await (await recipient(page)).fill('payee.near');await page.getByPlaceholder('Amount',{exact:true}).fill('1');await page.getByRole('button',{name:'Review payment',exact:true}).click();
- return await page.getByRole('dialog').getByRole('button',{name:'Send payment'}).isDisabled()&&!calls.includes('pay');
+ await page.locator('main').filter({hasText:'Some agent details could not be loaded.'}).getByText(UNAVAILABLE,{exact:true}).waitFor({timeout:15000});
+ const enabled=name=>page.getByRole('button',{name,exact:true}).and(page.locator(':enabled')).count();
+ return await enabled('Review payment')===0&&await enabled('Send payment')===0&&!calls.includes('pay');
 });
 
 await check('policy freshness: preserve draft and review every reversal after refresh',async()=>{

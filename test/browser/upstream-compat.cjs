@@ -1,4 +1,4 @@
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody } = require('./fixtures/rpc.cjs');
 /** Offline only: all requests are fulfilled by fixtures or aborted. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
@@ -13,9 +13,9 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
       const writes = [];
       const at = '2020-01-01T00:00:00Z', future = '2099-01-01T00:00:00Z';
       const grants = [
-        { grant_id: 'expired', label: 'expired-history', issued_at: at, expires_at: at, revoked_at: null },
-        { grant_id: 'revoked', label: 'revoked-history', issued_at: at, expires_at: future, revoked_at: at },
-        ...(scenario === 'ended-grants' ? [] : [{ grant_id: 'live', label: 'live-access', issued_at: at, expires_at: future, revoked_at: null }]),
+        { grant_id: 'expired', label: 'expired-history', issued_at: at, expires_at: at, revoked_at: null, agent_id: 'fixture', wallet_id: 'agent.near', owner_epoch: 1, owner_message: {} },
+        { grant_id: 'revoked', label: 'revoked-history', issued_at: at, expires_at: future, revoked_at: at, agent_id: 'fixture', wallet_id: 'agent.near', owner_epoch: 1, owner_message: {} },
+        ...(scenario === 'ended-grants' ? [] : [{ grant_id: 'live', label: 'live-access', issued_at: at, expires_at: future, revoked_at: null, agent_id: 'fixture', wallet_id: 'agent.near', owner_epoch: 1, owner_message: {} }]),
       ];
       await page.route('**/*', async route => {
         const u = new URL(route.request().url()), p = u.pathname;
@@ -26,20 +26,20 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
           const method = p.split('/rpc/')[1];
           if (['pay', 'owner/prepare', 'owner/submit', 'agreements/offer'].includes(method)) writes.push({ method, body: route.request().postDataJSON() });
           const values = {
-            get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup: { executor: true, agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' },
+            get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup: { executor: true, agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' },
               grant: scenario === 'ended-grants' ? null : { id: 'live', label: 'live-access', expiresAt: future }, dao: null },
             overview: { agentId: 'fixture', digest: 'sha256:' + 'a'.repeat(64), notInForce: null, agreed: ['payee.near'], grants,
               unmanaged: [], target: { usdc: 1 }, rebalance: { minLegUsd: 1, maxCostBps: 100 },
-              book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: '0', confidential: '10000000', usd: 10, price: 1 }],
+              book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: 0n, confidential: 10000000n, usd: 10, price: 1, priceUpdatedAt: null, priceExpiresAt: null }],
               policy: { status: 'APPLIED', revision: 1, policy: { actions: ['swap', 'transfer'], owner_approval: true, frozen: false,
                 destinations: { mode: 'only', list: [{ action: 'transfer', address: 'payee.near', confidential: scenario !== 'public-recipient' }] },
-                assets: ['usdc'], budget: {}, limits: {} }, usage: { budget: {} }, cooldowns: {} } },
+                assets: ['usdc'], budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, limits: {}, confidential: false, max_actions_per_hour: 10, timelock_ms: 0 }, usage: { budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } }, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, wallet_id: 'agent.near', provider_policy_synced: true } },
             'treasury/get': null, held: [], unresolved: [], 'inbox/list': [], 'agreements/list': [], activity: [],
             'owner/pending': [], 'owner/actions': [], policyHistory: [], paymentHistory: { items: [], complete: true },
-            'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 }, 'autopilot/evidence': { ticks: [] }, 'strategy/get': {}, invoices: [],
+            'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null }, 'autopilot/evidence': { ticks: [], corrupt: [] }, 'strategy/get': {}, invoices: [],
             pay: { outcome: 'refused', code: 'duplicate_held_payout' },
           };
-          return route.fulfill({ json: { json: rpcValue(values, method) } });
+          return route.fulfill({ json: rpcBody(values, method) });
         }
         if (p.startsWith('/static/')) return route.fulfill({ path: root + p, contentType: p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : 'font/woff2' });
         return route.fulfill({ path: root + '/index.html', contentType: 'text/html' });

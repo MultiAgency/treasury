@@ -6,7 +6,9 @@ import { Badge, Button, Details, input, reviewDialog, StatusBadge } from "../../
 import { Field } from "../../shared/form";
 import { useCanCall } from "../../app/viewer";
 import { refusalText } from "../../shared/words";
-import type { ReviewedPolicy } from "../../../../src/mandate";
+import type { OwnerInputs } from "@multiagency/sdk";
+
+type ReviewedPolicy = OwnerInputs["pay"]["expectedPolicy"];
 import { reviewedPolicyOf, sameReviewedPolicy } from "../policy/policy-review";
 import { providerDetailText } from "../../shared/provider-message";
 

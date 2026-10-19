@@ -155,12 +155,17 @@ test('strategy saves off, authorizes, rejects stale review, enables explicitly a
     expect(stack.portfolio.intents).toHaveLength(0);
     const saved = (await rpc(page, 'portfolio', 'strategy/get')).body.json;
     expect(saved.digest).not.toBe(original.digest);
-    // An old tab cannot overwrite, authorize, or enable the newly saved strategy.
-    for (const [method, input] of [
-      ['strategy/save', { strategy: original.strategy, expectedDigest: original.digest }],
-      ['owner/prepare', { action: { type: 'grant_issue', label: 'treasury', expectedStrategyDigest: original.digest } }],
-      ['autopilot/enable', { expectedDigest: original.digest }],
-    ]) expect((await rpc(page, 'portfolio', method, input)).status).toBeGreaterThanOrEqual(400);
+    // An old tab cannot overwrite, authorize, or enable the newly saved strategy: each is refused for the stale review itself.
+    const changed = 'The saved strategy changed. Compare it with your draft and review again.';
+    for (const [method, input, message] of [
+      ['strategy/save', { strategy: original.strategy, expectedDigest: original.digest }, changed],
+      ['owner/prepare', { signer: 'wallet', action: { type: 'grant_issue', label: 'treasury', expectedStrategyDigest: original.digest } },
+        'Review the current saved strategy before authorizing its grant; the strategy changed or was not reviewed.'],
+      ['autopilot/enable', { expectedDigest: original.digest }, changed],
+    ]) {
+      const refused = await rpc(page, 'portfolio', method, input);
+      expect({ method, status: refused.status, code: refused.body.json.code, message: refused.body.json.message }).toEqual({ method, status: 400, code: 'BAD_REQUEST', message });
+    }
     expect(stack.portfolio.intents).toHaveLength(0);
     expect(stack.portfolioState().strategy).toEqual(saved.strategy);
     await expect(page.getByRole('heading', { name: 'Authorize this saved strategy', exact: true })).toBeVisible();
@@ -176,7 +181,8 @@ test('strategy saves off, authorizes, rejects stale review, enables explicitly a
     await expect.poll(() => stack.portfolioState().settings).toMatch(/AUTOPILOT=on\n/);
     stack.portfolio.setUnavailable(true);
     // Establish a real provider failure before using the provider-independent stop control.
-    expect((await rpc(page, 'portfolio', 'overview')).status).toBeGreaterThanOrEqual(400);
+    const unavailable = await rpc(page, 'portfolio', 'overview');
+    expect({ status: unavailable.status, code: unavailable.body.json.code, provider: unavailable.body.json.data?.code }).toEqual({ status: 400, code: 'BAD_REQUEST', provider: 'http_error' });
     await page.getByRole('button', { name: 'Turn off', exact: true }).click();
     await expect.poll(() => stack.portfolioState().settings).toMatch(/AUTOPILOT=\n/);
     expect((await rpc(page, 'portfolio', 'autopilot/get')).body.json.on).toBe(false);

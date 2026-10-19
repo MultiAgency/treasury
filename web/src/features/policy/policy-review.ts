@@ -1,4 +1,6 @@
-import type { ReviewedPolicy } from "../../../../src/mandate";
+import type { OwnerInputs } from "@multiagency/sdk";
+
+type ReviewedPolicy = OwnerInputs["pay"]["expectedPolicy"];
 import type { Overview } from "../../shared/lib";
 
 /** Identify the reviewed policy. Owners may edit a frozen policy; sending still needs authorization. */

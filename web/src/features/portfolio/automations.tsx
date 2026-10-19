@@ -9,6 +9,7 @@ import { useEffect } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
 
 import { StrategyWorkflow } from "./strategy-workflow";
+import { OutcomeError } from "../../shared/outcome-error";
 import { amount, client, kindOf, swaps, useAttempt, useRun, usd } from "../../shared/lib";
 import { useCanCall } from "../../app/viewer";
 import { useAgent } from "../../app/agent-context";
@@ -105,7 +106,7 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
           );
         })}
         {rejected?.type === "rejected" && <NotExecuted problems={rejected.problems} again="Preview" />}
-        <ErrorBox error={preview.error ?? execution.error} />
+        <OutcomeError error={preview.error ?? execution.error} kind={preview.error ? preview.kind : execution.kind} />
         {blockReason && <p className="text-sm text-muted-foreground">{blockReason} {!hasGrant && executor && <Link to="/automations" className="underline">Review strategy authorization</Link>}</p>}
         {(executed || execution.error) && <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/activity">Review operation outcomes before another preview</Link></Button>}
       </div>

@@ -1,4 +1,4 @@
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
 /** Cold provider failures must not hide independently readable tasks. All network is intercepted. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
@@ -24,19 +24,19 @@ const { makeTick, recordingFor } = require('./fixtures/run.cjs');
     const method = p.split('/rpc/')[1]; calls.push(method);
     if (method === failure && mode === 'pending') return; // Leave this unrelated read unanswered.
     if (method === failure) return route.fulfill({status:503,json:{json:{defined:false,code:'INTERNAL_SERVER_ERROR',message:'Fixture unavailable'}}});
-    if (method === 'autopilot/stop') { writes.push(method); return route.fulfill({json:{json:{on:false}}}); }
+    if (method === 'autopilot/stop') { writes.push(method); return route.fulfill({json: rpcAnswer(method, {on:false})}); }
     const values = {
      instance:{agentId:'fixture',executor:profile !== 'approve-only'},
-     setup:{agentId:'fixture',executor:profile !== 'approve-only',wallet:null,owner:{type:'near',account_id:'owner.near'},grant:null,dao:null},
-     overview:{agentId:'fixture',book:[],unmanaged:[],target:{},rebalance:{minLegUsd:1,maxCostBps:100},grants:[],agreed:[],notInForce:null,policy:{policy:{actions:['swap'],destinations:{mode:'only',list:[]}}}},
-     'treasury/get':null, 'autopilot/get':{on:true,everyMin:60,maxUsd:10}, 'autopilot/evidence':{ticks:[tick],corrupt:[]}, 'autopilot/log':recordingFor(tick),
+     setup:{agentId:'fixture',executor:profile !== 'approve-only',wallet:null,owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},grant:null,dao:null},
+     overview:{agentId:'fixture',book:[],unmanaged:[],target:{},rebalance:{minLegUsd:1,maxCostBps:100},grants:[],agreed:[],notInForce:null,policy:{policy:{actions:['swap'],destinations:{mode:'only',list:[]},frozen:false,confidential:false,owner_approval:false,assets:'any',limits:{},max_actions_per_hour:10,budget:{ daily_usd: null, weekly_usd: null, monthly_usd: null },timelock_ms:0},wallet_id:'agent.near',revision:null,status:'APPLIED',provider_policy_synced:true,cooldowns:{ policy_change_available_at: null, unfreeze_available_at: null },usage:{ budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } }}, digest: null},
+     'treasury/get':null, 'autopilot/get':{on:true,everyMin:60,maxUsd:10,lastRun:null,nextRun:null}, 'autopilot/evidence':{ticks:[tick],corrupt:[]}, 'autopilot/log':recordingFor(tick),
      activity:[{at:tick.at,kind:'payout',request:{},correlationId:'payment',status:'SUCCESS'}],
      'owner/actions':[], 'owner/pending':[], held:[], unresolved:[], 'inbox/list':[], 'agreements/list':[], invoices:[], reconcileBooks:[],
-     paymentHistory:{items:[],complete:true}, paymentStatus:{status:'SUCCESS',request:{recipient:'payee.near',asset:'usdc',amount:'1000000'},createdAt:tick.at,approvalId:null},
+     paymentHistory:{items:[],complete:true}, paymentStatus:{status:'SUCCESS',request:{recipient:'payee.near',asset:'usdc',amount:'1000000'},createdAt:tick.at,approvalId:null, failureCode: null, updatedAt: null, expiresAt: null, detailError: null, evidence: { txHash: null, destinationTxHash: null, refundTxHash: null, refundTo: null, refundedAmount: null } },
      'strategy/get':null,
     };
     assert.ok(method in values, `Unexpected RPC ${method}`);
-    return route.fulfill({json:{json:rpcValue(values, method)}});
+    return route.fulfill({json: rpcBody(values, method)});
    }
    if (p.startsWith('/static/')) return route.fulfill({path:root+p,contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'font/woff2'});
    return route.fulfill({path:root+'/index.html',contentType:'text/html'});

@@ -92,7 +92,7 @@ function AgentStatus({ result }: { result: ReturnType<typeof useFleet>[number] }
 }
 
 function LatestRun({ name }: { name: string }) {
-  const evidence = useQuery({ ...queriesFor(clientFor(`/a/${name}`), ["fleet", name]).runs, retry: false, refetchInterval: 30_000 });
+  const evidence = useQuery({ ...queriesFor(clientFor(`/a/${name}`), `/a/${name}`).runs, retry: false, refetchInterval: 30_000 });
   const latest = evidence.data?.ticks.at(-1);
   const incomplete = Boolean(evidence.data?.corrupt?.length);
   return <div className="text-sm">

@@ -1,10 +1,9 @@
-import { queryOptions } from "@tanstack/react-query";
-import type { QuerySource } from "../../shared/query-source";
+import type { QueryUtils } from "../../shared/queries";
 
-export function activityQueriesFor(api: QuerySource, key: (local: string[], fleet?: string) => readonly string[]) {
+export function activityQueriesFor(orpc: QueryUtils) {
   return {
-    books: queryOptions({ queryKey: key(["books"]), queryFn: () => api.reconcileBooks() }),
-    unresolved: queryOptions({ queryKey: key(["unresolved"]), queryFn: () => api.unresolved(), refetchInterval: 30_000 }),
-    activity: queryOptions({ queryKey: key(["activity"]), queryFn: () => api.activity() }),
+    books: orpc.reconcileBooks.queryOptions(),
+    unresolved: orpc.unresolved.queryOptions({ refetchInterval: 30_000 }),
+    activity: orpc.activity.queryOptions(),
   };
 }

@@ -6,6 +6,7 @@ import { errorMessage, gw } from "../shared/lib";
 import { Button, Card, ErrorBox, Spinner } from "../shared/ui";
 import { useViewer } from "./viewer";
 import { signChallenge, signOutMember } from "../features/owner/wallet";
+import { announceSessionChange } from "./session-signal";
 
 /** The agents' owners, each once, in order. Signed out, the gateway lists only DAOs' agents, so these are DAOs. */
 export const ownersOf = (agents: Gateway["agents"]) => [...new Set(agents.map((a) => a.owner))];
@@ -22,6 +23,7 @@ export async function loadGateway(): Promise<Gateway | null> {
 export async function signOut() {
   await fetch("/gw/logout", { method: "POST" });
   await signOutMember().catch(() => {});
+  announceSessionChange();
   location.assign("/");
 }
 
@@ -40,6 +42,7 @@ export function SignIn({ daos, compact = false, create = false, primary = false 
       });
       // Back to the page they asked for: signed out, any address shows the public page in its place.
       // A reload, not assign: assigning a URL with a hash is a fragment navigation and loads nothing.
+      announceSessionChange();
       location.reload();
     } catch (e) {
       setError(errorMessage(e));

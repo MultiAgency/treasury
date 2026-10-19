@@ -1,4 +1,4 @@
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
 const { openWorkspaceNavigation } = require("./fixtures/navigation.cjs");
 /**
  * Offline showcase regressions. Build first with pnpm build:web.
@@ -13,16 +13,16 @@ const root = path.resolve(process.argv[2] || 'web/dist');
 const { makeTick, recordingFor } = require('./fixtures/run.cjs');
 const plannedBriefs = /Purchase orders|Campaign payouts|Adaptive DCA|House Money|Bitcoin treasury/;
 const budget = Object.fromEntries(['daily', 'weekly', 'monthly'].map(period => [period,
-  { limit_usd: '100', remaining_usd: '90', spent_usd: '10' },
+  { limit_usd: '100', remaining_usd: '90', spent_usd: '10', resets_at: null },
 ]));
-const setup = { agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' },
-  grant: { label: 'treasury', expiresAt: '2030-01-01T00:00:00Z' }, dao: null };
+const setup = { agentId: 'fixture', executor: true, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' },
+  grant: { id: 'grant-fixture', label: 'treasury', expiresAt: '2030-01-01T00:00:00Z' }, dao: null };
 const overview = kind => ({ agentId: 'fixture', digest: 'fixture', notInForce: null, agreed: [], unmanaged: [],
   rebalance: { minLegUsd: 1, maxCostBps: 100 }, target: { usdc: 1 },
-  book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: '0', confidential: '10000000', usd: 10, price: 1 }],
+  book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: 0n, confidential: 10000000n, usd: 10, price: 1, priceUpdatedAt: null, priceExpiresAt: null }],
   policy: { policy: { actions: kind === 'treasury' ? ['swap', 'transfer'] : ['transfer'], frozen: false,
-    destinations: { mode: 'only', list: [] }, assets: 'any' }, usage: { budget }, cooldowns: {} },
-});
+    destinations: { mode: 'only', list: [] }, assets: 'any', confidential: false, owner_approval: false, limits: {}, max_actions_per_hour: 10, budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, timelock_ms: 0 }, usage: { budget, timelock: { delay_ms: 0, scheduled_count: 0 } }, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, wallet_id: 'agent.near', revision: null, status: 'APPLIED', provider_policy_synced: true },
+grants: []});
 
 
 (async () => {
@@ -70,21 +70,21 @@ const overview = kind => ({ agentId: 'fixture', digest: 'fixture', notInForce: n
           return route.fulfill({ status: 500, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: 'Fixture read unavailable' } } });
         }
         const kind = pathname.includes('/payables/') ? 'payables' : 'treasury';
-        const values = { instance: { agentId: 'fixture', executor: !options.approveOnly }, setup: { ...setup, ...(options.noGrant && { grant: null }), ...(options.approveOnly && { executor: false }) }, overview: overview(kind), 'treasury/get': null, held: options.held && kind === 'payables' ? [{ at: new Date().toISOString(), request: { amount: '1000000', asset: 'usdc', recipient: 'payee.near' } }] : [], unresolved: options.unresolved && kind === 'payables' ? [{ at: new Date().toISOString(), key: 'fixture-unresolved' }] : [],
+        const values = { instance: { agentId: 'fixture', executor: !options.approveOnly }, setup: { ...setup, ...(options.noGrant && { grant: null }), ...(options.approveOnly && { executor: false }) }, overview: overview(kind), 'treasury/get': null, held: options.held && kind === 'payables' ? [{ at: new Date().toISOString(), request: { amount: '1000000', asset: 'usdc', recipient: 'payee.near' }, kind: 'payout', correlationId: 'fixture-held-payment', approvalId: 'fixture-approval' }] : [], unresolved: options.unresolved && kind === 'payables' ? [{ kind: 'payout', at: new Date().toISOString(), key: 'fixture-unresolved', request: {}, status: null, sent: false }] : [],
           'inbox/list': [], 'agreements/list': [], activity: [], invoices: [], reconcileBooks: [], 'owner/pending': [], 'owner/actions': [], paymentHistory: { items: [], complete: true },
-          'autopilot/get': { on: true, everyMin: 60, maxUsd: 10 },
-          'autopilot/evidence': { ticks: [run] } };
+          'autopilot/get': { on: true, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
+          'autopilot/evidence': { ticks: [run], corrupt: [] } };
         if (method === 'autopilot/log') {
           assert.equal(route.request().postDataJSON().json.tickId, run.id, 'recording read must select the displayed run');
           assert.ok(!options.approveOnly, 'approve-only views must not read recordings');
-          return route.fulfill({ json: { json: recordingFor(run) } });
+          return route.fulfill({ json: rpcAnswer(method, recordingFor(run)) });
         }
         if (options.oldRun && method === 'autopilot/evidence') {
           const input = route.request().postData() || url.search;
           values[method] = { ticks: input.includes('since') ? [] : [run], corrupt: [] };
         }
         assert.ok(method in values, `Unexpected RPC: ${method}`);
-        return route.fulfill({ json: { json: rpcValue(values, method) } });
+        return route.fulfill({ json: rpcBody(values, method) });
       }
       if (pathname.startsWith('/static/')) return route.fulfill({ path: root + pathname,
         contentType: pathname.endsWith('.js') ? 'application/javascript' : pathname.endsWith('.css') ? 'text/css' : 'font/woff2' });

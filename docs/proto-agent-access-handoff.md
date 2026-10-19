@@ -70,7 +70,7 @@ Preserve these properties or provide equivalent tests in the shared implementati
    Version-2 records bind agent ID and split execution/sweep scopes; no implicit upgrade grants authority.
 
 Proto integration must additionally preserve its existing host-selected agent list, host-local sessions,
-host restrictions, self-service registry, supplier routes and child/executor assignments. Testing the
+host restrictions, self-service registry, payee routes and child/executor assignments. Testing the
 standalone gateway does not establish those shared-host properties. Missing machine support should
 remain explicitly unavailable in Treasury, never fall back to browser sessions or another host.
 

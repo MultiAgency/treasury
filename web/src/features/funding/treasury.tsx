@@ -1,14 +1,10 @@
-import { paymentAssets } from "../payables/payment-assets";
 import { TREASURY_ONLY } from "../../treasury-surface";
 import { ConfirmButton } from "../owner/confirm-button";
-import { ArrowUUpLeft, Bank, LockKey, UsersThree } from "@phosphor-icons/react";
+import { Bank, LockKey, UsersThree } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ago, client, fromUnits, kindOf, queries, type Overview, short, toUnits, useAttempt } from "../../shared/lib";
-import type { Setup } from "../owner/owner";
-import { AssetAmount, PaymentReview, type PaymentReviewData, PayoutResult, useDestinations, usePayout } from "../payables/payout";
-import { reviewedPolicyOf } from "../policy/policy-review";
+import { ago, client, fromUnits, kindOf, queries, short, toUnits, useAttempt } from "../../shared/lib";
 import { useAgent } from "../../app/agent-context";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, input, Loading, QueryError, Section, Spinner } from "../../shared/ui";
 import { Field, focusInvalid } from "../../shared/form";
@@ -30,7 +26,7 @@ function LinkTreasury() {
   const wallet = useWallet();
   const daoWallet = dao.use();
   const [accountId, setAccountId] = useState("");
-  const link = useAttempt([["treasury"], ["setup"]]);
+  const link = useAttempt([queries.orpc.treasury.key(), queries.setup.queryKey]);
   const canLink = useCanCall("treasury/link");
   const [submitted, setSubmitted] = useState(false);
 
@@ -203,74 +199,6 @@ function ConfidentialFund({ treasury, wallet }: { treasury: Treasury; wallet: st
   );
 }
 
-function Return({ treasury, data, setup }: { treasury: Treasury; data: Overview; setup: Setup }) {
-  const destinations = useDestinations(data, setup);
-  const entry = destinations.current.find((d) => d.address === treasury.accountId);
-  const payout = usePayout();
-  const canPay = useCanCall("pay");
-  const [submitted, setSubmitted] = useState(false);
-  const [review, setReview] = useState<PaymentReviewData>();
-  const book = paymentAssets(data.book, setup.grant?.label);
-  const [chosenAsset, setAsset] = useState(book[0]?.asset ?? "");
-  const asset = book.some(h => h.asset === chosenAsset) ? chosenAsset : book[0]?.asset ?? "";
-  const [value, setValue] = useState("");
-  const holding = book.find((h) => h.asset === asset);
-  const amount = holding ? toUnits(value, holding.decimals) : null;
-
-  return (
-    <div className="flex flex-col gap-3">
-      {entry ? (
-        <>
-          <p className="text-sm text-muted-foreground">
-            The treasury is an allowed destination{entry.confidential ? ", paid confidentially" : ""}. Returns land in its
-            NEAR Intents balance.
-          </p>
-          <form
-            noValidate className="flex flex-wrap items-end gap-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setSubmitted(true);
-              if (!amount) { focusInvalid(e.currentTarget); return; }
-              if (canPay && !payout.busy && holding) setReview({
-                request: { recipient: treasury.accountId, asset, amount, confidential: entry.confidential },
-                symbol: holding.symbol, decimals: holding.decimals, ownerApproval: data.policy.policy?.owner_approval,
-                expectedPolicy: reviewedPolicyOf(data),
-              });
-            }}
-          >
-            <AssetAmount book={book} asset={asset} setAsset={setAsset} value={value} setValue={setValue} submitted={submitted} />
-            <Button type="submit" disabled={payout.busy || !canPay}>
-              {payout.busy ? <Spinner /> : <ArrowUUpLeft size={18} />} {payout.busy ? "Sending…" : "Review return"}
-            </Button>
-            <PayoutResult result={payout.result} />
-          </form>
-          <span role="status" className="sr-only">{payout.busy ? "Submitting return payment…" : ""}</span>
-          {review && <PaymentReview payment={review} currentPolicy={data.notInForce ? undefined : reviewedPolicyOf(data)} onClose={() => setReview(undefined)} onConfirm={payout.pay} />}
-          <ErrorBox error={payout.error} />
-        </>
-      ) : (
-        <>
-          <p className="text-sm text-muted-foreground">
-            The agent can't send anything to the treasury yet. The owner signs it in as the agent's first destination; the
-            policy still caps every transfer.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variant="outline"
-              disabled={destinations.action.busy || Boolean(destinations.blocked)}
-              onClick={() => destinations.add({ address: treasury.accountId, confidential: Boolean(treasury.dao) })}
-            >
-              {destinations.action.busy && <Spinner />} Allow returns to the treasury
-            </Button>
-            <span className="text-sm text-muted-foreground">{destinations.action.label ?? destinations.blocked}</span>
-          </div>
-          <ErrorBox error={destinations.action.error} />
-        </>
-      )}
-    </div>
-  );
-}
-
 /** A deposit address for NEAR-native USDC; anyone can fund the account, no signature needed, empty or already funded. */
 function Deposit({ empty }: { empty: boolean }) {
   const canDeposit = useCanCall("deposit");
@@ -345,7 +273,7 @@ function ConfidentialSetting({ treasury }: { treasury: Treasury }) {
 export function TreasurySection() {
   const { treasury, data, setup } = useAgent();
   const linked = useQuery({ ...queries.treasury, enabled: false });
-  const unlink = useAttempt([["treasury"], ["setup"]]);
+  const unlink = useAttempt([queries.orpc.treasury.key(), queries.setup.queryKey]);
   const empty = data.book.every((h) => BigInt(h.public) + BigInt(h.confidential) === 0n);
   if (linked.error) return <Section title="Receive funds"><p>Linked account could not be checked.</p><QueryError error={linked.error} retry={() => linked.refetch()} /></Section>;
   if (linked.isPending) return <Section title="Receive funds"><Loading label="Checking linked account…" /></Section>;
@@ -407,14 +335,4 @@ export function TreasurySection() {
     </div>
     </>
   );
-}
-
-/** Outgoing returns stay separate from the controls that receive funds. */
-export function ReturnFunds() {
-  const { treasury, data, setup } = useAgent();
-  const linked = useQuery({ ...queries.treasury, enabled: false });
-  if (linked.error || linked.isPending) return <p className="text-sm">Return controls are unavailable until the linked account is checked.</p>;
-  return treasury ? <Details summary={`Money out: return funds to ${treasury.accountId}`}>
-    <Return treasury={treasury} data={data} setup={setup} />
-  </Details> : null;
 }

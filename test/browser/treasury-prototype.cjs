@@ -5,14 +5,14 @@ const { resolve } = require('node:path');
 const { mkdirSync } = require('node:fs');
 
 async function treasuryOnly(browser, root) {
-  const { budget, setup, overview } = workspaceEvidence({policyDetails:true, grants:true});
+  const { budget, setup, overview } = workspaceEvidence();
   const book = overview('treasury');
   book.book[0].priceUpdatedAt = new Date().toISOString();
   book.policy.policy.limits = { monthly: { usdc: '100000000' } };
   const strategy = {targetBps:{usdc:10000},minLegUsd:1,maxCostBps:100,autopilot:{everyMin:60,maxUsd:10}};
   const open = workspaceOpener(root, { budget, values: () => ({setup:{...setup,executor:true},overview:book,treasury:null,unresolved:[], 'owner/actions':[],
-    'strategy/get':{strategy,digest:'fixture',grantSuffix:'fixture',executor:true,on:false,grantMatches:true,unresolved:0,grant:setup.grant,readiness:{state:'ready',canEnable:true,reasons:[]}},
-    'autopilot/get':{on:true,everyMin:60,maxUsd:10}}) });
+    'strategy/get':{strategy,digest:'fixture',grantSuffix:'fixture',executor:true,on:false,grantMatches:true,unresolved:0,grant:setup.grant,readiness:{state:'ready',canEnable:true,reasons:[]},observedAt:'2026-10-15T12:00:00Z'},
+    'autopilot/get':{on:true,everyMin:60,maxUsd:10,lastRun:null,nextRun:null}}) });
   const context = await browser.newContext({viewport:{width:1280,height:1000},reducedMotion:'reduce'});
   const {page,calls,requests,errors} = await open(context,'/a/treasury/');
   await page.getByRole('heading',{name:'Signed limits',exact:true}).waitFor();
@@ -61,16 +61,16 @@ async function treasuryOnly(browser, root) {
   await publicContext.close();
 }
 async function treasuryOwnerIdentity(browser, root) {
-  const { budget, setup, overview } = workspaceEvidence({policyDetails:true, grants:true});
+  const { budget, setup, overview } = workspaceEvidence();
   const longOwner = 'a'.repeat(59) + '.near';
   for (const scenario of [
-    { name: 'dao', owner: {type:'near',account_id:'dao-signer.near'}, dao: {id:'agentic.sputnik-dao.near',funded:true,owner:{type:'near',account_id:'dao-signer.near'}}, label:'agentic.sputnik-dao.near (by proposal)' },
-    { name: 'long-wallet', owner: {type:'near',account_id:longOwner}, dao:null, label:longOwner },
+    { name: 'dao', owner: {type:'near',account_id:'dao-signer.near',public_key:'ed25519:fixture'}, dao: {id:'agentic.sputnik-dao.near',funded:true,owner:{type:'near',account_id:'dao-signer.near',public_key:'ed25519:fixture'}}, label:'agentic.sputnik-dao.near (by proposal)' },
+    { name: 'long-wallet', owner: {type:'near',account_id:longOwner,public_key:'ed25519:fixture'}, dao:null, label:longOwner },
     { name: 'unavailable', owner:null, dao:null, label:"the owner's wallet" },
   ]) {
     const open = workspaceOpener(root, {budget, values: () => ({
       setup:{...setup,executor:true,owner:scenario.owner,dao:scenario.dao},overview:overview('treasury'),treasury:null,
-      unresolved:[],'owner/actions':[],'autopilot/get':{on:false,everyMin:60,maxUsd:10},
+      unresolved:[],'owner/actions':[],'autopilot/get':{on:false,everyMin:60,maxUsd:10,lastRun:null,nextRun:null},
     })});
     const context = await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});
     const {page,calls,errors} = await open(context,'/a/treasury/');

@@ -7,7 +7,7 @@ const { assertAccessible } = require('./fixtures/accessibility.cjs');
 
 async function treasuryAccessibility(browser, root) {
   const failures = [];
-  const { budget, setup, overview } = workspaceEvidence({ policyDetails: true, grants: true });
+  const { budget, setup, overview } = workspaceEvidence();
   const book = overview('treasury');
   book.book[0].priceUpdatedAt = new Date().toISOString();
   book.book[0].priceExpiresAt = new Date(Date.now() + 600_000).toISOString();
@@ -16,10 +16,10 @@ async function treasuryAccessibility(browser, root) {
   for (const state of ['public', 'overview', 'unresolved', 'unavailable', 'strategy', 'draft']) {
     const open = workspaceOpener(root, { budget, values: () => ({
       setup: { ...setup, executor: true }, instance: { agentId: 'fixture', executor: true }, overview: book, treasury: null,
-      unresolved: state === 'unresolved' ? [{ key: 'fixture-unresolved', kind: 'swap', sent: true, at: new Date().toISOString() }] : [],
-      'owner/actions': [], 'autopilot/get': { on: true, everyMin: 60, maxUsd: 10 },
+      unresolved: state === 'unresolved' ? [{ key: 'fixture-unresolved', kind: 'swap', sent: true, at: new Date().toISOString(), request: {}, status: null }] : [],
+      'owner/actions': [], 'autopilot/get': { on: true, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
       'strategy/get': { strategy, digest: 'fixture', grantSuffix: 'fixture', executor: true, on: true, grantMatches: true, unresolved: 0,
-        grant: setup.grant, readiness: { state: 'ready', canEnable: true, reasons: [] } },
+        grant: setup.grant, readiness: { state: 'ready', canEnable: true, reasons: [] }, observedAt: '2026-10-15T12:00:00Z' },
     }) });
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
     try {

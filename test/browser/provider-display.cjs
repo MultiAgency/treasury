@@ -1,4 +1,4 @@
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody } = require('./fixtures/rpc.cjs');
 /** Offline only: every application request is a fixture; no executor or wallet is started. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
@@ -25,20 +25,20 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
         if (p.includes('/rpc/')) {
           const method = p.split('/rpc/')[1];
           if (['pay', 'owner/prepare', 'owner/submit'].includes(method)) writes.push(method);
-          if (method === 'pay' && scenario === 'budget-error') return route.fulfill({ status: 400, json: { json: { defined: false, code: 'BAD_REQUEST', message: 'Budget exceeded', data: details } } });
+          if (method === 'pay' && scenario === 'budget-error') return route.fulfill({ status: 400, json: { json: { defined: false, code: 'BAD_REQUEST', message: 'Budget exceeded', data: { kind: 'provider', code: 'spend_budget_exceeded', ...details } } } });
           const values = {
-            get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup: { executor: true, agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' }, grant: { id: 'live', label: 'payout', expiresAt: '2099-01-01T00:00:00Z' }, dao: null },
+            get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup: { executor: true, agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' }, grant: { id: 'live', label: 'payout', expiresAt: '2099-01-01T00:00:00Z' }, dao: null },
             overview: { agentId: 'fixture', digest: 'sha256:' + 'a'.repeat(64), notInForce: null, agreed: ['payee.near'], grants: [], unmanaged: [], target: { [USDC]: 1 }, rebalance: { minLegUsd: 1, maxCostBps: 100 },
-              book: [...(budget ? [{ asset: 'nep141:wrap.near', symbol: 'wNEAR', decimals: 24, public: '0', confidential: '0', price: 1, usd: 0 }] : []), { asset: USDC, symbol: 'USDC', decimals: 6, public: '0', confidential: '10000000', price: scenario === 'no-price' ? null : 1, usd: scenario === 'no-price' ? null : 10, priceUpdatedAt: at, priceExpiresAt: expires }],
-              policy: { status: 'APPLIED', revision: 1, policy: { actions: payment ? ['transfer'] : ['swap', 'transfer'], owner_approval: true, frozen: false, destinations: { mode: 'only', list: [{ action: 'transfer', address: 'payee.near', confidential: true }] }, assets: [USDC], budget: {}, limits: {} }, usage: { budget: {} }, cooldowns: {} } },
+              book: [...(budget ? [{ asset: 'nep141:wrap.near', symbol: 'wNEAR', decimals: 24, public: 0n, confidential: 0n, price: 1, usd: 0, priceUpdatedAt: null, priceExpiresAt: null }] : []), { asset: USDC, symbol: 'USDC', decimals: 6, public: 0n, confidential: 10000000n, price: scenario === 'no-price' ? null : 1, usd: scenario === 'no-price' ? null : 10, priceUpdatedAt: at, priceExpiresAt: expires }],
+              policy: { status: 'APPLIED', revision: 1, policy: { actions: payment ? ['transfer'] : ['swap', 'transfer'], owner_approval: true, frozen: false, destinations: { mode: 'only', list: [{ action: 'transfer', address: 'payee.near', confidential: true }] }, assets: [USDC], budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, limits: {}, confidential: false, max_actions_per_hour: 10, timelock_ms: 0 }, usage: { budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } }, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, wallet_id: 'agent.near', provider_policy_synced: true } },
             'treasury/get': null, held: [], unresolved: [], 'inbox/list': [], 'agreements/list': [], activity: [], 'owner/pending': [], 'owner/actions': [],
             paymentHistory: { items: payment ? [{ correlationId: 'payment', at }] : [], complete: true },
             paymentStatus: { status: 'REFUNDED', failureCode: null, createdAt: at, updatedAt: at, request: { asset: USDC, recipient: 'payee.near', amount: '1000000', confidential: true }, approvalId: null, expiresAt: null, detailError: null,
               evidence: scenario === 'evidence' ? evidence : { txHash: null, destinationTxHash: null, refundTxHash: null, refundTo: null, refundedAmount: null } },
-            'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 }, 'autopilot/evidence': { ticks: [] }, 'strategy/get': {}, invoices: [],
+            'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null }, 'autopilot/evidence': { ticks: [], corrupt: [] }, 'strategy/get': {}, invoices: [],
             pay: { outcome: 'refused', code: 'spend_budget_exceeded', details },
           };
-          return route.fulfill({ json: { json: rpcValue(values, method) } });
+          return route.fulfill({ json: rpcBody(values, method) });
         }
         if (p.startsWith('/static/')) return route.fulfill({ path: root + p, contentType: p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : 'font/woff2' });
         return route.fulfill({ path: root + '/index.html', contentType: 'text/html' });

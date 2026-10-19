@@ -4,6 +4,7 @@ import { tickLog } from "../src/agui.js";
 import type { Tick } from "../src/evidence.js";
 import { inspectRecording, observationLabel, recordingProgress, recordingSummary } from "../web/src/features/evidence/recording-model.js";
 import type { ProgressRecord } from "../src/run-progress-schema.js";
+import { RecordingSchema } from "@multiagency/sdk";
 
 const at = "2026-01-01T00:00:00.000Z";
 const tick: Tick = {
@@ -15,7 +16,9 @@ const tick: Tick = {
     plan: null, steps: [{ index: 0, correlationId: "op-1", status: "SENT", failureCode: null }],
     shields: [], rejected: [], refusal: null, outcome: "awaiting outcome" },
 };
-const recording = () => tickLog(tick, { agentId: tick.agentId, records: [], gaps: [] }, {
+// The web consumes recordings through the published contract schema; fixtures are parsed the same way.
+const log = (...args: Parameters<typeof tickLog>) => RecordingSchema.parse(tickLog(...args));
+const recording = () => log(tick, { agentId: tick.agentId, records: [], gaps: [] }, {
   exportedAt: at, display: { asOf: at, assets: [] },
 });
 
@@ -41,7 +44,7 @@ test("recorded end never implies settlement, including later successful observat
 });
 
 test("a missing run end stays unknown, not failed or completed", () => {
-  const value = tickLog({ ...tick, end: null }, { agentId: tick.agentId, records: [], gaps: [] }, {
+  const value = log({ ...tick, end: null }, { agentId: tick.agentId, records: [], gaps: [] }, {
     exportedAt: at, display: { asOf: at, assets: [] },
   });
   assert.equal(recordingSummary(value), "No run end recorded. The outcome is unknown.");
@@ -56,7 +59,7 @@ test("stage rows pair recorded returns while overlapping stages and submissions 
     { type: "STEP_FINISHED", stepName: "balances-before" },
   ].map((event, i) => ({ version: 1, agentId: tick.agentId, tickId: tick.id, sequence: i + 1,
     at: new Date(Date.parse(at) + (i + 1) * 1000).toISOString(), event: event as ProgressRecord["event"] }));
-  const value = tickLog({ ...tick, progressVersion: 1, end: null }, { agentId: tick.agentId, records: [], gaps: [] }, {
+  const value = log({ ...tick, progressVersion: 1, end: null }, { agentId: tick.agentId, records: [], gaps: [] }, {
     exportedAt: "2026-01-01T00:00:10.000Z", display: { asOf: at, assets: [] }, progress,
     progressGaps: [{ code: "progress_unavailable" }],
   });
@@ -89,7 +92,7 @@ test("run end and later success never fabricate missing stage returns or legacy 
     line: 1, recordedAt: at, idempotencyKey: "key-1", type: "status", status: "SUCCESS",
   } });
   assert.deepEqual(recordingProgress(legacy), { items: [], latest: undefined });
-  const value = tickLog({ ...tick, progressVersion: 1 }, { agentId: tick.agentId, records: [], gaps: [] }, {
+  const value = log({ ...tick, progressVersion: 1 }, { agentId: tick.agentId, records: [], gaps: [] }, {
     exportedAt: at, display: { asOf: at, assets: [] }, progress: [{
       version: 1, agentId: tick.agentId, tickId: tick.id, sequence: 1, at,
       event: { type: "STEP_STARTED", stepName: "execution" },
@@ -103,7 +106,7 @@ test("run end and later success never fabricate missing stage returns or legacy 
 });
 
 test("a recorded execution failure stays distinct from later successful operation observations", () => {
-  const value = tickLog({ ...tick, end: { ...tick.end!, outcome: "Failed: status unavailable" } }, {
+  const value = log({ ...tick, end: { ...tick.end!, outcome: "Failed: status unavailable" } }, {
     agentId: tick.agentId, records: [], gaps: [],
   }, { exportedAt: at, display: { asOf: at, assets: [] } });
   value.laterObservations.push({ correlationId: "op-1", source: "journal", record: {

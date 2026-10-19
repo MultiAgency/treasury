@@ -36,3 +36,16 @@ test("dashboard Dockerfile copies every source needed for its web build", { time
     assert.equal(launcherHash(), launcherBefore, "The isolated build must not rewrite shared dependency launchers");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("every image refuses a development SDK link and copies local tarball dependencies before installing", () => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const local = Object.values({ ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>)
+    .flatMap(spec => spec.startsWith("file:") ? [spec.slice("file:".length).split("/")[0]!] : []);
+  for (const name of ["Dockerfile", "Dockerfile.dashboard", "Dockerfile.legacy-invoices"]) {
+    const [beforeInstall] = readFileSync(join(root, name), "utf8").split(/^RUN pnpm install/m);
+    assert.match(beforeInstall!, /^RUN node scripts\/release-mode\.mjs$/m, `${name} must refuse a development link before pnpm install`);
+    const copied = beforeInstall!.split("\n").filter(line => line.startsWith("COPY ")).flatMap(line => line.slice(5).trim().split(/\s+/).slice(0, -1));
+    for (const directory of local) assert.ok(copied.includes(directory), `${name} must copy ${directory} before pnpm install`);
+  }
+});

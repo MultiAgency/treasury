@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
 (async () => {
@@ -39,19 +39,19 @@ const root = path.resolve(process.argv[2] || 'web/dist');
           });
           if (method === 'recover') {
             state.checked = true;
-            return route.fulfill({ json: { json: state.empty ? [] : checks } });
+            return route.fulfill({ json: rpcAnswer(method, state.empty ? [] : checks) });
           }
           const values = {
             instance: { agentId: 'fixture', executor: true },
-            setup: { agentId: 'fixture', executor: true, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' }, grant: null, dao: null },
-            overview: { agentId: 'fixture', area: 'treasury', book: [], unmanaged: [], target: {}, rebalance: { minLegUsd: 1, maxCostBps: 100 }, grants: [], agreed: [], notInForce: null, policy: { policy: { actions: ['swap'], destinations: { mode: 'only', list: [] } } } },
-            'treasury/get': null, 'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 },
+            setup: { agentId: 'fixture', executor: true, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' }, grant: null, dao: null },
+            overview: { agentId: 'fixture', area: 'treasury', book: [], unmanaged: [], target: {}, rebalance: { minLegUsd: 1, maxCostBps: 100 }, grants: [], agreed: [], notInForce: null, policy: { policy: { actions: ['swap'], destinations: { mode: 'only', list: [] }, frozen: false, confidential: false, owner_approval: false, assets: 'any', limits: {}, max_actions_per_hour: 10, budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, timelock_ms: 0 }, wallet_id: 'agent.near', revision: null, status: 'APPLIED', provider_policy_synced: true, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, usage: { budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } } }, digest: null },
+            'treasury/get': null, 'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
             activity: [], held: [], 'owner/pending': [], 'inbox/list': [], 'agreements/list': [], invoices: [], reconcileBooks: [],
-            'owner/actions': [{ correlationId: 'retained-owner', type: 'approval_vote', signer: 'wallet', stage: 'submitted', expiresAt: at, ownerSucceeded: false, status: null, payment: { correlationId: 'retained-payment', verdict: 'approve' } }],
-            unresolved: scenario !== 'outcomes' || state.empty ? [] : (state.checked ? checks.slice(-1) : checks).map(check => ({ key: check.key, kind: 'payout', at, status: check.status, sent: Boolean(check.status) })),
-            paymentHistory: { items: [], complete: true }, 'strategy/get': null, 'autopilot/evidence': { ticks: [] },
+            'owner/actions': [{ correlationId: 'retained-owner', type: 'approval_vote', signer: 'wallet', stage: 'submitted', expiresAt: at, ownerSucceeded: false, status: null, payment: { correlationId: 'retained-payment', verdict: 'approve' }, failureCode: null }],
+            unresolved: scenario !== 'outcomes' || state.empty ? [] : (state.checked ? checks.slice(-1) : checks).map(check => ({ key: check.key, kind: 'payout', at, request: {}, status: check.status, sent: Boolean(check.status) })),
+            paymentHistory: { items: [], complete: true }, 'strategy/get': null, 'autopilot/evidence': { ticks: [], corrupt: [] },
           };
-          return route.fulfill({ json: { json: rpcValue(values, method) } });
+          return route.fulfill({ json: rpcBody(values, method) });
         }
         if (p.startsWith('/static/')) return route.fulfill({ path: root + p, contentType: p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : 'font/woff2' });
         return route.fulfill({ path: path.join(root, 'index.html'), contentType: 'text/html' });

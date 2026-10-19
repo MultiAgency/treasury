@@ -23,9 +23,9 @@ function runtimeDependencies(entry: string, seen = new Set<string>()) {
 }
 test("legacy public overviews cannot reach authenticated clients, queries or actions", () => {
   const dependencies = runtimeDependencies("public/prototype-explorer.tsx");
-  // Shared formatting re-exports exactPayment/fromUnits; these remain pure presentation helpers.
-  const presentation = ["features/evidence/showcase.tsx", "features/evidence/beats.ts", "features/payables/payment-copy.ts"];
-  for (const dependency of [...presentation, "../../evidence/inventory.ts", "shared/ui.tsx", "components/ui/card.tsx", "components/ui/button.tsx"]) {
+  // Shared formatting re-exports exactPayment/fromUnits from shared/amounts.ts: pure presentation helpers.
+  const presentation = ["features/evidence/showcase.tsx", "features/evidence/beats.ts"];
+  for (const dependency of [...presentation, "shared/amounts.ts", "../../evidence/inventory.ts", "shared/ui.tsx", "components/ui/card.tsx", "components/ui/button.tsx"]) {
     assert.ok(dependencies.has(resolve(web, dependency)), `Public presentation dependency must be checked: ${dependency}`);
   }
   for (const file of dependencies) {

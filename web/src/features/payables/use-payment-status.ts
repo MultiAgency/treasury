@@ -1,4 +1,4 @@
-import { queries } from "../../shared/queries";
+import { payablesQueries } from "./queries";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { client } from "../../shared/client";
@@ -11,7 +11,7 @@ export function usePaymentStatus(id: string | undefined) {
   // quickly without the payment finishing is followed by a 4 s pause instead of an immediate retry.
   const observation = useMemo(() => ({ seen: false, quick: false }), [id]);
   const status = useQuery({
-    ...queries.paymentStatus(id),
+    ...payablesQueries.paymentStatus(id),
     retry: false,
     enabled: Boolean(id),
     queryFn: async ({ signal }) => {

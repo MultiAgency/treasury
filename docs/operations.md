@@ -13,7 +13,13 @@ For self-service registration, configure the backend Agent API key, `SESSION_SEC
 32 characters), `TREASURY_SELF_SERVICE=true`, and the correct sign-in host. Set `TRUST_PROXY=true`
 behind Railway. With self-service off, configure explicit Treasury agent entries and their separate
 settings files instead; an empty configuration intentionally refuses startup. `deploy/dashboard.json`
-is also Treasury-only. `deploy/legacy-dashboard.json` is historical regression input.
+is also Treasury-only. `deploy/legacy-dashboard.json` is historical regression input. Proto executes
+for the agents on production hosts, so no tracked configuration or image starts an executor there:
+both preset DAO configurations run their agents approve-only (`"executor": false`), and
+`test/deploy-executors.test.ts` rejects a production host with an executing agent, including the
+schema's default. Self-service registrations are new agents with their own settings, so they don't
+duplicate an agent Proto executes. Host variables and start-command overrides are outside the
+repository and that test.
 
 Use one replica and a persistent `/data` volume. The entrypoint runs the gateway from `/data/state`;
 registered treasury state is under its `.treasuries/` directory. Never populate a new service with
@@ -33,8 +39,8 @@ checkout or Proto's shared-infrastructure candidate.
 ## Owner release handoff
 
 For the DAO reference, review the [release gates](treasury-rollout.md) and candidate
-`deploy/dao-treasury-demo.json`. The candidate preserves the historical Treasury executor and
-payout approve-only settings, and contains no Proto redirect. It is not a live topology record
+`deploy/dao-treasury-demo.json`. The candidate keeps the historical agent settings, runs both the
+Treasury and payout agents approve-only, and contains no Proto redirect. It is not a live topology record
 or permission to replace either existing service's configuration.
 
 Before deployment, finish concurrent edits, identify the exact candidate and run `pnpm verify`.
@@ -156,6 +162,7 @@ These commands do not create a quote, recover an operation, sign or send funds.
 ## Historical compatibility
 
 `PUBLIC_TREASURY_ONLY=false` selects the inherited UI for regression tests only. Payables execution
-requires the explicitly named `Dockerfile.legacy-invoices` or `pnpm legacy:invoices`; it is outside
-the Treasury product. Its state and recovery obligations remain documented in
+requires `pnpm legacy:invoices`; it is outside the Treasury product. `Dockerfile.legacy-invoices` forces
+`EXECUTOR=off`, which the invoice server refuses, so the image can't start the payout executor;
+Proto's payout executor replaces it. Its state and recovery obligations remain documented in
 [legacy operations](legacy/operations.md#payout-executor).

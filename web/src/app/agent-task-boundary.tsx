@@ -14,7 +14,8 @@ import { ownerName, type Setup, WalletButton } from "../features/owner/owner";
 import type { Treasury } from "../features/funding/treasury";
 import { Badge, Button, Details, QueryError, Spinner } from "../shared/ui";
 import { useWorkspace } from "./workspace";
-import { PaymentRecovery, StopSchedule } from "../features/owner/task-recovery";
+import { StopSchedule } from "../features/owner/task-recovery";
+import { legacy } from "@legacy";
 import { RunTimeline } from "../features/portfolio/timeline-run";
 import { RecoveryActivity } from "../features/activity/activity";
 import { AREA_NAV as NAV, areaPageTitle } from "./navigation";
@@ -102,7 +103,7 @@ function Identity({ setup, data }: { setup: Setup; data: Overview }) {
 const isIndependentTask = (pathname: string) => ["/activity", "/follow/payment", "/follow/run", "/automations"].some(path => pathname.replace(/\/$/, "").endsWith(path));
 
 function IndependentTask({ pathname }: { pathname: string }) {
-  if (pathname.endsWith("/follow/payment")) return <PaymentRecovery />;
+  if (pathname.endsWith("/follow/payment")) return legacy ? <legacy.PaymentRecovery /> : <RecoveryActivity />;
   if (pathname.endsWith("/follow/run")) return <RunTimeline />;
   if (pathname.endsWith("/automations")) return <StopSchedule />;
   if (pathname.endsWith("/activity")) return <RecoveryActivity />;
@@ -205,8 +206,9 @@ export function AgentTaskBoundary() {
       </main>
     );
 
+  // aria-disabled, not disabled: a refresh started from the keyboard keeps focus on this control.
   const refresh = (
-    <Button variant="ghost" size="sm" onClick={() => overview.refetch()} disabled={overview.isFetching} aria-label="Refresh">
+    <Button variant="ghost" size="sm" onClick={() => { if (!overview.isFetching) void overview.refetch(); }} aria-disabled={overview.isFetching} className="aria-disabled:opacity-50" aria-label="Refresh">
       {overview.isFetching ? <Spinner /> : <ArrowClockwise size={16} />}
     </Button>
   );

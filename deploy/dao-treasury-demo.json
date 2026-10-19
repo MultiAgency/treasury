@@ -8,7 +8,7 @@
       "owner": "agentic.sputnik-dao.near",
       "envFile": ".env.dao",
       "port": 8789,
-      "executor": true
+      "executor": false
     },
     {
       "name": "payout",

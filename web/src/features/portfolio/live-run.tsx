@@ -26,7 +26,7 @@ export function RunUpdates({ agentId, tickId, startedAt, ended, enabled, summary
     return () => clearTimeout(timer);
   }, [deadline]);
   const query = useQuery({
-    ...queries.recording(agentId, tickId),
+    ...queries.recording(tickId),
     queryFn: async ({ signal }) => inspectRecording(await client.autopilot.log({ tickId }, { signal }), agentId, tickId),
     enabled: enabled && recent && !paused,
     refetchInterval: (q) => !enabled || !recent || paused || q.state.status === "error" ? false : q.state.data?.completion === "recorded-end" ? 15_000 : 3_000,
@@ -40,7 +40,7 @@ export function RunUpdates({ agentId, tickId, startedAt, ended, enabled, summary
   const latest = progress?.latest;
   useEffect(() => {
     if (!ended && recording?.completion === "recorded-end") {
-      void cache.invalidateQueries({ queryKey: ["autopilot", "evidence", "timeline", "history"] });
+      void cache.invalidateQueries({ queryKey: queries.runs.queryKey, exact: true });
     }
   }, [cache, ended, recording?.completion]);
   return <section aria-label="Run timeline" className="min-w-0"><Card>

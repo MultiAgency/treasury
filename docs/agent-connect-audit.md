@@ -8,7 +8,7 @@ and evidence. An agreement in the shared payout agent does not satisfy the isola
 in brief 03.
 
 **Verdict: RESHAPE the original briefs.** Keep all three product goals, replace unsupported guarantees,
-and implement the missing work-order and supplier-settlement workflows. The existing requirement
+and implement the missing work-order and payee-settlement workflows. The existing requirement
 stages remain in the [canonical inventory](../evidence/inventory.ts), rendered in
 [Payables](facilitator.md) and [Treasury](treasury.md). This plan does not promote their evidence stages.
 
@@ -16,7 +16,7 @@ The product calls the new concept a **Work order**: agreed work for one payee, a
 and a deadline, linked to one dedicated agent and one immutable invoice identity. An **Agreement**
 records the terms; an **Invoice** requests payment against them. Keep the catalog title
 “Invoicing & Purchase-Order Management” when identifying brief 03. The first work-order flow retains
-owner approval for each payout; supplier conversion and forwarding remain a separate delivery step.
+owner approval for each payout; payee conversion and forwarding remain a separate delivery step.
 
 ## Scope and the four audit gates
 
@@ -24,7 +24,7 @@ owner approval for each payout; supplier conversion and forwarding remain a sepa
 |---|---|---|---|---|
 | 01 SputnikDAO Confidential Treasury Facilitator | Payables | Owner approval, confidential transfers and policy destinations | An outside requester files an invoice; the payout waits for the DAO. A payment to an unagreed payee is refused. The executor cannot authorize its own payout. | Existing payout agent, invoice intake, DAO owner intents and approval flow |
 | 02 Agentic Treasury Management | Portfolio | Owner-signed spending caps and USD budget, revocable grant, confidential balances | A scheduled rebalance executes quoted legs; a subsequent over-budget operation is refused. The owner delegates execution within a spending policy. | Existing treasury agent, strategy, plans and autopilot |
-| 03 Invoicing & Purchase-Order Management | Payables | Separate agent per order, one supplier destination, amount caps and an expiring grant; separate supplier settlement policy | One funded order pays its supplier without access to the main treasury's grant. The supplier converts receipts and forwards proceeds. Each executor has separately authorized access. | Planned order lifecycle and supplier workflow in the existing backend |
+| 03 Invoicing & Purchase-Order Management | Payables | Separate agent per order, one payee destination, amount caps and an expiring grant; separate payee settlement policy | One funded order pays its payee without access to the main treasury's grant. The payee converts receipts and forwards proceeds. Each executor has separately authorized access. | Planned order lifecycle and payee workflow in the existing backend |
 
 These mechanisms make the briefs relevant to Agent Connect. The demonstration column supplies the
 visible restriction and the takeaway. The integration column keeps one application artifact: the
@@ -41,12 +41,12 @@ The [enforcement assessment](enforcement.md) retains the implementation observat
 
 | Original assumption | Correct scope |
 |---|---|
-| A grant carries its own actions, recipients and budget | Grants identify actors and expire; all grants of an agent share its policy. Put supplier restrictions in the order agent's policy. |
+| A grant carries its own actions, recipients and budget | Grants identify actors and expire; all grants of an agent share its policy. Put payee restrictions in the order agent's policy. |
 | A grant label enforces strategy or purpose upstream | This server interprets the label and strategy digest. The provider does not enforce those application meanings. |
 | Sputnik members remain secret | Sputnik roles are public. Intake avoids direct member contact; it cannot hide the roster. |
 | The API policy takes a custom council list and quorum | The current policy exposes `owner_approval`. This project's DAO vote authorizes the DAO-derived owner signature; its quorum belongs to DAO governance. |
 | Asset caps form an exposure envelope | Caps restrict spending, not holdings, market losses or allocation quality. The provider's asset list restricts inputs; output-asset checks stay local. |
-| Confidentiality makes the treasury or supplier graph untraceable | Confidential transfers reduce public disclosure. Providers can see mappings, and timing or other public records can reveal relationships. |
+| Confidentiality makes the treasury or payee graph untraceable | Confidential transfers reduce public disclosure. Providers can see mappings, and timing or other public records can reveal relationships. |
 | A destination list conflicts with shield/unshield | Do not carry forward the pasted `policy_confidential_whitelist_conflict` claim. The enforcement assessment records a successful shield under a non-empty destination list; other cases retain their evidence limits. |
 | USD budget is set with `budget_set` | It is part of the complete policy, changed through `policy_update` with `expected_revision`. |
 | An expired grant means the order account expired or all payments stopped | The grant loses authority for new work; the account persists and committed work can finish. Residual funds and unresolved operations need explicit handling. |
@@ -97,16 +97,16 @@ This brief has two missing workflows. Both are needed for full coverage.
 
 **Buyer:** create an agent for one order, obtain the owner's signed policy and grant, confirm
 funding, submit the immutable payment, observe its outcome, then retire authority and account for
-residual funds. Use one supplier, one settlement asset and one payment for the first implementation;
+residual funds. Use one payee, one settlement asset and one payment for the first implementation;
 partial invoices and amendments need separate designs. The executor holds only that order's grant.
 Funding is an explicit owner action or a separately authorized treasury operation.
 
-**Supplier:** use a separately owned agent to observe receipts, quote conversion into USDC, execute
+**Payee:** use a separately owned agent to observe receipts, quote conversion into USDC, execute
 approved conversions and forward available proceeds to its agreed treasury on a schedule. Record
 which observations and operations a settlement run covers. A conversion that settles while forwarding
 is unresolved must not trigger another conversion or a replacement forwarding operation.
 
-The supplier's policy can allow spending supported receipt assets, swaps and transfers to one
+The payee's policy can allow spending supported receipt assets, swaps and transfers to one
 treasury destination. The request selects confidential execution; the destination entry restricts
 the transfer's confidential form. Conversion to USDC and when to run remain application decisions.
 Quotes, route minimums and recipients must be checked against the provider's
@@ -114,7 +114,7 @@ Quotes, route minimums and recipients must be checked against the provider's
 
 For the buyer's order, distinguish these boundaries:
 
-- A single supplier in `destinations` restricts the payee; a grant's label does not.
+- A single `destinations` entry restricts the payee; a grant's label does not.
 - A per-operation cap rejects an excessive amount, not every altered amount. Exact amount matching
   is local, or subject to the owner's review if approval is required.
 - Funding the order limits its available balance at that time. Deposits remain possible; funding
@@ -131,7 +131,7 @@ For the buyer's order, distinguish these boundaries:
 
 This pure example constructs a transfer-only policy and a grant request; it sends nothing. It
 typechecks against the installed `@near-intents-agent-api/sdk` 0.4.1; this is not provider validation.
-The caller supplies a provider token ID, verified supplier account, reviewed atomic cap, agent ID,
+The caller supplies a provider token ID, verified payee account, reviewed atomic cap, agent ID,
 expiry and commitment. `requireApproval` chooses whether each payout requires owner approval;
 autonomous order settlement still relies on local exact-invoice checks. Its default is approval.
 
@@ -140,7 +140,7 @@ import type { GenerateIntentRequest, Policy } from "@near-intents-agent-api/sdk"
 
 export function orderPolicy(
   assetId: string,
-  supplierAccount: string,
+  payeeAccount: string,
   maximumAtomic: string,
   requireApproval = true,
 ): Policy {
@@ -154,7 +154,7 @@ export function orderPolicy(
     max_actions_per_hour: 1,
     destinations: {
       mode: "only",
-      list: [{ action: "transfer", address: supplierAccount, confidential: true }],
+      list: [{ action: "transfer", address: payeeAccount, confidential: true }],
     },
     budget: { daily_usd: null, weekly_usd: null, monthly_usd: null },
     timelock_ms: 0,
@@ -187,11 +187,11 @@ Use the existing signed-in workspace; public pages remain static and read no pri
 |---|---|---|---|---|
 | 01 | Requester files an invoice | Show held payout and owner review | DAO approval and observed payment outcome | Show an unagreed-payee refusal and the separate agreement path |
 | 02 | Show strategy, policy limits and budget headroom | Scheduled run quotes its plan | Observe completed legs and budget change | Show provider budget refusal; include the shield observation in supporting evidence |
-| 03 buyer | Show order and isolated agent policy | Owner authorizes and funds the order | Supplier payment and recorded outcome | Show authority retirement and an expired-grant refusal on separately prepared evidence |
-| 03 supplier | Show received assets and agreed treasury | Quote USDC conversion | Observe conversion outcome | Forward proceeds and show the separate forwarding outcome |
+| 03 buyer | Show order and isolated agent policy | Owner authorizes and funds the order | Payee payment and recorded outcome | Show authority retirement and an expired-grant refusal on separately prepared evidence |
+| 03 payee | Show received assets and agreed treasury | Quote USDC conversion | Observe conversion outcome | Forward proceeds and show the separate forwarding outcome |
 
-Supporting negative cases for brief 03: wrong supplier, excessive amount, locally altered invoice,
-expired grant, same-request recovery, replenishment, and an interrupted supplier run. Each result
+Supporting negative cases for brief 03: wrong payee, excessive amount, locally altered invoice,
+expired grant, same-request recovery, replenishment, and an interrupted payee run. Each result
 must name the enforcing layer. A disabled button or local refusal cannot establish provider enforcement.
 No live run is authorized by this plan; mainnet tests and hosted money actions remain the owner's.
 
@@ -201,14 +201,14 @@ No live run is authorized by this plan; mainnet tests and hosted money actions r
    approvals, the single dispatch site and unresolved-operation blocking. Finish brief 01's new-payee
    acceptance evidence and brief 02's unattended-run evidence through separately authorized runs.
 2. **Specify and test the order lifecycle offline.** Bind order, agent, policy digest, immutable
-   invoice and operation identity. Reproduce wrong-supplier, altered-amount, expiry, concurrency,
+   invoice and operation identity. Reproduce wrong-payee, altered-amount, expiry, concurrency,
    lost-response and restart cases before implementing their behavior. Distinguish local tests from
    provider enforcement tests; retain real SQLite and child processes for crash/concurrency coverage.
 3. **Integrate isolated order agents.** The backend retains the partner key; each owner signs policy
    and grant intents; each executor receives only its agent's grant. Keep one executor per agent,
    with approve-only instances elsewhere. Current instance configuration must be extended deliberately
    for multiple order agents; never switch agent environment variables inside an active executor.
-4. **Add supplier settlement.** Separate receipt discovery, conversion and forwarding identities;
+4. **Add payee settlement.** Separate receipt discovery, conversion and forwarding identities;
    preserve partial progress and refuse new sends while an operation is unresolved. Avoid assuming a
    multi-agent or multi-leg run is atomic. Use the existing dispatch path for every money action.
 5. **Review state preservation before rollout.** Preserve all existing state directories listed in
@@ -230,7 +230,7 @@ distinct invoice identities, corrupt-record refusals, subprocess startup, separa
 parent's grant and owner key, fixed owner policy/grant requests and dispatch binding.
 `rpc/work-orders.ts` is composed into the router and classified by gateway permissions;
 `invoice-http.ts` exposes a private bridge and payee-scoped order APIs. No work-order frontend
-is connected. Full creation/funding/payment/restart/retirement acceptance and supplier settlement
+is connected. Full creation/funding/payment/restart/retirement acceptance and payee settlement
 remain outstanding; these modules are not established as ready for hosted or mainnet use.
 
 Work-order state is additive: `.work-orders/<parent-agent>/<order-id>.json` records immutable terms;
@@ -256,4 +256,4 @@ Some adjustments to highlight Agent Connect's capabilities:
 - Spending policies and USD budgets bound Portfolio operations; strategy and output-asset checks remain application responsibilities.
 - Destination policies belong on an isolated agent for each order, with amount caps and a dedicated expiring grant.
 - Grant expiry and idempotency support order control, but exact payment, settlement deadlines and paying once need narrower claims and further verification.
-- A separate supplier policy completes the third idea by authorizing receipt conversion and forwarding to an agreed treasury.
+- A separate payee policy completes the third idea by authorizing receipt conversion and forwarding to an agreed treasury.

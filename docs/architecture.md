@@ -357,16 +357,26 @@ and declare AG-UI protocol 1.0; lifecycle validation rejects a finished run with
 An observed run failure or a recorded end with missing stage returns emits RUN_ERROR without
 inventing returns. Legacy versions 1/2 remain readable. This adds no event transport or authorization rule.
 
-`features/demo/live-demo.tsx` composes a guided live walkthrough at `/a/<agent>/demo`, reached from
+`/a/<agent>/demo` is the guided run. For a treasury agent, in every build, it is
+`features/run/treasury-run.tsx`: readiness checks, the rebalance preview and explicit execution, and the
+confirmed plan's `PlanOutcome`, with links to the strategy, policy and owner-action screens. It follows the
+plan through the same `useFollowedPlan` page-address binding as Home, so a reload reopens that exact plan
+without resending. Stable deep links for other apps, each landing on its real control:
+`/demo#check`, `/demo#preview`, `/demo?plan=<id>#outcome`, `/#rebalance`, `/automations` (strategy save
+and authorization), `/policy` and `/policy#grants`, and `/activity#owner-actions`. The shell reveals a
+link's `#id` once its element renders (`app/hash-target.ts`). `test/browser/treasury-run.cjs` checks the
+run and every deep link on the Treasury build. The readiness checks (`features/run/run-checks.tsx`) are shared with the payout agent's
+walkthrough, which exists only in the shared build.
+
+`features/demo/live-demo.tsx` composes the payout agent's guided walkthrough, reached from
 Home's Guided walkthrough disclosure or Help → Guided walkthrough in the area. It reads the current agent's observations and reuses the
-existing rebalance preview/execution, manual payment review, configured invoice link and payment
+existing manual payment review, configured invoice link and payment
 discovery components. Prerequisite observations do not authorize actions; failed observations keep
 the guide's local submission controls unavailable while recorded outcomes remain reachable. Approve-only payout instances
 direct invoice submission to the configured service. Explicit confirmations and required owner approval
-remain in the existing controls; no mutation runs on entry or reload. A confirmed execution selects its
-exact plan identifier and polls its retained operations, including unresolved records. A non-refused
+remain in the existing controls; no mutation runs on entry or reload. A non-refused
 payment response selects its returned identity using the existing payment detail component. The guide
-never selects the newest record as a substitute; reload clears these local selections. Earlier records
+never selects the newest record as a substitute; reload clears this local selection. Earlier records
 remain discoverable through Payments and Activity. The guide creates no server records, RPC procedures or state formats of
 its own. `test/browser/live-demo.cjs` checks these paths with intercepted requests; no deployed or
 mainnet behavior is inferred from those fixtures.
@@ -503,7 +513,7 @@ executor's private `/internal/work-orders` endpoint. `invoice-http.ts` also expo
 order APIs. `work-order-pool.ts` starts isolated subprocesses; `work-order-runtime.ts` coordinates
 owner intents and fixed invoice filing; `work-order-binding.ts` checks immutable order terms.
 Store, pool, protocol and binding tests cover local behavior. There is no connected work-order
-React interface, no complete hosted lifecycle evidence and no supplier settlement implementation.
+React interface, no complete hosted lifecycle evidence and no payee settlement implementation.
 Keep each child settings file, initialization marker, owner intents, invoices and operation journal
 with its immutable order record; do not reuse the parent's grant or owner private key.
 

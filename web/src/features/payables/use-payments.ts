@@ -1,3 +1,4 @@
+import { payablesQueries } from "./queries";
 import { useQuery } from "@tanstack/react-query";
 import { useAgent } from "../../app/agent-context";
 import { queries, APPROVAL_WINDOW_MS } from "../../shared/queries";
@@ -16,10 +17,10 @@ export function usePayments(poll: number | false) {
   const held = useQuery({ ...queries.held, retry: false });
   const pending = useQuery({ ...queries.ownerPending, refetchInterval: poll });
   const activity = useQuery({ ...queries.activity });
-  const history = useQuery(queries.paymentHistory);
+  const history = useQuery(payablesQueries.paymentHistory);
   const ownerActions = useQuery({ ...queries.ownerActions, refetchInterval: poll, retry: false });
   const invoicesEnabled = canReadInvoices && kindOf(data) === "facilitator";
-  const invoices = useQuery({ ...queries.invoices, enabled: invoicesEnabled, refetchInterval: 15_000, retry: false });
+  const invoices = useQuery({ ...payablesQueries.invoices, enabled: invoicesEnabled, refetchInterval: 15_000, retry: false });
   const invoiceRecords = invoicesEnabled && !accessDenied(invoices.error) ? invoices.data ?? [] : [];
   const agentId = setup.agentId!;
   const remembered = paymentMemory.get(agentId) ?? new Map<string, Known>();

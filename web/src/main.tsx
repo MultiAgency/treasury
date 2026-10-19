@@ -1,12 +1,14 @@
 import { TREASURY_ONLY } from "./treasury-surface";
 import { TreasuryHome } from "./public/treasury-home";
 import { clearAgentCapabilities, gatewayQueries, redactProposalCaches } from "./app/queries";
+import { scopeOfKey, scopeQueries } from "./shared/queries";
+import { onSessionChange } from "./app/session-signal";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StrictMode, Suspense, lazy, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { PublicHome } from "./public";
 import { ErrorBox, Button, Loading } from "./shared/ui";
-import { ownersOf } from "./app/session";
+import { loadGateway, ownersOf } from "./app/session";
 import { BASE } from "./shared/client";
 import { deniedAt, onAccessDenial, recheckAccess, useAccessState } from "./shared/access";
 import "./styles.css";
@@ -28,18 +30,29 @@ onAccessDenial(denial => {
   if (denial.scope === "procedure") clearAgentCapabilities(queryClient, denial.base);
   else {
     redactProposalCaches(queryClient);
-    const name = denial.base.slice("/a/".length);
     const affected = (query: { queryKey: readonly unknown[] }) => {
-      const [scope, agent] = query.queryKey;
-      if (scope === "gateway" || scope === "gw") return false;
-      if (denial.scope === "session") return true;
-      if (scope === "fleet" || scope === "sibling") return agent === name;
-      return Boolean(BASE) && BASE === denial.base;
+      const scope = scopeOfKey(query.queryKey);
+      if (!scope) return false;
+      return denial.scope === "session" || scope.base === denial.base;
     };
     // Discard late reads as well as cached observations; unrelated agents keep their records.
     void queryClient.cancelQueries({ predicate: affected }).then(() => queryClient.removeQueries({ predicate: affected }));
   }
   void queryClient.invalidateQueries({ queryKey: gatewayQueries.session.queryKey, exact: true });
+});
+// Another tab signed in or out: reread identity now rather than when this snapshot goes stale.
+onSessionChange(() => { void queryClient.invalidateQueries({ queryKey: gatewayQueries.session.queryKey, exact: true }); });
+// Agent reads are keyed by the signed-in account. When another account signs in on this host (for
+// example in another tab), every earlier account's agent records and proposal lists leave memory.
+queryClient.getQueryCache().subscribe(event => {
+  if (event.type !== "updated" || event.action.type !== "success" || event.query.queryHash !== JSON.stringify(gatewayQueries.session.queryKey)) return;
+  const account = (event.query.state.data as Awaited<ReturnType<typeof loadGateway>> | undefined)?.viewer?.account ?? null;
+  if (!scopeQueries(account)) return;
+  const earlier = (query: { queryKey: readonly unknown[] }) => {
+    const scope = scopeOfKey(query.queryKey);
+    return scope ? scope.account !== (account ?? "") : query.queryKey[0] === "gw";
+  };
+  void queryClient.cancelQueries({ predicate: earlier }).then(() => queryClient.removeQueries({ predicate: earlier }));
 });
 
 /**

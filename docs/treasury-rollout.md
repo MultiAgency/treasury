@@ -12,8 +12,8 @@ it reuses Proto’s candidate host routing and adds no executor or state migrati
 
 ## Candidate configuration
 
-[dao-treasury-demo.json](../deploy/dao-treasury-demo.json) preserves the historical DAO Treasury
-executor on port 8789 and payout approve-only instance on port 8790. It has no redirect hosts.
+[dao-treasury-demo.json](../deploy/dao-treasury-demo.json) keeps the historical DAO Treasury agent on
+port 8789 and payout agent on port 8790, both approve-only: Proto executes for them. It has no redirect hosts.
 It is an explicit candidate for review, not evidence of current hosting. The default
 `deploy/treasury.json` has no preset agents and must not silently replace existing DAO settings.
 The duplicate local `treasury-reference.json` candidate has been consolidated into this file.

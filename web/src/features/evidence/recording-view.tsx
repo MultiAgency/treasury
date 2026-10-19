@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { Recording, RunLogEvent } from "../../../../src/run-log-schema";
+import type { Recording, RunLogEvent } from "@multiagency/sdk";
 import { observationLabel, recordingProgress, recordingSummary } from "./recording-model";
 import { RecordedProgress } from "./recorded-progress";
 import { Badge, Button, Details } from "../../shared/ui";

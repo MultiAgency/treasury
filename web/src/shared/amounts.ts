@@ -1,4 +1,4 @@
-import { ASSETS } from "../../../../src/policy.js";
+import { ASSETS } from "@multiagency/sdk";
 
 /** "1500000" at 6 decimals → "1.5", exactly: the inverse of `toUnits`. */
 export function fromUnits(raw: string, decimals: number) {

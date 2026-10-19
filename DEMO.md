@@ -49,8 +49,38 @@ reads when execution results arrive. The selected outcome reads every five secon
 while the page is visible; normal dashboard refreshes continue afterward. Missing reads stay
 unavailable. A policy change prevents comparison across policies. Budget changes may include other
 activity, so the difference is not attributed to this plan or presented as proof of atomic charging.
-Reload clears the local plan selection and submits nothing; retained outcomes remain in Activity.
+The page address keeps the confirmed plan's identifier: reload reopens that plan's retained operations and submits nothing. The before-confirmation budget observation is not retained after reload.
 This presentation is offline-tested, not a new hosted or mainnet observation.
+
+## Rehearse with the guided run
+
+The same story as a numbered run, at `/a/<agent-name>/demo` (A6 and later; earlier builds redirect it to
+the overview). It uses the agent's real controls, so a rehearsal is the real action.
+
+1. **Check this agent.** The first blocking check (access, executor, policy, send grant, funds or
+   unresolved operations) is shown with a link to resolve it. **Check observations** reads them again.
+   While any check blocks, **Preview** and **Execute** stay unavailable.
+2. **Preview and execute a rebalance.** Press **Preview**: it quotes and saves a plan, moving nothing.
+   Read each leg's estimated and minimum received amounts and costs. **Execute** opens
+   “Execute the previewed rebalance on mainnet?”; **Cancel** sends nothing, and **Execute swaps**
+   executes that exact saved plan. If the preview reports no swaps are needed, stop here.
+3. **Check the outcome.** The confirmed plan's operations appear under “This plan’s operations”, with
+   budget observations before confirmation and now, and when the operations were last read. The
+   address now ends in `?plan=<id>`. Reloading or sharing it reopens that plan and sends nothing.
+   **Stop following this plan** only closes the view.
+
+To hand a rehearser a starting point: `/demo#preview` opens at step 2, and `/demo?plan=<id>#outcome`
+at one plan's outcome. **Review strategy and grant** and **Review policy and owner signing** open the
+owner screens. This run is offline-tested (`test/browser/treasury-run.cjs`), not a hosted or mainnet
+observation.
+
+**Local, simulated rehearsal: not available yet.** Unlike the hosted note above, a local rehearsal would
+use a simulated provider, wallet and settlement. No supported local path serves this release's `/demo`
+today: Proto's interactive stack (`pnpm test:e2e:stack` in `dao/proto`) can serve a Payables release with
+`--payables-release <dir>`, but has no option for a Treasury release or a funded, authorized treasury
+agent. Until one exists, rehearse the same story's agent side with the
+[strategy recipe](demo/treasury-strategy/README.md) (simulated), and the screens with the offline browser
+suite above.
 
 To demonstrate scheduled execution, show the saved targets, matching authorization and schedule,
 then open an actual recorded scheduled run. A manual execution does not prove scheduling worked.

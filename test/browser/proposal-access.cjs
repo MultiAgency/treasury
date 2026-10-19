@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody } = require('./fixtures/rpc.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
 (async () => {
@@ -38,16 +38,16 @@ const root = path.resolve(process.argv[2] || 'web/dist');
         const payee = `${agent}-payment-payee.near`;
         const values = {
           instance: { agentId: agent, executor: true },
-          setup: { agentId: agent, executor: true, wallet: `${agent}.near`, owner: { type: 'near', account_id: 'owner.near' }, grant: null, dao: null },
+          setup: { agentId: agent, executor: true, wallet: `${agent}.near`, owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' }, grant: null, dao: null },
           overview: { agentId: agent, area: 'payables', digest: 'fixture', notInForce: null, agreed: [payee], unmanaged: [], target: {},
             rebalance: { minLegUsd: 1, maxCostBps: 100 }, book: [], grants: [],
-            policy: { revision: 1, status: 'APPLIED', policy: { actions: ['transfer'], assets: 'any', budget: {}, owner_approval: true, confidential: true,
-              destinations: { mode: 'only', list: [{ action: 'transfer', address: payee, confidential: true }] } } } },
-          'treasury/get': null, 'autopilot/get': { on: false, everyMin: 60, maxUsd: 0 },
-          held: [{ correlationId: `${agent}-payment`, at: new Date().toISOString(), request: { recipient: payee, asset: 'usdc', amount: '1000000' } }],
+            policy: { revision: 1, status: 'APPLIED', policy: { actions: ['transfer'], assets: 'any', budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, owner_approval: true, confidential: true,
+              destinations: { mode: 'only', list: [{ action: 'transfer', address: payee, confidential: true }] }, frozen: false, limits: {}, max_actions_per_hour: 10, timelock_ms: 0 }, wallet_id: 'agent.near', provider_policy_synced: true, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, usage: { budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } } } },
+          'treasury/get': null, 'autopilot/get': { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null },
+          held: [{ correlationId: `${agent}-payment`, at: new Date().toISOString(), request: { recipient: payee, asset: 'usdc', amount: '1000000' }, kind: 'payout', approvalId: 'fixture-approval' }],
           unresolved: [], 'inbox/list': [], 'agreements/list': [], 'owner/actions': [], 'owner/pending': [], policyHistory: [],
         };
-        return route.fulfill({ json: { json: rpcValue(values, method) } });
+        return route.fulfill({ json: rpcBody(values, method) });
       }
       if (p.startsWith('/static/')) return route.fulfill({ path: root + p,
         contentType: p.endsWith('.js') ? 'application/javascript' : p.endsWith('.css') ? 'text/css' : 'font/woff2' });

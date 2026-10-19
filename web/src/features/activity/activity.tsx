@@ -208,10 +208,10 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
 
   return (
     <>
-    {!limit && planId === undefined && <OwnerActions />}
+    {!limit && planId === undefined && <div id="owner-actions" className="scroll-mt-24"><OwnerActions /></div>}
     <Section
       title={planId !== undefined ? "This plan’s operations" : limit ? "Recent activity" : "Operation history"}
-      description={planId !== undefined ? "Retained operations linked to the exact plan you confirmed, including its shields and refusals." : "Operations recorded on this instance, including refusals, newest first."}
+      description={planId !== undefined ? "Retained operations linked to this exact plan, including its shields and refusals." : "Operations recorded on this instance, including refusals, newest first."}
       action={
         limit &&
         actions.length > limit && (

@@ -1,3 +1,4 @@
+import { payablesQueries } from "./queries";
 import { paymentAssets } from "../payables/payment-assets";
 import { TaskEvidence } from "../evidence/task-evidence";
 import { ConfirmButton } from "../owner/confirm-button";
@@ -242,13 +243,13 @@ function Agreements({ listed, payees, destinations, policySetup }: {
   const canAgree = useCanCall("agreements/propose");
   const nameOf = useNameOf();
   const queryClient = useQueryClient();
-  const list = useQuery(queries.agreements);
+  const list = useQuery(payablesQueries.agreements);
   // Observe the shell's policy read without starting another request.
   const policyRead = useQuery({ ...queries.overview, enabled: false });
   const { setup, data } = useAgent();
   const pending = useQuery({ ...queries.ownerPending, refetchInterval: 5_000 });
   const policyWaiting = pending.data?.some((p) => p.type === "policy_update" && p.state === "waiting");
-  const decline = useAttempt([["agreements"]]);
+  const decline = useAttempt([payablesQueries.orpc.agreements.key()]);
   const agreeing = useAttempt();
   // Each request's own deadline, until someone changes it: thirty days out.
   const [untilOf, setUntilOf] = useState<Record<string, string>>({});
@@ -272,7 +273,7 @@ function Agreements({ listed, payees, destinations, policySetup }: {
     agreeing.attempt(async () => {
       if (!canAgree) return;
       await client.agreements.propose({ id, until: endOf(until(id)) });
-      await queryClient.invalidateQueries(queries.agreements);
+      await queryClient.invalidateQueries(payablesQueries.agreements);
       if (!listed.has(payee)) await destinations.add({ address: payee, confidential: true });
     });
 
@@ -412,7 +413,7 @@ function Offer({ listed, destinations }: { listed: Set<string>; destinations: Re
           offer.attempt(async () => {
             const account = intentsAccount(payee);
             await client.agreements.offer({ payee: account, amount, note, until: endOf(until) });
-            await queryClient.invalidateQueries(queries.agreements);
+            await queryClient.invalidateQueries(payablesQueries.agreements);
             setPayee(""); setAmount(""); setNote(""); setUntil(initialUntil); setSubmitted(false);
             if (!listed.has(account)) await destinations.add({ address: account, confidential: true });
           });

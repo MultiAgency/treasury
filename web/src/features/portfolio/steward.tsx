@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils";
 import { amountOf, client, useRun } from "../../shared/lib";
 import { useAgent } from "../../app/agent-context";
 import { useCanCall } from "../../app/viewer";
-import { Badge, Button, Card, CardHeader, Empty, ErrorBox, NotExecuted, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { Badge, Button, Card, CardHeader, Empty, NotExecuted, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { OutcomeError } from "../../shared/outcome-error";
 
 /** A tool result that starts like this was stopped by the policy or the cost cap, or not proposed. */
 const resultTone = (result: string) =>
@@ -120,7 +121,7 @@ export function Steward() {
         {execution.events.map((event, i) =>
           event.type === "rejected" ? <NotExecuted key={i} problems={event.problems} again="Propose" /> : null,
         )}
-        <ErrorBox error={proposal.error ?? execution.error} />
+        <OutcomeError error={proposal.error ?? execution.error} kind={proposal.error ? proposal.kind : execution.kind} />
       </div>
 
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3">

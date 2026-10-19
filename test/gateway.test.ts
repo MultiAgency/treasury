@@ -259,26 +259,26 @@ test("configuration refuses a signing host that also redirects, including case v
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("historical shared configuration: both agents owned by the DAO, the treasury agent executed here, the payout agent approve-only", () => {
+test("historical shared configuration: both agents owned by the DAO and approve-only here; Proto executes for them", () => {
   const config = loadConfig("deploy/legacy-dashboard.json");
   assert.equal(config.host, "proto.multiagency.ai");
   assert.deepEqual(
     config.agents.map((a) => [a.name, a.owner, a.envFile, a.executor]),
     [
-      ["treasury", "agentic.sputnik-dao.near", ".env.dao", true],
+      ["treasury", "agentic.sputnik-dao.near", ".env.dao", false],
       ["payout", "agentic.sputnik-dao.near", ".env.payout", false],
     ],
   );
 });
 
-test("DAO demo routing preserves existing agent settings and executor assignments", () => {
+test("DAO demo routing preserves existing agent settings and runs both agents approve-only", () => {
   const previous = loadConfig("deploy/legacy-dashboard.json");
   const candidate = loadConfig("deploy/dao-treasury-demo.json");
   assert.equal(candidate.host, "treasury.multiagency.ai");
   assert.deepEqual(candidate.redirect_hosts ?? [], [], "the Treasury candidate must not redirect Proto");
   assert.deepEqual(candidate.agents, previous.agents);
   assert.equal(candidate.invoices, previous.invoices);
-  assert.equal(childEnv(candidate.agents[1] as typeof candidate.agents[1] & { envFile: string }, {}).EXECUTOR, "off");
+  for (const agent of candidate.agents) assert.equal(childEnv(agent as typeof agent & { envFile: string }, {}).EXECUTOR, "off");
 });
 
 test("legacy operators in dashboard configuration are ignored and cannot grant access", () => {

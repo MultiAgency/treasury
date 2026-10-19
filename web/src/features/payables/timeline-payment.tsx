@@ -1,3 +1,4 @@
+import { payablesQueries } from "./queries";
 import { usePayments } from "./use-payments";
 import { accessDenied, ReadFailure } from "../../shared/read-failure";
 import { usePayment } from "./use-payment";
@@ -17,7 +18,7 @@ import { Empty, EmptyContent } from "@/components/ui/empty";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { buildPaymentQueue, filterPaymentQueue } from "./payment-queue";
 
-import { ago, client, exactPayment, fromUnits, kindOf, minutesSeconds, queries, short } from "../../shared/lib";
+import { ago, client, exactPayment, fromUnits, kindOf, minutesSeconds, short } from "../../shared/lib";
 
 import { useAgent } from "../../app/agent-context";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, Loading, LoadingRecords, QueryError, Section, Spinner } from "../../shared/ui";
@@ -240,7 +241,7 @@ export function Payments({ title = "Payments", historyOpen = false, compact = fa
   // A local invoice/key never becomes a provider reference. Wait for an explicit recorded link.
   const selected = search.invoice ? mismatched ? undefined : invoice?.operation.correlationId : search.payment;
   if (selected && !list.some(([id]) => id === selected)) list.unshift([selected, { at: "" }]);
-  const agreementQuery = useQuery(queries.agreements);
+  const agreementQuery = useQuery(payablesQueries.agreements);
   const agreements = agreementQuery.isSuccess ? [...agreementQuery.data].reverse() : undefined;
   const heldIds = new Set((held.data ?? []).map((h) => h.correlationId));
   const showQueue = compact || (!search.payment && !search.invoice);

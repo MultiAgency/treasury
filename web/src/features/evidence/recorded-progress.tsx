@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { STAGE_LABEL } from "../../../../src/run-progress-schema";
+import { STAGE_LABEL } from "@multiagency/sdk";
 import { Badge } from "../../shared/ui";
 import type { RecordedProgressItem } from "./recording-model";
 

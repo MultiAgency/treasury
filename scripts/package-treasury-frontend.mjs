@@ -3,11 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSy
 import { dirname, isAbsolute, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { requireRelease } from './release-mode.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = process.argv[2] && resolve(process.argv[2]);
 if (!output || process.argv.length !== 3) throw new Error('Usage: node scripts/package-treasury-frontend.mjs NEW_OUTPUT_DIRECTORY');
 if (existsSync(output)) throw new Error('Output already exists; choose a new directory to preserve the reviewed artifact.');
+requireRelease();
 const inside = (base, target) => { const name = relative(base, target); return name !== '' && !name.startsWith('..') && !isAbsolute(name); };
 if (!inside(join(root, '.test-artifacts'), output) && !inside('/tmp', output))
   throw new Error('Use a new directory under .test-artifacts/ or /tmp/.');
@@ -22,7 +24,7 @@ function files(directory, prefix = '') {
 }
 const hash = value => createHash('sha256').update(value).digest('hex');
 const sourceDigest = () => {
-  const names = ['package.json', 'pnpm-lock.yaml', 'tsconfig.json', ...['src','web','evidence'].flatMap(dir => files(join(root, dir)).map(name => dir + '/' + name))].sort();
+  const names = ['package.json', 'pnpm-lock.yaml', 'tsconfig.json', ...['src','web','evidence','skills','vendor'].flatMap(dir => files(join(root, dir)).map(name => dir + '/' + name))].sort();
   return hash(names.map(name => name + '\0' + hash(readFileSync(join(root,name)))).join('\n'));
 };
 mkdirSync(dirname(output), { recursive: true });

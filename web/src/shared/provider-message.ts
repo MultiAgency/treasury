@@ -1,4 +1,4 @@
-import type { RefusalDetails } from "../../../src/provider-display.js";
+import type { RefusalDetails } from "@multiagency/sdk";
 
 /** Metadata describes the provider's observation; a time never grants permission to repeat a payment. */
 export function providerDetailText(details?: RefusalDetails | null): string {

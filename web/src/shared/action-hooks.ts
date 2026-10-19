@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import { errorMessage } from "./provider-message";
 import { refreshQueries } from "./query-refresh";
+import { failureKind } from "./client";
+import type { OwnerFailure } from "@multiagency/sdk";
 
 /** Seconds until `iso`, ticking while `iso` is set. */
 export function useCountdown(iso?: string) {
@@ -22,23 +24,28 @@ export function useAttempt(refreshKeys?: readonly QueryKey[]) {
   const queryClient = useQueryClient();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [kind, setKind] = useState<OwnerFailure["kind"]>();
   const [busy, setBusy] = useState(false);
   /** Runs `work`; a string it returns is shown as its outcome. */
   async function attempt(work: () => Promise<unknown>) {
+    let keys = refreshKeys;
     setBusy(true);
     setError(undefined);
+    setKind(undefined);
     setMessage(undefined);
     try {
       const outcome = await work();
       setMessage(typeof outcome === "string" && outcome ? outcome : undefined);
     } catch (e) {
       setError(errorMessage(e));
+      setKind(failureKind(e));
+      if (failureKind(e) === "unknown") keys = undefined;
     } finally {
       setBusy(false);
-      await refreshQueries(queryClient, refreshKeys);
+      await refreshQueries(queryClient, keys);
     }
   }
-  return { message, error, busy, attempt };
+  return { message, error, kind, busy, attempt };
 }
 
 /**
@@ -51,22 +58,28 @@ export function useRun<I, E>(start: (input: I) => Promise<AsyncIterable<E>>, ref
   const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
   const [input, setInput] = useState<I>();
   const [error, setError] = useState<string>();
+  const [kind, setKind] = useState<OwnerFailure["kind"]>();
 
   async function run(next: I) {
+    let keys = refreshKeys;
     setInput(next);
     setEvents([]);
     setError(undefined);
+    setKind(undefined);
     setState("running");
     try {
       for await (const event of await start(next)) setEvents((all) => [...all, event]);
       setState("done");
     } catch (e) {
       setError(errorMessage(e));
+      setKind(failureKind(e));
       setState("error");
+      // An unknown outcome may have saved or sent something: re-read everything, never resend.
+      if (failureKind(e) === "unknown") keys = undefined;
     } finally {
-      await refreshQueries(queryClient, refreshKeys);
+      await refreshQueries(queryClient, keys);
     }
   }
 
-  return { events, state, input, error, run };
+  return { events, state, input, error, kind, run };
 }

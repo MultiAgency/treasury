@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import type { Strategy } from "../../../../src/strategy-digest";
+import type { OwnerInputs } from "@multiagency/sdk";
+
+type Strategy = OwnerInputs["strategy/save"]["strategy"];
 import { confirmDiscard, useDirtyDraft } from "../../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../../shared/form";
 import { FieldSet, FieldLegend } from "@/components/ui/field";

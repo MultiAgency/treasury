@@ -1,5 +1,5 @@
-import { STAGE_LABEL } from "../../../../src/run-progress-schema.js";
-import { MAX_RECORDING_BYTES, RecordingSchema, type Recording, type RunLogEvent } from "../../../../src/run-log-schema.js";
+import { STAGE_LABEL } from "@multiagency/sdk";
+import { MAX_RECORDING_BYTES, RecordingSchema, type Recording, type RunLogEvent } from "@multiagency/sdk";
 
 /** Read-only validation: a recording is evidence, never an instruction or a live status response. */
 export function inspectRecording(value: unknown, agentId: string, tickId: string): Recording {

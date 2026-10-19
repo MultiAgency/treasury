@@ -3,12 +3,12 @@ const { runTask } = require('./fixtures/task.cjs');
 const { workspaceEvidence, workspaceOpener } = require('./fixtures/workspace.cjs');
 
 async function treasuryScope(browser, root) {
-  const { budget, setup, overview } = workspaceEvidence({ policyDetails: true, grants: true });
+  const { budget, setup, overview } = workspaceEvidence();
   const book = overview('treasury');
   book.book[0].priceUpdatedAt = new Date().toISOString();
   const open = workspaceOpener(root, { budget, values: () => ({
     setup: { ...setup, executor: true }, instance: { agentId: setup.agentId, executor: true }, overview: book, 'treasury/get': null, unresolved: [], held: [], activity: [], 'owner/actions': [],
-    'autopilot/get': { on: false, everyMin: 60, maxUsd: 10 },
+    'autopilot/get': { on: false, everyMin: 60, maxUsd: 10, lastRun: null, nextRun: null },
   }) });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   for (const path of ['/', '/#/explore/payables/overview', '/#/explore/treasury/overview']) {
@@ -23,7 +23,7 @@ async function treasuryScope(browser, root) {
   await payout.page.getByRole('heading', { name: 'Treasury unavailable', exact: true }).waitFor();
   assert.deepEqual(payout.calls, [], 'out-of-scope agent must not mount private task queries');
   await payout.page.close();
-  for (const path of ['/a/treasury/payees', '/a/treasury/demo']) {
+  for (const path of ['/a/treasury/payees']) {
     const { page, calls, requests, errors } = await open(context, path);
     await page.getByRole('heading', { name: 'Signed limits', exact: true }).waitFor();
     assert.equal(await page.getByRole('heading', { name: 'Rebalance', exact: true }).count(), 1);

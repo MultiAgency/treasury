@@ -1,4 +1,4 @@
-import { ASSETS } from "../../../../src/policy";
+import { ASSETS } from "@multiagency/sdk";
 import type { Holding } from "../../shared/format";
 
 /** Payout and invoice grants can transfer confidential USDC only. */

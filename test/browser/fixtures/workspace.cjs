@@ -1,21 +1,24 @@
 const assert = require('node:assert/strict');
 const { join } = require('node:path');
-const { rpcValue } = require('./rpc.cjs');
+const { rpcAnswer, rpcBody } = require('./rpc.cjs');
 const { makeTick, recordingFor } = require('./run.cjs');
 
 /** Fresh presentation evidence; each suite still declares its own allowed RPCs and overrides. */
-function workspaceEvidence({ policyDetails = false, grants = false } = {}) {
+function workspaceEvidence() {
+  // Complete answers, as the agent server sends them: the published owner contract checks every field.
   const budget = Object.fromEntries(['daily', 'weekly', 'monthly'].map(period => [period,
-    { limit_usd: '100', remaining_usd: '90', spent_usd: '10' },
+    { limit_usd: '100', remaining_usd: '90', spent_usd: '10', resets_at: null },
   ]));
-  const setup = { agentId: 'fixture', wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' },
-    grant: { label: 'treasury', expiresAt: '2030-01-01T00:00:00Z' }, dao: null };
-  const overview = kind => ({ agentId: 'fixture', digest: 'fixture', notInForce: null, agreed: [], unmanaged: [], ...(grants && { grants: [] }),
+  const setup = { agentId: 'fixture', wallet: 'agent.near', executor: true, owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' },
+    grant: { id: 'grant-fixture', label: 'treasury', expiresAt: '2030-01-01T00:00:00Z' }, dao: null };
+  const overview = kind => ({ agentId: 'fixture', digest: 'fixture', notInForce: null, agreed: [], unmanaged: [], grants: [],
     rebalance: { minLegUsd: 1, maxCostBps: 100 }, target: { usdc: 1 },
-    book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: '0', confidential: '10000000', usd: 10, price: 1 }],
-    policy: { policy: { actions: kind === 'treasury' ? ['swap', 'transfer'] : ['transfer'], frozen: false,
-      destinations: { mode: 'only', list: [] }, assets: 'any', ...(policyDetails && { budget: {}, limits: {} }) },
-      ...(policyDetails && { revision: 1 }), usage: { budget }, cooldowns: {} },
+    book: [{ asset: 'usdc', symbol: 'USDC', decimals: 6, public: 0n, confidential: 10000000n, usd: 10, price: 1, priceUpdatedAt: null, priceExpiresAt: null }],
+    policy: { policy: { actions: kind === 'treasury' ? ['swap', 'transfer'] : ['transfer'], frozen: false, confidential: true, owner_approval: kind !== 'treasury',
+      destinations: { mode: 'only', list: [] }, assets: 'any', max_actions_per_hour: 10, timelock_ms: 0,
+      budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, limits: {} },
+      revision: 1, status: 'APPLIED', provider_policy_synced: true, wallet_id: 'agent.near',
+      usage: { budget, timelock: { delay_ms: 0, scheduled_count: 0 } }, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null } },
   });
   return { budget, setup, overview };
 }
@@ -64,7 +67,7 @@ function workspaceOpener(root, { budget, values, proposals = false }) {
         if (method === 'autopilot/log') {
           assert.equal(route.request().postDataJSON().json.tickId, run.id, 'recording read must select the displayed run');
           assert.ok(!options.approveOnly, 'approve-only views must not read recordings');
-          return route.fulfill({ json: { json: recordingFor(run) } });
+          return route.fulfill({ json: rpcAnswer(method, recordingFor(run)) });
         }
         const kind = pathname.includes('/payables/') ? 'payables' : 'treasury';
         const declared = values(kind, options, state, run);
@@ -72,7 +75,7 @@ function workspaceOpener(root, { budget, values, proposals = false }) {
           const input = route.request().postData() || new URL(route.request().url()).search;
           declared[method] = { ticks: input.includes('since') ? [] : [run], corrupt: [] };
         }
-        return route.fulfill({ json: { json: rpcValue(declared, method) } });
+        return route.fulfill({ json: rpcBody(declared, method) });
       }
       if (pathname.startsWith('/static/')) return route.fulfill({ path: join(root, pathname),
         contentType: pathname.endsWith('.js') ? 'application/javascript' : pathname.endsWith('.css') ? 'text/css' : 'font/woff2' });

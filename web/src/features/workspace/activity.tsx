@@ -20,7 +20,7 @@ function AgentBooks({ agent, book }: { agent: GatewayAgent; book: Overview["book
   const [exporting, setExporting] = useState(false);
   const exportController = useRef<AbortController | null>(null);
   const api = clientFor(`/a/${agent.name}`);
-  const books = useQuery({ ...queriesFor(api, ["fleet", agent.name]).books, enabled: open, retry: false });
+  const books = useQuery({ ...queriesFor(api, `/a/${agent.name}`).books, enabled: open, retry: false });
   useEffect(() => {
     const unsubscribe = onAccessDenial(denial => {
       if (denial.scope === "session" || denial.scope === "agent" && denial.base === `/a/${agent.name}`)
@@ -60,7 +60,7 @@ function AgentBooks({ agent, book }: { agent: GatewayAgent; book: Overview["book
 /** One query set per agent, shared by unfiltered checks and filtered history. */
 export function useHistory(agents: GatewayAgent[]) {
   const access = useAccessState();
-  const reads = agents.map(agent => queriesFor(clientFor(`/a/${agent.name}`), ["fleet", agent.name]));
+  const reads = agents.map(agent => queriesFor(clientFor(`/a/${agent.name}`), `/a/${agent.name}`));
   const activities = useQueries({ queries: reads.map(read => ({ ...read.activity, retry: false, refetchInterval: 30_000 })) });
   const owners = useQueries({ queries: reads.map(read => ({ ...read.ownerActions, retry: false, refetchInterval: 30_000 })) });
   const unresolved = useQueries({ queries: reads.map(read => ({ ...read.unresolved, retry: false })) });

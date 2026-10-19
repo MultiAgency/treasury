@@ -1,6 +1,6 @@
 /** Offline task journeys. Run through test/browser/run.cjs to retain failure diagnostics. */
 const { runTask } = require('./fixtures/task.cjs');
-const { rpcValue } = require('./fixtures/rpc.cjs');
+const { rpcBody } = require('./fixtures/rpc.cjs');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
@@ -20,12 +20,12 @@ async function setupAndReturn(browser, root) {
      if (scenario === 'records-error' && method === 'owner/actions') return route.fulfill({ status: 503, json: { json: { defined: false, code: 'INTERNAL_SERVER_ERROR', message: 'Setup records unavailable' } } });
      const values = {
       instance: { agentId: returning ? 'fixture' : null, area: treasury ? 'treasury' : 'payables', executor: true },
-      setup: { agentId: returning ? 'fixture' : null, executor: true, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near' }, grant: grantReported ? { id: 'reported', label: 'payout', expiresAt: '2099-01-01T00:00:00Z' } : null, dao: { id: 'owner.sputnik-dao.near', funded: true, owner: { account_id: 'owner.near' } } },
-      overview: { agentId: 'fixture', area: treasury ? 'treasury' : 'payables', digest: 'fixture', notInForce: scenario === 'return-policy' ? 'revision 1 is not yet synchronized with the provider' : null, agreed: [], book: [], unmanaged: [], target: {}, grants: [], rebalance: { minLegUsd: 1, maxCostBps: 100 }, policy: { status: 'APPLIED', revision: 1, policy: { actions: treasury ? ['swap'] : ['transfer'], assets: 'any', budget: {}, limits: {}, frozen: false, owner_approval: true, destinations: { mode: 'only', list: [] } }, usage: { budget: {} }, cooldowns: {} } },
-      'owner/actions': ['creation-submitted', 'creation-succeeded', 'return-proposal', 'return-complete'].includes(scenario) ? [{ correlationId: 'existing-setup', type: returning ? 'grant_issue' : 'agent_create', signer: 'dao', stage: scenario === 'creation-succeeded' ? 'settled' : 'submitted', ownerSucceeded: scenario === 'creation-succeeded', status: scenario === 'creation-succeeded' ? 'SUCCESS' : null }] : [],
+      setup: { agentId: returning ? 'fixture' : null, executor: true, wallet: 'agent.near', owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' }, grant: grantReported ? { id: 'reported', label: 'payout', expiresAt: '2099-01-01T00:00:00Z' } : null, dao: { id: 'owner.sputnik-dao.near', funded: true, owner: { type: 'near', account_id: 'owner.near', public_key: 'ed25519:fixture' } } },
+      overview: { agentId: 'fixture', area: treasury ? 'treasury' : 'payables', digest: 'fixture', notInForce: scenario === 'return-policy' ? 'revision 1 is not yet synchronized with the provider' : null, agreed: [], book: [], unmanaged: [], target: {}, grants: [], rebalance: { minLegUsd: 1, maxCostBps: 100 }, policy: { status: 'APPLIED', revision: 1, policy: { actions: treasury ? ['swap'] : ['transfer'], assets: 'any', budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, limits: {}, frozen: false, owner_approval: true, destinations: { mode: 'only', list: [] }, confidential: false, max_actions_per_hour: 10, timelock_ms: 0 }, usage: { budget: { daily: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, weekly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null }, monthly: { limit_usd: null, spent_usd: '0', remaining_usd: null, resets_at: null } }, timelock: { delay_ms: 0, scheduled_count: 0 } }, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, wallet_id: 'agent.near', provider_policy_synced: true } },
+      'owner/actions': ['creation-submitted', 'creation-succeeded', 'return-proposal', 'return-complete'].includes(scenario) ? [{ correlationId: 'existing-setup', type: returning ? 'grant_issue' : 'agent_create', signer: 'dao', stage: scenario === 'creation-succeeded' ? 'settled' : 'submitted', ownerSucceeded: scenario === 'creation-succeeded', status: scenario === 'creation-succeeded' ? 'SUCCESS' : null, failureCode: null, payment: null, expiresAt: '2030-01-01T00:00:00Z' }] : [],
       'owner/pending': [], 'treasury/get': null, policyHistory: [], unresolved: [], held: [], activity: [], 'inbox/list': [],
      };
-     assert.ok(method in values, `Unexpected RPC ${method}`); return route.fulfill({ json: { json: rpcValue(values, method) } });
+     assert.ok(method in values, `Unexpected RPC ${method}`); return route.fulfill({ json: rpcBody(values, method) });
     }
     return route.fulfill({ path: p.startsWith('/static/') ? root + p : root + '/index.html' });
    });
@@ -88,15 +88,15 @@ async function setupRecovery(browser, root) {
         if(method==='setup' && setupFails) return error(503,'Setup fixture unavailable');
         if(denied && ['activity','unresolved','owner/actions'].includes(method)) return error(403,'Record access denied');
         const values={
-          get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup:{executor:false,agentId:scenario==='no-agent'?null:'fixture',wallet:'agent.near',owner:{type:'near',account_id:'owner.near'},grant:{label:'payout',expiresAt:'2030-01-01T00:00:00Z'},dao:null},
-          overview:{agentId:'fixture',digest:'fixture',notInForce:null,agreed:[],unmanaged:[],target:{usdc:1},rebalance:{minLegUsd:1,maxCostBps:100},book:[],policy:{policy:{actions:['transfer'],frozen:false,destinations:{mode:'only',list:[]},assets:'any',budget:{},limits:{}},usage:{budget:{}},cooldowns:{}}},
+          get instance() { return { agentId: this.setup?.agentId ?? null, executor: this.setup?.executor !== false }; }, setup:{executor:false,agentId:scenario==='no-agent'?null:'fixture',wallet:'agent.near',owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},grant:{id:'grant-fixture',label:'payout',expiresAt:'2030-01-01T00:00:00Z'},dao:null},
+          overview:{agentId:'fixture',digest:'fixture',notInForce:null,agreed:[],unmanaged:[],target:{usdc:1},rebalance:{minLegUsd:1,maxCostBps:100},book:[],policy:{policy:{actions:['transfer'],frozen:false,destinations:{mode:'only',list:[]},assets:'any',budget:{daily_usd:null,weekly_usd:null,monthly_usd:null},limits:{},confidential:false,owner_approval:false,max_actions_per_hour:10,timelock_ms:0},usage:{budget:{daily:{limit_usd:null,spent_usd:'0',remaining_usd:null,resets_at:null},weekly:{limit_usd:null,spent_usd:'0',remaining_usd:null,resets_at:null},monthly:{limit_usd:null,spent_usd:'0',remaining_usd:null,resets_at:null}},timelock:{delay_ms:0,scheduled_count:0}},cooldowns:{policy_change_available_at:null,unfreeze_available_at:null},wallet_id:'agent.near',revision:null,status:'APPLIED',provider_policy_synced:true},grants:[]},
           'treasury/get':null,
           activity:[{at,kind:'payout',request:{asset:'usdc',amount:'123',recipient:'private-payee.near'},correlationId:'private-operation',status:'PROCESSING'},{at,kind:'probe',request:{asset:'usdc',amount:'1'},correlationId:'private-probe',status:'FAILED'}],
-          unresolved:[{key:'private-unresolved',at,kind:'payout',status:'PROCESSING',sent:true}],
-          'owner/actions':[{correlationId:'private-owner',type:'approval_vote',signer:'wallet',stage:'submitted',expiresAt:'2020-01-01T00:00:00Z',ownerSucceeded:false,status:null,payment:{correlationId:'private-operation',verdict:'approve'}}],
+          unresolved:[{key:'private-unresolved',at,kind:'payout',status:'PROCESSING',sent:true,request:{}}],
+          'owner/actions':[{correlationId:'private-owner',type:'approval_vote',signer:'wallet',stage:'submitted',expiresAt:'2020-01-01T00:00:00Z',ownerSucceeded:false,status:null,payment:{correlationId:'private-operation',verdict:'approve'},failureCode:null}],
           'owner/pending':[],held:[],paymentHistory:{items:[],complete:true},'agreements/list':[],'inbox/list':[],invoices:[],ledger:[],reconcileBooks:[],
         };
-        return route.fulfill({json:{json:rpcValue(values, method)}});
+        return route.fulfill({json: rpcBody(values, method)});
       }
       if(p.startsWith('/static/')) return route.fulfill({path:root+p,contentType:p.endsWith('.js')?'application/javascript':p.endsWith('.css')?'text/css':'font/woff2'});
       documents++;return route.fulfill({path:path.join(root,'index.html'),contentType:'text/html'});

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Decoded } from "../../../src/gateway/proposals.js";
+import type { Decoded } from "@multiagency/sdk";
 
 export type AccessDenial = { base: string; scope: "session" | "agent" | "procedure"; message: string };
 type AccessState = { session?: AccessDenial; agents: Readonly<Record<string, AccessDenial>> };

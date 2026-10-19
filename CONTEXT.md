@@ -246,10 +246,18 @@ It reads no agent records, shows no private evidence and submits no money action
 hashes open the corresponding area's overview. It requires no wallet and never mounts the authenticated
 dashboard or its reads. Simulated approval, execution and playback are retired.
 
+**Guided Treasury run**:
+The operational guided run at `/a/<agent>/demo` for a treasury agent, in every build: readiness checks,
+the rebalance preview and its explicit execution, and the confirmed plan's outcome, with links to strategy
+and grant, policy and owner-action review. Steps mark nothing complete, and the readiness checks authorize
+nothing. The followed plan is the exact one confirmed, kept in the page address like Home's; reloading
+reopens it and submits nothing. Explanatory walkthrough chapters belong to Proto's showcase, which links
+here.
+
 **Guided walkthrough (historical shared interface)**:
-The retained guided walkthrough in the signed-in workspace that uses the agent's actual balances, policy and
-grant. It reuses the existing payment and rebalance controls, including their explicit confirmations
-and owner approvals. Its prerequisite observations do not authorize a send. Outcomes come from
+The retained guided walkthrough for the payout agent in the shared build, using the agent's actual balances, policy and
+grant. It reuses the existing payment controls, including their explicit confirmations
+and owner approvals. Treasury agents use the guided Treasury run. Its prerequisite observations do not authorize a send. Outcomes come from
 operation and payment records selected by the exact confirmed plan or returned payment identity;
 a walkthrough can finish without a swap, wait for approval, be refused, or leave an unresolved
 operation. Opening or reloading it submits nothing. Reload clears the local selection, and existing
@@ -287,9 +295,33 @@ A manually confirmed plan stays selected on the overview while its exact operati
 followed. The last successful budget observation before confirmation is retained beside subsequent
 provider observations. Neither the difference nor a returned execution stream establishes settlement,
 plan-specific charges or atomic budget accounting. A changed policy prevents headroom comparison;
-failed reads remain unavailable. This local selection is not a durable money record: reload clears
-it without replaying execution. Signed monthly caps and each USD budget window are shown together;
+failed reads remain unavailable. The page address keeps the confirmed plan's identifier, so a reload
+reopens the same plan's retained operations without replaying execution. The pre-confirmation budget
+observation is not retained after reload; the reopened view shows only later observations. The address
+is not a durable money record and selects nothing when malformed. **Stop following this plan** removes the identifier and closes
+the view; it cancels nothing, and the plan's operations stay in Activity. Signed monthly caps and each USD budget window are shown together;
 recorded refusal codes are read on demand, never produced by a live probe.
+
+**Frontend release manifest**: The `contract.json` shipped with the default build. It names the
+Proto platform capabilities (P2 manifest v1, from `@multiagency/sdk`) that the build's
+calls need, so Proto can refuse to serve an incompatible release. It grants no authority.
+`pnpm check:frontend` checks it against the build's actual module graph. The shared Payables and
+Portfolio surface enters only through the `@legacy` build seam and is absent from this build.
+
+**Owner contract client**: The web app's client over Proto's `ownerClient` (`web/src/shared/client.ts`).
+A failure's kind, not its message, decides recovery:
+- `unresolved` or `busy`: refused before sending; the UI points to the operations to follow.
+- `refused` or `provider`: refused, with the reported reason. A provider failure after a send counts as
+  `provider` only when the provider proves it a refusal; otherwise it is `unknown`.
+- `unavailable`: a read failed; reading again is safe.
+- `unknown`: a mutation or stream may have taken effect. Its records are re-read and nothing is
+  resent. A lost plan preview may have saved a plan that expires unused.
+
+The signed-in account is re-read when the tab becomes visible again and when another tab of this host
+signs in or out. While it is being re-read, no permission-dependent control is offered.
+
+The price-freshness and budget-window display rules are app-owned copies, kept equal to the
+backend's by a parity test while the copied backend remains. Offline-tested; not deployed.
 
 The signed-in Treasury header shows the owner from the existing setup observation, including the
 DAO’s proposal route when applicable. This identity is separate from the connected wallet and is

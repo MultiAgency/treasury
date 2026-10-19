@@ -8,4 +8,4 @@ The current invoice host serves idea-1 intake; its name does not establish idea-
 The [generated requirement tables](legacy/facilitator.md) retain mainnet evidence and unfinished
 requirements from the canonical inventory. General agreements are not isolated order agents.
 Idea-3 backend integration has progressed beyond the original roadmap prose, but frontend,
-full lifecycle acceptance and supplier settlement remain gaps. No evidence stage is promoted here.
+full lifecycle acceptance and payee settlement remain gaps. No evidence stage is promoted here.

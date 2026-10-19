@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "product": "treasury",
+  "required": [
+    "gateway-session-v1",
+    "agent-observe-v1",
+    "agent-schedule-stop-v1",
+    "agent-funding-v1",
+    "owner-treasury-v1",
+    "owner-intents-v1",
+    "treasury-observe-v1",
+    "treasury-strategy-v1",
+    "treasury-plans-v1",
+    "treasury-recovery-v1"
+  ],
+  "entries": {
+    "/": "index.html",
+    "/skill.md": "skill.md"
+  },
+  "fallback": "index.html"
+}

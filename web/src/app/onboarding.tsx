@@ -12,6 +12,7 @@ import { Button, Card, ErrorBox, input, Section, Spinner, Step } from "../shared
 import { connect, dao, send, useWallet } from "../features/owner/wallet";
 import { SetupActions, useSetupActions } from "./setup-progress";
 import { useCanCall, useViewer } from "./viewer";
+import { queries } from "../shared/queries";
 
 function ActionRow({ label, busy, disabled, onClick, children }: { label: ReactNode; busy: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -59,7 +60,7 @@ export function Onboarding({ setup }: { setup: Setup }) {
   // Poll while the owner account's funding proposal is out.
   useEffect(() => {
     if (!funding || setup.dao?.funded) return;
-    const timer = setInterval(() => queryClient.invalidateQueries({ queryKey: ["setup"] }), 5_000);
+    const timer = setInterval(() => queryClient.invalidateQueries({ queryKey: queries.setup.queryKey, exact: true }), 5_000);
     return () => clearInterval(timer);
   }, [funding, setup.dao?.funded, queryClient]);
 

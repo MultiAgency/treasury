@@ -4,16 +4,16 @@ import { Empty, EmptyContent } from "@/components/ui/empty";
 import { ConfirmButton } from "../owner/confirm-button";
 import { Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { bindingWindow } from "../../../../src/budget-window.js";
+import { bindingWindow } from "../../shared/budget";
 import { PERIOD } from "../../shared/budget";
 import { ago, amountOf, client, usd, useAttempt } from "../../shared/lib";
 import { useOptionalAgent } from "../../app/agent-context";
-import { Badge, Button, Card, ErrorBox, LoadingRecords, QueryError, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { Badge, Button, Card, LoadingRecords, QueryError, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
 import { useCanCall } from "../../app/viewer";
-import { instanceQuery } from "../owner/task-recovery";
 import { refusalText } from "../../shared/words";
 import { RunDownload } from "../evidence/run-download";
 import { RunUpdates } from "./live-run";
+import { OutcomeError } from "../../shared/outcome-error";
 
 /**
  * An autopilot run as a timeline that doubles as its receipt, read from the evidence the scheduler itself
@@ -79,7 +79,7 @@ const runLabel = (tick: Tick) =>
 /** One timeline, with the original outcome visible and supporting evidence on request. */
 function RunView({ tick }: { tick: Tick }) {
   const agent = useOptionalAgent();
-  const instance = useQuery({ ...instanceQuery, enabled: !agent });
+  const instance = useQuery({ ...queries.instance, enabled: !agent });
   const executor = agent ? agent.setup.executor !== false : instance.data?.executor === true;
   const book = agent?.data.book ?? [];
   const end = tick.end;
@@ -210,7 +210,7 @@ export function RunTimeline() {
       title="Follow this run"
       description={tick ? `An autopilot run, ${tick.trigger === "operator" ? "started by Run now" : "on its schedule"}, ${ago(tick.at)}. Each step is what the scheduler recorded.` : undefined}
     >
-      <ErrorBox error={run.error} />
+      <OutcomeError error={run.error} kind={run.kind} />
       {evidence.error && <QueryError error={evidence.error} retry={() => evidence.refetch()} />}
       {evidence.isPending && <Card><LoadingRecords label="Loading recorded runs…" /></Card>}
       {incomplete && <IncompleteRuns retry={() => void evidence.refetch()} />}

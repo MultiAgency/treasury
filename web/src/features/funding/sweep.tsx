@@ -5,14 +5,15 @@ import { LockKey } from "@phosphor-icons/react";
 import { amount, client, useRun } from "../../shared/lib";
 import { useCanCall } from "../../app/viewer";
 import { useAgent } from "../../app/agent-context";
-import { Button, Card, CardHeader, Dot, ErrorBox, Note, Spinner, StatusBadge } from "../../shared/ui";
+import { Button, Card, CardHeader, Dot, Note, Spinner, StatusBadge } from "../../shared/ui";
+import { OutcomeError } from "../../shared/outcome-error";
 
 export function Sweep() {
   const canSweep = useCanCall("sweep");
   const executor = useAgent().setup.executor !== false;
   const grant = useAgent().setup.grant;
   const canShield = grant?.label === "treasury" || Boolean(grant?.label.startsWith("treasury:"));
-  const { events, state, input, error, run } = useRun(client.sweep);
+  const { events, state, input, error, kind, run } = useRun(client.sweep);
   const running = state === "running";
   const plan = events.find((e) => e.type === "plan");
   const shields = events.filter((e) => e.type === "shield");
@@ -43,7 +44,7 @@ export function Sweep() {
           );
         })}
         {!canShield && <Note>Shielding requires a treasury grant. Payout and invoice grants cannot shield funds.</Note>}
-        <ErrorBox error={error} />
+        <OutcomeError error={error} kind={kind} />
       </div>
       <div className="mt-auto flex justify-end gap-3">
         <Button variant="outline" size="sm" disabled={running || !canSweep || !executor || !canShield} onClick={() => run({ execute: false })}>

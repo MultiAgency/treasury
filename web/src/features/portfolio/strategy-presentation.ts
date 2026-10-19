@@ -1,5 +1,7 @@
 import { ownerActionState } from "../owner/owner-observation.js";
-import type { StrategyStatus } from "../../../../src/strategy-status.js";
+import type { OwnerOutput } from "@multiagency/sdk";
+
+type StrategyStatus = OwnerOutput<"strategy/get">;
 
 type Read<T> = { data?: T; error: unknown };
 /** Current observations and UI permissions only; server controls still authorize every change. */

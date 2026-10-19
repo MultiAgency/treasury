@@ -1,4 +1,6 @@
-import type { Strategy } from "../../../../src/strategy-digest.js";
+import type { OwnerInputs } from "@multiagency/sdk";
+
+type Strategy = OwnerInputs["strategy/save"]["strategy"];
 
 export type StrategyDraft = { targets: Record<string, string>; minLegUsd: string; maxCost: string; everyMin: string; maxUsd: string };
 

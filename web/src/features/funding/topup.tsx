@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ASSETS } from "../../../../src/policy.js";
-import { mayCall } from "../../../../src/gateway/allowlist.js";
+import { ASSETS } from "@multiagency/sdk";
+import { mayCall } from "@multiagency/sdk";
 import { type client, clientFor, toUnits, useAttempt } from "../../shared/lib";
 import { useSiblings } from "../../shared/names";
 import { PaymentReview, type PaymentReviewData, PayoutResult } from "../payables/payout";
