@@ -1,11 +1,12 @@
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const { spawn } = require('node:child_process');
 const { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
     const context = await browser.newContext();
@@ -41,4 +42,4 @@ const { chromium } = require('./fixtures/browser.cjs');
     assert.ok(statSync(join(directory, context, 'page-0.png')).size > 0);
     console.log('PASS unknown RPC fails the process even when navigation error is caught; trace and screenshot retained');
   } finally { rmSync(directory, { recursive: true, force: true }); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

@@ -1,11 +1,12 @@
 /** Status checks preserve uncertain outcomes and never prepare or repeat a money action. */
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
 const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   const results = [];
   try {
@@ -123,4 +124,4 @@ const root = path.resolve(process.argv[2] || 'web/dist');
   } finally { await browser.close(); }
   console.log(JSON.stringify(results, null, 2));
   process.exitCode = results.every(result => result.pass) ? 0 : 1;
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

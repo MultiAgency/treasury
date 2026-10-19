@@ -1,4 +1,5 @@
 const { openWorkspaceNavigation } = require("./fixtures/navigation.cjs");
+const { runSuite } = require('./fixtures/task.cjs');
 /**
  * Offline shared workspace and activity regressions. Build first with pnpm build:web.
  * PLAYWRIGHT_MODULE=/path/to/playwright-core BROWSER_EXECUTABLE=/path/to/chrome \
@@ -12,7 +13,7 @@ const root = path.resolve(process.argv[2] || 'web/dist');
 const { workspaceEvidence, workspaceOpener } = require('./fixtures/workspace.cjs');
 const { budget, setup, overview } = workspaceEvidence();
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
   const open = workspaceOpener(root, { budget, values(kind, options, state, run) {
@@ -112,4 +113,4 @@ const { budget, setup, overview } = workspaceEvidence();
       console.log(`PASS ${width}px: shared navigation, area failure, activity filter, direct task links, no mutations`);
     }
   } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

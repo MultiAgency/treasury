@@ -1,10 +1,11 @@
 const { rpcBody } = require('./fixtures/rpc.cjs');
+const { runSuite } = require('./fixtures/task.cjs');
 /** Offline only: all requests are fulfilled by fixtures or aborted. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
 const root = require('node:path').resolve(process.argv[2] || 'web/dist');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
     for (const scenario of ['recipient', 'public-recipient', 'grants', 'ended-grants']) {
@@ -89,4 +90,4 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
       await page.close();
     }
   } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

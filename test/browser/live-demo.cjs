@@ -1,5 +1,6 @@
 /** Offline guided-run regressions for the shared build: Home entries and the payout agent's run. The Treasury run is tested on the Treasury build (treasury-run.cjs). */
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
 const { openRun, digest, paymentId, payment } = require('./fixtures/guided-run.cjs');
@@ -7,7 +8,7 @@ const { openWorkspaceNavigation } = require('./fixtures/navigation.cjs');
 const { expect } = require('@playwright/test');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
     const open = (routePath, options) => openRun(browser, root, routePath, options);
@@ -179,4 +180,4 @@ const root = path.resolve(process.argv[2] || 'web/dist');
     console.log('PASS changed observations invalidate an open payment confirmation');
 
   } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

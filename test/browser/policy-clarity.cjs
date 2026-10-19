@@ -1,9 +1,10 @@
 const { rpcBody, rpcMalformed, UNAVAILABLE } = require('./fixtures/rpc.cjs');
+const { runSuite } = require('./fixtures/task.cjs');
 /** Offline policy presentation checks: no server, executor or signer is started. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
 const root = require('node:path').resolve(process.argv[2] || 'web/dist');
-(async () => {
+runSuite(async () => {
  const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
  try {
   for (const scenario of ['round-trip', 'current', 'unsynchronized', 'unmatched-grant', 'approve-only', 'missing-evidence', 'history-error', 'history-denied', 'grant-link']) {
@@ -99,4 +100,4 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
    console.log('PASS policy clarity: ' + scenario); await page.close();
   }
  } finally { await browser.close(); }
-})().catch(e => { console.error(e); process.exitCode = 1; });
+});

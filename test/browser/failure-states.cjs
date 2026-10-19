@@ -1,9 +1,10 @@
 const { rpcBody } = require('./fixtures/rpc.cjs');
+const { runSuite } = require('./fixtures/task.cjs');
 /** Offline failed-refresh checks. No server, signer or executor is started. */
 const assert = require('node:assert/strict');
 const { chromium } = require('./fixtures/browser.cjs');
 const root = require('node:path').resolve(process.argv[2] || 'web/dist');
-(async () => {
+runSuite(async () => {
  const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
  try {
  async function open(path, options = {}) {
@@ -123,4 +124,4 @@ const root = require('node:path').resolve(process.argv[2] || 'web/dist');
   await page.close(); console.log('PASS recovery stop explains the required permission or executor');
  }
  } finally { await browser.close(); }
-})().catch(e => { console.error(e); process.exitCode = 1; });
+});

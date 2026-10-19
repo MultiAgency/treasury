@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const { assertResponsive } = require('./fixtures/layout.cjs');
 const { rpcBody, rpcMalformed, UNAVAILABLE } = require('./fixtures/rpc.cjs');
 const { openWorkspaceNavigation } = require('./fixtures/navigation.cjs');
@@ -15,7 +16,7 @@ let pageErrors=[];
 const budget=Object.fromEntries(['daily','weekly','monthly'].map(p=>[p,{limit_usd:'100',remaining_usd:'90',spent_usd:'10',resets_at:null}]));
 const setup={executor:true,agentId:'fixture',wallet:'agent.near',owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},grant:{id:'grant',label:'treasury',expiresAt:'2030-01-01T00:00:00Z'},dao:{id:'owner.sputnik-dao.near',owner:{type:'near',account_id:'owner.near',public_key:'ed25519:fixture'},funded:false}};
 const overview=kind=>({agentId:'fixture',digest:'sha256:'+'a'.repeat(64),grants:[],rebalance:{minLegUsd:1,maxCostBps:100},notInForce:null,agreed:['payee.near'],unmanaged:[],target:{usdc:1},book:[{asset:'usdc',symbol:'USDC',decimals:6,public:0n,confidential:10000000n,usd:10,price:1,priceUpdatedAt:null,priceExpiresAt:null}],policy:{status:'APPLIED',revision:1,policy:{actions:kind==='treasury'?['swap','transfer']:['transfer'],owner_approval:false,frozen:false,destinations:{mode:'only',list:[{action:'transfer',address:'payee.near',confidential:true},{action:'transfer',address:'treasury.near',confidential:true}]},assets:'any',budget:{daily_usd:null,weekly_usd:null,monthly_usd:null},limits:{},confidential:false,max_actions_per_hour:10,timelock_ms:0},usage:{budget,timelock:{delay_ms:0,scheduled_count:0}},cooldowns:{policy_change_available_at:null,unfreeze_available_at:null},wallet_id:'agent.near',provider_policy_synced:true}});
-(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE});
+runSuite(async () => {const browser=await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXECUTABLE});
 async function pageFor(path,options={}){const page=await browser.newPage({viewport:{width:options.width||390,height:900},reducedMotion:'reduce'});page.setDefaultTimeout(5000);page.on('pageerror',error=>pageErrors.push(error.message));if(options.clock)await page.clock.install();const calls=[];const requests=[];let failedGateway=!!options.gatewayError;let releaseDelayed;const delayed=new Promise(resolve=>{releaseDelayed=resolve;});
 await page.route('**/*',async r=>{const u=new URL(r.request().url()),p=u.pathname;if(u.hostname!=='frontend.test')return r.abort();
 if(p==='/gw/me'){if(options.gatewayDelay)await new Promise(ok=>setTimeout(ok,1200));if(failedGateway)return r.fulfill({status:503,json:{error:'Fixture gateway unavailable'}});return r.fulfill({json:{agents:options.public?[]:[{name:'treasury',area:'treasury',owner:'owner.near',dao:false},{name:'payables',area:'payables',owner:options.dao?setup.dao.id:'owner.near',dao:!!options.dao}],invoices:null,viewer:options.public?null:{account:'owner.near',access:{treasury:{canSign:true,canPropose:true,canVote:true,canExecute:true,canManage:true},payables:{canSign:!options.dao,canPropose:true,canVote:true,canExecute:true,canManage:true}}}}});}
@@ -243,4 +244,4 @@ await check('policy freshness: owner can review safeguards while the agent is fr
  await frozen.page.getByRole('button',{name:'Review payment',exact:true}).click();
  return await frozen.page.getByRole('dialog').getByRole('button',{name:'Send payment'}).isDisabled()&&!frozen.calls.includes('pay');
 });
-console.log(JSON.stringify(results,null,2));await browser.close();process.exitCode=results.length > 0 && results.every(x=>x.pass)?0:1;})();
+console.log(JSON.stringify(results,null,2));await browser.close();process.exitCode=results.length > 0 && results.every(x=>x.pass)?0:1;});

@@ -1,4 +1,5 @@
 const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
+const { runSuite } = require('./fixtures/task.cjs');
 const { openWorkspaceNavigation } = require("./fixtures/navigation.cjs");
 /**
  * Offline showcase regressions. Build first with pnpm build:web.
@@ -25,7 +26,7 @@ const overview = kind => ({ agentId: 'fixture', digest: 'fixture', notInForce: n
 grants: []});
 
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   const results = [];
   const filter = process.env.CASE_FILTER;
@@ -335,4 +336,4 @@ grants: []});
   console.log(JSON.stringify(results, null, 2));
   await browser.close();
   process.exitCode = results.length > 0 && results.every(result => result.pass) ? 0 : 1;
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

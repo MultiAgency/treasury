@@ -1,11 +1,12 @@
 /** Offline public overview regressions. Every request is intercepted; no server or wallet starts. */
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
 const { assertResponsive } = require('./fixtures/layout.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   const results = [];
   async function check(name, width, work) {
@@ -99,4 +100,4 @@ const root = path.resolve(process.argv[2] || 'web/dist');
   console.log(JSON.stringify(results, null, 2));
   await browser.close();
   process.exitCode = results.length > 0 && results.every(result => result.pass) ? 0 : 1;
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

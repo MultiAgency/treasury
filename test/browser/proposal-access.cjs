@@ -1,11 +1,12 @@
 /** Shared-DAO proposal payloads follow each agent's access, including late successful reads. */
 const assert = require('node:assert/strict');
+const { runSuite } = require('./fixtures/task.cjs');
 const path = require('node:path');
 const { chromium } = require('./fixtures/browser.cjs');
 const { rpcBody } = require('./fixtures/rpc.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -78,4 +79,4 @@ const root = path.resolve(process.argv[2] || 'web/dist');
     await page.close();
     console.log('PASS shared-DAO proposals redact cached and late denied-agent payloads while preserving healthy-agent evidence');
   } finally { await browser.close(); }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});

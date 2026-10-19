@@ -1,4 +1,5 @@
 const { rpcAnswer, rpcBody } = require('./fixtures/rpc.cjs');
+const { runSuite } = require('./fixtures/task.cjs');
 /** Offline regressions: all requests are fulfilled locally or aborted; no executor runs.
  * PLAYWRIGHT_MODULE=/path/to/playwright-core BROWSER_EXECUTABLE=/path/to/chrome
  * node test/browser/friction.cjs /path/to/frontend-build
@@ -9,7 +10,7 @@ const { chromium } = require('./fixtures/browser.cjs');
 const root = path.resolve(process.argv[2] || 'web/dist');
 const results = [];
 
-(async () => {
+runSuite(async () => {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.BROWSER_EXECUTABLE });
   try {
     for (const draft of ['2', '120', 'copy-success', 'copy-failure', 'grant_missing', 'duplicate_held_payout', 'single-asset', 'topup']) {
@@ -118,4 +119,4 @@ const results = [];
   } finally { await browser.close(); }
   console.log(JSON.stringify(results, null, 2));
   process.exitCode = results.every(result => result.pass) ? 0 : 1;
-})().catch(error => { console.error(error); process.exitCode = 1; });
+});
