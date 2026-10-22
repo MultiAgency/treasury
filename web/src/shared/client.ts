@@ -1,12 +1,14 @@
 import type { Client as RpcClient, FriendlyClientOptions } from "@orpc/client";
 import { ownerClient, ownerStreams, type OwnerCallOptions, type OwnerFailure, type OwnerInputs, type OwnerOutput, type OwnerProcedure, type RefusalDetails } from "@multiagency/sdk";
 import { reportAccessDenial } from "./access";
+import { embedHost } from "./embed";
 
 /**
  * Where this agent's pages live: "" when a local agent server serves them, "/a/<agent>" behind the
- * hosted gateway, which forwards that prefix's calls to the agent's own server.
+ * hosted gateway, which forwards that prefix's calls to the agent's own server. Embedded, the host
+ * names the agent instead and the page address is the host's own.
  */
-export const BASE = (location.pathname.match(/^\/a\/[a-z0-9-]+/)?.[0] ?? "") as "" | `/${string}`;
+export const BASE = (embedHost() ? `/a/${embedHost()!.agent}` : location.pathname.match(/^\/a\/[a-z0-9-]+/)?.[0] ?? "") as "" | `/${string}`;
 
 /** The procedures this build may call. `pnpm check:frontend` narrows it to the release's declared capabilities. */
 export type ClientProcedure = OwnerProcedure;

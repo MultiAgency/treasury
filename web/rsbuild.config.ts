@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { defineConfig } from "@rsbuild/core";
+import { pluginModuleFederation } from "@module-federation/rsbuild-plugin";
 import { pluginReact } from "@rsbuild/plugin-react";
 
 /**
@@ -7,6 +8,12 @@ import { pluginReact } from "@rsbuild/plugin-react";
  * the door's tint strengthens on dark tab bars.
  */
 const treasuryOnly = process.env.PUBLIC_TREASURY_ONLY !== "false";
+/**
+ * `pnpm build:embed` builds Treasury as a Module Federation remote for a host app (docs/embedding.md).
+ * Opt-in, into its own directory: the standalone build and its release artifacts are unchanged.
+ */
+const embed = process.env.PUBLIC_TREASURY_EMBED === "true";
+const shareReact = { singleton: true, requiredVersion: false, strictVersion: false } as const;
 const logoColor = treasuryOnly ? "oklch(0.795 0.184 86.047)" : "#0091fd";
 const logoTint = treasuryOnly ? ".t{opacity:.28}" : ".t{opacity:.28}@media (prefers-color-scheme:dark){.t{opacity:.5}}";
 const VAULT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -6 38 38"><style>${logoTint}</style><g fill="${logoColor}"><rect x="6" y="6" width="20" height="18" class="t"/><path fill-rule="evenodd" d="M7 3h18v2h3v20h-3v2H7v-2H4V5h3zM7 6v18h18V6z"/><path d="M7 27h4v3H7zm14 0h4v3h-4zM11-1h2v4h-2zm8 0h2v4h-2zM10-4h4v3h-4zm8 0h4v3h-4z"/><g transform="rotate(20 16 15)"><circle cx="16" cy="15" r="5.3" fill="none" stroke="${logoColor}" stroke-width="1.1" /><path d="M16 8v7m0 0 6.06 3.5M16 15l-6.06 3.5" fill="none" stroke="${logoColor}" stroke-width="1.1" /><rect x="15" y="7.3" width="2" height="3" rx="0.4" /><rect x="15" y="7.3" width="2" height="3" rx="0.4" transform="rotate(120 16 15)" /><rect x="15" y="7.3" width="2" height="3" rx="0.4" transform="rotate(240 16 15)" /><circle cx="16" cy="15" r="1.8" /><circle cx="16" cy="15" r="1.1" fill="none" stroke="#15171b" stroke-width="0.3" opacity="0.5" /></g><path fill-rule="evenodd" d="M2 8h6v4H2zm1 1v2h1V9zm-1 10h6v4H2zm1 1v2h1v-2z" /><path d="M23.5 14h2v3h-2z" /></g></svg>`;
@@ -26,7 +33,14 @@ const skillPage = {
 };
 
 export default defineConfig({
-  plugins: [pluginReact()],
+  plugins: [pluginReact(), ...(embed ? [pluginModuleFederation({
+    name: "treasury",
+    filename: "remoteEntry.js",
+    dts: false,
+    exposes: { "./mount": "./src/embed.tsx" },
+    // One React for host and remote; everything else Treasury brings itself.
+    shared: { react: shareReact, "react-dom": shareReact },
+  })] : [])],
   source: { entry: { index: "./src/main.tsx" }, define: { "process.env.PUBLIC_TREASURY_ONLY": JSON.stringify(process.env.PUBLIC_TREASURY_ONLY ?? "true") } },
   // The one build seam: only the shared build bundles the inherited Payables/Portfolio surface.
   resolve: { alias: { "@legacy": treasuryOnly ? "./src/legacy/absent.ts" : "./src/legacy/surface.ts" } },
@@ -37,7 +51,8 @@ export default defineConfig({
     tags: [{ tag: "link", attrs: { rel: "icon", type: "image/svg+xml", href: `data:image/svg+xml,${encodeURIComponent(VAULT)}` } }],
   },
   // Only the focused Treasury build is a release that declares the platform capabilities it calls (P2 manifest v1).
-  output: { distPath: { root: "dist" }, copy: treasuryOnly ? [{ from: "./contract.json" }, skillPage] : [] },
+  // The embed build is not a release: it ships no manifest, and its assets load from its own origin, not the host's.
+  output: { ...(embed ? { assetPrefix: "auto" } : {}), distPath: { root: embed ? "dist-embed" : "dist" }, copy: treasuryOnly && !embed ? [{ from: "./contract.json" }, skillPage] : [] },
   // `pnpm server` answers the RPC calls; the dev server only serves the UI.
   server: { port: 3000, proxy: { "/rpc": "http://127.0.0.1:8787" } },
 });

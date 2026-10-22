@@ -1,4 +1,5 @@
 import { TREASURY_ONLY } from "../treasury-surface";
+import { isEmbedded } from "../shared/embed";
 import { createContext, useContext, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BASE } from "../shared/client";
@@ -66,7 +67,7 @@ export function Workspace({ gateway, activity = false, pathname = location.pathn
     <a href="#agent-main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
     {children}
     <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 border-t px-4 py-5 text-sm sm:px-8">
-      {gateway.selfServiceTreasury && <Button asChild variant="outline"><a href="/">Your treasuries</a></Button>}
+      {gateway.selfServiceTreasury && !isEmbedded() && <Button asChild variant="outline"><a href="/">Your treasuries</a></Button>}
     </footer>
   </WorkspaceContext.Provider>;
   return <WorkspaceContext.Provider value={true}>

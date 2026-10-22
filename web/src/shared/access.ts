@@ -36,5 +36,15 @@ export function visibleProposals(proposals: readonly Decoded[], snapshot: Access
   return proposals.filter(p => p.what !== "agent" || !deniedAt(snapshot, `/a/${p.agent}`));
 }
 
+/** Forget latched denials, so the next reads decide again. */
+export function clearAccessDenials() {
+  state = { agents: {} };
+  for (const listener of listeners) listener();
+}
+
+let reread: (() => void) | null = null;
+/** Embedded, a reload would reload the host: the embed entry supplies how to read access again in place. */
+export const onEmbeddedRecheck = (read: () => void) => { reread = read; };
+
 /** Reloading checks the session and starts fresh caches; no owner action or payment is retried. */
-export const recheckAccess = () => location.reload();
+export const recheckAccess = () => (reread ? reread() : location.reload());

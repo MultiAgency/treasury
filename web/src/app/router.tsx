@@ -1,6 +1,7 @@
 import { TREASURY_ONLY } from "../treasury-surface";
 import { TreasuryDesk } from "../features/portfolio/treasury-desk";
-import { Link, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
+import { Link, createMemoryHistory, createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
+import { isEmbedded } from "../shared/embed";
 import { Activity, ActivityReturn, BooksDisclosure, Unresolved } from "../features/activity/activity";
 import { BASE } from "../shared/lib";
 import { Policy } from "../features/policy/policy";
@@ -28,8 +29,10 @@ function GuidedRun() {
 const page = <P extends string>(path: P, component: () => React.ReactNode) =>
   createRoute({ getParentRoute: () => root, path, component });
 
+// Embedded, the host owns the address bar: Treasury keeps its own place in memory.
 export const router = createRouter({
   basepath: BASE || "/",
+  ...(isEmbedded() ? { history: createMemoryHistory({ initialEntries: [`${BASE}/`] }) } : {}),
   routeTree: root.addChildren([
     // The page address keeps a confirmed plan's identity across reloads; it never replays execution.
     createRoute({ getParentRoute: () => root, path: "/", component: legacy?.Overview ?? TreasuryDesk, validateSearch: planSearch }),
