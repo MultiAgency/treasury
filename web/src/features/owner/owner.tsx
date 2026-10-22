@@ -1,6 +1,7 @@
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { signOut } from "../../app/session";
 import { TREASURY_ONLY } from "../../treasury-surface";
+import { isEmbedded } from "../../shared/embed";
 import { Snowflake, Sun, Wallet as WalletIcon } from "@phosphor-icons/react";
 import { Badge as WalletBadge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
@@ -198,7 +199,7 @@ export function WalletButton() {
   if (TREASURY_ONLY && wallet.status === "connected" && wallet.accountId) return <DropdownMenu>
     <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label={`Wallet: ${wallet.accountId}`}><WalletIcon data-icon="inline-start" aria-hidden="true" />{short(wallet.accountId)}</Button></DropdownMenuTrigger>
     <DropdownMenuContent align="end"><DropdownMenuGroup>
-      <DropdownMenuItem onSelect={() => { void (viewer ? signOut() : disconnect()); }}>Disconnect</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => { void (viewer && !isEmbedded() ? signOut() : disconnect()); }}>Disconnect</DropdownMenuItem>
     </DropdownMenuGroup></DropdownMenuContent>
   </DropdownMenu>;
   if (wallet.status === "connected" && wallet.accountId)
@@ -207,7 +208,7 @@ export function WalletButton() {
         <WalletBadge variant="neutral" className="h-auto min-h-6 max-w-full whitespace-normal">
           <WalletIcon size={12} weight="bold" /> <span className="min-w-0 break-all font-mono">{short(wallet.accountId)}</span>
         </WalletBadge>
-        <Button variant="ghost" size="sm" className="h-auto max-w-full whitespace-normal py-3" onClick={() => TREASURY_ONLY && viewer ? signOut() : disconnect()}>
+        <Button variant="ghost" size="sm" className="h-auto max-w-full whitespace-normal py-3" onClick={() => TREASURY_ONLY && viewer && !isEmbedded() ? signOut() : disconnect()}>
           Disconnect
         </Button>
       </div>

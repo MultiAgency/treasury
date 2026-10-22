@@ -1,5 +1,6 @@
 import { Logo, TreasuryBrand } from "./treasury-brand";
 import { TREASURY_ONLY } from "../treasury-surface";
+import { isEmbedded } from "../shared/embed";
 import { queries } from "../shared/queries";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ import { SetupNextStep } from "./setup-progress";
 const OFF_NAV: Record<Kind, LinkProps["to"][]> = { facilitator: ["/automations", "/follow/payment"], treasury: ["/follow/payment", "/steward"] };
 
 function Brand({ data }: { data?: Overview }) {
+  if (isEmbedded()) return null;
   if (TREASURY_ONLY) return <TreasuryBrand />;
   return (
     <div className="flex items-center gap-3">
@@ -161,7 +163,8 @@ export function AgentTaskBoundary() {
   const name = overview.data && AREA_NAMES[kindOf(overview.data)];
   const pageTitle = pathname.replace(/\/$/, "").endsWith("/activity") ? "Operation status" : overview.data ? areaPageTitle(kindOf(overview.data), pathname) : "Agent";
   useEffect(() => {
-    if (name) document.title = `${name} · ${pageTitle}`;
+    // The host owns the page title.
+    if (name && !isEmbedded()) document.title = `${name} · ${pageTitle}`;
   }, [name, pageTitle]);
 
   if (setup.error || setupRecovery)
@@ -255,7 +258,7 @@ export function AgentTaskBoundary() {
       <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
         {TREASURY_ONLY ? <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
           <div className="flex min-w-0 flex-1 flex-col gap-3">
-            <TreasuryBrand />
+            {!isEmbedded() && <TreasuryBrand />}
             <section aria-label="Treasury owner"><dl className="text-sm">
               <dt className="text-muted-foreground">Owner</dt>
               <dd className="break-words">{ownerName(setup.data)}</dd>

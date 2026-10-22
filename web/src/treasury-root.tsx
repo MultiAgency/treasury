@@ -9,12 +9,15 @@ import { PublicHome } from "./public";
 import { ErrorBox, Button, Loading } from "./shared/ui";
 import { loadGateway, ownersOf } from "./app/session";
 import { BASE } from "./shared/client";
-import { deniedAt, onAccessDenial, recheckAccess, useAccessState } from "./shared/access";
+import { clearAccessDenials, deniedAt, onAccessDenial, recheckAccess, useAccessState } from "./shared/access";
+import { embedHost, isEmbedded } from "./shared/embed";
 
 const AuthenticatedApp = lazy(() => import("./app/authenticated-app").then(module => ({ default: module.AuthenticatedApp })));
 const PrototypeExplorer = lazy(() => import("./public/prototype-explorer").then(module => ({ default: module.PrototypeExplorer })));
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
+/** Read access again without reloading the page: embedded, a reload would reload the host. */
+export const rereadAccess = () => { clearAccessDenials(); void queryClient.resetQueries(); };
 onAccessDenial(denial => {
   if (denial.scope === "procedure") clearAgentCapabilities(queryClient, denial.base);
   else {
@@ -73,6 +76,14 @@ function GatewayPage({ activity }: { activity: boolean }) {
     viewer: { ...gateway.viewer, access: Object.fromEntries(Object.entries(gateway.viewer.access)
       .filter(([name]) => !deniedAt(access, `/a/${name}`))) },
   } : gateway;
+  // Embedded, the host owns sign-in and says who is signed in; the gateway still decides what that account may see.
+  if (isEmbedded() && gateway) {
+    if (!gateway.viewer) return <main className="mx-auto max-w-xl p-8"><p role="status">Sign in to the host app to use this treasury.</p></main>;
+    if (gateway.viewer.account !== embedHost()!.account) return <main className="mx-auto flex max-w-xl flex-col gap-3 p-8">
+      <h1 className="text-xl font-semibold">Account mismatch</h1>
+      <p role="alert">The account signed in to this session is not the account the host reported. Private records are hidden.</p>
+    </main>;
+  }
   const content = gateway && !gateway.viewer ? (
     TREASURY_ONLY ? <TreasuryHome selfService={gateway.selfServiceTreasury} daos={ownersOf(gateway.agents.filter(agent => agent.area === "treasury" || agent.name === "treasury"))} /> : <PublicHome daos={ownersOf(gateway.agents)} invoices={gateway.invoices} />
   ) : (
@@ -96,7 +107,7 @@ const subscribeHash = (notify: () => void) => {
   return () => window.removeEventListener("hashchange", notify);
 };
 function App() {
-  const hash = useSyncExternalStore(subscribeHash, () => location.hash);
+  const hash = useSyncExternalStore(subscribeHash, () => isEmbedded() ? "" : location.hash);
   const example = hash.match(/^#\/explore\/(payables|treasury)(?:\/([^/?#]+))?\/?$/);
   if (example && !TREASURY_ONLY) return <PrototypeExplorer key={example[1]} area={example[1] as "payables" | "treasury"} page={example[2] || "overview"} />;
   return <GatewayPage activity={hash === "#activity"} />;
