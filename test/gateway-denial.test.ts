@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { mayCall } from "../src/gateway/allowlist.js";
+import { consentDescription } from "../src/gateway/dao-consent.js";
 import { router } from "../src/router.js";
 import { sessionToken } from "../src/signin.js";
 
@@ -37,6 +38,9 @@ const reached: string[] = [];
 const forwardedCredentials: unknown[] = [];
 let walletIdentityUnavailable = false;
 let walletAgentId = "a".repeat(64);
+let daoAgentId = "a".repeat(64);
+/** The DAO's proposals as the stand-in chain stores them (Sputnik `get_proposal`). */
+const proposals = new Map<number, unknown>();
 let agentServers: Server[], rpcServer: Server, gateway: ChildProcess, base: string, dir: string;
 
 const listen = (server: Server) => new Promise<number>((done) => server.listen(0, "127.0.0.1", () => done((server.address() as AddressInfo).port)));
@@ -58,7 +62,7 @@ const agentServer = (owner: string | null) => createServer((req, res) => {
   const path = req.url!.replace(/^\/rpc\//, "");
   if (req.headers["x-gateway"]) {
     if (owner === OWNER && walletIdentityUnavailable) return res.writeHead(503).end();
-    const setup = { agentId: owner && (owner === OWNER ? walletAgentId : "a".repeat(64)), owner: owner && { type: "near", account_id: owner } };
+    const setup = { agentId: owner && (owner === OWNER ? walletAgentId : daoAgentId), owner: owner && { type: "near", account_id: owner } };
     return res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ json: path === "ownerIdentity" ? setup : null }));
   }
   reached.push(path);
@@ -71,10 +75,13 @@ before(async () => {
   rpcServer = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk)).on("end", () => {
-      const { id, params } = JSON.parse(body) as { id: unknown; params: { account_id?: string } };
+      const { id, params } = JSON.parse(body) as { id: unknown; params: { account_id?: string; method_name?: string; args_base64?: string } };
       const view = (value: unknown) => ({ result: { result: [...Buffer.from(JSON.stringify(value))], logs: [], block_height: 1, block_hash: "11111111111111111111111111111111" } });
       // Only the DAO and the MPC signer have contracts; any other account is answered as the chain answers an unknown one.
-      const answer = params.account_id === DAO ? view(policy) : params.account_id === "v1.signer" ? view(DAO_KEY)
+      const unknown = { error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: { requested_account_id: params.account_id } }, code: -32000, message: "Server error" } };
+      const proposal = () => proposals.get(JSON.parse(Buffer.from(params.args_base64 ?? "e30=", "base64").toString()).id);
+      const answer = params.account_id === DAO && params.method_name === "get_proposal" ? (proposal() ? view(proposal()) : unknown)
+        : params.account_id === DAO ? view(policy) : params.account_id === "v1.signer" ? view(DAO_KEY)
         : { error: { name: "HANDLER_ERROR", cause: { name: "UNKNOWN_ACCOUNT", info: { requested_account_id: params.account_id } }, code: -32000, message: "Server error" } };
       res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id, ...answer }));
     });
@@ -487,4 +494,95 @@ test("owner recovery and receipt discovery require agent membership and prohibit
     assert.equal(response.headers.get("cache-control"), "private, no-store");
     assert.deepEqual(reached, [path]);
   }
+});
+
+// DAO consent: a passed Vote proposal that names the credential, verified against the chain.
+const DAO_AGENT_ID = "a".repeat(64);
+const approval = (id: number, over: { scopes?: string[]; status?: string; kind?: unknown; agentId?: string; ttlSeconds?: number; issueBy?: string; agent?: string } = {}) => {
+  proposals.set(id, { id, proposer: "council.near", status: over.status ?? "Approved", kind: over.kind ?? "Vote", submission_time: String(BigInt(Date.now()) * 1_000_000n),
+    description: consentDescription({ agent: over.agent ?? "treasury", agentId: over.agentId ?? DAO_AGENT_ID, host: "dao.test", label: "fixture assistant",
+      scopes: (over.scopes ?? ["read"]) as never, ttlSeconds: over.ttlSeconds ?? 60, issueBy: over.issueBy ?? new Date(Date.now() + 3_600_000).toISOString() }) });
+  return id;
+};
+const issued = async (response: Response) => (await response.json()) as { token: string; credential: { id: string; consent?: { dao: string; proposalId: number } } };
+
+test("a DAO-approved credential can be issued, used within its scopes, and revoked like a wallet owner's", async () => {
+  const response = await credentialRequest("council.near", ["read", "prepare"], "treasury", { proposalId: approval(101, { scopes: ["read", "prepare"] }) });
+  assert.equal(response.status, 201);
+  const { token, credential } = await issued(response);
+  assert.deepEqual(credential.consent && { dao: credential.consent.dao, proposalId: credential.consent.proposalId }, { dao: DAO, proposalId: 101 });
+  reached.length = 0;
+  assert.equal((await machineCall(token, "overview")).status, 200);
+  assert.equal((await machineCall(token, "rebalance")).status, 200);
+  assert.deepEqual(reached, ["overview", "rebalance"]);
+  // Only what the approval names: no execution, sweep, owner signing or management.
+  for (const path of ["executePlan", "sweep", "owner/prepare", "owner/submit", "strategy/save", "autopilot/enable", "pay", "recover"])
+    assert.equal((await machineCall(token, path)).status, 403, path);
+  assert.deepEqual(reached, ["overview", "rebalance"], "refused calls never reach the agent");
+  // Bound to this treasury and this host, like any credential.
+  assert.equal((await machineCall(token, "overview", "wallet")).status, 403);
+  assert.equal((await machineCall(token, "overview", "treasury", { host: "elsewhere.test" })).status, 421);
+  // Any current manager revokes it, as for a wallet owner; the call then fails at once.
+  assert.equal((await machineFetch(`${base}/gw/machine-credentials/treasury/${credential.id}`, { method: "DELETE", headers: { host: "dao.test", ...session("manager.near") } })).status, 200);
+  assert.equal((await machineCall(token, "overview")).status, 401);
+});
+
+test("DAO member permissions alone never issue a credential, however strong; the approval must be the DAO's and match", async () => {
+  // Strongest members, no proposal, then proposals that are not consent for this credential.
+  assert.equal((await credentialRequest("council.near", ["read"])).status, 403);
+  assert.equal((await credentialRequest("council.near", ["read"], "treasury", { proposalId: 9_999 })).status, 403, "no such proposal");
+  const refusals: [string, number, string[]][] = [
+    ["not yet approved", approval(110, { status: "InProgress" }), ["read"]],
+    ["rejected", approval(111, { status: "Rejected" }), ["read"]],
+    ["expired", approval(112, { status: "Expired" }), ["read"]],
+    ["a proposal that does something", approval(113, { kind: { Transfer: { token_id: "", receiver_id: "x.near", amount: "1" } } }), ["read"]],
+    ["wider scopes than approved", approval(114, { scopes: ["read"] }), ["read", "prepare"]],
+    ["narrower scopes than approved", approval(115, { scopes: ["read", "prepare"] }), ["read"]],
+    ["another agent's approval", approval(116, { agent: "wallet" }), ["read"]],
+    ["another provider agent", approval(117, { agentId: "b".repeat(64) }), ["read"]],
+    ["a longer lifetime than approved", approval(118, { ttlSeconds: 60 }), ["read"]],
+    ["issue-by passed", approval(119, { issueBy: new Date(Date.now() - 1_000).toISOString() }), ["read"]],
+  ];
+  for (const [name, id, scopes] of refusals) {
+    const longer = name === "a longer lifetime than approved";
+    const response = await credentialRequest("council.near", scopes, "treasury", { proposalId: id, ...(longer && { ttlSeconds: 3_600 }) });
+    assert.equal(response.status, 403, name);
+  }
+  // A member without management permission cannot present even a valid approval.
+  assert.equal((await credentialRequest("member.near", ["read"], "treasury", { proposalId: approval(120) })).status, 403);
+  assert.equal((await credentialRequest("executor.near", ["read"], "treasury", { proposalId: approval(121) })).status, 403);
+  assert.equal((await credentialRequest(undefined, ["read"], "treasury", { proposalId: approval(122) })).status, 401);
+  // Wallet-owned treasuries take no proposalId.
+  assert.equal((await credentialRequest(OWNER, ["read"], "wallet", { proposalId: 1 })).status, 400);
+});
+
+test("one DAO approval backs one credential, even if the first is revoked", async () => {
+  const id = approval(130);
+  const first = await credentialRequest("manager.near", ["read"], "treasury", { proposalId: id });
+  assert.equal(first.status, 201);
+  assert.equal((await credentialRequest("council.near", ["read"], "treasury", { proposalId: id })).status, 409);
+  const { credential } = await issued(first);
+  await machineFetch(`${base}/gw/machine-credentials/treasury/${credential.id}`, { method: "DELETE", headers: { host: "dao.test", ...session("council.near") } });
+  assert.equal((await credentialRequest("council.near", ["read"], "treasury", { proposalId: id })).status, 409);
+});
+
+test("a DAO credential stops working the moment the chain no longer shows the approval it rests on", async () => {
+  const id = approval(140, { scopes: ["read"] });
+  const { token } = await issued(await credentialRequest("council.near", ["read"], "treasury", { proposalId: id }));
+  assert.equal((await machineCall(token, "overview")).status, 200);
+  const original = proposals.get(id);
+  // The stored approval changes status, vanishes, or reads differently: every one refuses before forwarding.
+  for (const changed of [{ ...(original as object), status: "Removed" }, { ...(original as object), kind: { Transfer: {} } },
+    { ...(original as object), description: (original as { description: string }).description + " " }, undefined]) {
+    if (changed) proposals.set(id, changed); else proposals.delete(id);
+    reached.length = 0;
+    assert.equal((await machineCall(token, "overview")).status, 403);
+    assert.deepEqual(reached, []);
+  }
+  proposals.set(id, original);
+  assert.equal((await machineCall(token, "overview")).status, 200);
+  // Replacing the provider agent under the same workspace name also ends it: the approval named the old one.
+  daoAgentId = "b".repeat(64);
+  try { assert.equal((await machineCall(token, "overview")).status, 403); } finally { daoAgentId = "a".repeat(64); }
+  assert.equal((await machineCall(token, "overview")).status, 200);
 });

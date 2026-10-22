@@ -2,7 +2,9 @@ import { createORPCClient } from "@orpc/client";
 import { RPCLink } from "@orpc/client/fetch";
 import type { RouterClient } from "@orpc/server";
 import { z } from "zod";
-import { type DaoPolicy, daoPolicy, groupOf, permits } from "../chain.js";
+import { type DaoPolicy, daoPolicy, daoProposal, groupOf, permits } from "../chain.js";
+import { type Consent, type MachineScope } from "./machine-auth.js";
+import { type ReadProposal, consentDigest } from "./dao-consent.js";
 import { daoOwner } from "../dao-owner.js";
 import type { Router } from "../router.js";
 
@@ -133,4 +135,45 @@ export async function resolveAccess(account: string, agents: Agent[], now = Date
     return access ? ([agent.name, access] as const) : null;
   }));
   return Object.fromEntries(granted.filter((g) => g !== null)) as Record<string, Access>;
+}
+
+/**
+ * Fresh evidence that `agent` is a DAO's: the owner is still a DAO, and the provider's agent reports
+ * the DAO's signing account as its owner. Nothing cached; null when anything cannot be read or differs.
+ */
+export async function resolveDaoIdentity(agent: Agent): Promise<{ agentId: string } | null> {
+  try {
+    if (!(await daoPolicy(agent.owner))) return null;
+    const signer = (await daoOwner(agent.owner)).account_id;
+    const link = new RPCLink({ origin: `http://127.0.0.1:${agent.port}`, url: "/rpc", headers: { "x-gateway": "owner-check" } });
+    const client: RouterClient<Router> = createORPCClient(link);
+    const parsed = identity.safeParse(await client.ownerIdentity(undefined, { signal: AbortSignal.timeout(3_000) }));
+    if (!parsed.success || !parsed.data.agentId || !parsed.data.owner ||
+      parsed.data.owner.type !== "near" || parsed.data.owner.account_id !== signer) return null;
+    return { agentId: parsed.data.agentId };
+  } catch { return null; }
+}
+
+/**
+ * A DAO-approved credential's authority at call time. The DAO is still the agent's owner, the provider
+ * agent is the one the credential names, and the DAO's approval is still the approved proposal the
+ * credential was issued on. Its permissions are only what the approval's scopes name; no member's
+ * permissions come into it, and a missing or changed approval refuses.
+ */
+export async function resolveDaoMachineAccess(
+  credential: { agentId: string; scopes: readonly MachineScope[]; consent?: Consent },
+  agent: Agent,
+  read: ReadProposal = daoProposal,
+): Promise<{ access: Access; agentId: string } | null> {
+  const { consent } = credential;
+  if (!consent || consent.dao !== agent.owner) return null;
+  const identified = await resolveDaoIdentity(agent);
+  if (!identified || identified.agentId !== credential.agentId) return null;
+  try {
+    const proposal = await read(consent.dao, consent.proposalId);
+    if (!proposal || proposal.id !== consent.proposalId || proposal.kind !== "Vote" || proposal.status !== "Approved" ||
+      consentDigest(proposal.description) !== consent.digest) return null;
+  } catch { return null; }
+  const executes = credential.scopes.includes("execute-plan") || credential.scopes.includes("sweep");
+  return { access: { canSign: false, canPropose: credential.scopes.includes("prepare"), canVote: false, canExecute: executes, canManage: false }, agentId: identified.agentId };
 }

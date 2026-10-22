@@ -91,8 +91,8 @@ receipts are documented in the Treasury repository at `demo/treasury-strategy/RE
 - **No spending budget:** the credential has none of its own. The scheduled autopilot's per-run
   ceiling does not apply to plans you execute. Only the owner's policy and grants limit spending,
   and those limits do not cap market exposure.
-- **Not available:** only wallet-owned Treasuries support machine delegation. DAO delegation is
-  refused.
+- **DAO-owned Treasuries:** a credential needs the DAO's approved `Vote` proposal naming it; a client
+  cannot obtain one by itself. See docs/machine-api.md.
 
 ## Setup
 

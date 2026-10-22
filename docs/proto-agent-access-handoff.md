@@ -55,7 +55,8 @@ or required by this handoff. Neither OAuth nor NEAR/OutLayer machine identity ha
 Preserve these properties or provide equivalent tests in the shared implementation:
 
 1. DAO group permissions alone cannot establish consent to delegate machine authority. The candidate
-   refuses DAO issuance and use until a verified DAO approval mechanism exists.
+   refuses DAO issuance and use without the DAO's approved `Vote` proposal that names the credential, read
+   from the chain at issuance and on every call (see [DAO-owned Treasuries](machine-api.md#dao-owned-treasuries)).
 2. Machine authorization requires fresh chain/provider ownership evidence. A warmed dashboard cache
    cannot permit calls during failed identity reads; missing or replaced agents refuse access.
 3. Credentials bind the host, workspace, owner and actual provider agent ID, not just the workspace name.

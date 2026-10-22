@@ -101,9 +101,9 @@ const threshold = (t: unknown) =>
  * contract, or no such method (AccountDoesNotExistError, FunctionCallError; mainnet RPC, 2026-10-13).
  * Any other failure, such as the RPC being unreachable, is no answer at all and throws.
  */
-async function daoView<T>(accountId: string, method: string): Promise<T | null> {
+async function daoView<T>(accountId: string, method: string, args?: object): Promise<T | null> {
   try {
-    return (await near.view<T>(accountId, method)) ?? null;
+    return (await near.view<T>(accountId, method, args)) ?? null;
   } catch (error) {
     if (error instanceof AccountDoesNotExistError || error instanceof FunctionCallError) return null;
     throw error;
@@ -112,6 +112,10 @@ async function daoView<T>(accountId: string, method: string): Promise<T | null> 
 
 /** A Sputnik DAO's policy; null for any other account, which is treated as a plain NEAR account. */
 export const daoPolicy = (accountId: string) => daoView<DaoPolicy>(accountId, "get_policy");
+
+/** One proposal as Sputnik stores it (`get_proposal`); null when the DAO has no such proposal. */
+export const daoProposal = (accountId: string, id: number) =>
+  daoView<{ id: number; proposer: string; description: string; status: string; kind: unknown; submission_time: string }>(accountId, "get_proposal", { id });
 
 /** The id the DAO's next proposal will get (Sputnik's `get_last_proposal_id`); null for an account that isn't a DAO. */
 export const nextProposalId = (accountId: string) => daoView<number>(accountId, "get_last_proposal_id");

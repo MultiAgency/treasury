@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { BadRequest } from "../http.js";
@@ -13,13 +13,22 @@ export const MachineIssue = z.strictObject({
   label: z.string().trim().min(1).max(80),
   scopes: z.array(MachineScope).min(1).max(4).refine(values => new Set(values).size === values.length),
   ttlSeconds: z.number().int().min(60).max(86_400).default(3_600),
+  /** A DAO-owned treasury only: the id of the DAO's approved consent proposal (src/gateway/dao-consent.ts). */
+  proposalId: z.number().int().nonnegative().optional(),
 });
-const Record = MachineIssue.omit({ ttlSeconds: true }).extend({
+/** The DAO approval a credential was issued on, pinned by the hash of the proposal's description. */
+const Consent = z.strictObject({ dao: z.string().min(2), proposalId: z.number().int().nonnegative(), digest: z.string().regex(/^[a-f0-9]{64}$/) });
+export type Consent = z.infer<typeof Consent>;
+/** One DAO approval backs one credential. */
+export class ConsentAlreadyUsed extends Error {}
+const Record = MachineIssue.omit({ ttlSeconds: true, proposalId: true }).extend({
   version: z.literal(2), id: z.uuid(), secretHash: z.string().regex(/^[a-f0-9]{64}$/),
   account: z.string().min(2), owner: z.string().min(2), agent: z.string().regex(/^[a-z0-9-]{1,32}$/),
   agentId: z.string().min(1),
   host: z.string().min(1), createdAt: z.number().int().nonnegative(), expiresAt: z.number().int().positive(),
   revoked: z.boolean(),
+  /** Present when a DAO's approval, not a wallet owner, authorizes the credential. */
+  consent: Consent.optional(),
 }).strict();
 // Earlier experimental records remain listable/revocable, but can never authorize a call.
 const LegacyRecord = Record.omit({ agentId: true }).extend({ version: z.literal(1), scopes: z.array(z.enum(["read", "prepare", "execute"])).min(1).max(3) });
@@ -48,7 +57,20 @@ export class MachineCredentials {
     if (record.id !== id || record.expiresAt <= record.createdAt) throw new Error("Invalid machine credential record");
     return record;
   }
-  issue(input: z.infer<typeof MachineIssue> & { account: string; owner: string; agent: string; agentId: string; host: string }, now = Date.now()) {
+  /** Mark a DAO approval used, once. Exclusive creation: a second credential on the same approval is refused, even across restarts. */
+  private consume(dao: string, proposalId: number, now: number) {
+    const directory = join(this.root, "consents");
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    const file = join(directory, `${createHash("sha256").update(`${dao}#${proposalId}`).digest("hex")}.json`);
+    let fd: number;
+    try { fd = openSync(file, "wx", 0o600); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new ConsentAlreadyUsed("This DAO approval has already been used for a credential. Approve a new proposal to issue another.");
+      throw error;
+    }
+    try { writeSync(fd, JSON.stringify({ dao, proposalId, at: now }) + "\n"); fsyncSync(fd); } finally { closeSync(fd); }
+  }
+  issue(input: Omit<z.infer<typeof MachineIssue>, "proposalId"> & { account: string; owner: string; agent: string; agentId: string; host: string; consent?: Consent }, now = Date.now()) {
     const parsed = MachineIssue.parse({ label: input.label, scopes: input.scopes, ttlSeconds: input.ttlSeconds });
     mkdirSync(this.root, { recursive: true, mode: 0o700 });
     if ((statSync(this.root).mode & 0o077) !== 0) throw new Error("Machine credential directory must be private");
@@ -57,7 +79,10 @@ export class MachineCredentials {
     const secret = randomBytes(32).toString("base64url");
     const record = Record.parse({ version: 2, id, secretHash: hash(secret).toString("hex"), account: input.account,
       owner: input.owner, agent: input.agent, agentId: input.agentId, host: input.host.toLowerCase(), label: parsed.label,
-      scopes: parsed.scopes, createdAt: now, expiresAt: now + parsed.ttlSeconds * 1_000, revoked: false });
+      scopes: parsed.scopes, createdAt: now, expiresAt: now + parsed.ttlSeconds * 1_000, revoked: false,
+      ...(input.consent && { consent: input.consent }) });
+    // After everything that can refuse, before the credential exists: a failed write burns the approval, never reuses it.
+    if (input.consent) this.consume(input.consent.dao, input.consent.proposalId, now);
     writeAtomic(join(this.root, `${id}.json`), JSON.stringify(record) + "\n", 0o600);
     return { credential: publicRecord(record), token: `tmc_${id}.${secret}` };
   }

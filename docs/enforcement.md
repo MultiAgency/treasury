@@ -275,13 +275,13 @@ The gateway caches DAO policy for up to a minute, so removal may take that long 
 
 The candidate [machine interface](machine-api.md) accepts only wallet-owner delegations, bound to
 one host, workspace and provider agent ID. It requires fresh chain/provider ownership observations
-on every request; failures refuse access without using dashboard ownership caches. DAO delegation is
-refused until verified DAO consent exists. Plan execution and sweep scopes are independent. This
+on every request; failures refuse access without using dashboard ownership caches. DAO delegation needs
+the DAO's own approved proposal, read from the chain at issuance and on every call. Plan execution and sweep scopes are independent. This
 neither issues a provider grant nor signs for the owner, and execution uses the existing executor.
 Older experimental credentials remain listable/revocable but cannot authenticate. Offline regressions
 reproduced and fixed DAO issuance without consent, stale-identity access during failure, and credential
 reuse after agent replacement. Hosted acceptance, independent security review, sender-constrained
-credentials and a DAO delegation mechanism remain gaps.
+credentials and use of the DAO delegation mechanism on a real DAO remain gaps.
 
 The candidate external planner quotes chosen swaps and saves `source: external` plans for the existing
 execution path. Its skill helper completes an offline real-stack prepare/execute/evidence/revoke flow.

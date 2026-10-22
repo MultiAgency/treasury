@@ -127,12 +127,12 @@ expiring and revocable access to the existing Treasury executor. It supports rea
 externally chosen swaps and separately delegated plan/sweep execution for established
 wallet owners; it is not deployed. A [Treasury skill](skills/treasury/SKILL.md) packages the workflow
 and client helper; its prepare/execute/evidence/revoke flow is tested against an offline simulated provider.
-DAO machine delegation is refused until a verified DAO approval mechanism exists.
+A DAO-owned Treasury issues credentials only on the DAO's own approved proposal (offline-tested; see [DAO-owned Treasuries](docs/machine-api.md#dao-owned-treasuries)); member permissions alone never do.
 
 ## Not done yet
 
 - Machine access has no hosted acceptance, credential-management UI, standalone public SDK,
-  verified DAO delegation or complete external-client fault acceptance yet. Bearer credentials are
+  DAO delegation used on a real DAO or complete external-client fault acceptance yet. Bearer credentials are
   not sender-constrained; see
   [machine-interface limits](docs/machine-api.md#failure-and-evidence-semantics).
 
