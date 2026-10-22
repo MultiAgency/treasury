@@ -54,7 +54,7 @@ export function replaceGenerated(source: string, section: string, body: string):
 export function documentationUpdates() {
   return [
     { path: "docs/legacy/facilitator.md", section: "requirements", body: requirementsMarkdown("facilitator") },
-    { path: "docs/legacy/treasury.md", section: "requirements", body: requirementsMarkdown("treasury") },
+    { path: "docs/treasury-requirements.md", section: "requirements", body: requirementsMarkdown("treasury") },
     { path: "docs/legacy/DEMO.md", section: "verification", body: verificationMarkdown().replace(/\]\(docs\//g, "](../../docs/") },
     { path: "docs/treasury.md", section: "requirements", body: requirementsMarkdown("treasury", true) },
     { path: "DEMO.md", section: "verification", body: treasuryVerificationMarkdown() },

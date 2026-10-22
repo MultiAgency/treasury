@@ -1,5 +1,3 @@
-> Historical shared-workspace documentation. Retained for evidence and compatibility; this is not the Treasury product scope or its current runbook. Start at [README](../../README.md).
-
 # Treasury
 
 A treasury agent rebalances the DAO's treasury toward its target on its own: it reads balances,
@@ -20,7 +18,7 @@ the catalog's words where they fit, split where the catalog mixes two kinds:
 Every row says how it's known: **observed on mainnet**,
 a dated observation with real funds, on this area's own agent or on another (the other area's, or an
 isolated test agent), and the row says which; **tested offline**; **per pinned provider source, with deployed behavior unverified**; or **not yet**. The provider and its
-custody are still trusted; [enforcement](../enforcement.md) sets out how far, and what isn't established.
+custody are still trusted; [enforcement](enforcement.md) sets out how far, and what isn't established.
 
 The app shows only this area's running brief. Public cards show its evidence coverage by observation
 scope and its known limitations, without a completion score. The shared signed-in workspace leads
@@ -28,7 +26,7 @@ with tasks and status; each area keeps its known limitations beside its detailed
 Mainnet observations do not establish every guarantee. Public cards also show its capability and safety targets,
 controls and evidence stages; members follow **Inspect evidence and limitations** on Portfolio
 for the same requirements with their evidence. Roadmap briefs remain below for planning and are
-not displayed in the app. Both presentations use the [canonical inventory](../../evidence/inventory.ts).
+not displayed in the app. Both presentations use the [canonical inventory](../evidence/inventory.ts).
 The tables below are generated; edit the inventory and run `pnpm evidence:write`.
 `pnpm test` rejects drift.
 These layout changes are prepared locally; see DEMO.md for the last verified deployment.
@@ -104,9 +102,9 @@ These are catalog targets, not established guarantees. Evidence stages describe 
 
 - Not listed above: the catalog's "unshielding exactly what a payout needs". Payouts are confidential
   transfers between confidential balances, so the treasury keeps no public reserve; a payee who can't
-  receive confidentially would need a public payout, not built ([enforcement](../enforcement.md)).
+  receive confidentially would need a public payout, not built ([enforcement](enforcement.md)).
 - The running brief’s [known limitations](#known-limitations) cover enforcement and unattended
-  operation. See [enforcement](../enforcement.md) for the supporting assessment; outside the dashboard,
+  operation. See [enforcement](enforcement.md) for the supporting assessment; outside the dashboard,
   warnings reach the owner through optional Telegram notices (README **Notifications**).
 
 ## Run-log adapter and export (offline-tested)
@@ -126,7 +124,7 @@ timestamps describe local recordings, not provider execution times. Stage durati
 and a historical tick without an end produces only its recorded start. New ticks add recorded
 stage transitions and provider-accepted submissions before their end, via a supplementary progress
 file. The before/after books and quoted plan still become available at tick end.
-See [integrated run updates](../live-run.md) for the offline-tested behavior and limits.
+See [integrated run updates](live-run.md) for the offline-tested behavior and limits.
 
 Version 3 validates lifecycle order as well as event shapes. A recorded end with an open stage
 emits `RUN_ERROR` and an explicit progress gap, never an invented `STEP_FINISHED`. A recorded run
@@ -174,7 +172,7 @@ reconcile a tick. The browser download flow has been built, but has not been che
   and cancellation behavior need verification before implementation. Today, an observed queued
   execution remains unresolved and blocks new sends, but this server does not reject a policy merely
   because it has a timelock and does not inspect the provider's scheduled-execution queue
-  ([architecture](../architecture.md#how-the-money-path-stays-safe-on-one-host)).
+  ([architecture](architecture.md#how-the-money-path-stays-safe-on-one-host)).
 
 
 ## Strategy setup in the dashboard (offline-tested)
@@ -209,4 +207,4 @@ shield. Autopilot also checks the sum of prior submitted swaps for that plan plu
 against its ceiling; shields are excluded and refunds do not replenish the limit. Unknown valuation
 refuses. The journal supplies these existing records, so no counter migration is needed. This is
 offline-tested in `test/planning-valuation.test.ts`; it does not establish settlement-time cost or
-provider budget accounting. See [execution valuation](../enforcement.md#how-each-claim-is-known).
+provider budget accounting. See [execution valuation](enforcement.md#how-each-claim-is-known).

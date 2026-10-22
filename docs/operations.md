@@ -119,7 +119,7 @@ Settings writers lock the canonical settings-file target. Symlink aliases share 
 returns a retry error without replacing settings. A CLI edit does not refresh another process's
 environment. Do not remove a live writer's lock. Unreadable journal, owner-intent, inbox and agreement
 records require investigation against verified evidence; never erase them to unblock sending.
-Detailed historical upgrade notes remain in [legacy operations](legacy/operations.md#settings-and-record-read-hardening).
+Detailed historical upgrade notes remain in [legacy operations](operations-runbooks.md#settings-and-record-read-hardening).
 
 ## Scheduling cadence and local refactoring
 
@@ -138,7 +138,7 @@ Use the existing `pnpm run-report` with its configured dashboard URL, session fi
 Keep reports and real recordings outside the repo. A scheduled run, provider acceptance, operation
 settlement and an absence of dashboard interventions are separate observations. The report's
 historical intervention classification is retained. Multi-day unattended operation remains a gap.
-See [the detailed report procedure](legacy/operations.md#unattended-run-observing-the-treasury-autopilot).
+See [the detailed report procedure](operations-runbooks.md#unattended-run-observing-the-treasury-autopilot).
 
 ## Read-only checks
 
@@ -161,8 +161,7 @@ These commands do not create a quote, recover an operation, sign or send funds.
 
 ## Historical compatibility
 
-`PUBLIC_TREASURY_ONLY=false` selects the inherited UI for regression tests only. Payables execution
-requires `pnpm legacy:invoices`; it is outside the Treasury product. `Dockerfile.legacy-invoices` forces
-`EXECUTOR=off`, which the invoice server refuses, so the image can't start the payout executor;
-Proto's payout executor replaces it. Its state and recovery obligations remain documented in
-[legacy operations](legacy/operations.md#payout-executor).
+`PUBLIC_TREASURY_ONLY=false` selects the inherited UI. Nothing in this repository runs it any more:
+the legacy invoice server image, its `legacy:invoices` script and the legacy browser suite were
+removed. Proto's payout executor replaces the invoice server. Its state and recovery obligations remain
+documented in [legacy operations](legacy/operations.md#payout-executor).

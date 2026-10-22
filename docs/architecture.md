@@ -118,7 +118,7 @@ New non-invoice operations use journal v2: a durable preparation followed by a d
 claim before the provider call. On the next money-lock acquisition, an unclaimed preparation is
 resolved as `never_submitted`. Claimed operations without an outcome and ambiguous legacy records
 remain blocked. Invoice preparation keeps its existing SQLite lifecycle. Before upgrading, follow the
-[stopped-writer migration](operations.md#journal-v2-and-owner-intent-locking-upgrade).
+[stopped-writer migration](operations-runbooks.md#journal-v2-and-owner-intent-locking-upgrade).
 
 ### Checks before each send
 
