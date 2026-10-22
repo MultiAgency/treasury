@@ -9,6 +9,7 @@ node_modules/
 .invoices/
 .inbox/
 web/dist/
+web/dist-embed/
 .plans/
 .playwright-mcp/
 .test-artifacts/
