@@ -21,6 +21,8 @@ type ReportInput = {
   /** The books: every execution in the API's history. */
   ledger: Row[];
   now?: string;
+  /** A multi-day run states how long it must be; the report then says whether the window was. */
+  minHours?: number;
 };
 
 export type Outcome = "executed" | "no-op" | "refused" | "failed" | "skipped" | "incomplete";
@@ -46,7 +48,7 @@ export function outcomeOf(t: Tick): Outcome {
  * incidents behind each failed criterion. It states what the evidence shows and no more: operation
  * only, no custody or economic claims.
  */
-export function unattendedReport({ since, until, evidence, interventions: record, ledger, now = new Date().toISOString() }: ReportInput) {
+export function unattendedReport({ since, until, evidence, interventions: record, ledger, now = new Date().toISOString(), minHours }: ReportInput) {
   const ticks = evidence.ticks.filter((t) => t.at >= since && t.at <= until).sort((a, b) => a.at.localeCompare(b.at));
   const rows = ledger.filter((r) => r.at >= since && r.at <= until && MONEY.has(r.type));
   // Operator-only calls that only read (the evidence itself) are listed, not counted as interventions.
@@ -68,6 +70,8 @@ export function unattendedReport({ since, until, evidence, interventions: record
   // settings the later tick recorded. Operator, skipped and incomplete ticks are named, not counted.
   const done = ticks.filter((t) => t.trigger === "schedule" && !["skipped", "incomplete"].includes(outcome.get(t)!));
   const gaps: string[] = [];
+  /** The start of each gap, for the per-day table. */
+  const gapStarts: string[] = [];
   // The scheduler counts the interval from a tick's end (its inbox "run" entry), so a gap runs from one tick's end to the next one's start.
   const points = [{ at: since, ended: since, schedule: done[0]?.schedule },
     ...done.map((t) => ({ at: t.at, ended: t.end?.endedAt || t.at, schedule: t.schedule })), { at: until, ended: until, schedule: done.at(-1)?.schedule }];
@@ -79,6 +83,7 @@ export function unattendedReport({ since, until, evidence, interventions: record
     if (Date.parse(b.at) - Date.parse(a.ended) <= (schedule.everyMin + SLACK_MIN) * 60_000) continue;
     const within = ticks.filter((t) => t.at > a.at && t.at < b.at && !done.includes(t)).map((t) => `${t.trigger} ${outcome.get(t)} tick at ${t.at}`);
     gaps.push(`${a.at} → ${b.at} (interval ${schedule.everyMin} min)${within.length ? `; in between: ${within.join(", ")}` : ""}`);
+    gapStarts.push(a.at);
   }
 
   // References: the same operation or plan named by two ticks. Not proof of two executions.
@@ -123,6 +128,17 @@ export function unattendedReport({ since, until, evidence, interventions: record
   const drift = (o: NonNullable<Tick["end"]>["before"] | undefined) => (o && seen(o)?.driftBps) ?? "?";
   const list = (title: string, items: string[]) => (items.length ? [title, ...items.map((i) => `- ${i}`)] : []);
 
+  // Per UTC day, so a multi-day run shows where it was healthy and where it wasn't. Counts only, no verdict.
+  const hours = (Date.parse(until) - Date.parse(since)) / 3_600_000;
+  const day = (iso: string) => iso.slice(0, 10);
+  const days: string[] = [];
+  for (let d = Date.parse(day(since)); d <= Date.parse(day(until)) && days.length < 366; d += 86_400_000) days.push(new Date(d).toISOString().slice(0, 10));
+  const dayRow = (d: string) => {
+    const of = ticks.filter((t) => day(t.at) === d);
+    const n = (o: Outcome) => of.filter((t) => outcome.get(t) === o).length;
+    return `| ${d} | ${of.filter((t) => done.includes(t)).length} | ${of.filter((t) => t.trigger === "operator").length} | ${n("executed")} | ${n("no-op")} | ${n("refused")} | ${n("failed")} | ${n("skipped")} | ${n("incomplete")} | ${gapStarts.filter((g) => day(g) === d).length} |`;
+  };
+
   const lines = [
     `# Unattended run: ${since} → ${until}`,
     "",
@@ -130,6 +146,7 @@ export function unattendedReport({ since, until, evidence, interventions: record
     "",
     "## Criteria",
     `- Scheduled ticks completed without unexplained gaps: ${ok(gaps.length === 0)} (${gaps.length} gaps)`,
+    ...(minHours === undefined ? [] : [`- Window covers at least ${minHours} h: ${ok(hours >= minHours)} (${hours.toFixed(1)} h)`]),
     `- Every started tick recorded its end: ${ok(count("incomplete") === 0)} (${count("incomplete")} incomplete)`,
     `- No duplicate execution: ${duplicateVerdict} (${duplicateExecutions.length} confirmed: one plan leg executed twice; ${lookalikes.length} suspected: same terms, no tick recorded one; ${unattributed.length} executions no tick recorded)`,
     `- No duplicate references: ${ok(references.length === 0)} (${references.length})`,
@@ -141,6 +158,13 @@ export function unattendedReport({ since, until, evidence, interventions: record
     `${ticks.length} ticks: ${["executed", "no-op", "refused", "failed", "skipped", "incomplete"].map((o) => `${count(o as Outcome)} ${o}`).join(", ")}. ` +
       `${operatorTicks.length} operator-triggered. ${rows.length} executions in the API history. ` +
       `Unresolved operations were observed at ${unresolvedSeen.length} ticks (an observation, not a recovery record).`,
+    "",
+    `## Coverage by day (UTC)`,
+    `The window is ${hours.toFixed(1)} h across ${days.length} UTC day${days.length === 1 ? "" : "s"}. A gap is counted on the day it starts.`,
+    "",
+    "| day | scheduled ticks completed | operator-triggered | executed | no-op | refused | failed | skipped | incomplete | gaps starting |",
+    "|---|---|---|---|---|---|---|---|---|---|",
+    ...days.map(dayRow),
     "",
     "## Configuration segments",
     ...segments.map((s, i) => {

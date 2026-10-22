@@ -9,7 +9,7 @@ import { type Intervention, unattendedReport } from "./report.js";
  * checked against the API's execution history and the gateway's record of operator calls. Reads only, through the hosted dashboard, as the
  * signed-in account in REPORT_COOKIE_FILE (a file holding `dao_session=…`, never pasted anywhere).
  *
- *   DASHBOARD_URL=https://… REPORT_COOKIE_FILE=… SINCE=2026-…Z [UNTIL=…Z] [OUT=report.md] pnpm run-report
+ *   DASHBOARD_URL=https://… REPORT_COOKIE_FILE=… SINCE=2026-…Z [UNTIL=…Z] [MIN_HOURS=72] [OUT=report.md] pnpm run-report
  *
  * It reports operation only: one day of ticks says nothing about atomic budgets, strict caps or savings.
  */
@@ -18,6 +18,8 @@ const BASE = new URL(required("DASHBOARD_URL"));
 const COOKIE = readFileSync(required("REPORT_COOKIE_FILE"), "utf8").trim();
 const SINCE = required("SINCE");
 const UNTIL = process.env.UNTIL ?? new Date().toISOString();
+const MIN_HOURS = process.env.MIN_HOURS === undefined ? undefined : Number(process.env.MIN_HOURS);
+if (MIN_HOURS !== undefined && !(MIN_HOURS > 0)) throw new Error("MIN_HOURS must be a positive number of hours");
 
 const rpc = <T>(path: string, input?: unknown) => hostedRpc<T>(BASE, COOKIE, "treasury", path, input);
 
@@ -32,6 +34,6 @@ const [evidence, ledger, interventions] = await Promise.all([
     return record;
   }),
 ]);
-const report = unattendedReport({ since: SINCE, until: UNTIL, evidence, interventions, ledger });
+const report = unattendedReport({ since: SINCE, until: UNTIL, evidence, interventions, ledger, minHours: MIN_HOURS });
 if (process.env.OUT) writeFileSync(process.env.OUT, report);
 process.stdout.write(report);
