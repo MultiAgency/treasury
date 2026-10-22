@@ -42,7 +42,7 @@ test("every image refuses a development SDK link and copies local tarball depend
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   const local = Object.values({ ...manifest.dependencies, ...manifest.devDependencies } as Record<string, string>)
     .flatMap(spec => spec.startsWith("file:") ? [spec.slice("file:".length).split("/")[0]!] : []);
-  for (const name of ["Dockerfile", "Dockerfile.dashboard", "Dockerfile.legacy-invoices"]) {
+  for (const name of ["Dockerfile", "Dockerfile.dashboard"]) {
     const [beforeInstall] = readFileSync(join(root, name), "utf8").split(/^RUN pnpm install/m);
     assert.match(beforeInstall!, /^RUN node scripts\/release-mode\.mjs$/m, `${name} must refuse a development link before pnpm install`);
     const copied = beforeInstall!.split("\n").filter(line => line.startsWith("COPY ")).flatMap(line => line.slice(5).trim().split(/\s+/).slice(0, -1));

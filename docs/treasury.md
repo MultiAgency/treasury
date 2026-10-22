@@ -88,4 +88,4 @@ refusals and failed reads. They are not deployed or mainnet-observed.
 The [60-second demo](../DEMO.md), [operations guide](operations.md) and
 [run-recording documentation](live-run.md) cover presentation, preservation and detailed evidence.
 Historical roadmap briefs and the earlier full implementation narrative are retained in
-[legacy Treasury documentation](legacy/treasury.md); they are outside this product's scope.
+[Treasury requirements and roadmap briefs](treasury-requirements.md); they are outside this product's scope.

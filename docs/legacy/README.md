@@ -222,7 +222,7 @@ of maintaining separate requirement statuses.
 
 ## Not done yet
 
-The isolated Treasury-only candidate adds optional self-service registration for regular NEAR accounts and Sputnik DAOs. It is offline-tested, not deployed or mainnet-verified. Registration prepares a private workspace; creating its agent still requires the owner-signature flow. Capacity, state preservation and rollout are described in [operations](../operations.md#optional-self-service-treasury-registration-isolated-candidate).
+The isolated Treasury-only candidate adds optional self-service registration for regular NEAR accounts and Sputnik DAOs. It is offline-tested, not deployed or mainnet-verified. Registration prepares a private workspace; creating its agent still requires the owner-signature flow. Capacity, state preservation and rollout are described in [operations](../operations-runbooks.md#optional-self-service-treasury-registration-isolated-candidate).
 
 The guided walkthroughs are locally implemented and tested with offline browser fixtures, not verified
 on the deployed hosts. They depend on existing permissions, configured services and retained records;
@@ -267,7 +267,7 @@ a manual payout matching an existing held payout; provider replay deduplication 
   `RUN_ERROR`, not a fabricated stage completion. Versions 1/2 remain readable as legacy recordings.
   New ticks record intermediate
   stages and provider-accepted submissions for the polling run view; older ticks retain only their
-  original evidence. See the [progress rollout](../operations.md#run-progress-rollout) before deployment.
+  original evidence. See the [progress rollout](../operations-runbooks.md#run-progress-rollout) before deployment.
   No real-recording or mainnet validation is claimed for these additions.
 
 The [enforcement assessment](../enforcement.md#status) tracks the current evidence for the signed

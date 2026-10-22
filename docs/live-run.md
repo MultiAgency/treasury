@@ -59,7 +59,7 @@ Malformed responses now refuse the read instead of becoming an empty successful 
 No key, endpoint, authorization rule or retry policy was changed.
 
 Deploy the dashboard, recording reader and executor from the same candidate. Durable progress adds
-optional records without converting existing state; follow the [run progress rollout](operations.md#run-progress-rollout).
+optional records without converting existing state; follow the [run progress rollout](operations-runbooks.md#run-progress-rollout).
 Follow the combined rollout and preservation instructions in [Operations](operations.md#combined-ui-strategy-and-recovery-candidate).
 Both services receive the shared FastNear helper when built from the same candidate. No deployment
 or mainnet action was performed during this implementation.

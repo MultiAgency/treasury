@@ -338,7 +338,7 @@ deployment of 2026-10-13 (dao `2713d2ea`, invoices `07a35af2`); the deployed sou
 The tests use real processes and storage with offline provider stand-ins (`test/journal.test.ts`,
 `test/owner-intents-race.test.ts`). Locks are single-host leases; they do not fence a stalled process
 across hosts or prove remote exactly-once execution. See the
-[upgrade procedure](operations.md#journal-v2-and-owner-intent-locking-upgrade).
+[upgrade procedure](operations-runbooks.md#journal-v2-and-owner-intent-locking-upgrade).
 
 ## Two facts that limit any local guarantee
 - **One live grant is not one sender.** Any number of processes can share a token. Counting grants fences
