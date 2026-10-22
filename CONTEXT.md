@@ -85,8 +85,8 @@ when it owns the agent. Historical records retain `operator` as the label for a 
 
 **Machine credential**:
 A revocable, expiring bearer credential bound to one Treasury workspace, signing host and provider
-agent ID. Only an established wallet owner can issue one after fresh chain/provider ownership checks.
-DAO machine delegation is refused until a verified DAO consent mechanism exists. Every request
+agent ID. A wallet owner issues one after fresh chain/provider ownership checks; a DAO-owned Treasury's is issued only
+on the DAO's own approved `Vote` proposal that names it, which is read from the chain at issuance and on every call. Every request
 requires fresh ownership evidence; failed reads, missing agents or changed identities refuse access.
 The `read`, `prepare`, `execute-plan` and `sweep` scopes are independent and expose a limited procedure
 list. They delegate access to the existing executor, not a new provider grant or an owner signature.

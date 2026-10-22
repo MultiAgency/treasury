@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MachineCredentials, machineMayCall } from "../src/gateway/machine-auth.js";
+import { ConsentAlreadyUsed, MachineCredentials, machineMayCall } from "../src/gateway/machine-auth.js";
 
 const access = { canSign: true, canPropose: false, canVote: false, canExecute: true, canManage: true };
 test("machine credentials survive restart, bind authority, expire and revoke without storing the bearer secret", () => {
@@ -58,4 +58,30 @@ test("machine scopes intersect current permissions and never expose owner signin
   assert.equal(machineMayCall(["read", "prepare"], access, "executePlan"), false);
   for (const path of ["owner/prepare", "owner/submit", "strategy/save", "autopilot/enable", "pay", "workOrders/create", "recover", "setup", "unknown"])
     assert.equal(machineMayCall(["read", "prepare", "execute-plan", "sweep"], access, path), false, path);
+});
+
+test("a DAO approval backs one credential: reuse is refused, across restarts, and revocation works as for a wallet owner", () => {
+  const dir = mkdtempSync(join(tmpdir(), "machine-auth-"));
+  try {
+    const root = join(dir, "credentials");
+    const consent = { dao: "dao.near", proposalId: 7, digest: "c".repeat(64) };
+    const base = { account: "member.near", owner: "dao.near", agent: "treasury", agentId: "a".repeat(64), host: "treasury.test", label: "assistant", scopes: ["read" as const], ttlSeconds: 60 };
+    const store = new MachineCredentials(root);
+    const issued = store.issue({ ...base, consent }, 1_000);
+    assert.deepEqual(issued.credential.consent, consent);
+    assert.equal(statSync(join(root, "consents")).mode & 0o777, 0o700);
+    assert.equal(store.authenticate(`Bearer ${issued.token}`, "treasury.test", 1_001)?.consent?.proposalId, 7);
+    // The same approval, even from a restarted process, never backs a second credential; another proposal does.
+    assert.throws(() => new MachineCredentials(root).issue({ ...base, consent }, 2_000), ConsentAlreadyUsed);
+    assert.equal(new MachineCredentials(root).list("treasury", "dao.near").length, 1, "the refused issue left no credential behind");
+    new MachineCredentials(root).issue({ ...base, consent: { ...consent, proposalId: 8 } }, 2_000);
+    // The same proposal id in another DAO is a different approval.
+    new MachineCredentials(root).issue({ ...base, owner: "other.near", consent: { ...consent, dao: "other.near" } }, 2_000);
+    // Revoked like any credential, by anyone who manages the treasury; the approval is not freed.
+    assert.equal(store.revoke(issued.credential.id, "treasury", "dao.near"), true);
+    assert.equal(store.authenticate(`Bearer ${issued.token}`, "treasury.test", 1_001), null);
+    assert.throws(() => store.issue({ ...base, consent }, 3_000), ConsentAlreadyUsed);
+    // A wallet-owner credential carries no consent and is unaffected.
+    assert.equal(store.issue({ ...base, owner: "owner.near", account: "owner.near" }, 3_000).credential.consent, undefined);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

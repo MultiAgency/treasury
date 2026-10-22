@@ -17,7 +17,7 @@ Never send browser cookies, Origin headers, provider credentials or URLs chosen 
 Scopes are independent. Read/prepare access does not permit execution; saved-plan execution does not
 permit a fresh sweep. Credential lifecycle management uses Proto's shared `/a/<name>/access` owner browser sign-in.
 Credentials expire and can be revoked; they add no spending budget. External plan execution is not
-limited by the scheduled autopilot's per-run ceiling. DAO delegation remains refused.
+limited by the scheduled autopilot's per-run ceiling. A DAO-owned Treasury issues credentials only on the DAO's approved proposal; see docs/machine-api.md.
 
 ## Prepare input
 

@@ -10,10 +10,12 @@ import { BadRequest, crossSite, readJson, SECURITY_HEADERS, sendFailure, sendJso
 import { chainKeyLookup, challengeAnswer, clientAddress, hourlyLimit, parseSignIn, sessions, verifySignIn } from "../signin.js";
 import { type AgentEntry, childEnv, hostOf, loadConfig } from "./config.js";
 import { recentSignProposals } from "./proposals.js";
-import { ownerOf, resolveAccess, resolveAgentAccess, resolveMachineAccess } from "./roles.js";
+import { ownerOf, resolveAccess, resolveAgentAccess, resolveDaoIdentity, resolveDaoMachineAccess, resolveMachineAccess } from "./roles.js";
+import { daoPolicy } from "../chain.js";
 import { appendSynced } from "../synced.js";
 import { canonicalHostAnswer, signingHost } from "./canonical-host.js";
-import { MachineCredentials, MachineIssue, machineMayCall } from "./machine-auth.js";
+import { ConsentAlreadyUsed, MachineCredentials, MachineIssue, machineMayCall } from "./machine-auth.js";
+import { ConsentRefused, verifyConsent } from "./dao-consent.js";
 
 /**
  * The hosted dashboard: the one public process. It signs members in, decides per request what each
@@ -134,7 +136,8 @@ createServer(async (req, res) => {
       const agent = config.agents.find(a => a.name === call[1] && a.area === "treasury");
       if (!agent || agent.name !== credential.agent || agent.owner !== credential.owner) return json(res, 403, { error: "Credential does not authorize this Treasury" });
       const body = JSON.stringify(await readJson(req));
-      const authority = await resolveMachineAccess(credential.account, agent);
+      // A DAO-approved credential rests on the DAO's approval, a wallet owner's on the owner's fresh ownership.
+      const authority = credential.consent ? await resolveDaoMachineAccess(credential, agent) : await resolveMachineAccess(credential.account, agent);
       if (!authority || authority.agentId !== credential.agentId || !machineMayCall(credential.scopes, authority.access, call[2]!)) return json(res, 403, { error: "Fresh wallet ownership, agent identity or machine scope does not authorize this procedure" });
       if (!machineCredentials.authenticate(req.headers.authorization, signHost)) return json(res, 401, { error: "Machine credential expired or was revoked before forwarding" });
       appendSynced(join(".machine-auth", "access.jsonl"), { at: new Date().toISOString(), account: credential.account,
@@ -165,13 +168,33 @@ createServer(async (req, res) => {
       }
       if (req.method === "POST" && !id) {
         const body = await readJson(req);
-        const authority = await resolveMachineAccess(account, agent);
-        if (!authority) return json(res, 403, { error: "Fresh established wallet ownership required. DAO machine delegation is not supported." });
         const parsed = MachineIssue.safeParse(body);
+        // A DAO-owned treasury: the DAO's approved proposal authorizes, never a member's permissions.
+        if (await daoPolicy(agent.owner).catch(() => undefined)) {
+          // Without the DAO's approval nothing else matters: refuse before looking at the rest of the request.
+          if (typeof body !== "object" || body === null || !("proposalId" in body)) return json(res, 403, { error: "DAO consent required: the DAO must approve a Vote proposal that describes this credential, and its proposalId must be provided. Member permissions alone do not authorize machine access." });
+          if (!parsed.success || parsed.data.proposalId === undefined) throw new BadRequest("Provide a label, read/prepare/execute-plan/sweep scopes, a lifetime of 60–86400 seconds and the DAO's proposalId.");
+          const { proposalId, ...request } = parsed.data;
+          const identified = await resolveDaoIdentity(agent);
+          if (!identified) return json(res, 403, { error: "Fresh DAO ownership and provider identity evidence required." });
+          try {
+            const { digest } = await verifyConsent(agent.owner, proposalId, { agent: agent.name, agentId: identified.agentId, host: signHost, label: request.label, scopes: request.scopes, ttlSeconds: request.ttlSeconds });
+            return json(res, 201, machineCredentials.issue({ ...request, account, agent: agent.name, agentId: identified.agentId, owner: agent.owner, host: signHost,
+              consent: { dao: agent.owner, proposalId, digest } }));
+          } catch (error) {
+            if (error instanceof ConsentRefused) return json(res, 403, { error: error.message });
+            if (error instanceof ConsentAlreadyUsed) return json(res, 409, { error: error.message });
+            throw error;
+          }
+        }
+        const authority = await resolveMachineAccess(account, agent);
+        if (!authority) return json(res, 403, { error: "Fresh established wallet ownership required." });
         if (!parsed.success) throw new BadRequest("Provide a label, read/prepare/execute-plan/sweep scopes and a lifetime of 60–86400 seconds.");
+        if (parsed.data.proposalId !== undefined) throw new BadRequest("proposalId applies to DAO-owned treasuries only.");
         if (parsed.data.scopes.includes("prepare") && !mayCall(access, "rebalance")) return json(res, 403, { error: "Plan preparation permission required" });
         if ((parsed.data.scopes.includes("execute-plan") || parsed.data.scopes.includes("sweep")) && !authority.access.canExecute) return json(res, 403, { error: "Execution permission required" });
-        return json(res, 201, machineCredentials.issue({ ...parsed.data, account, agent: agent.name, agentId: authority.agentId, owner: agent.owner, host: signHost }));
+        const { proposalId: _unused, ...request } = parsed.data;
+        return json(res, 201, machineCredentials.issue({ ...request, account, agent: agent.name, agentId: authority.agentId, owner: agent.owner, host: signHost }));
       }
       return json(res, 405, { error: "Use GET or POST on the collection, or DELETE on a credential" });
     }

@@ -12,9 +12,10 @@ provider grant token, owner signatures, or a second executor.
 
 Sign in normally with your wallet at the intended Treasury host. Credential management uses that
 browser session, never another machine credential. The configured area must be `treasury`.
-Only an established wallet owner may issue credentials, with fresh chain and provider ownership
-evidence. DAO machine delegation is refused: member permissions are not proof of DAO consent.
-Existing DAO records may still be listed or revoked by current managers; they cannot authorize calls.
+A wallet-owned Treasury's credentials are issued by its established wallet owner, with fresh chain
+and provider ownership evidence. A DAO-owned Treasury's are issued only on the DAO's own approved
+proposal (see [DAO-owned Treasuries](#dao-owned-treasuries)): member permissions are not proof of DAO
+consent, however strong. Current managers can list and revoke either kind.
 
 Management endpoints return ordinary JSON:
 
@@ -46,6 +47,51 @@ Select only the scopes the client needs. Default lifetime is one hour; allowed l
 through 24 hours. Renewal means issuing a new credential and revoking the old one. A bearer credential
 authorizes whoever holds it: keep it in the client's secret store, outside prompts, skill files,
 repositories and logs. Use HTTPS on hosted systems. Do not export a browser session to the machine.
+
+## DAO-owned Treasuries
+
+A Sputnik DAO consents to a credential by approving a proposal, never through a member's permissions.
+Offline-tested; not deployed, and no interface files the proposal for the DAO: it is filed with the
+DAO's usual tools.
+
+1. **File a `Vote` proposal** (kind `Vote`, which executes nothing) whose description is the line
+   `treasury-machine-credential/v1`, a newline, and one line of JSON naming exactly one credential:
+
+   ```
+   treasury-machine-credential/v1
+   {"agent":"treasury","agentId":"<the provider agent id>","host":"treasury.multiagency.ai","label":"Treasury assistant","scopes":["read","prepare"],"ttlSeconds":3600,"issueBy":"2026-10-29T12:00:00Z"}
+   ```
+
+   `agentId` is the id in the Treasury's `instance`/`ownerIdentity` answer. `ttlSeconds` is the longest
+   lifetime (60 to 86400); `issueBy` is the last moment the approval can be used to issue.
+2. **The DAO approves it** by its own voting. Only status `Approved` counts; in-progress, rejected, removed,
+   expired, moved and failed proposals do not, and neither does any kind other than `Vote`.
+3. **A manager of the Treasury issues the credential** from a signed-in session, naming the proposal. The
+   request must match the approval exactly: same agent, provider agent id, host, label and scope set, and a
+   lifetime no longer than approved:
+
+   ```javascript
+   await fetch('/gw/machine-credentials/treasury', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ label: 'Treasury assistant', scopes: ['read', 'prepare'], ttlSeconds: 3600, proposalId: 41 }),
+   });
+   ```
+
+The gateway reads the proposal from the chain; nothing in the request stands in for it. It refuses (403) a
+missing `proposalId`, a proposal it cannot read, one that is not approved, not a `Vote`, older than 30 days,
+past `issueBy`, or that differs from the request in any term, and refuses (409) an approval that already
+backed a credential. One approval backs one credential, even if that credential is later revoked; another
+needs a new proposal. The requester must also manage the Treasury, but that permission only lets them present
+an approval, never replaces it.
+
+On every call the gateway checks again, with no cached evidence: the owner is still a DAO, the provider agent
+is the one the credential names and answers to the DAO's signing account, and the proposal on chain is still
+`Approved`, a `Vote`, with the same description (pinned by a hash). Anything unreadable or different refuses
+with 403 before forwarding. A DAO credential's authority is its approved scopes alone; no member's
+permissions add to it, and it has no more reach than a wallet owner's with the same scopes. Revoke it like
+any credential: `DELETE /gw/machine-credentials/<name>/<id>`, by any current manager. Revocation does not
+cancel an operation already forwarded to the executor.
 
 ## Call the interface
 
@@ -137,7 +183,11 @@ compatible Treasury revision and client version. A standalone public SDK remains
 
 ## State preservation and rollout
 
-`.machine-auth/` is additive gateway state, created privately on first issuance. Existing money state needs no
+`.machine-auth/` is additive gateway state, created privately on first issuance. DAO credentials add a
+`consent` field to their record and one file per used approval under `.machine-auth/consents/`; preserve
+that directory too, because deleting a file there would let its approval back a second credential. A gateway
+from before DAO consent cannot read records that carry `consent` and refuses their use; revoke or move
+those records before rolling back. Existing money state needs no
 conversion and no credential is issued automatically. New credential records use storage version 2 with
 an actual agent ID and separate execution/sweep scopes. Earlier experimental version-1 records remain
 listable and revocable, but authenticate as invalid. They are never upgraded into authority implicitly;
@@ -153,7 +203,7 @@ Storage is capped at 1024 credential records. Archive expired/revoked records wh
 removing a record invalidates that credential. No migration or cleanup should modify money records.
 No deployment, real credential provisioning, or live execution is part of the offline verification.
 
-Tests: `test/machine-auth.test.ts`, the real-process gateway fixture in `test/gateway-denial.test.ts`,
+Tests: `test/machine-auth.test.ts`, `test/dao-consent.test.ts`, the real-process gateway fixture in `test/gateway-denial.test.ts`,
 and the legacy-host API boundary in `test/gateway-canonical.test.ts`. They cover credential hashing,
 restart compatibility, expiry, revocation, scope/host/workspace isolation, current-permission denial,
 owner-action exclusion, secret stripping, and refusal before forwarding on storage/audit failure.
@@ -163,10 +213,11 @@ owner-action exclusion, secret stripping, and refusal before forwarding on stora
 Offline regressions reproduced three failures in the initial candidate: a DAO council member could issue
 credentials without DAO consent, a warmed ownership cache permitted calls during a failed live identity
 read, and replacing the provider agent under the same workspace name retained credential authority.
-The candidate now refuses DAO delegation, requires fresh identity evidence, and binds each credential
-to the actual agent ID. Plan execution and sweep permissions are also independent, with cross-scope
+The candidate now refuses DAO delegation without the DAO's approved proposal, requires fresh identity
+evidence, and binds each credential to the actual agent ID. Plan execution and sweep permissions are also independent, with cross-scope
 denials tested. These changes do not establish independent review, hosted acceptance, sender-constrained
-credentials, or a DAO approval mechanism; those remain open.
+credentials; those remain open. The DAO approval mechanism is offline-tested only: no DAO has used it, and no
+interface files the proposal.
 
 ## External-strategy acceptance gates
 
