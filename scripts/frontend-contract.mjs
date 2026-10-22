@@ -110,8 +110,8 @@ for (const path of app) if (shared.test(path)) fail(`Default build bundles a sha
 const config = join(web, '.treasury-frontend-contract.tsconfig.json'), clientFile = join(web, 'src/shared/client.ts');
 const alias = 'export type ClientProcedure = OwnerProcedure;';
 const declared = `export type ClientProcedure = ${procedures.map(procedure => JSON.stringify(procedure)).join(' | ') || 'never'};`;
-// Only this build's graph: main.tsx and what it imports, with `@legacy` resolved as the build resolves it.
-const tsconfig = JSON.stringify({ extends: './tsconfig.json', files: ['./src/main.tsx', './src/env.d.ts'], include: [],
+// Only this build's graph: main.tsx, the embed entry and what they import, with `@legacy` resolved as the build resolves it.
+const tsconfig = JSON.stringify({ extends: './tsconfig.json', files: ['./src/main.tsx', './src/embed.tsx', './src/env.d.ts'], include: [],
   compilerOptions: { paths: { '@/*': ['./src/*'], '@legacy': ['./src/legacy/absent.ts'] } } });
 let narrowed = false;
 const api = new API({ cwd: repo, fs: {
