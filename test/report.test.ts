@@ -148,3 +148,89 @@ test("a non-refusal failure after a settled leg is a failure, not an execution",
   assert.equal(outcomeOf(failedAfter), "failed");
   assert.match(criterion(report([tick(1), failedAfter, tick(121)], { ledger: [row(61, "op_1")] }), "No failed executions"), /\*\*no\*\*/);
 });
+
+// A multi-day run: three UTC days of hourly ticks, judged by the same rules as one day, with a per-day view.
+const HOUR = 60;
+const days = (n: number) => n * 24 * HOUR;
+/** Hourly ticks from minute 1, `n` of them, minus the hours listed. */
+const hourly = (n: number, skip: number[] = [], change: (hour: number) => Partial<Tick> = () => ({}), ended: (hour: number) => Partial<End> | null = () => ({})) =>
+  Array.from({ length: n }, (_, hour) => hour).filter((hour) => !skip.includes(hour)).map((hour) => tick(1 + hour * HOUR, change(hour), ended(hour)));
+const multi = (ticks: Tick[], options: { minHours?: number; ledger?: Row[] } = {}) =>
+  unattendedReport({ since: at(0), until: at(days(3)), evidence: { ticks, corrupt: [] }, interventions: { calls: [], corrupt: [] }, ledger: options.ledger ?? [], now: at(days(3) + 1), minHours: options.minHours });
+const dayRows = (text: string) => text.split("\n").filter((l) => /^\| 2026-10-1\d \|/.test(l)).map((l) => l.split("|").slice(1, -1).map((cell) => cell.trim()));
+
+test("a clean 72-hour run holds every criterion and shows each day's ticks", () => {
+  const text = multi(hourly(72));
+  assert.doesNotMatch(text.split("## Configuration")[0]!, /\*\*no\*\*|cannot be established/);
+  assert.match(text, /72 ticks: 0 executed, 72 no-op/);
+  assert.match(text, /The window is 72\.0 h across 4 UTC days/);
+  // Day columns: day, scheduled completed, operator, executed, no-op, refused, failed, skipped, incomplete, gaps starting.
+  assert.deepEqual(dayRows(text), [
+    ["2026-10-13", "24", "0", "0", "24", "0", "0", "0", "0", "0"],
+    ["2026-10-14", "24", "0", "0", "24", "0", "0", "0", "0", "0"],
+    ["2026-10-15", "24", "0", "0", "24", "0", "0", "0", "0", "0"],
+    ["2026-10-16", "0", "0", "0", "0", "0", "0", "0", "0", "0"],
+  ]);
+});
+
+test("a stretch missed on day two is a gap, counted on the day it starts, and the other days stay clean", () => {
+  // Hours 30-33 of the run (day two) never ran: a five-hour gap.
+  const text = multi(hourly(72, [30, 31, 32, 33]));
+  assert.match(criterion(text, "Scheduled ticks"), /\*\*no\*\* \(1 gaps\)/);
+  const rows = dayRows(text);
+  assert.equal(rows[0]![9], "0");
+  assert.equal(rows[1]![1], "20", "day two completed 20 of its 24 ticks");
+  assert.equal(rows[1]![9], "1", "the gap starts on day two");
+  assert.equal(rows[2]![9], "0");
+  assert.match(text, /interval 60 min/);
+});
+
+test("a gap that begins on one day and ends on the next is counted once, where it starts", () => {
+  // Hours 22-26 missing: starts the evening of day one, ends on day two.
+  const rows = dayRows(multi(hourly(72, [22, 23, 24, 25, 26])));
+  assert.deepEqual(rows.map((r) => r[9]), ["1", "0", "0", "0"]);
+});
+
+test("a build change on day two starts a new segment; both segments are judged on their own", () => {
+  const text = multi(hourly(72, [], (hour) => (hour >= 30 ? { build: { deployment: "dep-2", source: "sha256:src2", lockfile: "sha256:lock", packageJson: "sha256:pkg" } } : {})));
+  assert.match(text, /1\. 2026-10-13T00:01:00\.000Z → [^,]+, 30 ticks: deployment dep-1/);
+  assert.match(text, /2\. [^,]+, 42 ticks: deployment dep-2/);
+  assert.match(criterion(text, "Scheduled ticks"), /yes/);
+});
+
+test("a failure on day three fails its criterion and shows on that day, not the others", () => {
+  const failing = (hour: number): Partial<End> | null => (hour === 60 ? { steps: [{ index: 0, status: "FAILED", correlationId: "op_x", failureCode: "E" }], outcome: "step 1: FAILED" } : {});
+  const text = multi(hourly(72, [], () => ({}), failing));
+  assert.match(criterion(text, "No failed"), /\*\*no\*\* \(1 ticks\)/);
+  const rows = dayRows(text);
+  assert.deepEqual(rows.map((r) => r[6]), ["0", "0", "1", "0"]);
+});
+
+test("an operator action on day two is an incident on its day", () => {
+  const text = multi(hourly(72, [], (hour) => (hour === 40 ? { trigger: "operator" } : {})));
+  assert.match(criterion(text, "No operator interventions"), /\*\*no\*\*/);
+  assert.equal(dayRows(text)[1]![2], "1");
+});
+
+test("a run states how long it must be, and the report says whether the window was", () => {
+  const ticks = hourly(72);
+  assert.match(criterion(multi(ticks, { minHours: 72 }), "Window covers at least 72 h"), /yes \(72\.0 h\)/);
+  assert.match(criterion(multi(ticks, { minHours: 96 }), "Window covers at least 96 h"), /\*\*no\*\* \(72\.0 h\)/);
+  assert.doesNotMatch(multi(ticks), /Window covers at least/);
+});
+
+test("the same plan leg executed on two different days is caught as a duplicate, with both references listed", () => {
+  const swapAt = (hour: number, id: string) => (hour === 5 || hour === 50 ? swap(id, "plan-same") : {});
+  const text = multi(hourly(72, [], () => ({}), (hour) => swapAt(hour, hour === 5 ? "op_a" : "op_b")),
+    { ledger: [row(1 + 5 * HOUR, "op_a"), row(1 + 50 * HOUR, "op_b")] });
+  assert.match(criterion(text, "No duplicate references"), /\*\*no\*\* \(1\)/);
+  assert.match(text, /plan plan-same executed by ticks at 2026-10-13T05:01:00\.000Z, 2026-10-15T02:01:00\.000Z/);
+  assert.match(criterion(text, "No duplicate execution"), /\*\*no\*\* \(1 confirmed/);
+  assert.deepEqual(dayRows(text).map((r) => r[3]), ["1", "0", "1", "0"], "one execution on each of the two days");
+});
+
+test("distinct plans on different days are matched to their own ticks and raise nothing", () => {
+  const text = multi(hourly(72, [], () => ({}), (hour) => (hour === 5 ? swap("op_a", "plan-a") : hour === 50 ? swap("op_b", "plan-b") : {})),
+    { ledger: [row(1 + 5 * HOUR, "op_a"), row(1 + 50 * HOUR, "op_b", "2")] });
+  assert.doesNotMatch(text.split("## Configuration")[0]!, /\*\*no\*\*|cannot be established/);
+});

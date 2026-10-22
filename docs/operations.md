@@ -137,7 +137,9 @@ scheduler checkpoint is not implemented.
 Use the existing `pnpm run-report` with its configured dashboard URL, session file and agent name.
 Keep reports and real recordings outside the repo. A scheduled run, provider acceptance, operation
 settlement and an absence of dashboard interventions are separate observations. The report's
-historical intervention classification is retained. Multi-day unattended operation remains a gap.
+historical intervention classification is retained. Multi-day unattended operation remains a gap; the plan
+and checklist for proving it, including `MIN_HOURS` and the report's per-day table, are in
+[unattended-multi-day-run](unattended-multi-day-run.md).
 See [the detailed report procedure](legacy/operations.md#unattended-run-observing-the-treasury-autopilot).
 
 ## Read-only checks
