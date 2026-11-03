@@ -111,8 +111,6 @@ export const READS = ["setup", "instance", "overview", "policyHistory", "activit
 export type Read = (typeof READS)[number];
 export type Stream = (typeof ownerStreams)[number];
 export type Action = Exclude<OwnerProcedure, Read | Stream>;
-/** What a read answers, by procedure: the types screens use for the records they show. */
-export type Answer<P extends OwnerProcedure> = OwnerOutput<P>;
 export type Setup = OwnerOutput<"setup">;
 export type Overview = OwnerOutput<"overview">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */

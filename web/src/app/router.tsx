@@ -3,9 +3,12 @@ import { Shell } from "./frame";
 import { BASE } from "./location";
 import { PAGES, type Page } from "./pages";
 
-/** A page the prototype has and this app doesn't yet: it moves here feature by feature. */
+/** A page the prototype has and this app doesn't yet: it moves here feature by feature. Each page has one `<h1>`. */
 function Pending({ title }: { title: string }) {
-  return <p className="text-sm text-muted-foreground">{title} moves here from the Treasury prototype, one feature at a time.</p>;
+  return <>
+    <h1 className="text-2xl font-semibold">{title}</h1>
+    <p className="text-sm text-muted-foreground">{title} moves here from the Treasury prototype, one feature at a time.</p>
+  </>;
 }
 
 const root = createRootRoute({ component: Shell });

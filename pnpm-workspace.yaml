@@ -1,9 +1,5 @@
 packages:
   - web
-# Published 2026-10-31T04:49:57Z, inside pnpm's minimum release age (24 hours here); the pinned version this example
-# demonstrates. Remove after 2026-11-01T04:50Z, once 0.3.1 is past it.
-minimumReleaseAgeExclude:
-  - '@multiagency/sdk@0.3.1'
 permissions:
   '@multiagency/sdk':
     skills: true

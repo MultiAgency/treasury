@@ -42,14 +42,6 @@ export function QueryError({ error, retry }: { error: { message: string }; retry
   </Alert>;
 }
 
-/** Detail most readers skip, folded under a one-line summary. */
-export function Details({ summary, open, className = "", children }: { summary: string; open?: boolean; className?: string; children: ReactNode }) {
-  return <details open={open} className={cn("text-sm", className)}>
-    <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground">{summary}</summary>
-    <div className="mt-2 flex flex-col gap-2">{children}</div>
-  </details>;
-}
-
 /** A long identifier, shortened in the middle. */
 export const short = (id: string, max = 20) => (id.length > max ? `${id.slice(0, 8)}…${id.slice(-6)}` : id);
 

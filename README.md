@@ -119,7 +119,7 @@ The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`),
 
 - **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.
 - **Features port one at a time** from MultiAgency/treasury-prototype's `web/src`, each in its own issue. So far: the session and access (sign-in and out, account switches, access denials, the agent frame). The other pages show where their feature will land.
-- **`contract.json`** names the platform capabilities the build uses (`gateway-session-v1` and `agent-observe-v1` so far). The release server refuses a build whose capabilities its host doesn't offer.
+- **`contract.json`** names the platform capabilities the build uses (`gateway-session-v1` and `agent-observe-v1` so far). The release server refuses a build whose capabilities its host doesn't offer. `web/test/contract.test.ts` checks it both ways: every call the app makes is covered, and every capability it requires is used.
 - **Accessible names** the platform's E2E specs query, and every change to them, are listed in [`web/PLATFORM-SESSION.md`](web/PLATFORM-SESSION.md), along with this app's deviations from the brief.
 
 ```sh
@@ -129,4 +129,6 @@ pnpm --filter @treasury/web test        # platform.ts with a mocked fetch
 pnpm --filter @treasury/web test:stack  # builds, then drives the build on a fresh stack served with --frontend
 ```
 
-The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It needs `../platform` (or `TREASURY_PLATFORM`) at 766b3f3 with its dependencies installed, as the CLI's stack test does.
+The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan of every page it opens.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests and the build for both packages on every pull request and push to `main`, then both stack tests on a stack from the platform at 766b3f3. It needs `../platform` (or `TREASURY_PLATFORM`) at 766b3f3 with its dependencies installed, as the CLI's stack test does.

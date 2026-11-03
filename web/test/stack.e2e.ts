@@ -3,14 +3,16 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
+import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { startStack } from "../../scripts/stack.ts";
+import { setUnavailable, startStack, type Stack } from "../../scripts/stack.ts";
 
-let stop: () => Promise<void>, browser: Browser, owner: BrowserContext, home: Page, dashboard: string, account: string;
+let stop: () => Promise<void>, target: Stack, browser: Browser, owner: BrowserContext, home: Page, dashboard: string, account: string;
 
 before(async () => {
   const started = await startStack({ args: ["--frontend", join(import.meta.dirname, "..", "dist")] });
   stop = started.stop;
+  target = started.target;
   const state = started.state();
   dashboard = state.dashboard;
   account = state.ownerAccount;
@@ -85,5 +87,52 @@ test("disconnecting the wallet signs out this tab and the others; connecting sig
   await Promise.race([reloaded, chooser.waitFor({ timeout: 15_000 }).then(() => chooser.click()).catch(() => {})]);
   await reloaded;
   await home.waitForURL(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("region", { name: "Treasury owner" }));
+});
+
+/** Every axe rule that applies, at any impact: a violation is a defect, not a warning. */
+const axe = async (page: Page) => (await new AxeBuilder({ page }).analyze()).violations.map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
+
+test("no axe violations on the signed-out page or the signed-in frame", async () => {
+  await home.goto(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("region", { name: "Treasury owner" }));
+  assert.deepEqual(await axe(home), []);
+  // A page this connection opens has no session: the signed-out page.
+  const signedOut = await owner.newPage();
+  await signedOut.goto(`${dashboard}/`);
+  await visible(signedOut.getByRole("button", { name: "Connect wallet", exact: true }).first());
+  assert.deepEqual(await axe(signedOut), []);
+  await signedOut.close();
+});
+
+test("by keyboard: the skip link reaches the page, and the wallet menu opens and closes", async () => {
+  await home.goto(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("region", { name: "Treasury owner" }));
+  await home.keyboard.press("Tab");
+  assert.equal(await home.evaluate(() => document.activeElement?.textContent), "Skip to main content");
+  await home.keyboard.press("Enter");
+  assert.equal(await home.evaluate(() => document.activeElement?.id), "agent-main");
+
+  const wallet = home.getByRole("button", { name: `Wallet: ${account}`, exact: true });
+  await wallet.focus();
+  await home.keyboard.press("Enter");
+  await visible(home.getByRole("menuitem", { name: "Disconnect" }));
+  await home.keyboard.press("Escape");
+  await home.getByRole("menuitem", { name: "Disconnect" }).waitFor({ state: "hidden" });
+  assert.equal(await home.evaluate(() => document.activeElement?.getAttribute("aria-label")), `Wallet: ${account}`, "focus returns to the wallet button");
+});
+
+test("an outage of the agent's provider: setup is unavailable, and Retry setup recovers once it ends", async () => {
+  await setUnavailable(target, true);
+  try {
+    await home.goto(`${dashboard}/a/portfolio/`);
+    // The owner session still grants the agent; its setup read is the provider's refusal.
+    await visible(home.getByRole("heading", { name: "Available records", exact: true }));
+    await visible(home.getByRole("alert").filter({ hasText: "Setup unavailable" }));
+    assert.equal(await home.getByRole("region", { name: "Treasury owner" }).count(), 0, "nothing unconfirmed is shown");
+  } finally {
+    await setUnavailable(target, false);
+  }
+  await home.getByRole("button", { name: "Retry setup" }).click();
   await visible(home.getByRole("region", { name: "Treasury owner" }));
 });
