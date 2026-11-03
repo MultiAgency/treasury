@@ -37,7 +37,7 @@ Kept, with the same role, name and meaning:
 | Treasury overview | heading (level 1) | | #7 PR 1 |
 | Schedule status | region | | #7 PR 1 |
 | Schedule: `on · every <n> minutes`, `off`, `checking…` or `unavailable` | status | | #7 PR 1 |
-| Turn off schedule | button (while the schedule is on or unconfirmed): #6's stop, as "Turn off" sends it | | #7 PR 1 |
+| Turn off schedule | button (while the schedule is on or unconfirmed): #6's stop, as "Turn off" sends it, enabled and explained as "Turn off" is ("Your account cannot stop the schedule.", "Checking executor identity…", and so on) | | #7 PR 1 |
 | Book value, Budget or `<period>` budget left, Held privately | figure labels | | #7 PR 1 |
 | Allocation, Signed limits | heading (level 2) | | #7 PR 1 |
 | USD budget windows | table, with row headers Daily, Weekly, Monthly | | #7 PR 1 |
@@ -61,7 +61,11 @@ Changed or not present yet:
 | An agent not yet created | Onboarding | Status text: "This Treasury agent hasn't been created yet." | #12 (creation) |
 | A self-service host's root | Treasury creation | A "Your treasuries" heading with a link per treasury agent | #12 (creation) |
 | Every page under `/a/<agent>/` but the Overview and Activity | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9–#12 |
-| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered: the frame leaves those two pages to their own control, as in A, and the pages are placeholders | #7 (portfolio) |
+| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A, and the pages are placeholders | #7 (portfolio) |
+| The frame on a failed read, on the Overview | The frame's "Schedule" section ("Turn off") beside the Overview's "Turn off schedule" | Once the Overview is shown, only its "Turn off schedule"; before the overview first loads, the frame's "Turn off" | Permanent |
+| Signed limits' caps | "Per-asset monthly caps": the monthly window only, an asset outside the book in raw units | "Per-asset caps": every window the policy signs (Per transaction, Hourly, Daily, Monthly), each "`<window>`: `<amount>`", where an asset the book doesn't list is in the platform's units if it's one of the platform's assets (wNEAR, USDC, ETH) and otherwise "`<raw>` raw units · `<asset>`"; the description says "Per-asset caps" for "Monthly asset caps". A hid the per-transaction cap the provider enforces first | Permanent |
+| An amount of an asset the book doesn't list (Activity's requests, Signed limits' caps) | USDC in its units; any other asset as "`<raw>` `<asset>`" without `nep141:`, which reads as whole tokens | The platform's assets (wNEAR, USDC, ETH) in their units, from the SDK's `PROPOSAL_TOKENS`; any other asset as "`<raw>` raw units · `<asset>`". A swap's destination is named the same way (A: the book's symbol, else the raw id), so "1.5 wNEAR → ETH" on an empty book | Permanent |
+| Signed limits, after a failed overview refresh | Its own "Last reported limits and budget; current observations could not be refreshed." | Not shown: the frame's "Refresh failed. Showing previously loaded records; check again before acting." says it once for the page | Permanent |
 | `/policy` | The "Owner controls" section (`h2`), with "Freeze the agent" or "Unfreeze the agent" (`h3`) and Freeze or Unfreeze | Below the placeholder: "Freeze the agent" or "Unfreeze the agent" (`h2`, as no section holds it yet) and Freeze or Unfreeze | #10 (policy) |
 | An owner action's "Follow the payment outcome" | A link to `/follow/payment?payment=<id>` | A link to `/activity`: this app has no page for one payment | Permanent |
 | The Overview's rebalance: the "Quoted rebalance" region (Preview, Execute, the policy's no-swaps note) and the followed plan's outcome ("Follow the outcome") | Shown | Not shown | #7 PR 3 |

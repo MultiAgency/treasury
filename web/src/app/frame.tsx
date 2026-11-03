@@ -61,8 +61,8 @@ function Notice({ children }: { children: ReactNode }) {
   return <div className="flex items-center gap-3 p-8 text-muted-foreground">{children}</div>;
 }
 
-/** Pages with their own schedule control: the frame doesn't offer a second one there. */
-const SCHEDULE_PAGES = ["/automations", "/follow/run"];
+/** Pages with their own schedule control: the frame doesn't offer a second one there once the page is shown. */
+const SCHEDULE_PAGES = ["/", "/automations", "/follow/run"];
 
 /**
  * The agent's frame: its owner, the wallet and the shared reads. Until the agent exists, nothing else is shown. A
@@ -147,7 +147,7 @@ function AgentFrame() {
       <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
       <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
     </>}
-    {error && canStop && setup.data.executor === true && !SCHEDULE_PAGES.includes(page) && <StopSchedule />}
+    {error && canStop && setup.data.executor === true && !(SCHEDULE_PAGES.includes(page) && overview.data) && <StopSchedule />}
     <SetupContext.Provider value={setup.data}>
       {overview.data
         ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>

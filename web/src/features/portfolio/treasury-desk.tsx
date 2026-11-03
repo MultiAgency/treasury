@@ -1,25 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { failureMessage } from "../../platform";
 import { useAgent, useAgentReads } from "../../app/frame";
-import { useCanCall } from "../../app/viewer";
-import { Button, ErrorBox, QueryError } from "../../shared/ui";
+import { Button, QueryError } from "../../shared/ui";
 import { useValuedBook } from "../../shared/valuation";
 import { Unresolved } from "../activity/activity";
-import { SCHEDULE_STOP_SCOPE, SCHEDULE_STOPPED, useStopSchedule } from "../owner/task-recovery";
+import { SCHEDULE_STOP_SCOPE, StopBlocked, StopResult, useStopSchedule } from "../owner/task-recovery";
 import { Allocation, Figures } from "./book";
 import { TreasuryLimits } from "./treasury-limits";
 
 /** The Treasury's overview. Existing controls retain provider checks and explicit confirmations. */
 export function TreasuryDesk() {
   const { data: raw } = useAgent();
-  const data = useValuedBook(raw);
+  const { data, now } = useValuedBook(raw);
   return <>
     <h1 className="text-2xl font-semibold">Treasury overview</h1>
     <Unresolved />
     <ScheduleStatus />
     <Figures data={data} />
-    <Allocation data={data} />
+    <Allocation data={data} now={now} />
     <TreasuryLimits />
     <nav aria-label="Treasury tools" className="flex flex-wrap gap-3">
       <Button asChild variant="outline"><Link to="/automations">Set targets and schedule</Link></Button>
@@ -31,18 +29,16 @@ export function TreasuryDesk() {
 }
 
 function ScheduleStatus() {
-  const { setup } = useAgent();
-  const canStop = useCanCall("autopilot/stop");
   const status = useQuery(useAgentReads().autopilot);
-  const { stop, busy, result } = useStopSchedule();
+  const control = useStopSchedule();
   const known = !status.error && status.data;
   return <section aria-label="Schedule status" className="flex flex-col gap-3 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p role="status">Schedule: <strong>{known ? status.data.on ? `on · every ${status.data.everyMin} minutes` : "off" : status.isPending ? "checking…" : "unavailable"}</strong></p>
-      {(!known || status.data.on) && <Button variant="outline" disabled={!canStop || setup.executor !== true || busy} onClick={stop}>Turn off schedule</Button>}
+      {(!known || status.data.on) && <Button variant="outline" disabled={control.disabled} onClick={control.stop}>Turn off schedule</Button>}
     </div>
-    {(!known || status.data.on) && <p className="text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p>}
+    {(!known || status.data.on) && <><p className="text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p><StopBlocked control={control} /></>}
     {status.error && <QueryError error={status.error} retry={() => status.refetch()} />}
-    <ErrorBox error={result && !result.ok ? failureMessage(result) : undefined} />{result?.ok && <p role="status">{SCHEDULE_STOPPED}</p>}
+    <StopResult control={control} />
   </section>;
 }

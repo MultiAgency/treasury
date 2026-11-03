@@ -8,20 +8,22 @@ import { useNameOf } from "../../shared/names";
 import { accessDenied, Button, Loading, ReadFailure, Section } from "../../shared/ui";
 import { Row } from "../activity/activity";
 
+/** The policy's per-asset cap windows, each as the provider names it. */
+const CAP_WINDOWS = { per_transaction: "Per transaction", hourly: "Hourly", daily: "Daily", monthly: "Monthly" } as const;
+
 /** Signed amounts and separately observed headroom, never a spend authorization. */
 export function TreasuryLimits() {
   const { data } = useAgent();
-  const observation = useQuery({ ...useAgentReads().overview, enabled: false });
   const policy = data.policy.policy;
-  const caps = Object.entries(policy?.limits?.monthly ?? {});
+  const caps = (Object.keys(CAP_WINDOWS) as (keyof typeof CAP_WINDOWS)[])
+    .flatMap(window => Object.entries(policy?.limits?.[window] ?? {}).map(([asset, raw]) => ({ window, asset, raw })));
   const [refusalsOpen, setRefusalsOpen] = useState(false);
-  return <Section title="Signed limits" description="Monthly asset caps and the shared USD budget constrain spending separately. Each operation is checked again before submission.">
-    {observation.error && <p className="text-sm text-warning-muted-foreground">Last reported limits and budget; current observations could not be refreshed.</p>}
+  return <Section title="Signed limits" description="Per-asset caps and the shared USD budget constrain spending separately. Each operation is checked again before submission.">
     <dl className="text-sm"><dt className="text-muted-foreground">Allowed assets</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => data.book.find(h => h.asset === asset)?.symbol ?? asset).join(", ") || "None"}</dd></dl>
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="min-w-0">
-        <h3 className="mb-3 text-sm font-medium">Per-asset monthly caps</h3>
-        {caps.length ? <ul className="divide-y text-sm">{caps.map(([asset, raw]) => <li key={asset} className="break-words py-3 first:pt-0">{data.book.some(holding => holding.asset === asset) ? amountOf(raw, asset, data.book) : `${raw} raw units · ${asset}`}</li>)}</ul> : <p className="text-sm text-muted-foreground">{policy ? "No monthly caps reported" : "Policy unavailable"}</p>}
+        <h3 className="mb-3 text-sm font-medium">Per-asset caps</h3>
+        {caps.length ? <ul className="divide-y text-sm">{caps.map(({ window, asset, raw }) => <li key={`${window}|${asset}`} className="break-words py-3 first:pt-0">{CAP_WINDOWS[window]}: {amountOf(raw, asset, data.book)}</li>)}</ul> : <p className="text-sm text-muted-foreground">{policy ? "No asset caps reported" : "Policy unavailable"}</p>}
         <p className="mt-3 text-sm text-muted-foreground">These are signed caps, not remaining allowances inferred from balances.</p>
       </div>
       <div className="min-w-0 overflow-x-auto">

@@ -184,10 +184,10 @@ test("cached reads are keyed by host, agent and viewer, so accounts never share 
   assert.equal(scopeOfKey(["gateway"]), undefined);
 });
 
-test("the schedule's read is autopilot/get, keyed with the agent's other reads, and not retried", async () => {
+test("the schedule's read is autopilot/get, keyed with the agent's other reads, and retried only when its answer was lost", async () => {
   const { autopilot } = reads("portfolio", "owner.near");
   assert.deepEqual(autopilot.queryKey, [scope("portfolio", "owner.near"), "autopilot/get"]);
-  assert.equal(autopilot.retry, false);
+  assert.equal(autopilot.retry, retryLost);
   const schedule = { on: true, everyMin: 60, maxUsd: 100, lastRun: null, nextRun: "2026-11-03T00:00:00.000Z" };
   answers.push(json({ json: schedule }));
   assert.deepEqual(await autopilot.queryFn!({ signal: new AbortController().signal } as never), schedule);

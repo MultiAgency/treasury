@@ -1,6 +1,6 @@
-import { bindingBudget, PERIOD } from "../../shared/budget";
+import { bindingWindow, PERIOD } from "../../shared/budget";
 import type { Overview as Book } from "../../platform";
-import { ASSET_COLOR, ago, bookValue, fromUnits, type Holding, units, usd } from "../../shared/format";
+import { ago, assetColor, bookValue, fromUnits, type Holding, units, usd } from "../../shared/format";
 import { priceState } from "../../shared/prices";
 import { Section } from "../../shared/ui";
 
@@ -25,11 +25,12 @@ function Meter({ value, className = "bg-brand" }: { value: number; className?: s
 export function Figures({ data }: { data: Book }) {
   const total = bookValue(data);
   const shielded = total === null ? null : data.book.reduce((sum, h) => sum + (BigInt(h.confidential) === 0n ? 0 : units(h.confidential, h.decimals) * h.price!), 0);
-  const window = bindingBudget(data);
+  const window = bindingWindow(data.policy.usage.budget);
   const limit = Number(window?.limit_usd ?? 0);
   const budget = window ? (
     <Figure label={`${PERIOD[window.period]} budget left`} value={usd(window.remaining_usd)}>
-      <Meter value={limit ? Number(window.spent_usd) / limit : 0} />
+      {/* A zero limit is spent before anything is: full, not empty. */}
+      <Meter value={limit ? Number(window.spent_usd) / limit : 1} />
       <span className="text-sm text-muted-foreground">
         {usd(window.spent_usd)} of {usd(limit)} spent{window.resets_at && ` · resets ${ago(window.resets_at)}`}
       </span>
@@ -55,14 +56,15 @@ export function Figures({ data }: { data: Book }) {
   );
 }
 
-export function Allocation({ data }: { data: Book }) {
+/** `now` is the time `data` was valued at, so a row's price state agrees with its USD value. */
+export function Allocation({ data, now }: { data: Book; now: number }) {
   const total = bookValue(data);
   const bar = (share: (h: Holding) => number) => (
     <div className="flex h-3 gap-0.5 overflow-hidden rounded-full">
       {data.book.map((h) => (
         <div
           key={h.asset}
-          className={`${ASSET_COLOR[h.symbol]} `}
+          className={assetColor(h.symbol)}
           style={{ width: `${share(h) * 100}%` }}
         />
       ))}
@@ -91,19 +93,20 @@ export function Allocation({ data }: { data: Book }) {
               const weight = total ? h.usd! / total : 0;
               const target = data.target[h.asset] ?? 0;
               const drift = weight - target;
+              const price = priceState(h, now);
               return (
                 <tr key={h.asset} className="border-b last:border-0">
                   <td className="py-4 pr-4">
                     <div className="flex items-center gap-3">
-                      <span className={`size-2.5 rounded-full ${ASSET_COLOR[h.symbol]}`} />
+                      <span className={`size-2.5 rounded-full ${assetColor(h.symbol)}`} />
                       <span className="font-medium">{h.symbol}</span>
-                      <span className="hidden text-muted-foreground sm:inline">{priceState(h, Date.now()) === "fresh" ? usd(h.price) : "—"}</span>
+                      <span className="hidden text-muted-foreground sm:inline">{price === "fresh" ? usd(h.price) : "—"}</span>
                     </div>
                     <p className="mt-1 whitespace-normal break-all text-xs text-muted-foreground">
                       {fromUnits((BigInt(h.public) + BigInt(h.confidential)).toString(), h.decimals)} {h.symbol}
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground whitespace-normal">
-                      {priceState(h, Date.now()) === "fresh" ? "Fresh price" : priceState(h, Date.now()) === "stale" ? "Stale price" : "Price or freshness unavailable"}
+                      {price === "fresh" ? "Fresh price" : price === "stale" ? "Stale price" : "Price or freshness unavailable"}
                       {h.priceUpdatedAt && Number.isFinite(Date.parse(h.priceUpdatedAt)) && <> · updated <time dateTime={h.priceUpdatedAt} title={h.priceUpdatedAt}>{new Date(h.priceUpdatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time></>}
                     </p>
                   </td>

@@ -76,6 +76,8 @@ test("the Overview shows the schedule, the book, its allocation against the targ
     await visible(home.getByRole("row").filter({ has: home.getByText(symbol, { exact: true }) }).first());
 
   await visible(home.getByRole("heading", { level: 2, name: "Signed limits", exact: true }));
+  // The stack's policy signs a per-transaction cap only: every signed window is listed, not just the monthly one.
+  await visible(home.getByText("Per transaction: 25 USDC", { exact: true }));
   const windows = home.getByRole("table", { name: "USD budget windows" });
   for (const period of ["Daily", "Weekly", "Monthly"]) await visible(windows.getByRole("rowheader", { name: period, exact: true }));
 
@@ -296,6 +298,26 @@ test("Turn off stops the schedule when a read fails: in the frame, and on the st
     await setUnavailable(target, false);
   }
   assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+});
+
+test("an overview refresh fails on the Overview: one stop control, the Overview's own", async () => {
+  await home.goto(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("status").filter({ hasText: "Schedule: off" }));
+  // From now on the provider refuses the overview and the schedule's read: the next refresh of each fails.
+  const refused = JSON.stringify({ json: { defined: true, code: "BAD_REQUEST", message: "The provider could not complete this request.",
+    data: { kind: "provider", code: "http_error", availableAt: null } } });
+  const reads = ["**/a/portfolio/rpc/overview", "**/a/portfolio/rpc/autopilot/get"];
+  for (const read of reads) await home.route(read, route => route.fulfill({ status: 400, contentType: "application/json", body: refused }));
+  try {
+    await home.getByText("Refresh failed. Showing previously loaded records; check again before acting.", { exact: true }).waitFor({ timeout: 60_000 });
+    await visible(home.getByRole("status").filter({ hasText: "Schedule: unavailable" }));
+    await visible(home.getByRole("button", { name: "Turn off schedule", exact: true }));
+    assert.equal(await home.getByRole("button", { name: /^Turn off/ }).count(), 1, "the frame adds no second stop beside the Overview's");
+    assert.equal(await home.getByRole("heading", { name: "Schedule", exact: true }).count(), 0, "the frame's Schedule section isn't shown");
+    assert.deepEqual(await axe(home), []);
+  } finally {
+    for (const read of reads) await home.unroute(read);
+  }
 });
 
 /** How the owner session answers one of `portfolio`'s procedures: whether it succeeded, or its failure's kind. */
