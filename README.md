@@ -1,6 +1,6 @@
 # treasury
 
-The Treasury app's owner UI, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.4.0: the owner's Treasury pages, replacing the prototype's, in the session the owner signs in to with their wallet (`/a/<agent>/`, `ownerClient` same-origin). It lives in `web/` ([below](#the-owner-ui)). Beside it, `server/` is the app's own server on the app route ([below](#the-app-server), #20): the only way to reach Treasury proposals.
+The Treasury app's owner UI, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.4.0: the owner's Treasury pages, replacing the prototype's, in the session the owner signs in to with their wallet (`/a/<agent>/`, `ownerClient` same-origin). It lives in `web/` ([below](#the-owner-ui)). Beside it, `apps/server/` is the app's own server on the app route ([below](#the-app-server), #20): the only way to reach Treasury proposals.
 
 Whether the owner UI stays on the owner session or moves to the app's own routes on the platform (`/apps/v1`) is an open question for the platform ([MultiAgency/platform#14](https://github.com/MultiAgency/platform/issues/14)). Most of its calls would move by changing its one platform module, `web/src/platform.ts`; some are served only by the owner session. App access doesn't reach DAO-owned agents yet ([MultiAgency/platform#13](https://github.com/MultiAgency/platform/issues/13)).
 
@@ -20,7 +20,7 @@ SDK and platform feedback goes to [MultiAgency/platform](https://github.com/Mult
 
 ## The app server
 
-`server/` is its own package in the pnpm workspace: Node running TypeScript directly, `node:http`, `@multiagency/sdk` 0.4.0 and `near-kit` 0.20.2. It holds the deployment's `tap_` credential and calls the platform with `appClient`. Its design, rules and plan are in #20. The first version so far:
+`apps/server/` is its own package in the pnpm workspace: Node running TypeScript directly, `node:http`, `@multiagency/sdk` 0.4.0 and `near-kit` 0.20.2. It holds the deployment's `tap_` credential and calls the platform with `appClient`. Its design, rules and plan are in #20. The first version so far:
 
 - **Owner sign-in:** a NEP-413 challenge addressed to this server, verified with `near-kit` before any chain call, then a full-access key of the signing account on chain (FastNEAR's RPC, configured as the platform's `src/chain.ts`). Each challenge is single-use and expires in 5 minutes.
 - **Sessions:** a `Secure`, httpOnly, `SameSite=Strict` cookie, ended after 30 minutes idle, 12 hours or sign-out; in memory, so a restart signs everyone out. Every write checks `Origin` and requires JSON.

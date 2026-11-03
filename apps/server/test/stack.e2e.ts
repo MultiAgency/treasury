@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { request } from "node:https";
 import type { AddressInfo } from "node:net";
-import { signOwner, startStack, type Stack } from "../../scripts/stack.ts";
+import { signOwner, startStack, type Stack } from "../../../scripts/stack.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";

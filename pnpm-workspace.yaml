@@ -3,7 +3,6 @@
 minimumReleaseAgeExclude:
   - '@multiagency/sdk@0.4.0'
 packages:
-  - server
   - web
   - apps/*
   - packages/*
