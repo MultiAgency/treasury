@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useAgent, useAgentReads } from "../../app/frame";
 import { PERIOD } from "../../shared/budget";
-import { amountOf, usd } from "../../shared/format";
+import { amountOf, symbolOf, usd } from "../../shared/format";
 import { useNameOf } from "../../shared/names";
 import { accessDenied, Button, Loading, ReadFailure, Section } from "../../shared/ui";
 import { Row } from "../activity/activity";
@@ -19,7 +19,7 @@ export function TreasuryLimits() {
     .flatMap(window => Object.entries(policy?.limits?.[window] ?? {}).map(([asset, raw]) => ({ window, asset, raw })));
   const [refusalsOpen, setRefusalsOpen] = useState(false);
   return <Section title="Signed limits" description="Per-asset caps and the shared USD budget constrain spending separately. Each operation is checked again before submission.">
-    <dl className="text-sm"><dt className="text-muted-foreground">Allowed assets</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => data.book.find(h => h.asset === asset)?.symbol ?? asset).join(", ") || "None"}</dd></dl>
+    <dl className="text-sm"><dt className="text-muted-foreground">Allowed assets</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => symbolOf(asset, data.book)).join(", ") || "None"}</dd></dl>
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="min-w-0">
         <h3 className="mb-3 text-sm font-medium">Per-asset caps</h3>

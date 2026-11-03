@@ -117,6 +117,8 @@ export function useSigner(setup: Setup) {
   const permitted = canPrepare && (viewer === null || (viaDao ? viewer.access?.canPropose : viewer.access?.canSign));
   return {
     viaDao,
+    /** Whether this page can sign now: through the DAO, or with the owner's own wallet connected. */
+    canSign: Boolean(permitted && (viaDao || walletIsOwner)),
     permitted: Boolean(permitted),
     needsWallet: Boolean(permitted && !viaDao && wallet.status !== "connected"),
     connectedNotOwner: !viaDao && wallet.status === "connected" && !walletIsOwner,

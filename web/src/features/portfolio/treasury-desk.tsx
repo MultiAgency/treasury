@@ -4,7 +4,7 @@ import { useAgent, useAgentReads } from "../../app/frame";
 import { Button, QueryError } from "../../shared/ui";
 import { useValuedBook } from "../../shared/valuation";
 import { Unresolved } from "../activity/activity";
-import { SCHEDULE_STOP_SCOPE, StopBlocked, StopResult, useStopSchedule } from "../owner/task-recovery";
+import { offersStop, SCHEDULE_STOP_SCOPE, StopBlocked, StopResult, useStopSchedule } from "../owner/task-recovery";
 import { Allocation, Figures } from "./book";
 import { TreasuryLimits } from "./treasury-limits";
 
@@ -35,9 +35,9 @@ function ScheduleStatus() {
   return <section aria-label="Schedule status" className="flex flex-col gap-3 text-sm">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p role="status">Schedule: <strong>{known ? status.data.on ? `on · every ${status.data.everyMin} minutes` : "off" : status.isPending ? "checking…" : "unavailable"}</strong></p>
-      {(!known || status.data.on) && <Button variant="outline" disabled={control.disabled} onClick={control.stop}>Turn off schedule</Button>}
+      {offersStop(status) && <Button variant="outline" disabled={control.disabled} onClick={control.stop}>Turn off schedule</Button>}
     </div>
-    {(!known || status.data.on) && <><p className="text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p><StopBlocked control={control} /></>}
+    {offersStop(status) && <><p className="text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p><StopBlocked control={control} /></>}
     {status.error && <QueryError error={status.error} retry={() => status.refetch()} />}
     <StopResult control={control} />
   </section>;

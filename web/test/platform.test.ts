@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { agent, failureKind, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, scope, scopeOfKey, type Denial } from "../src/platform.ts";
+import { agent, answered, failureKind, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, scope, scopeOfKey, type Denial } from "../src/platform.ts";
 import { pageTitle } from "../src/app/pages.ts";
 
 /** Each request the app sent, and the answers the fake host gives, in order. */
@@ -192,6 +192,25 @@ test("the schedule's read is autopilot/get, keyed with the agent's other reads, 
   answers.push(json({ json: schedule }));
   assert.deepEqual(await autopilot.queryFn!({ signal: new AbortController().signal } as never), schedule);
   assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/autopilot/get"]);
+});
+
+test("the strategy's read is strategy/get, keyed with the agent's other reads, and retried only when its answer was lost", async () => {
+  const { strategy } = reads("portfolio", "owner.near");
+  assert.deepEqual(strategy.queryKey, [scope("portfolio", "owner.near"), "strategy/get"]);
+  assert.equal(strategy.retry, retryLost);
+  answers.push(lost);
+  await assert.rejects(async () => strategy.queryFn!({ signal: new AbortController().signal } as never), (e: unknown) => failureKind(e) === "unavailable");
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/strategy/get"]);
+});
+
+test("strategy/save and autopilot/enable are actions: a lost answer is unknown, sent once; answered throws it by kind", async () => {
+  const strategy = { targetBps: { "nep141:wrap.near": 10_000 }, minLegUsd: 2, maxCostBps: 250, autopilot: { everyMin: 60, maxUsd: 0 } };
+  answers.push(lost, lost);
+  const saved = await agent("portfolio").act("strategy/save", { strategy, expectedDigest: "sha256:a" });
+  const enabled = await agent("portfolio").act("autopilot/enable", { expectedDigest: "sha256:a" });
+  for (const result of [saved, enabled]) assert.throws(() => answered(result), (e: unknown) => failureKind(e) === "unknown");
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/strategy/save", "/a/portfolio/rpc/autopilot/enable"]);
+  assert.deepEqual(answered({ ok: true, value: 1 }), 1);
 });
 
 test("a cached read is retried only when its answer was lost", () => {

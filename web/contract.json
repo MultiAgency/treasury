@@ -7,6 +7,7 @@
     "agent-schedule-stop-v1",
     "owner-intents-v1",
     "treasury-observe-v1",
+    "treasury-strategy-v1",
     "treasury-recovery-v1"
   ],
   "entries": {

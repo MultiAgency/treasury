@@ -1,11 +1,5 @@
-import { failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type OwnerResult, type Setup, type Transaction } from "../../platform.ts";
+import { answered, failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type Setup, type Transaction } from "../../platform.ts";
 import { observeOwnerAction } from "./owner-observation.ts";
-
-/** An action's value, or its failure thrown as a `PlatformError`, decided by kind. */
-const answered = <T,>(result: OwnerResult<T>): T => {
-  if (!result.ok) throw new PlatformError(result);
-  return result.value;
-};
 
 export type Signer = "wallet" | "dao";
 export type Step = "preparing" | "signing" | "filing" | "voting" | "settling";

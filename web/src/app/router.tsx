@@ -2,7 +2,10 @@ import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/
 import type { ComponentType, ReactNode } from "react";
 import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
 import { OwnerControls } from "../features/owner/owner";
+import { StrategyWorkflow } from "../features/portfolio/strategy-workflow";
 import { TreasuryDesk } from "../features/portfolio/treasury-desk";
+import { swaps } from "../shared/format";
+import { LinkButton } from "../shared/ui";
 import { Shell, useAgent } from "./frame";
 import { BASE } from "./location";
 import { PAGES, type Page } from "./pages";
@@ -39,8 +42,22 @@ function ActivityPage() {
   </>;
 }
 
+/** The Strategy page: configure, authorize and schedule the strategy. */
+function StrategyPage() {
+  const { setup, data } = useAgent();
+  return <>
+    <h1 className="text-2xl font-semibold">{PAGES["/automations"]}</h1>
+    <p className="text-sm text-muted-foreground">Configure, authorize and schedule the strategy.</p>
+    {setup.executor === false && <p className="text-sm text-muted-foreground">Preview, execution and automation settings are available on the executor with the corresponding account permissions.</p>}
+    {!setup.grant && <p className="text-sm text-muted-foreground">A grant is required for new automation actions. <LinkButton to="/policy" hash="grants">Review grants and permissions</LinkButton>.</p>}
+    <StrategyWorkflow />
+    {!swaps(data) && <p className="text-sm text-muted-foreground">The current policy does not allow swaps. Rebalance previews are unavailable; recorded runs and strategy settings remain accessible.</p>}
+    <LinkButton to="/follow/run">Run autopilot once or review recorded runs →</LinkButton>
+  </>;
+}
+
 /** A page that has moved here; a pending one shows its placeholder, with any ported feature it belongs to below it. */
-const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/activity": ActivityPage };
+const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/automations": StrategyPage, "/activity": ActivityPage };
 const BELOW_PLACEHOLDER: Partial<Record<Page, ComponentType>> = { "/policy": Freeze };
 
 const root = createRootRoute({ component: Shell });

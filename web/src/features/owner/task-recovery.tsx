@@ -9,6 +9,9 @@ import { Button, ErrorBox, Loading, QueryError, Section } from "../../shared/ui"
 export const SCHEDULE_STOPPED = "Future scheduled runs are off. A run already started can still submit further operations; submitted operations may finish.";
 export const SCHEDULE_STOP_SCOPE = "Stopping the schedule prevents future scheduled runs. A run already started can still submit further operations; submitted operations may finish.";
 
+/** Whether to offer stopping the schedule: unless its latest read confirms it off. Who may stop it is `useStopSchedule`'s. */
+export const offersStop = (schedule: { data?: { on: boolean }; error: unknown }) => !schedule.data || Boolean(schedule.error) || schedule.data.on;
+
 /** Reads a stop changes: the schedule and the strategy it runs. */
 const scheduleRead = (key: readonly unknown[]) => typeof key[1] === "string" && /^(autopilot|strategy)\//.test(key[1]);
 

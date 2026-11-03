@@ -1,5 +1,6 @@
 import { Copy } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { Link } from "@tanstack/react-router";
+import { useState, type ComponentProps, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -20,6 +21,11 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
 
 export const statusTone = (status: string | undefined): Tone =>
   status === "SUCCESS" ? "success" : status === "FAILED" || status === "REFUNDED" ? "destructive" : status ? "warning" : "neutral";
+
+/** A link styled as a small outline button that wraps its text rather than overflowing. */
+export function LinkButton(props: ComponentProps<typeof Link>) {
+  return <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link {...props} /></Button>;
+}
 
 export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return <section className="flex flex-col gap-6">

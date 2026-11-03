@@ -32,6 +32,11 @@ export class PlatformError extends Error {
   }
 }
 export const failureKind = (error: unknown) => error instanceof PlatformError ? error.failure.kind : undefined;
+/** An action's value, or its failure thrown as a `PlatformError`, decided by kind. */
+export const answered = <T,>(result: OwnerResult<T>): T => {
+  if (!result.ok) throw new PlatformError(result);
+  return result.value;
+};
 
 /** Plan previews save a plan and move nothing; every other unknown outcome may have sent something. */
 const PREVIEWS = new Set<string>(["rebalance", "steward/propose"]);
@@ -131,6 +136,10 @@ export type ActivityRow = OwnerOutput<"activity">[number];
 export type UnresolvedOperation = OwnerOutput<"unresolved">[number];
 export type OperationCheck = OwnerOutput<"recover">[number];
 export type Books = OwnerOutput<"reconcileBooks">;
+/** The owner's saved strategy: targets, swap limits and the schedule's settings. */
+export type Strategy = OwnerInputs["strategy/save"]["strategy"];
+/** The saved strategy with its digest, whether the live grant approves it, and whether its schedule may be turned on. */
+export type StrategyStatus = OwnerOutput<"strategy/get">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
 export { mayCall, type Access } from "@multiagency/sdk";
 type Options = { signal?: AbortSignal };
@@ -220,6 +229,8 @@ export function reads(name: string, viewer: string | null) {
     unresolved: queryOptions({ queryKey: [key, "unresolved"], queryFn: ({ signal }) => api.read("unresolved", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
     books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
+    strategy: queryOptions({ queryKey: [key, "strategy/get"], queryFn: ({ signal }) => api.read("strategy/get", undefined, { signal }), retry: retryLost,
+      refetchInterval: 30_000 }),
     autopilot: queryOptions({ queryKey: [key, "autopilot/get"], queryFn: ({ signal }) => api.read("autopilot/get", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
   };
