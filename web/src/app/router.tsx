@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
-import type { ComponentType, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
-import { OwnerControls } from "../features/owner/owner";
+import { Policy } from "../features/policy/policy";
 import { StrategyWorkflow } from "../features/portfolio/strategy-workflow";
 import { TreasuryDesk } from "../features/portfolio/treasury-desk";
 import { swaps } from "../shared/format";
@@ -18,19 +18,6 @@ function Pending({ title }: { title: string }) {
   </>;
 }
 
-/** Freezing, as the policy page has it: that page is built around it later. */
-function Freeze() {
-  const { setup, data } = useAgent();
-  const frozen = Boolean(data.policy.policy?.frozen);
-  return <div className="flex flex-wrap items-start justify-between gap-4 text-sm">
-    <div className="flex max-w-prose flex-col gap-2">
-      <h2 className="font-medium">{frozen ? "Unfreeze the agent" : "Freeze the agent"}</h2>
-      <p>Freezing blocks new actions across grants. It does not prove that an operation already committed by the provider will stop.</p>
-      {frozen && <p>Unfreezing does not establish that the grant, schedule or a particular action is ready.</p>}
-    </div>
-    <OwnerControls setup={setup} frozen={frozen} />
-  </div>;
-}
 
 /** The Activity page: unresolved operations, the owner's actions with the operation history, and the books. */
 function ActivityPage() {
@@ -56,15 +43,19 @@ function StrategyPage() {
   </>;
 }
 
-/** A page that has moved here; a pending one shows its placeholder, with any ported feature it belongs to below it. */
-const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/automations": StrategyPage, "/activity": ActivityPage };
-const BELOW_PLACEHOLDER: Partial<Record<Page, ComponentType>> = { "/policy": Freeze };
+/** The Policy & grants page: the policy in force and its editor, the owner's controls with the grants, and the policy's evidence. */
+function PolicyPage() {
+  return <>
+    <h1 className="text-2xl font-semibold">{PAGES["/policy"]}</h1>
+    <Policy />
+  </>;
+}
+
+/** A page that has moved here; a pending one shows its placeholder. */
+const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/automations": StrategyPage, "/policy": PolicyPage, "/activity": ActivityPage };
 
 const root = createRootRoute({ component: Shell });
-const page = (path: Page) => createRoute({ getParentRoute: () => root, path, component: PORTED[path] ?? (() => {
-  const Below = BELOW_PLACEHOLDER[path];
-  return <><Pending title={PAGES[path]} />{Below && <Below />}</>;
-}) });
+const page = (path: Page) => createRoute({ getParentRoute: () => root, path, component: PORTED[path] ?? (() => <Pending title={PAGES[path]} />) });
 
 export const router = createRouter({
   basepath: BASE || "/",

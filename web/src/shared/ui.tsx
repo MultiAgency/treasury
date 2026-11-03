@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { failureKind } from "../platform";
 
 export { Button };
+/** Native input/select callers share the same states as the Input component. */
+export { inputStyles as input } from "@/components/ui/input";
 
 /** Maia surface only; native dialog focus and each review's authorization remain with the caller. */
 export const reviewDialog =

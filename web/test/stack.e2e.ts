@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
-import type { OwnerActionRecord, OwnerStatus, StrategyStatus } from "../src/platform.ts";
+import { authorizeStrategy, dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import type { OwnerActionRecord, OwnerStatus, Overview, StrategyStatus } from "../src/platform.ts";
 
 
 /**
@@ -271,6 +271,148 @@ test("a lost signature reply: the outcome is unknown, followed in owner/status, 
   // Leave `portfolio` unfrozen for the tests after this one.
   await home.getByRole("button", { name: "Unfreeze", exact: true }).click();
   await home.getByRole("heading", { name: "Freeze the agent", exact: true }).waitFor({ timeout: 60_000 });
+});
+
+test("Policy & grants: the policy in force, the owner's controls and the grants, beside its evidence", async () => {
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  await visible(home.getByRole("heading", { level: 1, name: "Policy & grants", exact: true }));
+  assert.equal(await home.title(), "Treasury · Policy & grants");
+  const observed = home.getByRole("region", { name: "Current policy and grant observations" });
+  await visible(observed.getByText("Reported in force", { exact: true }));
+  await visible(observed.getByText(/^treasury · expires /));
+  await visible(home.getByRole("heading", { level: 2, name: "Allowed actions", exact: true }));
+  await visible(home.getByText("Revision 1 · applied", { exact: true }));
+  // The stack's policy caps each payment at 25 USDC: "Caps per payment".
+  await visible(home.getByText("25 USDC", { exact: true }));
+  await visible(home.getByRole("heading", { level: 2, name: "Owner controls", exact: true }));
+  for (const name of ["Stop the schedule", "Freeze the agent"]) await visible(home.getByRole("heading", { level: 3, name, exact: true }));
+  await visible(home.getByRole("heading", { level: 2, name: "Grants", exact: true }));
+  const current = home.getByRole("list", { name: "Live grants" }).getByRole("listitem").filter({ hasText: "Current" });
+  assert.equal(await current.count(), 1);
+  await visible(current.getByText("treasury", { exact: true }));
+  // A Treasury grant is bound to the saved strategy, so it's issued from the Strategy page, not here.
+  await home.getByText("Issue or renew a grant", { exact: true }).click();
+  await visible(home.getByRole("link", { name: "Review strategy authorization", exact: true }));
+  await visible(home.getByRole("heading", { level: 2, name: "Policy evidence", exact: true }));
+  await home.getByText("Mandate digest and revisions", { exact: true }).click();
+  await visible(home.getByText("No revision records returned by this check.", { exact: true }));
+  assert.deepEqual(await axe(home), []);
+});
+
+test("with no policy to read, /policy still offers Freeze and the grants, and says the frozen state isn't confirmed", async () => {
+  // The overview answered with its policy unreadable (`policy.policy` null), as the provider can report it. The answer is
+  // read in the page: `route.fetch` runs in Node, which refuses the stack's self-signed certificate.
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  const body = await home.evaluate(async () => (await fetch("/a/portfolio/rpc/overview", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ json: undefined }) })).json() as Promise<{ json: Overview; meta?: unknown }>);
+  body.json.policy.policy = null;
+  await home.route("**/a/portfolio/rpc/overview", route => route.fulfill({ json: body }));
+  try {
+    await home.goto(`${dashboard}/a/portfolio/policy`);
+    await visible(home.getByText("No policy available to review."));
+    await visible(home.getByRole("heading", { level: 3, name: "Freeze the agent", exact: true }));
+    await visible(home.getByText("The policy isn’t available, so whether the agent is frozen now isn’t confirmed."));
+    assert.equal(await home.getByRole("button", { name: "Freeze", exact: true }).isEnabled(), true);
+    await visible(home.getByRole("list", { name: "Live grants" }));
+    assert.deepEqual(await axe(home), []);
+  } finally {
+    await home.unroute("**/a/portfolio/rpc/overview");
+  }
+});
+
+test("a strategy-bound grant is listed under its label, as the current grant", async () => {
+  // Signed the way #7's Strategy page signs it: bound to the strategy saved above.
+  await authorizeStrategy(target);
+  const { grants } = await rpc<Overview>(home, "overview");
+  const bound = grants.find(g => g.label.startsWith("treasury:") && !g.revoked_at);
+  assert.ok(bound, `a strategy-bound grant (grants: ${grants.map(g => g.label)})`);
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  const live = home.getByRole("list", { name: "Live grants" });
+  const row = live.getByRole("listitem").filter({ has: home.getByText(bound.label, { exact: true }) });
+  await visible(row.getByText("Live", { exact: true }));
+  await visible(row.getByText("Current", { exact: true }));
+  await visible(home.getByRole("region", { name: "Current policy and grant observations" }).getByText(`${bound.label} · expires `));
+});
+
+test("revoking the current grant: reviewed in the dialog, prepared once; the stack's provider fails it and the grant stays live", async () => {
+  // The stack's simulated provider has no grant_revoke (platform 1a7fe98, test/e2e/provider.mjs): owner/prepare answers
+  // 500 there, so this follows the revoke up to that failure. A signed revoke can't be tested on this stack.
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  const current = home.getByRole("list", { name: "Live grants" }).getByRole("listitem").filter({ hasText: "Current" });
+  const grantsBefore = (await rpc<Overview>(home, "overview")).grants;
+  const sent: string[] = [];
+  const onRequest = (request: { url(): string }) => {
+    const path = new URL(request.url()).pathname.split("/rpc/")[1];
+    if (path?.startsWith("owner/prepare") || path?.startsWith("owner/submit")) sent.push(path);
+  };
+  home.on("request", onRequest);
+  try {
+    const actions = await recorded(home, async () => {
+      await current.getByRole("button", { name: "Revoke", exact: true }).click();
+      const dialog = home.getByRole("dialog", { name: "Revoke the current grant?" });
+      await visible(dialog);
+      assert.deepEqual(await axe(home), []);
+      assert.deepEqual(sent, [], "nothing is prepared before the review is confirmed");
+      const answered = home.waitForResponse(response => response.url().endsWith("/rpc/owner/prepare"));
+      await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
+      assert.equal((await answered).ok(), false);
+      // A 500 to an action is an unknown outcome to the SDK; for a prepare, nothing was signed, so nothing took effect.
+      await visible(home.getByRole("alert").filter({ hasText: "Preparing was interrupted. Nothing was signed, so nothing took effect; any intent already prepared expires unsigned. Prepare again." }));
+    });
+    assert.deepEqual(sent, ["owner/prepare"], "prepared once, never submitted");
+    assert.deepEqual(actions, [], "no owner action was recorded");
+    assert.deepEqual((await rpc<Overview>(home, "overview")).grants, grantsBefore, "the grants are unchanged");
+    await visible(current.getByRole("button", { name: "Revoke", exact: true }));
+  } finally {
+    home.off("request", onRequest);
+  }
+});
+
+test("a policy edit drafted, reviewed and signed in the owner's page: one policy_update, applied as the next revision", async () => {
+  // The stack's `portfolio` provider signs every policy edit as NEP-413 (`onChainPolicyEdits` is off for it in
+  // test/e2e/environment.mjs), so the edit is signed in the page and applied; the NEP-366 path isn't exercised here.
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  await home.getByRole("button", { name: "Edit", exact: true }).click();
+  // While it's invalid, the field's label also holds its error, so its name starts with its label.
+  const rate = home.getByRole("textbox", { name: /^Actions an hour/ });
+  assert.equal(await rate.inputValue(), "10");
+  assert.equal(await home.getByRole("button", { name: "Review changes", exact: true }).isDisabled(), true, "nothing to review yet");
+  await rate.fill("1.5");
+  await home.getByRole("button", { name: "Review changes", exact: true }).click();
+  await visible(home.getByText("Check actions an hour. Correct the highlighted field before reviewing.", { exact: true }));
+  // Focus moves to the invalid field once its error is committed.
+  await until(async () => (await home.evaluate(() => document.activeElement?.getAttribute("name"))) === "actions-per-hour", 5_000);
+  await rate.fill("12");
+  await home.getByRole("button", { name: "Review changes", exact: true }).click();
+  const review = home.getByRole("status").filter({ hasText: "You will sign these changes:" });
+  await visible(review);
+  assert.deepEqual(await review.getByRole("listitem").allInnerTexts(), ["Actions an hour: 10 → 12"]);
+  assert.deepEqual(await axe(home), []);
+
+  // A slow read after the signature: the new revision arrives while the editor still waits for it. It is this update's
+  // own, so it never reads as a changed policy, and nothing is offered again before the editor closes.
+  const stale = home.getByText("The policy changed or is unavailable.", { exact: false });
+  await home.route("**/a/portfolio/rpc/setup", async route => { await new Promise(resolve => setTimeout(resolve, 3_000)); await route.continue(); });
+  const [action, ...others] = await recorded(home, async () => {
+    try {
+      const sign = home.getByRole("button", { name: "Sign update", exact: true });
+      await sign.click();
+      await visible(home.getByText("Revision 2 · applied", { exact: true }));
+      assert.equal(await stale.count(), 0, "the owner's own update isn't a changed policy");
+      if (await sign.count()) assert.equal(await sign.isDisabled(), true, "no second signature while the editor closes");
+      await sign.waitFor({ state: "detached", timeout: 15_000 });
+    } finally {
+      await home.unroute("**/a/portfolio/rpc/setup");
+    }
+  });
+  assert.equal(others.length, 0, "one owner action");
+  assert.equal(action?.type, "policy_update");
+  assert.deepEqual(await status(home, action!.correlationId), { stage: "submitted", status: "SUCCESS" });
+  const { policy } = await rpc<Overview>(home, "overview");
+  assert.equal(policy.revision, 2);
+  assert.equal(policy.policy?.max_actions_per_hour, 12);
+  assert.equal(await stale.count(), 0);
+  assert.equal(await home.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
 });
 
 /** Turns the schedule off from `page`: the stop is sent once and answered, and the schedule reads as off. */

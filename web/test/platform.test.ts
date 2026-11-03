@@ -66,6 +66,18 @@ test("recover is an action: a lost answer is unknown, never unavailable, and it'
   assert.equal(checked.ok ? undefined : new PlatformError(checked).message, "The check was interrupted. It only reads; check again.");
 });
 
+test("an interrupted owner/prepare says nothing took effect; an interrupted owner/submit still may have", async () => {
+  answers.push(lost);
+  const prepared = await agent("portfolio").act("owner/prepare", { action: { type: "agent_freeze" }, signer: "wallet" });
+  assert.equal(prepared.ok ? "ok" : prepared.kind, "unknown");
+  assert.equal(prepared.ok ? undefined : new PlatformError(prepared).message,
+    "Preparing was interrupted. Nothing was signed, so nothing took effect; any intent already prepared expires unsigned. Prepare again.");
+  answers.push(lost);
+  const submitted = await agent("portfolio").act("owner/submit", { correlationId: "c1", signedData: {} });
+  assert.match(submitted.ok ? "" : new PlatformError(submitted).message, /^The outcome is unknown: this owner\/submit request may have taken effect\./);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/owner/prepare", "/a/portfolio/rpc/owner/submit"]);
+});
+
 test("Activity's reads are cached per viewer and retried only when their answer was lost", () => {
   for (const read of ["activity", "unresolved", "books"] as const) {
     const options = reads("portfolio", "owner.near")[read];
@@ -211,6 +223,17 @@ test("strategy/save and autopilot/enable are actions: a lost answer is unknown, 
   for (const result of [saved, enabled]) assert.throws(() => answered(result), (e: unknown) => failureKind(e) === "unknown");
   assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/strategy/save", "/a/portfolio/rpc/autopilot/enable"]);
   assert.deepEqual(answered({ ok: true, value: 1 }), 1);
+});
+
+test("the policy's revisions are policyHistory, keyed with the agent's other reads, and never retried", async () => {
+  const { policyHistory } = reads("portfolio", "owner.near");
+  assert.deepEqual(policyHistory.queryKey, [scope("portfolio", "owner.near"), "policyHistory"]);
+  assert.notDeepEqual(policyHistory.queryKey, reads("portfolio", "member.near").policyHistory.queryKey);
+  assert.equal(policyHistory.retry, false);
+  const revisions = [{ revision: 2, status: "APPLIED", appliedAt: "2026-11-03T00:00:00.000Z", transactionHash: null, digest: "sha256:d" }];
+  answers.push(json({ json: revisions }));
+  assert.deepEqual(await policyHistory.queryFn!({ signal: new AbortController().signal } as never), revisions);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/policyHistory"]);
 });
 
 test("a cached read is retried only when its answer was lost", () => {
