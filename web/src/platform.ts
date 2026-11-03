@@ -35,9 +35,12 @@ export const failureKind = (error: unknown) => error instanceof PlatformError ? 
 
 /** Plan previews save a plan and move nothing; every other unknown outcome may have sent something. */
 const PREVIEWS = new Set<string>(["rebalance", "steward/propose"]);
+/** Actions that only read (outcome checks): an interrupted one changed nothing. */
+const CHECKS = new Set<string>(["recover"]);
 export function failureMessage(failure: OwnerFailure): string {
   if (failure.kind === "unknown") return PREVIEWS.has(failure.procedure)
     ? "The preview was interrupted, so a plan may have been saved. Nothing was sent. Observations are read again; preview again for a fresh plan, and any earlier plan expires unused."
+    : CHECKS.has(failure.procedure) ? "The check was interrupted. It only reads; check again."
     : `The outcome is unknown: this ${failure.procedure} request may have taken effect. Check the recorded operations before any other action; nothing is sent again automatically.`;
   if (failure.kind === "unavailable") return "This read failed or returned an answer that could not be verified. Reading again is safe.";
   return failure.error;
@@ -124,6 +127,10 @@ export type Intent = NonNullable<Prepared["intent"]>;
 export type Transaction = NonNullable<Prepared["dao"]>["transaction"];
 export type OwnerStatus = OwnerOutput<"owner/status">;
 export type OwnerActionRecord = OwnerOutput<"owner/actions">[number];
+export type ActivityRow = OwnerOutput<"activity">[number];
+export type UnresolvedOperation = OwnerOutput<"unresolved">[number];
+export type OperationCheck = OwnerOutput<"recover">[number];
+export type Books = OwnerOutput<"reconcileBooks">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
 export { mayCall, type Access } from "@multiagency/sdk";
 type Options = { signal?: AbortSignal };
@@ -209,5 +216,9 @@ export function reads(name: string, viewer: string | null) {
     /** Read again every few seconds only while an action's outcome is pending. */
     ownerActions: queryOptions({ queryKey: [key, "owner/actions"], queryFn: ({ signal }) => api.read("owner/actions", undefined, { signal }), retry: false,
       refetchInterval: query => query.state.data?.some(a => a.stage === "prepared" || a.stage === "submitted") ? 5_000 : false }),
+    activity: queryOptions({ queryKey: [key, "activity"], queryFn: ({ signal }) => api.read("activity", undefined, { signal }), retry: retryLost }),
+    unresolved: queryOptions({ queryKey: [key, "unresolved"], queryFn: ({ signal }) => api.read("unresolved", undefined, { signal }), retry: retryLost,
+      refetchInterval: 30_000 }),
+    books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
   };
 }

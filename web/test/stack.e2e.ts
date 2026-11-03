@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { dropSignatureResponse, revealOwnerOutcome, setUnavailable, startStack, type Stack } from "../../scripts/stack.ts";
+import { dropSignatureResponse, dropSwapResponse, revealOwnerOutcome, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import type { OwnerActionRecord, OwnerStatus } from "../src/platform.ts";
 
 
@@ -258,4 +258,106 @@ test("Turn off stops the schedule when a read fails: in the frame, and on the st
     await setUnavailable(target, false);
   }
   assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+});
+
+/** How the owner session answers one of `portfolio`'s procedures: whether it succeeded, or its failure's kind. */
+const answer = (page: Page, path: string) => page.evaluate(async path => {
+  const response = await fetch(`/a/portfolio/rpc/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  return response.ok ? { ok: true } : { ok: false, kind: ((await response.json()) as { json: { data?: { kind?: string } } }).json.data?.kind };
+}, path);
+
+test("setup unreadable: Activity shows the retained records; other pages link to them", async () => {
+  await setUnavailable(target, true);
+  try {
+    await home.goto(`${dashboard}/a/portfolio/activity`);
+    await visible(home.getByRole("heading", { name: "Available records", exact: true }));
+    await visible(home.getByRole("alert").filter({ hasText: "Setup unavailable" }));
+    await visible(home.getByRole("status").filter({ hasText: "Retained records remain available. Current provider outcomes are not confirmed here." }));
+    await visible(home.getByRole("heading", { name: "Unresolved operations", exact: true }));
+    await visible(home.getByText("No unresolved operations are recorded on this instance.", { exact: true }));
+    await visible(home.getByRole("heading", { name: "Owner actions", exact: true }));
+    await visible(home.getByRole("heading", { name: "Operation history", exact: true }));
+    assert.equal(await home.getByRole("region", { name: "Treasury owner" }).count(), 0, "nothing unconfirmed is shown");
+    assert.deepEqual(await axe(home), []);
+
+    await home.goto(`${dashboard}/a/portfolio/funding`);
+    await visible(home.getByRole("alert").filter({ hasText: "Setup unavailable" }));
+    await home.getByRole("link", { name: "Review existing operation records", exact: true }).click();
+    await home.waitForURL(`${dashboard}/a/portfolio/activity`);
+    await visible(home.getByRole("heading", { name: "Operation history", exact: true }));
+  } finally {
+    await setUnavailable(target, false);
+  }
+});
+
+test("a provider outage reads as the owner session answers it: by kind, the provider's refusal, and the agent's own records stay", async () => {
+  await setUnavailable(target, true);
+  try {
+    // On the owner session (unlike the machine route) the agent is still granted: setup is the provider's refusal,
+    // and the agent's own records still answer.
+    assert.deepEqual([await answer(home, "setup"), await answer(home, "activity"), await answer(home, "unresolved")],
+      [{ ok: false, kind: "provider" }, { ok: true }, { ok: true }]);
+    await home.goto(`${dashboard}/a/portfolio/activity`);
+    // A provider refusal is shown in its own words, and isn't a denial: the records aren't hidden.
+    await visible(home.getByRole("alert").filter({ hasText: "Setup unavailable" }));
+    await visible(home.getByText("The provider could not complete this request. Check the recorded outcome before retrying.", { exact: true }));
+    await visible(home.getByRole("status").filter({ hasText: "Retained records remain available." }));
+    await visible(home.getByRole("heading", { name: "Operation history", exact: true }));
+    assert.equal(await home.getByText(/could not be loaded/).count(), 0, "the agent's own records were read");
+  } finally {
+    await setUnavailable(target, false);
+  }
+});
+
+// The unresolved operation it leaves blocks every later money action: only reads follow it.
+test("after a lost swap reply, Activity lists the unresolved operation and says resolving it is the owner's separate step", async () => {
+  await dropSwapResponse(target);
+  // Executed outside the app's UI, as the platform's specs do: the provider applies the swap and loses the reply.
+  const saved = await rpc<{ id: string }>(home, "externalPlan", { swaps: [{ from: USDC, to: WNEAR, amount: "1000000" }] });
+  const executed = await home.evaluate(async planId => (await fetch("/a/portfolio/rpc/executePlan", { method: "POST",
+    headers: { "content-type": "application/json" }, body: JSON.stringify({ json: { planId } }) })).text(), saved.id);
+  assert.match(executed, /event: error/);
+
+  await home.goto(`${dashboard}/a/portfolio/activity`);
+  await visible(home.getByRole("heading", { name: "Operation status", level: 1 }));
+  await visible(home.getByText("Unresolved operations", { exact: true }).first());
+  await visible(home.getByRole("status").filter({ hasText: /^New sends are blocked by 1 unresolved operation\.$/ }));
+  await visible(home.getByText("Resolving it is a separate step that needs the owner’s authorization. This page cannot clear, retry or replay it.", { exact: true }));
+  await visible(home.getByText("Its submission was attempted and no provider reference was returned, so whether it executed is unknown.", { exact: true }));
+  await visible(home.getByText("submission outcome unknown", { exact: true }));
+  await visible(home.getByRole("heading", { name: "Owner actions", exact: true }));
+  assert.equal(await home.getByRole("button", { name: /clear|retry|replay|resolve/i }).count(), 0, "resolution isn't offered here");
+  assert.deepEqual(await axe(home), []);
+
+  // Checking outcomes reads statuses only: the operation stays unknown and unresolved, nothing is sent again, and the
+  // check stays offered after its unknown result, so a second check reads the same.
+  const rows = (await rpc<unknown[]>(home, "activity")).length;
+  const check = home.getByRole("button", { name: "Check operation outcomes", exact: true });
+  for (let time = 1; time <= 2; time++) {
+    await check.click();
+    await visible(home.getByRole("status").filter({ hasText: /^Status check complete: Checked 1 operation\./ }));
+    await visible(home.getByRole("list", { name: "Operation status results" }).getByText("Outcome still unknown", { exact: true }));
+    assert.equal(await check.isEnabled(), true, `the check is offered again after check ${time}`);
+    assert.equal((await rpc<unknown[]>(home, "unresolved")).length, 1, `still unresolved after check ${time}`);
+    assert.equal((await rpc<unknown[]>(home, "activity")).length, rows, `nothing new was recorded by check ${time}`);
+  }
+});
+
+test("the overview fails while setup loads: Activity still lists the unresolved operation, under the overview's error", async () => {
+  // Only this page's overview read is refused, as the provider refuses it; setup and the agent's own records still answer.
+  const overview = "**/a/portfolio/rpc/overview";
+  await home.route(overview, route => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ json: {
+    defined: true, code: "BAD_REQUEST", message: "The provider could not complete this request.", data: { kind: "provider", code: "http_error", availableAt: null } } }) }));
+  try {
+    await home.goto(`${dashboard}/a/portfolio/activity`);
+    await visible(home.getByRole("region", { name: "Treasury owner" }));
+    await visible(home.getByText("Some agent details could not be loaded.", { exact: true }));
+    await visible(home.getByRole("heading", { name: "Operation status", level: 1 }));
+    await visible(home.getByRole("status").filter({ hasText: /^New sends are blocked by 1 unresolved operation\.$/ }));
+    await visible(home.getByText("submission outcome unknown", { exact: true }));
+    await visible(home.getByRole("heading", { name: "Operation history", exact: true }));
+    assert.deepEqual(await axe(home), []);
+  } finally {
+    await home.unroute(overview);
+  }
 });

@@ -18,6 +18,9 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
   return <BadgePrimitive variant={tone}>{children}</BadgePrimitive>;
 }
 
+export const statusTone = (status: string | undefined): Tone =>
+  status === "SUCCESS" ? "success" : status === "FAILED" || status === "REFUNDED" ? "destructive" : status ? "warning" : "neutral";
+
 export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
   return <section className="flex flex-col gap-6">
     <div className="flex flex-wrap items-end justify-between gap-4">
@@ -73,6 +76,14 @@ export function ReadFailure({ label, error, retry, retained, updatedAt }: {
       : "No current records are available from this check; this does not mean there are none."}</p>
     <QueryError error={error} retry={retry} />
   </div>;
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  return (
+    <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs">
+      <Badge tone={statusTone(status)}>{status.toLowerCase()}</Badge>
+    </span>
+  );
 }
 
 export function CopyButton({ text }: { text: string }) {

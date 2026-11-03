@@ -1,6 +1,6 @@
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
-import type { ComponentType } from "react";
-import { OwnerActions } from "../features/owner/owner-actions";
+import type { ComponentType, ReactNode } from "react";
+import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
 import { OwnerControls } from "../features/owner/owner";
 import { Shell, useAgent } from "./frame";
 import { BASE } from "./location";
@@ -28,14 +28,25 @@ function Freeze() {
   </div>;
 }
 
-/** What a pending page already shows below its placeholder: a ported feature it belongs to. */
-const PORTED: Partial<Record<Page, ComponentType>> = { "/policy": Freeze, "/activity": OwnerActions };
+/** The Activity page: unresolved operations, the owner's actions with the operation history, and the books. */
+function ActivityPage() {
+  return <>
+    <h1 className="text-2xl font-semibold">{PAGES["/activity"]}</h1>
+    <Unresolved />
+    <Activity />
+    <BooksDisclosure />
+  </>;
+}
+
+/** A page that has moved here; a pending one shows its placeholder, with any ported feature it belongs to below it. */
+const PORTED: Partial<Record<Page, () => ReactNode>> = { "/activity": ActivityPage };
+const BELOW_PLACEHOLDER: Partial<Record<Page, ComponentType>> = { "/policy": Freeze };
 
 const root = createRootRoute({ component: Shell });
-const page = (path: Page) => createRoute({ getParentRoute: () => root, path, component: () => {
-  const Ported = PORTED[path];
-  return <><Pending title={PAGES[path]} />{Ported && <Ported />}</>;
-} });
+const page = (path: Page) => createRoute({ getParentRoute: () => root, path, component: PORTED[path] ?? (() => {
+  const Below = BELOW_PLACEHOLDER[path];
+  return <><Pending title={PAGES[path]} />{Below && <Below />}</>;
+}) });
 
 export const router = createRouter({
   basepath: BASE || "/",

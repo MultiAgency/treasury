@@ -1,9 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import { reads, type OwnerActionRecord as Record } from "../../platform";
-import { AGENT } from "../../app/location";
-import { useViewer } from "../../app/viewer";
+import { type OwnerActionRecord as Record } from "../../platform";
+import { useAgentReads } from "../../app/frame";
 import { accessDenied, Button, Card, CopyButton, Details, Loading, ReadFailure, Section } from "../../shared/ui";
 
 /** One recorded owner action: where it stands, and its reference to follow it by. */
@@ -26,8 +25,7 @@ export function OwnerActionRecord({ action: a }: { action: Record }) {
 
 /** Private durable records on this host, not a complete history across owner devices. */
 export function OwnerActions() {
-  const viewer = useViewer();
-  const actions = useQuery(reads(AGENT!, viewer?.account ?? null).ownerActions);
+  const actions = useQuery(useAgentReads().ownerActions);
   const records = accessDenied(actions.error) ? [] : actions.data ?? [];
   const refreshControl = useRef<HTMLButtonElement>(null);
   const failure = useRef<HTMLDivElement>(null);
