@@ -8,7 +8,7 @@ import { WalletButton } from "../../app/wallet-button";
 import { agent, answered, type StrategyStatus } from "../../platform";
 import { useAttempt } from "../../shared/action-hooks";
 import { symbolOf } from "../../shared/format";
-import { Badge, Button, Card, Details, ErrorBox, Loading, QueryError } from "../../shared/ui";
+import { Badge, Button, Card, Details, ErrorBox, LinkButton, Loading, QueryError } from "../../shared/ui";
 import { ConfirmButton } from "../owner/confirm-button";
 import { useOwnerAction, useSigner } from "../owner/owner";
 import { awaitingOutcome } from "../owner/owner-observation";
@@ -77,7 +77,7 @@ export function StrategyWorkflow() {
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 className="font-medium">Targets and schedule</h2>
       {view.scheduleLabel && <Badge>{view.scheduleLabel}</Badge>}
-      {view.showStop && <Button variant="outline" disabled={busy || stopControl.disabled} onClick={stop}>Turn off</Button>}
+      {view.showStop && <Button variant="outline" disabled={stopControl.disabled} onClick={stop}>Turn off</Button>}
     </div>
     {view.showStop && <p className="text-sm text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p>}
     {view.showStop && <StopBlocked control={stopControl} />}
@@ -124,13 +124,13 @@ export function StrategyWorkflow() {
         <h3 className="font-medium">Owner authorization</h3>
         {!executor && <p className="text-sm">Review authorization and configure the strategy on its executor.</p>}
         {executor && schedule.data?.on && <p className="text-sm">Turn the schedule off before reviewing {value.grantMatches ? "a grant renewal" : "a new authorization"}.</p>}
-        {executor && !pendingGrant && !review && <Button ref={reviewTrigger} variant={value.grantMatches ? "outline" : "default"} disabled={!view.canReview} onClick={() => { setLast(undefined); setReview(value); }}>{value.grantMatches ? "Review grant renewal" : "Review authorization"}</Button>}
+        {executor && !pendingGrant && !review && <Button disabled={!view.canReview} onClick={() => { setLast(undefined); setReview(value); }}>Review authorization</Button>}
         {review && <div className="flex flex-col gap-3 border-t pt-4">
           <h4 ref={reviewHeading} tabIndex={-1} className="scroll-mt-48 font-medium">{review.grantMatches ? "Renew the grant for this saved strategy" : "Authorize this saved strategy"}</h4>
           <StrategySummary strategy={review.strategy} nameOf={nameOf} />
           {review.grantMatches && <p className="text-sm">Issue a new grant before the current one expires, using the same saved strategy. No strategy change or prior revocation is required.</p>}
           <p className="text-sm">The grant lets this executor act inside the signed policy for 30 days. It authorizes these targets and limits; it does not enable the schedule. A $0 ceiling leaves swaps for manual execution, but scheduled shielding can still run.</p>
-          <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/policy">Review the policy’s caps and budget</Link></Button>
+          <LinkButton to="/policy">Review the policy’s caps and budget</LinkButton>
           {!currentReview && <p role="alert">The saved strategy changed or could not be checked. Review it again before authorizing.</p>}
           {signer.needsWallet && <WalletButton />}
           {signer.connectedNotOwner && <p>Connect the owner’s wallet to authorize this strategy.</p>}
@@ -138,11 +138,15 @@ export function StrategyWorkflow() {
             <Button variant="ghost" disabled={busy} onClick={() => setReview(undefined)}>Cancel review</Button>
             <Button disabled={!view.canAuthorize} onClick={async () => {
               if (authorizing.current) return;
-              authorizing.current = true; setCheckingOwner(true); setLast("authorize");
+              authorizing.current = true; setCheckingOwner(true); setLast(undefined);
               try {
-                // The owner's latest records, so a grant another tab already submitted is followed, never signed again.
-                const fresh = await actions.refetch();
-                if (fresh.error || awaitingOutcome(fresh.data ?? [], ["grant_issue"])) return;
+                // Read again first: a grant another tab already submitted is followed, never signed again, and nothing is signed
+                // unless the saved strategy is still the reviewed one and the schedule is confirmed off. Otherwise the page's
+                // own notices say why: the changed strategy, the schedule to turn off, or the failed read.
+                const [records, strategyNow, scheduleNow] = await Promise.all([actions.refetch(), status.refetch(), schedule.refetch()]);
+                if (records.error || awaitingOutcome(records.data ?? [], ["grant_issue"])) return;
+                if (strategyNow.error || strategyNow.data?.digest !== review.digest || scheduleNow.error || scheduleNow.data?.on !== false) return;
+                setLast("authorize");
                 if (await owner.run({ type: "grant_issue", label: "treasury", expectedStrategyDigest: review.digest })) {
                   advanceAfterAuthorization.current = true;
                   setReview(undefined);
@@ -175,7 +179,7 @@ export function StrategyWorkflow() {
       </Details>}
       <Details summary="Strategy digest"><code className="break-all text-xs">{value.digest}</code></Details>
     </>}
-    {pendingGrant && <p role="status" className="text-sm">An owner grant action is already {pendingGrant.stage}. Follow its existing record before signing again. <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/activity" hash={`owner-${pendingGrant.correlationId}`}>Review owner action</Link></Button></p>}
+    {pendingGrant && !owner.busy && <p role="status" className="text-sm">An owner grant action is already {pendingGrant.stage}. Follow its existing record before signing again. <LinkButton to="/activity" hash={`owner-${pendingGrant.correlationId}`}>Review owner action</LinkButton></p>}
     {actions.error && <QueryError error={actions.error} retry={() => actions.refetch()} />}
     {owner.label && <p role="status" className="text-sm">{owner.label}</p>}
     {owner.unknown && <p role="status" className="text-sm">{owner.unknown}</p>}

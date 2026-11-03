@@ -4,7 +4,7 @@ import { useCanCall } from "../../app/viewer";
 import type { Strategy } from "../../platform";
 import { confirmDiscard, useDirtyDraft } from "../../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../../shared/form";
-import { Button, Details, ErrorBox, Spinner } from "../../shared/ui";
+import { Button, Details, ErrorBox, errorMessage, Spinner } from "../../shared/ui";
 import { parseStrategyDraft, strategyDraft } from "./strategy-form";
 
 export function StrategySummary({ strategy, nameOf, advanced = true }: { strategy: Strategy; nameOf: (asset: string) => string; advanced?: boolean }) {
@@ -46,7 +46,7 @@ export function StrategyEditor({ strategy, digest, latest, nameOf, onSave, onClo
     if (busy || stale || !canSave) return;
     setBusy(true); setError(undefined);
     try { await onSave(next, baseDigest); setSaved(true); onClose(); }
-    catch (e) { setError(e instanceof Error ? e.message : "The strategy could not be saved. Review its current state before trying again."); }
+    catch (e) { setError(errorMessage(e)); }
     finally { setBusy(false); }
   };
   return <div className="flex flex-col gap-4">
@@ -76,7 +76,7 @@ export function StrategyEditor({ strategy, digest, latest, nameOf, onSave, onClo
         {field("maxUsd", "Automatic rebalance ceiling (USD)")}
       </FieldGroup>
       <p className="text-sm text-muted-foreground">$0 leaves swaps for manual execution. With a matching grant, scheduled runs can still shield public balances.</p>
-      <Details summary="Swap limits" open={Boolean(errors.minLegUsd || errors.maxCost)}>
+      <Details summary="Swap limits">
         <FieldGroup className="grid gap-3 sm:grid-cols-2">{field("minLegUsd", "Minimum swap (USD)")}{field("maxCost", "Maximum swap cost (%)")}</FieldGroup>
         <p className="text-sm text-muted-foreground">The cost limit applies at the minimum received shown in each swap preview.</p>
       </Details>

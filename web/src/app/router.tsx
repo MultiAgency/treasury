@@ -1,11 +1,11 @@
-import { createRootRoute, createRoute, createRouter, Link, redirect } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import type { ComponentType, ReactNode } from "react";
 import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
 import { OwnerControls } from "../features/owner/owner";
 import { StrategyWorkflow } from "../features/portfolio/strategy-workflow";
 import { TreasuryDesk } from "../features/portfolio/treasury-desk";
 import { swaps } from "../shared/format";
-import { Button } from "../shared/ui";
+import { LinkButton } from "../shared/ui";
 import { Shell, useAgent } from "./frame";
 import { BASE } from "./location";
 import { PAGES, type Page } from "./pages";
@@ -49,10 +49,10 @@ function StrategyPage() {
     <h1 className="text-2xl font-semibold">{PAGES["/automations"]}</h1>
     <p className="text-sm text-muted-foreground">Configure, authorize and schedule the strategy.</p>
     {setup.executor === false && <p className="text-sm text-muted-foreground">Preview, execution and automation settings are available on the executor with the corresponding account permissions.</p>}
-    {!setup.grant && <p className="text-sm text-muted-foreground">A grant is required for new automation actions. <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/policy" hash="grants">Review grants and permissions</Link></Button>.</p>}
+    {!setup.grant && <p className="text-sm text-muted-foreground">A grant is required for new automation actions. <LinkButton to="/policy" hash="grants">Review grants and permissions</LinkButton>.</p>}
     <StrategyWorkflow />
     {!swaps(data) && <p className="text-sm text-muted-foreground">The current policy does not allow swaps. Rebalance previews are unavailable; recorded runs and strategy settings remain accessible.</p>}
-    <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link to="/follow/run">Run autopilot once or review recorded runs →</Link></Button>
+    <LinkButton to="/follow/run">Run autopilot once or review recorded runs →</LinkButton>
   </>;
 }
 
