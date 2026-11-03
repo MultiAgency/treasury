@@ -1,10 +1,10 @@
-// The CLI end to end on a fresh simulated stack, started from the platform at 766b3f3 and stopped afterwards:
+// The CLI end to end on a fresh simulated stack, started from the platform at 1a7fe98 and stopped afterwards:
 // `pnpm test:stack`. Each role's credential is issued by the owner through the stack's control and kept in this process.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { ROLES, type Role } from "../src/config.ts";
-import { dropSwapResponse, ETH, fundPublic, issue, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../scripts/stack.ts";
+import { authorizeStrategy, dropSwapResponse, ETH, fundPublic, issue, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../scripts/stack.ts";
 
 let target: Stack, stop: () => Promise<void>;
 const tokens = {} as Record<Role, string>;
@@ -15,7 +15,9 @@ before(async () => {
   ({ target, stop } = await startStack());
   for (const role of ["propose", "execute", "sweep"] as const) tokens[role] = await issue(target, role, 600);
   // The stack starts with 100 USDC, so these targets ask for a USDC → wNEAR and a USDC → ETH leg of $20 each.
-  await setTargets(target, { [USDC]: 6_000, [WNEAR]: 2_000, [ETH]: 2_000 });
+  const digest = await setTargets(target, { [USDC]: 6_000, [WNEAR]: 2_000, [ETH]: 2_000 });
+  // The execute credential's plans run only while the owner's grant binds the saved strategy.
+  assert.equal(await authorizeStrategy(target), digest);
 }, { timeout: 180_000 });
 
 after(() => stop?.());

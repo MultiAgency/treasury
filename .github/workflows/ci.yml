@@ -27,7 +27,7 @@ jobs:
         run: pnpm --filter @treasury/web typecheck && pnpm --filter @treasury/web test && pnpm --filter @treasury/web build
 
   stack:
-    name: Stack tests (platform 766b3f3, simulated)
+    name: Stack tests (platform 1a7fe98, simulated)
     needs: checks
     runs-on: ubuntu-latest
     env:
@@ -37,8 +37,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: MultiAgency/platform
-          # The commit @multiagency/sdk 0.3.1 was published from (tag sdk-v0.3.1); startStack checks it.
-          ref: 766b3f3a25b6ae90ac4d4f1d8bb65ef5597f6f66
+          # The commit @multiagency/sdk 0.4.0 was published from (tag sdk-v0.4.0); startStack checks it.
+          ref: 1a7fe9818e2a83c548e1ba8d587f10acac37716a
           path: platform
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
