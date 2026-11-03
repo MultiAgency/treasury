@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { amountOf, describeRequest } from "../src/shared/format.ts";
+import { amountOf, describeRequest, symbolOf } from "../src/shared/format.ts";
 
 const usdc = { asset: ASSETS.USDC, symbol: "USDC", decimals: 6 } as Parameters<typeof amountOf>[2][number];
 
@@ -21,4 +21,10 @@ test("a swap's request names both sides the same way, the book's or the platform
   const swap = (to: string) => describeRequest({ origin_asset: ASSETS.wNEAR, destination_asset: to, amount: "1500000000000000000000000" }, []);
   assert.equal(swap(ASSETS.ETH), "1.5 wNEAR → ETH");
   assert.equal(swap("nep141:other.near"), "1.5 wNEAR → nep141:other.near");
+});
+
+test("an asset's symbol is the book's, or the platform's for its own assets on an empty book, else its id", () => {
+  assert.equal(symbolOf(ASSETS.USDC, [{ ...usdc, symbol: "USDC.e" }]), "USDC.e");
+  assert.deepEqual([ASSETS.USDC, ASSETS.wNEAR, ASSETS.ETH].map(asset => symbolOf(asset, [])), ["USDC", "wNEAR", "ETH"]);
+  assert.equal(symbolOf("nep141:other.near", []), "nep141:other.near");
 });

@@ -28,11 +28,14 @@ function assetInfo(asset: string, book: Holding[]): Pick<Holding, "decimals" | "
   return book.find((b) => b.asset === asset) ?? (Object.hasOwn(PROPOSAL_TOKENS, asset) ? PROPOSAL_TOKENS[asset] : undefined);
 }
 
+/** An asset's symbol: the book's, else the platform's for its own assets, else its id. */
+export const symbolOf = (asset: string, book: Holding[]) => assetInfo(asset, book)?.symbol ?? asset;
+
 /** A money action's request in words: what moves, how much, and to whom. */
 export function describeRequest(request: Record<string, unknown>, book: Holding[], nameOf: (account: string) => string = (a) => a) {
   const r = request as Partial<Record<"origin_asset" | "destination_asset" | "asset" | "amount" | "recipient", string>>;
   return r.origin_asset && r.destination_asset && r.amount
-    ? `${amountOf(r.amount, r.origin_asset, book)} → ${assetInfo(r.destination_asset, book)?.symbol ?? r.destination_asset}`
+    ? `${amountOf(r.amount, r.origin_asset, book)} → ${symbolOf(r.destination_asset, book)}`
     : r.asset && r.amount
       ? `${amountOf(r.amount, r.asset, book)}${r.recipient ? ` to ${nameOf(r.recipient)}` : ""}`
       : JSON.stringify(request);

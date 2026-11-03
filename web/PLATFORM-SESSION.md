@@ -45,6 +45,25 @@ Kept, with the same role, name and meaning:
 | Treasury tools: Set targets and schedule, View treasury runs, Balances and funding | navigation, links | | #7 PR 1 |
 | View activity | link | | #7 PR 1 |
 | Review recorded refusals | disclosure summary, under Signed limits; its rows are Activity's, with "Refusal code: `<code>`" | | #7 PR 1 |
+| Strategy | heading (level 1, the page's title) | workspace | #7 PR 2 |
+| Targets and schedule | heading | | #7 PR 2 |
+| Schedule on, Schedule off, Schedule unknown; Readiness unknown, Blocked, Ready for scheduled runs, Off · strategy authorized, Needs owner authorization | badge text | | #7 PR 2 |
+| Turn off | button (while the schedule is on or unconfirmed): #6's stop, enabled and explained as #6's "Turn off" is | workspace | #7 PR 2 |
+| Configuration, authorization and schedule; Swap limits; Grant renewal; Strategy digest | disclosure summary | | #7 PR 2 |
+| Strategy setup | list | | #7 PR 2 |
+| Saved configuration, Owner authorization, Schedule control | region | | #7 PR 2 |
+| Saved configuration or Strategy draft, Owner authorization, Schedule | heading | | #7 PR 2 |
+| Edit strategy | button, then heading of the editor | workspace (button) | #7 PR 2 |
+| USDC (%), wNEAR (%), ETH (%) (each `<symbol> (%)`), Run every (minutes), Automatic rebalance ceiling (USD), Minimum swap (USD), Maximum swap cost (%) | textbox labels | workspace (the targets and Run every) | #7 PR 2 |
+| Target allocation · total 100% | group (fieldset legend) | | #7 PR 2 |
+| Cancel, Save with autopilot off | button | workspace (Save with autopilot off) | #7 PR 2 |
+| Review against latest strategy | button (after the saved strategy changed under the draft) | | #7 PR 2 |
+| Review authorization, Review grant renewal, Cancel review | button | | #7 PR 2 |
+| Authorize this saved strategy, Renew the grant for this saved strategy | heading | workspace (Authorize this saved strategy) | #7 PR 2 |
+| Authorize in wallet, Renew in wallet, Propose strategy authorization, Propose grant renewal | button | workspace (Authorize in wallet) | #7 PR 2 |
+| Review the policy’s caps and budget, Review owner action, Follow treasury runs, Review grants and permissions, Run autopilot once or review recorded runs → | link | | #7 PR 2 |
+| Turn on | button, and its review dialog ("Let the agent act on its own?") with Cancel and Turn on | workspace (button, `dialog`) | #7 PR 2 |
+| Strategy saved. Schedule off; review authorization before enabling.; Schedule enabled. Operation outcomes are reported separately. | status text | | #7 PR 2 |
 
 The Activity page's text comes from the prototype's A8 (`send-block`) change, which exists only uncommitted in `dao/treasury`'s working tree, not at `d999861`: `BlockedSummary` and `blockedBy` (`src/shared/send-block.ts`), and its wording of a replacement as an "operation", not a "payment". `/does not establish that nothing was sent/` stays in `Activity`'s per-plan view, which the portfolio's plan outcome uses (#7); the treasury-migration spec asserts it absent after a refusal before sending.
 
@@ -60,8 +79,10 @@ Changed or not present yet:
 | Setup unavailable | The retained-records task (operation status, run timeline) below the alert | The alert and "Retry setup"; on `/automations` the "Schedule" section with "Turn off", and on `/activity` the retained records (unresolved operations, owner actions and operation history), as in A; elsewhere a "Review existing operation records" link to `/activity`. Records already loaded stay shown when a later setup read fails | #9 (run): the run timeline on `/follow/run` |
 | An agent not yet created | Onboarding | Status text: "This Treasury agent hasn't been created yet." | #12 (creation) |
 | A self-service host's root | Treasury creation | A "Your treasuries" heading with a link per treasury agent | #12 (creation) |
-| Every page under `/a/<agent>/` but the Overview and Activity | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9–#12 |
-| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A, and the pages are placeholders | #7 (portfolio) |
+| Every page under `/a/<agent>/` but the Overview, Strategy and Activity | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9–#12 |
+| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A. Strategy's own "Turn off" is there; `/follow/run` is a placeholder | #7 PR 4 (runs) |
+| Strategy's heading levels | The page's "Strategy" (`h2`, a section), "Targets and schedule" (`h3`), its sections and the review's heading (`h4`), and the editor's "Edit strategy" (`h3`) | "Strategy" is the page's `h1`; "Targets and schedule" `h2`, its sections `h3`, and the review's heading and "Edit strategy" `h4`. Names unchanged | Permanent |
+| Strategy's "Preview a manual rebalance on the overview" link | Shown | Not shown: the overview has no rebalance yet | #7 PR 3 |
 | The frame on a failed read, on the Overview | The frame's "Schedule" section ("Turn off") beside the Overview's "Turn off schedule" | Once the Overview is shown, only its "Turn off schedule"; before the overview first loads, the frame's "Turn off" | Permanent |
 | Signed limits' caps | "Per-asset monthly caps": the monthly window only, an asset outside the book in raw units | "Per-asset caps": every window the policy signs (Per transaction, Hourly, Daily, Monthly), each "`<window>`: `<amount>`", where an asset the book doesn't list is in the platform's units if it's one of the platform's assets (wNEAR, USDC, ETH) and otherwise "`<raw>` raw units · `<asset>`"; the description says "Per-asset caps" for "Monthly asset caps". A hid the per-transaction cap the provider enforces first | Permanent |
 | An amount of an asset the book doesn't list (Activity's requests, Signed limits' caps) | USDC in its units; any other asset as "`<raw>` `<asset>`" without `nep141:`, which reads as whole tokens | The platform's assets (wNEAR, USDC, ETH) in their units, from the SDK's `PROPOSAL_TOKENS`; any other asset as "`<raw>` raw units · `<asset>`". A swap's destination is named the same way (A: the book's symbol, else the raw id), so "1.5 wNEAR → ETH" on an empty book | Permanent |
@@ -78,6 +99,17 @@ A wallet connected to another account than the session's shows a status note und
 "Signed in" and "Sign out" (the `ViewerBadge`) don't render in a Treasury-only build in A either, so shared-reader's and account-switch's queries for them don't concern this build.
 
 Added: a "Sign out" button beside "Connect wallet" while signed in with no wallet connected (disconnected from the wallet itself, or a new browser profile). With a wallet connected, "Disconnect" signs out as before.
+
+Strategy (#7 PR 2):
+- The bound grant is #6's owner action (`grant_issue`, label `treasury`, the reviewed strategy's digest): the platform labels it `treasury:<grantSuffix>`, and the overview's grants (what the policy page lists, #10) carry that label.
+- A grant already awaiting its outcome blocks a new authorization by #6's rule (`awaitingOutcome`): submitted, or proposed to the DAO and awaiting its vote. A wallet grant only prepared was never signed and doesn't block. A blocked every prepared or submitted `grant_issue`, so a wallet signature declined in the wallet blocked authorizing until the record expired.
+- "Turn off" shows unless the schedule's latest read confirms it off, as the Overview's "Turn off schedule" does. A also showed it while only the strategy's read failed, with the schedule read as off.
+- A target asset the book doesn't list is named by the platform's symbol (wNEAR, USDC, ETH) in the summary and the editor's labels, as Activity names it (`symbolOf`). A showed its raw id, so an empty book's editor read "nep141:eth.omft.near (%)", not "ETH (%)".
+- Only the latest action's notice or error shows (a save's, the grant's, Turn on's or the stop's). A could show "Schedule enabled…" beside a later "Strategy saved…", and an earlier authorization error beside a later success.
+- An invalid field inside the collapsed "Swap limits" disclosure opens it before focus moves there.
+- After an `owner/submit` whose outcome is unknown, its status note shows on the page and authorizing isn't offered again until a status read settles it, as with #6's freeze.
+- Unresolved operations keep Turn on disabled through the strategy's readiness ("`<n>` unresolved operation(s) block new sends."), as in A; `autopilot/enable` refuses them with its readiness reasons, not a typed `unresolved` refusal. Failures show their messages. The send block (`useSendBlock`) and `OutcomeError` land with their first use: Rebalance (#7 PR 3) and the sweep (#11).
+- account-switch's `/30% wNEAR \/ 70% USDC/` reads the quote region's Rebalance description ("Swap toward …", A's `automations.tsx`), not the strategy summary, which reads "`<n>`% `<symbol>`" joined by " · ". It passes once Rebalance lands (#7 PR 3).
 
 Added in #6:
 - After an `owner/submit` whose outcome is unknown, a status note under the freeze control: "The outcome is unknown: this owner/submit request may have taken effect. Check the recorded operations before any other action; nothing is sent again automatically." The control stays disabled while the action is followed by its `correlationId`. In A, only "Checking the owner action’s outcome…" showed.

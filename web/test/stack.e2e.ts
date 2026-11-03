@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
-import type { OwnerActionRecord, OwnerStatus } from "../src/platform.ts";
+import type { OwnerActionRecord, OwnerStatus, StrategyStatus } from "../src/platform.ts";
 
 
 let stop: () => Promise<void>, target: Stack, browser: Browser, owner: BrowserContext, home: Page, dashboard: string, account: string;
@@ -298,6 +298,57 @@ test("Turn off stops the schedule when a read fails: in the frame, and on the st
     await setUnavailable(target, false);
   }
   assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+});
+
+test("Strategy: saved with the schedule off, the owner's grant bound to it signed in the owner's page, then autopilot on and off", async () => {
+  await home.goto(`${dashboard}/a/portfolio/automations`);
+  await visible(home.getByRole("heading", { level: 1, name: "Strategy", exact: true }));
+  const original = await rpc<StrategyStatus>(home, "strategy/get");
+  await home.getByRole("button", { name: "Edit strategy", exact: true }).click();
+  for (const [label, value] of [["USDC (%)", "60"], ["wNEAR (%)", "20"], ["ETH (%)", "20"], ["Run every (minutes)", "120"]] as const)
+    await home.getByLabel(label, { exact: true }).fill(value);
+  assert.deepEqual(await axe(home), []);
+  await home.getByRole("button", { name: "Save with autopilot off", exact: true }).click();
+  // The saved strategy, observed again, opens its review: nothing is signed or turned on by saving.
+  await visible(home.getByRole("heading", { name: "Authorize this saved strategy", exact: true }));
+  const saved = await rpc<StrategyStatus>(home, "strategy/get");
+  assert.notEqual(saved.digest, original.digest);
+  assert.deepEqual(saved.strategy.targetBps, { [USDC]: 6000, [WNEAR]: 2000, [ETH]: 2000 });
+  assert.equal(saved.strategy.autopilot.everyMin, 120);
+  assert.equal(saved.grantMatches, false, "saving unbinds the earlier grant");
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+  assert.deepEqual(await axe(home), []);
+
+  const [grant, ...others] = await recorded(home, async () => {
+    await home.getByRole("button", { name: "Authorize in wallet", exact: true }).click();
+    await home.getByRole("button", { name: "Turn on", exact: true }).waitFor({ timeout: 60_000 });
+  });
+  assert.equal(others.length, 0, "one owner action per click");
+  assert.equal(grant?.type, "grant_issue");
+  assert.deepEqual(await status(home, grant!.correlationId), { stage: "submitted", status: "SUCCESS" });
+  // The grant is bound to the reviewed strategy by its label, which is how the policy page lists it.
+  const authorized = await rpc<StrategyStatus>(home, "strategy/get");
+  assert.equal(authorized.digest, saved.digest);
+  assert.equal(authorized.grantMatches, true);
+  assert.equal(authorized.grant?.label, `treasury:${saved.grantSuffix}`);
+  const { grants } = await rpc<{ grants: { label: string; revoked_at: string | null }[] }>(home, "overview");
+  assert.ok(grants.some(g => g.label === `treasury:${saved.grantSuffix}` && !g.revoked_at), "the overview's grants list the strategy-bound grant under its own label");
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false, "authorizing doesn't turn the schedule on");
+
+  await home.getByRole("button", { name: "Turn on", exact: true }).click();
+  const dialog = home.getByRole("dialog", { name: "Let the agent act on its own?" });
+  await visible(dialog);
+  assert.deepEqual(await axe(home), []);
+  await dialog.getByRole("button", { name: "Turn on", exact: true }).click();
+  await visible(home.getByRole("status").filter({ hasText: "Schedule enabled. Operation outcomes are reported separately." }));
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, true);
+  await visible(home.getByRole("link", { name: "Follow treasury runs", exact: true }));
+
+  await turnOff(home);
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+  assert.equal(await home.getByRole("button", { name: "Turn off", exact: true }).count(), 0, "an off schedule offers nothing to turn off");
+  await visible(home.getByRole("button", { name: "Turn on", exact: true }));
+  assert.equal(await home.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
 });
 
 test("an overview refresh fails on the Overview: one stop control, the Overview's own", async () => {
