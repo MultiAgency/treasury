@@ -66,6 +66,8 @@ Added in #6:
 - The control also stays disabled after that note until a status read settles the outcome (`submitted`, `expired` or `failed`): a refused status read ends the following but offers no second signature (a lost one is read again).
 - While a freeze or unfreeze awaits its outcome, in any page of the session or after a reload, Freeze and Unfreeze (or Propose to freeze, Propose to unfreeze) are disabled, with a status note and a "Follow owner action" link. Recorded as submitted (`owner/actions` stage `submitted`): "An earlier freeze was submitted and its outcome is still being checked. Do not sign again." Proposed to the DAO and awaiting its vote (stage `prepared`, signer `dao`): "An earlier freeze was proposed to `<dao>` and awaits its vote. Do not propose again." In A, a reload offered them again.
 
+Activity renders once setup has loaded, even while the overview is loading or has failed (under the frame's "Some agent details could not be loaded." and its error); amounts in the books then show in raw units. An interrupted "Check operation outcomes" (`recover` answered `unknown`) says "The check was interrupted. It only reads; check again.", not that it may have taken effect, and the check stays offered.
+
 Activity's "Back to Activity" (`ActivityReturn`) and "Review invoices in Payments" don't render in a Treasury-only build in A either, and aren't ported.
 
 An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not found` (A: `Treasury · Overview`) and offers "Back to overview".

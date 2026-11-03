@@ -1,8 +1,8 @@
 import { DownloadSimple } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useAgent, useAgentReads } from "../../app/frame";
+import { Link } from "@tanstack/react-router";
+import { useState } from "react";
+import { useAgentReads, useOverview, useSetup } from "../../app/frame";
 import { AGENT } from "../../app/location";
 import { useCanCall } from "../../app/viewer";
 import { OwnerActions } from "../owner/owner-actions";
@@ -11,7 +11,7 @@ import { useAttempt } from "../../shared/action-hooks";
 import { ago, amountOf, describeRequest, swaps } from "../../shared/format";
 import { useNameOf } from "../../shared/names";
 import { blockedBy } from "../../shared/send-block";
-import { accessDenied, Badge, Button, Card, CopyButton, Details, ErrorBox, Loading, QueryError, ReadFailure, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { accessDenied, Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, Loading, QueryError, ReadFailure, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
 import { refusalText } from "../../shared/words";
 
 /** A status read describes existing work; it never establishes that a replacement is safe. */
@@ -53,13 +53,20 @@ function BlockedSummary({ operations }: { operations: UnresolvedOperation[] }) {
   </div>;
 }
 
+/** Unresolved operations in plain words, for when their read failed or setup is unavailable. */
+function UnresolvedList({ operations }: { operations: UnresolvedOperation[] }) {
+  return operations.length > 0 && <ul className="flex flex-col gap-2 text-sm">
+    {operations.map(op => <li key={op.key} className="break-all">{op.kind} · {op.status ?? "outcome unknown"} · <span className="font-mono">{op.key}</span></li>)}
+  </ul>;
+}
+
 /**
  * Money actions without a proven outcome. Each blocks every new one, so the agent waits until they
  * are resolved. Recovery only reads statuses; ambiguous replay is blocked.
  */
 export function Unresolved() {
   const canRecover = useCanCall("recover");
-  const { data: overview } = useAgent();
+  const setup = useSetup();
   const unresolved = useQuery(useAgentReads().unresolved);
   const data = accessDenied(unresolved.error) ? [] : unresolved.data ?? [];
   const { busy, message, error, attempt } = useAttempt();
@@ -69,7 +76,7 @@ export function Unresolved() {
     return (
       <Section title="Unresolved operations" description="New sends are blocked while these outcomes remain unknown.">
         <ReadFailure label="Unresolved operations" error={unresolved.error} retry={() => unresolved.refetch()} retained={unresolved.data !== undefined} updatedAt={unresolved.dataUpdatedAt} />
-        {data.length > 0 && <ul className="space-y-2 text-sm">{data.map(op => <li key={op.key} className="break-all">{op.kind} · {op.status ?? "outcome unknown"} · {op.key}</li>)}</ul>}
+        <UnresolvedList operations={data} />
         <p className="text-sm">Refresh these records before checking operation outcomes. Missing current evidence does not make a replacement operation safe.</p>
       </Section>
     );
@@ -112,7 +119,7 @@ export function Unresolved() {
         </div>
         {data.length > 0 && <div className="flex flex-col gap-2 text-sm">
           <p>{canRecover ? "" : "Your account cannot check these operations. Ask someone with execution or management permission. "}These references contain private agent information.</p>
-          <div><CopyButton text={JSON.stringify({ agent: overview.agentId, unresolved: data.map(({ key, status, at }) => ({ key, status, at })) }, null, 2)} /> Copy review references</div>
+          <div><CopyButton text={JSON.stringify({ agent: setup.agentId, unresolved: data.map(({ key, status, at }) => ({ key, status, at })) }, null, 2)} /> Copy review references</div>
         </div>}
         {checks.length > 0 && <div className="flex flex-col gap-3 text-sm"><h3 className="font-medium">Last outcome check</h3><ul aria-label="Operation status results" className="divide-y">{checks.map(check => <OperationCheckResult key={check.key} check={check} />)}</ul></div>}
         <Details summary="When an outcome stays unknown">
@@ -175,21 +182,21 @@ function Row({ op, book, nameOf }: { op: ActivityRow; book: Overview["book"]; na
 
 /** Recorded operations, including refusals; `limit` shows the latest few with a link to the rest. */
 export function Activity({ limit, planId }: { limit?: number; planId?: string }) {
-  const { data: overview } = useAgent();
+  const overview = useOverview();
   const nameOf = useNameOf();
   return <ActivityRecords limit={limit} planId={planId} overview={overview} nameOf={nameOf} />;
 }
 
 /** Local records remain reviewable without inventing balances or policy observations. */
 export function RecoveryActivity() {
-  const unresolved = useQuery({ ...useAgentReads().unresolved, retry: false });
+  const unresolved = useQuery(useAgentReads().unresolved);
   return <>
     <p role="status" className="text-sm">Retained records remain available. Current provider outcomes are not confirmed here.</p>
     <Section title="Unresolved operations" description="Recorded operations without a proven outcome. New sends remain blocked while they are unresolved.">
       {unresolved.isPending && <Loading label="Checking unresolved records…" />}
       {unresolved.error && <ReadFailure label="Unresolved operations" error={unresolved.error} retry={() => unresolved.refetch()} retained={unresolved.data !== undefined} updatedAt={unresolved.dataUpdatedAt} />}
       {unresolved.isSuccess && !unresolved.data.length && <p>No unresolved operations are recorded on this instance.</p>}
-      {(accessDenied(unresolved.error) ? [] : unresolved.data ?? []).map(op => <p key={op.key} className="break-all text-sm">{op.kind} · {op.status ?? "outcome unknown"} · <span className="font-mono">{op.key}</span></p>)}
+      <UnresolvedList operations={accessDenied(unresolved.error) ? [] : unresolved.data ?? []} />
     </Section>
     <ActivityRecords />
   </>;
@@ -198,13 +205,11 @@ export function RecoveryActivity() {
 function ActivityRecords({ limit, planId, overview, nameOf = (account: string) => account }: {
   limit?: number; planId?: string; overview?: Overview; nameOf?: (account: string) => string;
 }) {
-  const activity = useQuery({ ...useAgentReads().activity, retry: false });
+  const activity = useQuery(useAgentReads().activity);
   const data = accessDenied(activity.error) ? [] : activity.data ?? [];
-  const hash = useLocation({ select: (location) => location.hash });
-  // The query may finish after router navigation; scroll only once its target row exists.
-  useEffect(() => {
-    if (!limit && hash.startsWith("operation-") && activity.data) document.getElementById(hash)?.scrollIntoView({ block: "start" });
-  }, [hash, activity.data, limit]);
+  // A row without a correlation ID (one refused before submission) is keyed by its place in the log, counted from the
+  // oldest: the log only grows, newest first, so that place never changes. The activity read carries no idempotency key.
+  const key = (op: ActivityRow) => op.correlationId ?? `entry-${data.length - data.indexOf(op)}`;
   const actions = data.filter((op) => !isProbe(op) && (planId === undefined || op.planId === planId));
   const probes = data.filter(isProbe);
 
@@ -233,7 +238,7 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
       {actions.length > 0 && (
         <ol className="flex flex-col">
           {actions.slice(0, limit).map((op) => (
-            <Row key={`${op.at}-${op.kind}`} op={op} book={overview?.book ?? []} nameOf={nameOf} />
+            <Row key={key(op)} op={op} book={overview?.book ?? []} nameOf={nameOf} />
           ))}
         </ol>
       )}
@@ -241,7 +246,7 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
         <Details summary={`Earlier policy tests (${probes.length}): requests sent to be refused, from retired probes`}>
           <ol className="flex flex-col">
             {probes.map((op) => (
-              <Row key={`${op.at}-${op.kind}`} op={op} book={overview?.book ?? []} nameOf={nameOf} />
+              <Row key={key(op)} op={op} book={overview?.book ?? []} nameOf={nameOf} />
             ))}
           </ol>
         </Details>
@@ -251,7 +256,7 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
   );
 }
 
-/** Saves the ledger the agent builds as a CSV file. */
+/** Saves the ledger the agent builds as a CSV file; a failed read throws. */
 async function downloadLedger() {
   const csv = await agent(AGENT!).read("ledgerCsv", undefined);
   const link = Object.assign(document.createElement("a"), {
@@ -259,7 +264,8 @@ async function downloadLedger() {
     download: `ledger-${new Date().toISOString().slice(0, 10)}.csv`,
   });
   link.click();
-  URL.revokeObjectURL(link.href);
+  // The download starts after this tick: revoking now could cancel it.
+  setTimeout(() => URL.revokeObjectURL(link.href));
 }
 
 /**
@@ -275,8 +281,13 @@ export function BooksDisclosure() {
 }
 
 function Books() {
-  const { data } = useAgent();
+  const book = useOverview()?.book ?? [];
   const books = useQuery(useAgentReads().books);
+  const [exportError, setExportError] = useState<string>();
+  const exportLedger = async () => {
+    setExportError(undefined);
+    try { await downloadLedger(); } catch (error) { setExportError(errorMessage(error)); }
+  };
 
   return (
     <Section
@@ -287,7 +298,8 @@ function Books() {
         <QueryError error={books.error} retry={() => books.refetch()} />
       ) : !books.data ? (
         <Loading label="Reconciling the books…" />
-      ) : <BooksTable rows={books.data} book={data.book} onExport={() => downloadLedger()} />}
+      ) : <BooksTable rows={books.data} book={book} onExport={exportLedger} />}
+      <ErrorBox error={exportError} />
     </Section>
   );
 }

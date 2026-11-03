@@ -35,9 +35,12 @@ export const failureKind = (error: unknown) => error instanceof PlatformError ? 
 
 /** Plan previews save a plan and move nothing; every other unknown outcome may have sent something. */
 const PREVIEWS = new Set<string>(["rebalance", "steward/propose"]);
+/** Actions that only read (outcome checks): an interrupted one changed nothing. */
+const CHECKS = new Set<string>(["recover"]);
 export function failureMessage(failure: OwnerFailure): string {
   if (failure.kind === "unknown") return PREVIEWS.has(failure.procedure)
     ? "The preview was interrupted, so a plan may have been saved. Nothing was sent. Observations are read again; preview again for a fresh plan, and any earlier plan expires unused."
+    : CHECKS.has(failure.procedure) ? "The check was interrupted. It only reads; check again."
     : `The outcome is unknown: this ${failure.procedure} request may have taken effect. Check the recorded operations before any other action; nothing is sent again automatically.`;
   if (failure.kind === "unavailable") return "This read failed or returned an answer that could not be verified. Reading again is safe.";
   return failure.error;

@@ -21,6 +21,15 @@ export function useAgent() {
   if (!agent) throw new Error("Agent observations unavailable");
   return agent;
 }
+/** The selected agent's setup, for a page that works without its overview (Activity). */
+const SetupContext = createContext<Setup | null>(null);
+export function useSetup() {
+  const setup = useContext(SetupContext);
+  if (!setup) throw new Error("Agent setup unavailable");
+  return setup;
+}
+/** The overview when it has loaded, for a page that works without it. */
+export const useOverview = () => useContext(AgentContext)?.data;
 
 /** The selected agent's cached reads, for the signed-in account. */
 export function useAgentReads() {
@@ -89,7 +98,7 @@ function AgentFrame() {
   const page = (pathname.startsWith(`/a/${AGENT}`) ? pathname.slice(`/a/${AGENT}`.length) : pathname).replace(/\/$/, "") || "/";
   const title = pageTitle(page);
   useEffect(() => { document.title = `Treasury · ${title}`; }, [title]);
-  // The operation records stay reviewable while setup can't be read: they are the agent's own, not the provider's.
+  // The operation records stay reviewable while setup or the overview can't be read: they are the agent's own, not the provider's.
   const retained = page === "/activity";
 
   if (recovering && !loaded)
@@ -139,8 +148,11 @@ function AgentFrame() {
       <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
     </>}
     {error && canStop && setup.data.executor === true && !SCHEDULE_PAGES.includes(page) && <StopSchedule />}
-    {overview.data
-      ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
-      : error ? null : <Loading label="Loading the book…" />}
+    <SetupContext.Provider value={setup.data}>
+      {overview.data
+        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
+        // Activity reads the agent's own records: it doesn't wait for the overview, nor hide when it fails.
+        : retained ? <Outlet /> : error ? null : <Loading label="Loading the book…" />}
+    </SetupContext.Provider>
   </main>;
 }

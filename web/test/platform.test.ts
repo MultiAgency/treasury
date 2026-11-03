@@ -62,6 +62,8 @@ test("recover is an action: a lost answer is unknown, never unavailable, and it'
   const checked = await agent("portfolio").act("recover", undefined);
   assert.equal(checked.ok ? "ok" : checked.kind, "unknown");
   assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/recover"]);
+  // It only reads, so its interruption says so, not that it may have taken effect.
+  assert.equal(checked.ok ? undefined : new PlatformError(checked).message, "The check was interrupted. It only reads; check again.");
 });
 
 test("Activity's reads are cached per viewer and retried only when their answer was lost", () => {

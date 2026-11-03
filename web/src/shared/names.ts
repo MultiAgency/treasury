@@ -1,4 +1,4 @@
-import { useAgent } from "../app/frame";
+import { useSetup } from "../app/frame";
 import { short } from "./ui";
 
 /**
@@ -6,6 +6,6 @@ import { short } from "./ui";
  * shortened. Named accounts (alice.near, the DAO) read fine as they are. Sibling agents aren't read in this build.
  */
 export function useNameOf() {
-  const { setup } = useAgent();
+  const setup = useSetup();
   return (account: string) => account === setup.wallet ? "this agent" : /^[0-9a-f]{64}$/.test(account) ? short(account) : account;
 }

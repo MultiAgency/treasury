@@ -309,7 +309,7 @@ test("a provider outage reads as the owner session answers it: by kind, the prov
   }
 });
 
-// Last: the unresolved operation it leaves blocks every later money action.
+// The unresolved operation it leaves blocks every later money action: only reads follow it.
 test("after a lost swap reply, Activity lists the unresolved operation and says resolving it is the owner's separate step", async () => {
   await dropSwapResponse(target);
   // Executed outside the app's UI, as the platform's specs do: the provider applies the swap and loses the reply.
@@ -340,5 +340,24 @@ test("after a lost swap reply, Activity lists the unresolved operation and says 
     assert.equal(await check.isEnabled(), true, `the check is offered again after check ${time}`);
     assert.equal((await rpc<unknown[]>(home, "unresolved")).length, 1, `still unresolved after check ${time}`);
     assert.equal((await rpc<unknown[]>(home, "activity")).length, rows, `nothing new was recorded by check ${time}`);
+  }
+});
+
+test("the overview fails while setup loads: Activity still lists the unresolved operation, under the overview's error", async () => {
+  // Only this page's overview read is refused, as the provider refuses it; setup and the agent's own records still answer.
+  const overview = "**/a/portfolio/rpc/overview";
+  await home.route(overview, route => route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ json: {
+    defined: true, code: "BAD_REQUEST", message: "The provider could not complete this request.", data: { kind: "provider", code: "http_error", availableAt: null } } }) }));
+  try {
+    await home.goto(`${dashboard}/a/portfolio/activity`);
+    await visible(home.getByRole("region", { name: "Treasury owner" }));
+    await visible(home.getByText("Some agent details could not be loaded.", { exact: true }));
+    await visible(home.getByRole("heading", { name: "Operation status", level: 1 }));
+    await visible(home.getByRole("status").filter({ hasText: /^New sends are blocked by 1 unresolved operation\.$/ }));
+    await visible(home.getByText("submission outcome unknown", { exact: true }));
+    await visible(home.getByRole("heading", { name: "Operation history", exact: true }));
+    assert.deepEqual(await axe(home), []);
+  } finally {
+    await home.unroute(overview);
   }
 });
