@@ -50,7 +50,12 @@ export async function startStack({ args = ["--no-browser"], platform = process.e
     }
     await delay(250);
   }
-  const state = () => JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as { cdp: string | null; dashboard: string; ownerAccount: string };
+  const state = () => JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as {
+    cdp: string | null; dashboard: string; ownerAccount: string; testPublicKey: string;
+    treasury: { agent: string; agentId: string };
+    /** With `--app <deployment>`: the app's base and the 0600 file holding its `tap_` credential. */
+    app: { deployment: string; base: string; credentialFile: string } | null;
+  };
   return { target: stack(directory), state, stop };
 }
 
@@ -97,3 +102,7 @@ export const dropSignatureResponse = (target: Stack) => control(target, { comman
 
 /** `portfolio`'s provider answers owner outcomes again, after `dropSignatureResponse`. */
 export const revealOwnerOutcome = (target: Stack) => control(target, { command: "revealOwnerOutcome", agent: "portfolio" });
+
+/** The owner signs a NEP-413 message, as their wallet would for an app; answers the signing account, key and signature. */
+export const signOwner = (target: Stack, payload: { message: string; recipient: string; nonce: string }) =>
+  control<{ accountId: string; publicKey: string; signature: string }>(target, { command: "signOwner", ...payload });
