@@ -57,6 +57,21 @@ test("an action is sent once and answers its result, whatever happened", async (
   assert.equal(sent.length, 2, "each action was sent exactly once");
 });
 
+test("recover is an action: a lost answer is unknown, never unavailable, and it's sent once", async () => {
+  answers.push(lost);
+  const checked = await agent("portfolio").act("recover", undefined);
+  assert.equal(checked.ok ? "ok" : checked.kind, "unknown");
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/recover"]);
+});
+
+test("Activity's reads are cached per viewer and retried only when their answer was lost", () => {
+  for (const read of ["activity", "unresolved", "books"] as const) {
+    const options = reads("portfolio", "owner.near")[read];
+    assert.notDeepEqual(options.queryKey, reads("portfolio", "member.near")[read].queryKey, read);
+    assert.equal(options.retry, retryLost, read);
+  }
+});
+
 test("a stream hands over each event; a throw after the first is unknown, and nothing is sent again", async () => {
   const seen: unknown[] = [];
   answers.push(events({ type: "plan", exposed: [] }));

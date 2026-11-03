@@ -124,6 +124,10 @@ export type Intent = NonNullable<Prepared["intent"]>;
 export type Transaction = NonNullable<Prepared["dao"]>["transaction"];
 export type OwnerStatus = OwnerOutput<"owner/status">;
 export type OwnerActionRecord = OwnerOutput<"owner/actions">[number];
+export type ActivityRow = OwnerOutput<"activity">[number];
+export type UnresolvedOperation = OwnerOutput<"unresolved">[number];
+export type OperationCheck = OwnerOutput<"recover">[number];
+export type Books = OwnerOutput<"reconcileBooks">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
 export { mayCall, type Access } from "@multiagency/sdk";
 type Options = { signal?: AbortSignal };
@@ -209,5 +213,9 @@ export function reads(name: string, viewer: string | null) {
     /** Read again every few seconds only while an action's outcome is pending. */
     ownerActions: queryOptions({ queryKey: [key, "owner/actions"], queryFn: ({ signal }) => api.read("owner/actions", undefined, { signal }), retry: false,
       refetchInterval: query => query.state.data?.some(a => a.stage === "prepared" || a.stage === "submitted") ? 5_000 : false }),
+    activity: queryOptions({ queryKey: [key, "activity"], queryFn: ({ signal }) => api.read("activity", undefined, { signal }), retry: retryLost }),
+    unresolved: queryOptions({ queryKey: [key, "unresolved"], queryFn: ({ signal }) => api.read("unresolved", undefined, { signal }), retry: retryLost,
+      refetchInterval: 30_000 }),
+    books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
   };
 }
