@@ -45,11 +45,11 @@ test("a little clock skew is tolerated; more than the limit isn't", () => {
   assert.equal(checkQuotes("wNEAR", [q("a", 100), q("b", 100), ahead(skew + 1)], NOW).frozen, true);
 });
 
-test("no fresh quotes freezes even if the limits ask for zero sources", () => {
+test("limits that ask for zero sources are refused, and the reading freezes", () => {
   const limits = { ...ORACLE_DEFAULTS, minSources: 0 };
   const r = checkQuotes("wNEAR", [], NOW, limits);
-  assert.equal(r.frozen && r.reason, "insufficient-sources");
-  assert.equal(checkQuotes("wNEAR", [q("a", 100, ORACLE_DEFAULTS.maxStalenessMs + 1)], NOW, limits).frozen, true);
+  assert.equal(r.frozen && r.reason, "invalid-config");
+  assert.equal(checkQuotes("wNEAR", three(), NOW, limits).frozen, true, "even with good quotes");
 });
 
 test("a quote exactly five minutes old is fresh; one millisecond older is stale", () => {

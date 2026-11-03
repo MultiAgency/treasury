@@ -5,6 +5,8 @@
 // The EMA reference and the TWAP are the next step (A3.2). Defaults are the plan's source values, awaiting the
 // backtest's calibration (H9); equality at a limit passes, since the plan says "over 2%" and "over 5 minutes".
 
+import { isNonNegative, isPositive, isPositiveInt, report } from "./validate.ts";
+
 export const ORACLE_DEFAULTS = {
   /** Fresh, distinct sources needed. */
   minSources: 3,
@@ -27,11 +29,21 @@ export type PriceQuote = {
   observedAt: number;
 };
 
-export type FrozenReason = "insufficient-sources" | "stale" | "disagreement";
+export type FrozenReason = "insufficient-sources" | "stale" | "disagreement" | "invalid-config";
 
 export type QuoteCheck =
   | { frozen: false; median: number; quotes: PriceQuote[] }
   | { frozen: true; reason: FrozenReason; detail: string; quotes: PriceQuote[] };
+
+/** What is wrong with the limits, if anything. Empty means usable. */
+export function oracleLimitProblems(l: OracleLimits): string[] {
+  const r = report();
+  r.need(isPositiveInt(l.minSources), "minSources must be a whole number of at least 1");
+  r.need(isNonNegative(l.maxDisagreementPct) && l.maxDisagreementPct <= 100, "maxDisagreementPct must be between 0 and 100");
+  r.need(isPositive(l.maxStalenessMs), "maxStalenessMs must be above zero");
+  r.need(isNonNegative(l.maxFutureSkewMs), "maxFutureSkewMs must be zero or more");
+  return r.problems;
+}
 
 export function median(values: readonly number[]): number {
   if (values.length === 0) throw new Error("median of an empty list");
@@ -53,6 +65,9 @@ export function median(values: readonly number[]): number {
  *   empty set freezes and never reaches the median. Counted quotes more than `maxDisagreementPct` apart freeze it as `disagreement`.
  */
 export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: number, limits: OracleLimits = ORACLE_DEFAULTS): QuoteCheck {
+  const unusable = oracleLimitProblems(limits);
+  if (unusable.length > 0) return { frozen: true, reason: "invalid-config", detail: unusable.join("; "), quotes: [] };
+  if (!Number.isFinite(now)) return { frozen: true, reason: "invalid-config", detail: "the clock is not a number", quotes: [] };
   const newest = new Map<string, PriceQuote>();
   for (const q of quotes) {
     if (q.asset !== asset || !Number.isFinite(q.price) || q.price <= 0 || !Number.isFinite(q.observedAt) || q.observedAt > now + limits.maxFutureSkewMs) continue;
@@ -63,7 +78,7 @@ export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: n
   const valid = [...newest.values()];
   const fresh = valid.filter(q => now - q.observedAt <= limits.maxStalenessMs);
 
-  const needed = Math.max(1, limits.minSources);
+  const needed = limits.minSources;
   if (fresh.length < needed) {
     const stale = valid.length - fresh.length;
     return {
