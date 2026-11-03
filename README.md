@@ -1,10 +1,15 @@
 # treasury
 
-An agent managing a Treasury's holdings for its wallet owner, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.3.1.
+The Treasury app, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.3.1. It shows two SDK surfaces for Treasury agents:
 
-It demonstrates one SDK surface: **Treasury's machine route** (`/machine/v1/a/<agent>`), reached with `ownerClient`, an absolute base and an owner-issued `tmc_` bearer credential. It covers Treasury agents only, owned by a wallet. A DAO-owned agent is refused, since a member's permissions aren't the DAO's consent. The app path (`appClient`, owner consents, payout requests) is demonstrated by the MultiAgency dashboard instead.
+| | Surface | Reached with | Where |
+| --- | --- | --- | --- |
+| **The CLI** | Treasury's machine route (`/machine/v1/a/<agent>`): an agent managing the holdings for its wallet owner | `ownerClient` with an absolute base and an owner-issued `tmc_` bearer credential | `src/`, `scripts/`, `test/` (this page) |
+| **The owner UI** | The owner's session on the host (`/a/<agent>/`): the owner's Treasury pages, replacing the prototype's | `ownerClient` same-origin, in the session the owner signs in to with their wallet | `web/` ([below](#the-owner-ui)) |
 
-The platform host doesn't serve the machine route yet, so this runs against the platform's simulated stack at [`766b3f3`](https://github.com/MultiAgency/platform/commit/766b3f3) (tag `sdk-v0.3.1`, the commit SDK 0.3.1 was published from). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. The host, agent and credentials live in `.env`.
+Under direction B, both move to the app's own routes on the platform (`/apps/v1`). For the UI, that switch is confined to its one platform module, `web/src/platform.ts`. The app path today (`appClient`, owner consents, payout requests) is demonstrated by the MultiAgency dashboard.
+
+The machine route covers Treasury agents owned by a wallet only. A DAO-owned agent is refused, since a member's permissions aren't the DAO's consent. The platform host doesn't serve the machine route yet, so both surfaces run against the platform's simulated stack at [`766b3f3`](https://github.com/MultiAgency/platform/commit/766b3f3) (tag `sdk-v0.3.1`, the commit SDK 0.3.1 was published from). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. The CLI's host, agent and credentials live in `.env`.
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
 
@@ -107,3 +112,23 @@ The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`),
 - last, a lost swap reply (`dropSwapResponse`): `execute` exits 3, reads the records, and the swap was applied once and not resent. The operation stays unresolved until the owner's `recover`, which leaves that stack blocked; it's stopped afterwards anyway.
 
 `test/commands.test.ts` covers the same outcomes with a faked client (`provider`, `unavailable`, `unknown`: their exit codes, and that `unknown` reads `unresolved` and `activity` and never resends). It also covers every row of the execution mapping above: rejected before any leg, rejected after a leg, `FAILED`/`REFUNDED` legs, unsettled legs and shields, sweep shields, a lost preview, a throw mid-stream, and usage errors. `test/stack-credential.test.ts` runs the credential script against a fake stack directory.
+
+## The owner UI
+
+`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.3.1 only. Nothing is imported from the platform's or the prototype's source.
+
+- **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.
+- **Features port one at a time** from MultiAgency/treasury-prototype's `web/src`, each in its own issue. So far: the session and access (sign-in and out, account switches, access denials, the agent frame). The other pages show where their feature will land.
+- **`contract.json`** names the platform capabilities the build uses (`gateway-session-v1` and `agent-observe-v1` so far). The release server refuses a build whose capabilities its host doesn't offer. `web/test/contract.test.ts` checks it both ways: every call the app makes is covered, and every capability it requires is used.
+- **Accessible names** the platform's E2E specs query, and every change to them, are listed in [`web/PLATFORM-SESSION.md`](web/PLATFORM-SESSION.md), along with this app's deviations from the brief.
+
+```sh
+pnpm --filter @treasury/web build       # web/dist, with contract.json
+pnpm --filter @treasury/web typecheck
+pnpm --filter @treasury/web test        # platform.ts with a mocked fetch
+pnpm --filter @treasury/web test:stack  # builds, then drives the build on a fresh stack served with --frontend
+```
+
+The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
+
+CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests and the build for both packages on every pull request and push to `main`, then both stack tests on a stack from the platform at 766b3f3. It needs `../platform` (or `TREASURY_PLATFORM`) at 766b3f3 with its dependencies installed, as the CLI's stack test does.

@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Typecheck, unit tests and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm's version comes from package.json's packageManager.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The CLI
+        run: pnpm typecheck && pnpm test
+      - name: The owner UI
+        run: pnpm --filter @treasury/web typecheck && pnpm --filter @treasury/web test && pnpm --filter @treasury/web build
+
+  stack:
+    name: Stack tests (platform 766b3f3, simulated)
+    needs: checks
+    runs-on: ubuntu-latest
+    env:
+      TREASURY_PLATFORM: ${{ github.workspace }}/platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: MultiAgency/platform
+          # The commit @multiagency/sdk 0.3.1 was published from (tag sdk-v0.3.1); startStack checks it.
+          ref: 766b3f3a25b6ae90ac4d4f1d8bb65ef5597f6f66
+          path: platform
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The platform's stack and its browser
+        working-directory: platform
+        run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
+      - name: The CLI on the stack
+        run: pnpm test:stack
+      - name: The owner UI on the stack
+        run: pnpm --filter @treasury/web test:stack

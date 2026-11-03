@@ -22,16 +22,18 @@ export function stack(directory: string): Stack {
 }
 
 /**
- * Starts a fresh stack from a platform checkout at `PLATFORM_COMMIT` with its dependencies installed (`../platform` by
- * default, or TREASURY_PLATFORM), as the platform's own specs do, and answers it with a `stop` that ends it.
+ * Starts a fresh stack with the Treasury agent from a platform checkout at `PLATFORM_COMMIT` with its dependencies
+ * installed (`../platform` by default, or TREASURY_PLATFORM), as the platform's own specs do, and answers it with a
+ * `stop` that ends it. `args` are the stack's other flags: without a browser by default, or `--frontend <dist>` to serve
+ * an owner build in the stack's browser, whose owner page starts signed in (`state().cdp` attaches to it).
  */
-export async function startStack(platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform")) {
+export async function startStack({ args = ["--no-browser"], platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform") }: { args?: string[]; platform?: string } = {}) {
   const head = execFileSync("git", ["-C", platform, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   if (!head.startsWith(PLATFORM_COMMIT)) throw new Error(`Check out ${PLATFORM_COMMIT} in ${platform} (it's at ${head.slice(0, 7)})`);
   // Inside the platform checkout, as its own runs are: the stack's agents resolve their dependencies from there.
   mkdirSync(join(platform, ".test-artifacts"), { recursive: true });
   const artifacts = mkdtempSync(join(platform, ".test-artifacts", "treasury-stack-")), directory = join(artifacts, "stack");
-  const child = spawn(process.execPath, [join(platform, "test", "e2e", "stack.mjs"), "--no-browser", "--treasury"],
+  const child = spawn(process.execPath, [join(platform, "test", "e2e", "stack.mjs"), "--treasury", ...args],
     { cwd: platform, env: { ...process.env, PROTO_E2E_ARTIFACTS: artifacts }, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", chunk => { output += chunk; });
@@ -49,7 +51,8 @@ export async function startStack(platform = process.env.TREASURY_PLATFORM ?? joi
     }
     await delay(250);
   }
-  return { target: stack(directory), stop };
+  const state = () => JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as { cdp: string | null; dashboard: string; ownerAccount: string };
+  return { target: stack(directory), state, stop };
 }
 
 let sequence = 0;

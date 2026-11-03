@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "test", "rsbuild.config.ts"]
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "product": "treasury",
+  "required": [
+    "gateway-session-v1",
+    "agent-observe-v1"
+  ],
+  "entries": {
+    "/": "index.html"
+  },
+  "fallback": "index.html"
+}
