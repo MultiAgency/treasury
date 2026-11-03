@@ -6,5 +6,11 @@
   "engines": {
     "node": ">=24.22.0"
   },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm typecheck && pnpm test"
+  },
   "packageManager": "pnpm@12.15.0"
 }

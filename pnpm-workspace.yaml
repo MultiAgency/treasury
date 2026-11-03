@@ -4,6 +4,8 @@ minimumReleaseAgeExclude:
   - '@multiagency/sdk@0.4.0'
 packages:
   - web
+  - apps/*
+  - packages/*
 permissions:
   '@multiagency/sdk':
     skills: true
