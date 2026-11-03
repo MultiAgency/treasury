@@ -129,6 +129,6 @@ pnpm --filter @treasury/web test        # platform.ts with a mocked fetch
 pnpm --filter @treasury/web test:stack  # builds, then drives the build on a fresh stack served with --frontend
 ```
 
-The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan of every page it opens.
+The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
 
 CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests and the build for both packages on every pull request and push to `main`, then both stack tests on a stack from the platform at 766b3f3. It needs `../platform` (or `TREASURY_PLATFORM`) at 766b3f3 with its dependencies installed, as the CLI's stack test does.

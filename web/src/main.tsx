@@ -17,7 +17,8 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWind
 
 onAccessDenial(denial => {
   if (denial.scope === "procedure") {
-    // A refused procedure revokes this agent's controls until a successful session read restores them.
+    // A refused procedure turns this agent's controls off until the session read below answers. The gateway decides:
+    // controls its answer still grants come back, and the agent refuses the procedure again if it must.
     const query = queryClient.getQueryCache().find<Gateway>({ queryKey: gatewayRead.queryKey, exact: true });
     const data = query?.state.data;
     if (query && data?.viewer && denial.agent && data.viewer.access[denial.agent])

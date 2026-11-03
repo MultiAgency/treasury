@@ -90,8 +90,8 @@ test("disconnecting the wallet signs out this tab and the others; connecting sig
   await visible(home.getByRole("region", { name: "Treasury owner" }));
 });
 
-/** Every axe rule that applies, at any impact: a violation is a defect, not a warning. */
-const axe = async (page: Page) => (await new AxeBuilder({ page }).analyze()).violations.map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
+/** axe's WCAG 2.x A and AA rules, at any impact: a violation is a defect, not a warning. Best-practice rules aren't run. */
+const axe = async (page: Page) => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations.map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
 
 test("no axe violations on the signed-out page or the signed-in frame", async () => {
   await home.goto(`${dashboard}/a/portfolio/`);

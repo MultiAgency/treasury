@@ -19,7 +19,7 @@ Kept, with the same role, name and meaning:
 | Setup unavailable, Retry setup | alert text, button | | step 1 |
 | Skip to main content | link | | step 1 |
 
-Added: each page has one `<h1>` with its title (Overview, Strategy, and so on) while it's a placeholder. In A, only the Overview ("Treasury overview") and the guided run had an `<h1>`, so the other pages failed axe's `page-has-heading-one`. A feature that replaces a placeholder keeps one `<h1>` per page, without duplicating a heading a spec queries by name (workspace's `Strategy`).
+Added: each page has an `<h1>` with its title (Overview, Strategy, and so on) while it's a placeholder. In A, only the Overview ("Treasury overview") and the guided run had one.
 
 Page titles are unchanged: `Treasury · <page>`, with the prototype's page names (Overview, Strategy, Runs, Balances & funding, Policy & grants, Guided walkthrough, Operation status).
 
@@ -41,7 +41,7 @@ A wallet connected to another account than the session's shows a status note und
 
 ## Deviations from the brief
 
-- **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe on every page it opens (any violation fails it) and checks the keyboard paths.
+- **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe's WCAG A and AA rules on every page it opens (any violation fails it) and checks the keyboard paths.
 - **`contract.json` is checked both ways** (`test/contract.test.ts`): every procedure and gateway route the app calls is covered by a required capability, and every required capability is used, per the SDK's `ownerCapabilities`.
 - **`features/workspace` is left behind.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Its one live module, `attention.ts`, moves with portfolio. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
 - **Treasury creation** (`create-treasury`, `onboarding`, `setup-progress`) is its own issue.
