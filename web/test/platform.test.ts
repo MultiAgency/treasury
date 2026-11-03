@@ -141,6 +141,26 @@ test("a sign-out the gateway doesn't confirm throws, so nobody is shown as signe
   await assert.rejects(gateway.signOut(), TypeError);
 });
 
+test("owner reads: the instance and the owner's actions, each a read of its own procedure and never retried", async () => {
+  const owner = reads("portfolio", "owner.near");
+  answers.push(json({ json: { agentId: "a1", executor: true } }), json({ json: [] }));
+  assert.deepEqual(await owner.instance.queryFn!({ signal: new AbortController().signal } as never), { agentId: "a1", executor: true });
+  assert.deepEqual(await owner.ownerActions.queryFn!({ signal: new AbortController().signal } as never), []);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/instance", "/a/portfolio/rpc/owner/actions"]);
+  assert.equal(owner.instance.retry, false);
+  assert.equal(owner.ownerActions.retry, false);
+  assert.notDeepEqual(owner.ownerActions.queryKey, reads("portfolio", "member.near").ownerActions.queryKey);
+});
+
+test("a lost owner/submit answer is unknown and sent once; its status is a read", async () => {
+  answers.push(lost);
+  const submitted = await agent("portfolio").act("owner/submit", { correlationId: "c1", signedData: {} });
+  assert.equal(submitted.ok ? "ok" : submitted.kind, "unknown");
+  answers.push(json({ json: { stage: "submitting" } }));
+  assert.deepEqual(await agent("portfolio").read("owner/status", { correlationId: "c1" }), { stage: "submitting" });
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/owner/submit", "/a/portfolio/rpc/owner/status"]);
+});
+
 test("cached reads are keyed by host, agent and viewer, so accounts never share records", () => {
   assert.notDeepEqual(reads("portfolio", "owner.near").overview.queryKey, reads("portfolio", "member.near").overview.queryKey);
   assert.deepEqual(scopeOfKey([scope("portfolio", "owner.near"), "overview"]), { host: "treasury.test", agent: "portfolio", account: "owner.near" });

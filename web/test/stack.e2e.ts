@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { setUnavailable, startStack, type Stack } from "../../scripts/stack.ts";
+import { dropSignatureResponse, revealOwnerOutcome, setUnavailable, startStack, type Stack } from "../../scripts/stack.ts";
+import type { OwnerActionRecord, OwnerStatus } from "../src/platform.ts";
+
 
 let stop: () => Promise<void>, target: Stack, browser: Browser, owner: BrowserContext, home: Page, dashboard: string, account: string;
 
@@ -135,4 +137,125 @@ test("an outage of the agent's provider: setup is unavailable, and Retry setup r
   }
   await home.getByRole("button", { name: "Retry setup" }).click();
   await visible(home.getByRole("region", { name: "Treasury owner" }));
+});
+
+/** One of `portfolio`'s owner procedures, called from `page` in the owner's session as the app calls it: its value. */
+const rpc = async <T,>(page: Page, path: string, input?: unknown): Promise<T> => page.evaluate(async ([path, input]) => {
+  const response = await fetch(`/a/portfolio/rpc/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ json: input }) });
+  if (!response.ok) throw new Error(`${path} answered ${response.status}: ${await response.text()}`);
+  return (await response.json()).json;
+}, [path, input] as const);
+const records = (page: Page) => rpc<OwnerActionRecord[]>(page, "owner/actions");
+const status = (page: Page, correlationId: string) => rpc<OwnerStatus>(page, "owner/status", { correlationId });
+/** Waits until `check` answers true, reading again every half second. */
+const until = async (check: () => Promise<boolean>, timeout = 60_000) => {
+  for (const started = Date.now(); !(await check()); await new Promise(resolve => setTimeout(resolve, 500)))
+    if (Date.now() - started > timeout) throw new Error("Timed out");
+};
+/** The owner actions `act` records, by the records before and after it. */
+const recorded = async (page: Page, act: () => Promise<void>) => {
+  const before = new Set((await records(page)).map(a => a.correlationId));
+  await act();
+  return (await records(page)).filter(a => !before.has(a.correlationId));
+};
+
+test("freeze, then unfreeze, each signed in the owner's page and successful in owner/status", async () => {
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  await visible(home.getByRole("heading", { name: "Freeze the agent", exact: true }));
+  assert.deepEqual(await axe(home), []);
+  for (const [button, type, next] of [["Freeze", "agent_freeze", "Unfreeze the agent"], ["Unfreeze", "agent_unfreeze", "Freeze the agent"]] as const) {
+    const [action, ...others] = await recorded(home, async () => {
+      await home.getByRole("button", { name: button, exact: true }).click();
+      await home.getByRole("heading", { name: next, exact: true }).waitFor({ timeout: 60_000 });
+    });
+    assert.equal(others.length, 0, "one owner action per click");
+    assert.equal(action?.type, type);
+    assert.deepEqual(await status(home, action!.correlationId), { stage: "submitted", status: "SUCCESS" });
+    assert.equal(await home.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
+  }
+});
+
+test("a lost signature reply: the outcome is unknown, followed in owner/status, never signed again; then it settles", async () => {
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  await visible(home.getByRole("heading", { name: "Freeze the agent", exact: true }));
+  const sent: string[] = [], statusReads: string[] = [];
+  const onRequest = (request: { url(): string }) => {
+    const path = new URL(request.url()).pathname.split("/rpc/")[1];
+    if (path === "owner/prepare" || path === "owner/submit") sent.push(path);
+    if (path === "owner/status") statusReads.push(path);
+  };
+  home.on("request", onRequest);
+  try {
+    await dropSignatureResponse(target);
+    const before = new Set((await records(home)).map(a => a.correlationId));
+    await home.getByRole("button", { name: "Freeze", exact: true }).click();
+    await visible(home.getByRole("status").filter({ hasText: "The outcome is unknown: this owner/submit request may have taken effect." }));
+    const freeze = home.getByRole("button", { name: "Freeze", exact: true });
+    assert.equal(await freeze.isDisabled(), true, "no second signature is offered");
+    const [action] = (await records(home)).filter(a => !before.has(a.correlationId));
+    assert.equal(action?.type, "agent_freeze");
+    assert.equal(action.stage, "submitted");
+    assert.deepEqual(await status(home, action.correlationId), { stage: "submitting" });
+    await until(async () => statusReads.length > 0);
+    assert.deepEqual(await axe(home), []);
+
+    // Another page of the session, after a reload, offers no signature either while the record says submitted.
+    const other = await tab("/a/portfolio/policy");
+    await visible(other.getByRole("status").filter({ hasText: "An earlier freeze was submitted and its outcome is still being checked. Do not sign again." }));
+    // The provider may already show the agent frozen: neither freezing nor unfreezing is offered.
+    assert.equal(await other.getByRole("button", { name: /^(connect to )?(un)?freeze$/i }).isDisabled(), true);
+    await other.goto(`${dashboard}/a/portfolio/activity`);
+    await visible(other.getByText("Submission attempted—checking the existing owner action’s outcome. Do not sign again."));
+    assert.deepEqual(await axe(other), []);
+    await other.close();
+
+    await revealOwnerOutcome(target);
+    await until(async () => (await status(home, action.correlationId)).stage === "submitted");
+    assert.deepEqual(await status(home, action.correlationId), { stage: "submitted", status: "SUCCESS" });
+    // The page's own observation settles it: the agent is frozen, and nothing was signed or submitted again.
+    await home.getByRole("heading", { name: "Unfreeze the agent", exact: true }).waitFor({ timeout: 30_000 });
+    assert.equal(await home.getByRole("status").filter({ hasText: "The outcome is unknown" }).count(), 0);
+    assert.deepEqual(sent, ["owner/prepare", "owner/submit"]);
+  } finally {
+    home.off("request", onRequest);
+  }
+  // Leave `portfolio` unfrozen for the tests after this one.
+  await home.getByRole("button", { name: "Unfreeze", exact: true }).click();
+  await home.getByRole("heading", { name: "Freeze the agent", exact: true }).waitFor({ timeout: 60_000 });
+});
+
+/** Turns the schedule off from `page`: the stop is sent once and answered, and the schedule reads as off. */
+const turnOff = async (page: Page) => {
+  const button = page.getByRole("button", { name: "Turn off", exact: true });
+  await visible(button);
+  await until(async () => !(await button.isDisabled()), 15_000);
+  const answered = page.waitForResponse(response => response.url().endsWith("/rpc/autopilot/stop"));
+  await button.click();
+  assert.equal((await answered).ok(), true);
+  await visible(page.getByRole("status").filter({ hasText: "Future scheduled runs are off." }));
+};
+
+test("Turn off stops the schedule when a read fails: in the frame, and on the strategy page while setup is unavailable", async () => {
+  // A lost overview answer, retried and still lost: the frame keeps the owner's way to stop the schedule.
+  await home.route("**/a/portfolio/rpc/overview", route => route.abort("connectionreset"));
+  try {
+    await home.goto(`${dashboard}/a/portfolio/`);
+    await home.getByText("Some agent details could not be loaded.").waitFor({ timeout: 30_000 });
+    assert.deepEqual(await axe(home), []);
+    await turnOff(home);
+  } finally {
+    await home.unroute("**/a/portfolio/rpc/overview");
+  }
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
+
+  await setUnavailable(target, true);
+  try {
+    await home.goto(`${dashboard}/a/portfolio/automations`);
+    await visible(home.getByRole("alert").filter({ hasText: "Setup unavailable" }));
+    assert.deepEqual(await axe(home), []);
+    await turnOff(home);
+  } finally {
+    await setUnavailable(target, false);
+  }
+  assert.equal((await rpc<{ on: boolean }>(home, "autopilot/get")).on, false);
 });

@@ -117,6 +117,13 @@ export type Stream = (typeof ownerStreams)[number];
 export type Action = Exclude<OwnerProcedure, Read | Stream>;
 export type Setup = OwnerOutput<"setup">;
 export type Overview = OwnerOutput<"overview">;
+/** An owner action to prepare for signature, and what the wallet signs for it: an intent, or a DAO's transaction. */
+export type { OwnerAction, OwnerResult } from "@multiagency/sdk";
+type Prepared = OwnerOutput<"owner/prepare">;
+export type Intent = NonNullable<Prepared["intent"]>;
+export type Transaction = NonNullable<Prepared["dao"]>["transaction"];
+export type OwnerStatus = OwnerOutput<"owner/status">;
+export type OwnerActionRecord = OwnerOutput<"owner/actions">[number];
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
 export { mayCall, type Access } from "@multiagency/sdk";
 type Options = { signal?: AbortSignal };
@@ -197,5 +204,9 @@ export function reads(name: string, viewer: string | null) {
     setup: queryOptions({ queryKey: [key, "setup"], queryFn: ({ signal }) => api.read("setup", undefined, { signal }), retry: false }),
     overview: queryOptions({ queryKey: [key, "overview"], queryFn: ({ signal }) => api.read("overview", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
+    /** The instance's agent and whether it executes. */
+    instance: queryOptions({ queryKey: [key, "instance"], queryFn: ({ signal }) => api.read("instance", undefined, { signal }), retry: false }),
+    ownerActions: queryOptions({ queryKey: [key, "owner/actions"], queryFn: ({ signal }) => api.read("owner/actions", undefined, { signal }), retry: false,
+      refetchInterval: 5_000 }),
   };
 }
