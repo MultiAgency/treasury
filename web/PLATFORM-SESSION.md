@@ -39,6 +39,10 @@ A wallet connected to another account than the session's shows a status note und
 
 "Signed in" and "Sign out" (the `ViewerBadge`) don't render in a Treasury-only build in A either, so shared-reader's and account-switch's queries for them don't concern this build.
 
+Added: a "Sign out" button beside "Connect wallet" while signed in with no wallet connected (disconnected from the wallet itself, or a new browser profile). With a wallet connected, "Disconnect" signs out as before.
+
+An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not found` (A: `Treasury · Overview`) and offers "Back to overview".
+
 ## Deviations from the brief
 
 - **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe's WCAG A and AA rules on every page it opens (any violation fails it) and checks the keyboard paths.

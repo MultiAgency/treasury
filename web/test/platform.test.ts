@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { agent, failureKind, gateway, isTreasury, onDenial, PlatformError, READS, reads, scope, scopeOfKey, type Denial } from "../src/platform.ts";
+import { agent, failureKind, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, scope, scopeOfKey, type Denial } from "../src/platform.ts";
+import { pageTitle } from "../src/app/pages.ts";
 
 /** Each request the app sent, and the answers the fake host gives, in order. */
 let sent: { url: string; method: string; body: string }[] = [];
@@ -144,4 +145,21 @@ test("cached reads are keyed by host, agent and viewer, so accounts never share 
   assert.notDeepEqual(reads("portfolio", "owner.near").overview.queryKey, reads("portfolio", "member.near").overview.queryKey);
   assert.deepEqual(scopeOfKey([scope("portfolio", "owner.near"), "overview"]), { host: "treasury.test", agent: "portfolio", account: "owner.near" });
   assert.equal(scopeOfKey(["gateway"]), undefined);
+});
+
+test("a cached read is retried only when its answer was lost", () => {
+  const failed = (kind: "unavailable" | "forbidden" | "session" | "refused" | "provider") => new PlatformError(
+    kind === "unavailable" ? { ok: false, kind } : kind === "forbidden" || kind === "session"
+      ? { ok: false, kind, status: kind === "session" ? 401 : 403, error: "no", source: "gateway" } as never
+      : { ok: false, kind, error: "no" } as never);
+  assert.equal(retryLost(0, failed("unavailable")), true);
+  assert.equal(retryLost(3, failed("unavailable")), false);
+  for (const kind of ["forbidden", "session", "refused", "provider"] as const) assert.equal(retryLost(0, failed(kind)), false, kind);
+  assert.equal(retryLost(0, new Error("not a platform answer")), false);
+});
+
+test("an address that isn't a page is named as such, not as the overview", () => {
+  assert.equal(pageTitle("/"), "Overview");
+  assert.equal(pageTitle("/automations/"), "Strategy");
+  assert.equal(pageTitle("/typo"), "Page not found");
 });

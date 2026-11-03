@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
-import { Card as CardPrimitive } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { cn } from "@/lib/utils";
 
 export { Button };
 
@@ -11,11 +9,6 @@ export type Tone = "neutral" | "success" | "warning" | "info" | "destructive";
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return <BadgePrimitive variant={tone}>{children}</BadgePrimitive>;
-}
-
-export function Card({ className = "", size = "default", children }: { className?: string; size?: "default" | "sm"; children: ReactNode }) {
-  // Feature cards contain direct children; keep their horizontal padding.
-  return <CardPrimitive size={size} className={cn("px-(--card-spacing)", className)}>{children}</CardPrimitive>;
 }
 
 export function Spinner() {

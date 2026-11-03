@@ -1,7 +1,7 @@
 import { SignIn as SignInIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { gateway } from "../platform";
-import { Button, Card, ErrorBox, Spinner, errorMessage } from "../shared/ui";
+import { Button, ErrorBox, Spinner, errorMessage } from "../shared/ui";
 import { announceSessionChange } from "./session-signal";
 import { disconnect, signChallenge } from "./wallet";
 
@@ -21,7 +21,7 @@ export async function signOut() {
   location.assign("/");
 }
 
-export function SignIn({ daos, compact = false, create = false, primary = false }: { daos: string[]; compact?: boolean; create?: boolean; primary?: boolean }) {
+export function SignIn({ primary = false }: { primary?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const signIn = async () => {
@@ -38,21 +38,11 @@ export function SignIn({ daos, compact = false, create = false, primary = false 
       setBusy(false);
     }
   };
-  const action = <>
+  return <div className="flex max-w-sm flex-col items-start gap-2">
     <ErrorBox error={error} />
     <span role="status" className="sr-only">{busy ? "Complete sign-in in your NEAR wallet." : ""}</span>
     <Button variant={primary ? "default" : "outline"} size={primary ? "default" : "sm"} className="w-fit" onClick={signIn} disabled={busy}>
       {busy ? <Spinner /> : <SignInIcon size={16} aria-hidden="true" />} {busy ? "Connecting…" : "Connect wallet"}
     </Button>
-  </>;
-  if (compact) return <div className="flex max-w-sm flex-col items-start gap-2">{action}</div>;
-  return <Card>
-    <div className="flex flex-col gap-2">
-      <h2 className="text-xl font-semibold">{create ? "Start with your NEAR account" : "Members"}</h2>
-      <p className="text-sm text-muted-foreground">
-        {create ? "Connect your NEAR wallet to create a treasury for your account or a Sputnik DAO. Sign-in signs a message; creating an agent requires a separate owner action." : <>Sign in with the NEAR wallet that owns an agent here{daos.length > 0 && `, or as a member of ${daos.join(" or ")}`}. You sign a message, not a transaction: nothing is sent on chain.</>}
-      </p>
-    </div>
-    {action}
-  </Card>;
+  </div>;
 }

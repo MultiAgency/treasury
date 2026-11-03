@@ -111,7 +111,7 @@ export const isTreasury = (agent: GatewayAgent) => (agent.area ?? (agent.name ==
 /** Owner procedures that only read. Each is a read to the SDK too: a lost answer is `unavailable`, never `unknown`. */
 export const READS = ["setup", "instance", "overview", "policyHistory", "activity", "unresolved", "held", "autopilot/get",
   "inbox/list", "treasury/get", "strategy/get", "autopilot/evidence", "autopilot/log", "ledger", "ledgerCsv",
-  "owner/pending", "owner/actions", "owner/status"] as const satisfies readonly OwnerProcedure[];
+  "reconcileBooks", "owner/pending", "owner/actions", "owner/status"] as const satisfies readonly OwnerProcedure[];
 export type Read = (typeof READS)[number];
 export type Stream = (typeof ownerStreams)[number];
 export type Action = Exclude<OwnerProcedure, Read | Stream>;
@@ -187,11 +187,15 @@ export function scopeOfKey(key: readonly unknown[]) {
 export const gatewayRead = queryOptions({ queryKey: ["gateway"], queryFn: () => gateway.me(), retry: false, staleTime: 60_000,
   refetchOnReconnect: false, refetchOnWindowFocus: "always" });
 
+/** Retries a read only when its answer was lost; a denial or a refusal would answer the same again. */
+export const retryLost = (failures: number, error: Error) => failures < 3 && failureKind(error) === "unavailable";
+
 /** Cached reads of one agent for one viewer. Only reads: actions and streams never go through a query. */
 export function reads(name: string, viewer: string | null) {
   const api = agent(name), key = scope(name, viewer);
   return {
     setup: queryOptions({ queryKey: [key, "setup"], queryFn: ({ signal }) => api.read("setup", undefined, { signal }), retry: false }),
-    overview: queryOptions({ queryKey: [key, "overview"], queryFn: ({ signal }) => api.read("overview", undefined, { signal }), refetchInterval: 30_000 }),
+    overview: queryOptions({ queryKey: [key, "overview"], queryFn: ({ signal }) => api.read("overview", undefined, { signal }), retry: retryLost,
+      refetchInterval: 30_000 }),
   };
 }

@@ -86,7 +86,7 @@ function GatewayPage() {
     </div>}
     {gateway.viewer
       ? <AuthenticatedApp gateway={visible} />
-      : <SignedOutHome selfService={gateway.selfServiceTreasury} daos={[...new Set(gateway.agents.filter(isTreasury).map(agent => agent.owner))]} />}
+      : <SignedOutHome selfService={gateway.selfServiceTreasury} />}
   </>;
 }
 

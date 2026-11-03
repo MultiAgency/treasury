@@ -8,7 +8,8 @@ import { connect, disconnect, useWallet } from "./wallet";
 
 /**
  * The connected wallet, and disconnecting it, which signs the member out of this host as well. A wallet connected to
- * another account than the session's is called out: owner actions wait until they match (see `useCanCall`).
+ * another account than the session's is called out: owner actions wait until they match (see `useCanCall`). Signed in
+ * with no wallet connected (disconnected from the wallet itself, or a new browser profile), "Sign out" ends the session.
  */
 export function WalletButton() {
   const wallet = useWallet();
@@ -41,6 +42,10 @@ export function WalletButton() {
       {wallet.status === "connecting" ? <Spinner /> : <WalletIcon size={16} />}
       Connect wallet
     </Button>
+    {viewer && <Button variant="ghost" size="sm" onClick={() => {
+      setError(undefined);
+      signOut().catch(e => setError(errorMessage(e)));
+    }}>Sign out</Button>}
     <ErrorBox error={error} />
   </div>;
 }

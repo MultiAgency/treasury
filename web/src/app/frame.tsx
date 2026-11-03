@@ -8,7 +8,7 @@ import { TreasuryBrand } from "./brand";
 import { useGateway } from "./gateway-context";
 import { useHashTarget } from "./hash-target";
 import { AGENT } from "./location";
-import { pageTitle } from "./pages";
+import { PAGES, pageTitle } from "./pages";
 import { useViewer } from "./viewer";
 import { WalletButton } from "./wallet-button";
 
@@ -61,13 +61,14 @@ function AgentFrame() {
   const account = viewer?.account ?? null;
   const agentReads = useMemo(() => reads(AGENT!, account), [account]);
   const setup = useQuery(agentReads.setup);
-  // Stays in recovery while an explicit retry has no setup result yet.
-  const [setupRecovery, setSetupRecovery] = useState(false);
+  // Stays in recovery while an explicit retry has no setup result yet: a retry with no data clears the query's error.
+  // Recorded for the account it failed for, so another account's first read shows loading, not this failure.
+  const [failedFor, setFailedFor] = useState<string | null>();
   useEffect(() => {
-    if (setup.isError) setSetupRecovery(true);
-    else if (setup.isSuccess) setSetupRecovery(false);
-  }, [setup.isError, setup.isSuccess]);
-  const recovering = Boolean(setup.error) || setupRecovery;
+    if (setup.isError) setFailedFor(account);
+    else if (setup.isSuccess) setFailedFor(undefined);
+  }, [setup.isError, setup.isSuccess, account]);
+  const recovering = Boolean(setup.error) || (failedFor === account && !setup.isSuccess);
   const ready = Boolean(setup.data?.agentId) && !recovering;
   const overview = useQuery({ ...agentReads.overview, enabled: ready });
   // Records already shown stay shown when a later setup read fails; only a first failure replaces the frame.
@@ -108,7 +109,7 @@ function AgentFrame() {
       </div>
       <WalletButton />
     </header>
-    {title !== "Overview" && <Button asChild variant="outline" className="self-start"><Link to="/">Back to overview</Link></Button>}
+    {title !== PAGES["/"] && <Button asChild variant="outline" className="self-start"><Link to="/">Back to overview</Link></Button>}
     {error && <>
       <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
       <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
