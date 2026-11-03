@@ -29,6 +29,7 @@ const handler = createServer({
   publicOrigin: settings.TREASURY_PUBLIC_ORIGIN,
   deployment: settings.TREASURY_DEPLOYMENT,
   trustedProxyHops: settings.TREASURY_TRUSTED_PROXY_HOPS,
+  ownerRequestsPerMinute: settings.OWNER_REQUESTS_PER_MINUTE,
 });
 
 const server = createHttpServer(handler).listen(settings.PORT, () => {

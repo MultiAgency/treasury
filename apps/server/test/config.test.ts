@@ -18,7 +18,24 @@ test("the configuration is checked at startup, with defaults for lifetimes and l
   assert.equal(settings.CHALLENGE_TTL_MS, 5 * 60_000);
   assert.equal(settings.CHALLENGES_PER_MINUTE, 10);
   assert.equal(settings.TREASURY_TRUSTED_PROXY_HOPS, 0, "no proxy is trusted unless configured");
+  assert.equal(settings.OWNER_REQUESTS_PER_MINUTE, 60);
   assert.equal(secrets.FASTNEAR_API_KEY, undefined);
+});
+
+test("a variable set to nothing counts as unset, so its default applies rather than 0", () => {
+  const { settings, secrets } = loadConfig({ ...env, PORT: "", TREASURY_TRUSTED_PROXY_HOPS: "", FASTNEAR_API_KEY: "" });
+  assert.equal(settings.PORT, 8787);
+  assert.equal(settings.TREASURY_TRUSTED_PROXY_HOPS, 0);
+  assert.equal(loadConfig({ ...env, TREASURY_TRUSTED_PROXY_HOPS: "2" }).settings.TREASURY_TRUSTED_PROXY_HOPS, 2);
+  assert.equal(secrets.FASTNEAR_API_KEY, undefined);
+  assert.throws(() => loadConfig({ ...env, TREASURY_DEPLOYMENT: "" }), /TREASURY_DEPLOYMENT/, "a required one is still missing");
+});
+
+test("this server's origin must be https, except on localhost: the session cookie is Secure", () => {
+  assert.throws(() => loadConfig({ ...env, TREASURY_PUBLIC_ORIGIN: "http://treasury.test" }), /TREASURY_PUBLIC_ORIGIN/);
+  for (const local of ["http://localhost:8787", "http://127.0.0.1:8787", "http://[::1]:8787"])
+    assert.equal(loadConfig({ ...env, TREASURY_PUBLIC_ORIGIN: local }).settings.TREASURY_PUBLIC_ORIGIN, local);
+  assert.equal(loadConfig({ ...env, TREASURY_PLATFORM_ORIGIN: "http://127.0.0.1:3000" }).settings.TREASURY_PLATFORM_ORIGIN, "http://127.0.0.1:3000", "the platform's may be http, as the stack is");
 });
 
 test("a missing or invalid setting stops startup, naming each one", () => {

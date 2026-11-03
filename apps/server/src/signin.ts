@@ -2,6 +2,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { isIPv6 } from "node:net";
 import { verifyNep413Signature } from "near-kit";
 import type { KeyLookup } from "./keys.ts";
+import { createRateLimit } from "./ratelimit.ts";
 
 export type Challenge = { message: string; recipient: string; nonce: string };
 export type SignedChallenge = { accountId: string; publicKey: string; signature: string; nonce: string };
@@ -12,10 +13,12 @@ export type SignInResult =
 
 /**
  * Whom the rate limit counts a request against: an IPv4 address, or an IPv6 address's /64, since one host is usually
- * given a whole /64. An IPv4-mapped IPv6 address counts as its IPv4 address.
+ * given a whole /64. An IPv4-mapped IPv6 address counts as its IPv4 address, and a port some proxies append
+ * (`1.2.3.4:5678`, `[2001:db8::1]:443`) is dropped.
  */
 export function clientKey(address: string) {
-  const plain = address.split("%")[0]!;
+  const unported = /^\[([^\]]+)\](?::\d+)?$/.exec(address)?.[1] ?? /^(\d+\.\d+\.\d+\.\d+):\d+$/.exec(address)?.[1] ?? address;
+  const plain = unported.split("%")[0]!;
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(plain);
   if (mapped) return mapped[1]!;
   if (!isIPv6(plain)) return plain;
@@ -48,29 +51,14 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
   const key = randomBytes(32);
   const mac = (signed: Buffer) => createHmac("sha256", key).update(signed).digest().subarray(0, 16);
   const spent = new Map<string, number>();
-  // Requests per client in the last minute, for challenges and for sign-in attempts, each limited to `perMinute`.
-  const challenges = new Map<string, number[]>(), attempts = new Map<string, number[]>();
-  // A full pass at most every 10 seconds, so a flood of requests costs linear time, not quadratic.
-  let prunedAt = -Infinity;
-  const prune = (at: number) => {
-    if (at - prunedAt < 10_000) return;
-    prunedAt = at;
+  // Challenges and sign-in attempts per client, each limited to `perMinute`.
+  const challenges = createRateLimit({ perMinute, now }), attempts = createRateLimit({ perMinute, now });
+  // Spent nonces are dropped once expired, in a pass at most every 10 seconds.
+  let sweptAt = -Infinity;
+  const sweep = (at: number) => {
+    if (at - sweptAt < 10_000) return;
+    sweptAt = at;
     for (const [nonce, expiresAt] of spent) if (expiresAt <= at) spent.delete(nonce);
-    for (const asked of [challenges, attempts]) {
-      for (const [client, times] of asked) {
-        const recent = times.filter(time => time > at - 60_000);
-        if (recent.length) asked.set(client, recent); else asked.delete(client);
-      }
-    }
-  };
-  /** Counts a request from `address`'s client in `asked`, unless it has had `perMinute` in the last minute. */
-  const allow = (asked: Map<string, number[]>, address: string) => {
-    const at = now(), client = clientKey(address);
-    prune(at);
-    const times = (asked.get(client) ?? []).filter(time => time > at - 60_000);
-    if (times.length >= perMinute) return false;
-    asked.set(client, [...times, at]);
-    return true;
   };
   /** The nonce's expiry when this process issued it, else nothing. */
   const issuedHere = (nonce: Buffer) => {
@@ -81,7 +69,7 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
   return {
     /** A fresh challenge for `address`, at most `perMinute` a minute per client (`clientKey`). */
     challenge(address: string): { ok: true; value: Challenge } | { ok: false; kind: "refused"; code: "rate_limited" } {
-      if (!allow(challenges, address)) return { ok: false, kind: "refused", code: "rate_limited" };
+      if (!challenges(clientKey(address))) return { ok: false, kind: "refused", code: "rate_limited" };
       const signed = Buffer.alloc(16);
       signed.writeBigUInt64BE(BigInt(now()), 0);
       randomBytes(8).copy(signed, 8);
@@ -92,7 +80,7 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
      * a bad signature leaves usable can't be tried without limit.
      */
     async verify(address: string, signed: SignedChallenge): Promise<SignInResult> {
-      if (!allow(attempts, address)) return { ok: false, kind: "refused", code: "rate_limited" };
+      if (!attempts(clientKey(address))) return { ok: false, kind: "refused", code: "rate_limited" };
       const nonce = Buffer.from(signed.nonce, "base64");
       // Only the canonical text: lenient decoding gives many texts for one nonce, and `spent` is keyed by the text.
       if (nonce.toString("base64") !== signed.nonce) return { ok: false, kind: "refused", code: "unknown_challenge" };
@@ -108,10 +96,11 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
       // Checked again with no await between check and record, so two concurrent uses of one signature can't both pass.
       // Recorded before the chain lookup, whatever its answer, so each nonce costs at most one RPC call.
       if (spent.has(signed.nonce)) return { ok: false, kind: "refused", code: "unknown_challenge" };
-      prune(now());
+      sweep(now());
       spent.set(signed.nonce, expiresAt);
       const key = await keyLookup(signed.accountId, signed.publicKey);
-      if (key === "unavailable") return { ok: false, kind: "unavailable" };
+      // The chain didn't answer: the nonce is released so the same signature can be tried again, within the attempt limit.
+      if (key === "unavailable") { spent.delete(signed.nonce); return { ok: false, kind: "unavailable" }; }
       if (key !== "full") return { ok: false, kind: "refused", code: "not_full_access" };
       return { ok: true, account: signed.accountId };
     },

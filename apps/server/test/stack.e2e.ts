@@ -46,6 +46,7 @@ before(async () => {
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
     publicOrigin: ORIGIN,
     deployment: state.app.deployment,
+    ownerRequestsPerMinute: 1_000,
     trustedProxyHops: 0,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));

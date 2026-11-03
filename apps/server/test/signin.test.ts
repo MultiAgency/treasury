@@ -87,9 +87,14 @@ test("a key that isn't a full-access key of the signing account is refused", asy
   assert.deepEqual(await other.signIn.verify("client", owner.sign(other.challenge())), { ok: false, kind: "refused", code: "not_full_access" });
 });
 
-test("a chain that doesn't answer makes sign-in unavailable, not refused", async () => {
-  const { signIn, challenge } = setup(async () => "unavailable");
-  assert.deepEqual(await signIn.verify("client", owner.sign(challenge())), { ok: false, kind: "unavailable" });
+test("a chain that doesn't answer makes sign-in unavailable, not refused, and the same signature works once it answers", async () => {
+  let chain: "unavailable" | "full" = "unavailable";
+  const { signIn, challenge } = setup(async () => chain);
+  const signed = owner.sign(challenge());
+  assert.deepEqual(await signIn.verify("client", signed), { ok: false, kind: "unavailable" });
+  chain = "full";
+  assert.deepEqual(await signIn.verify("client", signed), { ok: true, account: "owner.near" });
+  assert.deepEqual(await signIn.verify("client", signed), { ok: false, kind: "refused", code: "unknown_challenge" });
 });
 
 test("challenges are rate-limited per client and minute", () => {
@@ -124,6 +129,9 @@ test("the rate limit counts an IPv6 client by its /64, and an IPv4-mapped addres
   assert.equal(clientKey("::ffff:192.0.2.7"), "192.0.2.7");
   assert.equal(clientKey("192.0.2.7"), "192.0.2.7");
   assert.equal(clientKey("fe80::1%en0"), "fe80:0:0:0::/64");
+  assert.equal(clientKey("192.0.2.7:5678"), "192.0.2.7", "a port a proxy appended is dropped");
+  assert.equal(clientKey("[2001:db8:1:2::1]:443"), clientKey("2001:db8:1:2::9"));
+  assert.equal(clientKey("[2001:db8:1:2::1]"), clientKey("2001:db8:1:2::9"));
   const { signIn } = setup(undefined, undefined, 3);
   for (let i = 0; i < 3; i++) assert.equal(signIn.challenge(`2001:db8:1:2::${i + 1}`).ok, true);
   assert.deepEqual(signIn.challenge("2001:db8:1:2::99"), { ok: false, kind: "refused", code: "rate_limited" }, "another address in the same /64");

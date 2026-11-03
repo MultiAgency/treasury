@@ -11,7 +11,8 @@ import { createSignIn } from "../src/signin.ts";
 import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
-const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near" }, {
+const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near", transferred: "owner.near" }, {
+  stale: { transferred: "previous.near" },
   foreign: ["elsewhere-agent"],
   failing: {
     revoked: { ok: false, kind: "session", status: 401, error: "Invalid, expired or revoked app credential" },
@@ -19,7 +20,8 @@ const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.n
     "bad-gateway": { ok: false, kind: "unavailable", httpStatus: 502 },
     limited: { ok: false, kind: "refused", status: 429, error: "Request limit reached" },
     conflict: { ok: false, kind: "refused", status: 409, error: "Current wallet ownership could not be verified" },
-    hidden: { ok: false, kind: "forbidden", status: 403, error: "Not this deployment's agent" },
+    // The platform's only 403 on this route: a request carrying browser headers, so this server is misconfigured.
+    hidden: { ok: false, kind: "forbidden", status: 403, error: "Use the app server, without browser credentials." },
   },
 });
 const clock = { now: Date.now() };
@@ -34,6 +36,7 @@ before(async () => {
     publicOrigin: ORIGIN,
     deployment: "treasury",
     trustedProxyHops: 0,
+    ownerRequestsPerMinute: 1_000,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -123,13 +126,13 @@ test("a missing agent, one this deployment can't see and someone else's get the 
   const cookie = await signIn(intruder);
   const missing = await json(await call("GET", "/api/agents/missing", { cookie }));
   assert.deepEqual(missing, { status: 403, body: { ok: false, kind: "not_owner" } });
-  for (const agent of ["portfolio", "hidden"]) assert.deepEqual(await json(await call("GET", `/api/agents/${agent}`, { cookie })), missing, agent);
+  for (const agent of ["portfolio"]) assert.deepEqual(await json(await call("GET", `/api/agents/${agent}`, { cookie })), missing, agent);
 });
 
-test("the platform's failures are never forwarded: a revoked credential, an outage, a rate limit or a conflict is just unavailable", async t => {
+test("the platform's failures are never forwarded: a revoked credential, an outage, a rate limit, a conflict or a 403 is just unavailable", async t => {
   const logged = t.mock.method(console, "error", () => {});
   const cookie = await signIn(owner);
-  for (const agent of ["revoked", "down", "bad-gateway", "limited", "conflict"]) {
+  for (const agent of ["revoked", "down", "bad-gateway", "limited", "conflict", "hidden"]) {
     const answer = await json(await call("GET", `/api/agents/${agent}`, { cookie }));
     assert.deepEqual(answer, { status: 503, body: { ok: false, kind: "unavailable" } }, `${agent}: not not_owner, which would tell the owner it isn't theirs`);
     assert.ok(!/credential|limit|ownership/.test(JSON.stringify(answer)), "no platform text reaches the browser");
@@ -173,7 +176,7 @@ test("sign-in attempts are limited per client, by the address the trusted proxy 
     platform: fake.platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 2, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000,
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -185,6 +188,63 @@ test("sign-in attempts are limited per client, by the address the trusted proxy 
   for (let i = 0; i < 2; i++) assert.equal((await post("/api/session", "203.0.113.7", wrong)).body.code, "bad_signature");
   assert.deepEqual(await post("/api/session", "203.0.113.7", owner.sign(issued.value)), { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" } });
   assert.equal((await post("/api/session", "203.0.113.8", owner.sign(issued.value))).status, 200, "another client, by the proxy's address for it");
+});
+
+/** A second server with its own platform fake and a low owner-request limit, and a sign-in helper for it. */
+async function limitedServer(t: { after(fn: () => void): void }, platform: ReturnType<typeof fakePlatform>["platform"], ownerRequestsPerMinute: number) {
+  const limited = createHttpServer(createServer({
+    platform,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "intruder.near": [intruder.publicKey], "owner.near": [owner.publicKey] }) }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute,
+  }));
+  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
+  t.after(() => limited.close());
+  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+  const session = async (who: ReturnType<typeof wallet>) => {
+    const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
+    return (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(who.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  };
+  const read = async (cookie: string, agent: string) => json(await fetch(`${at}/api/agents/${agent}`, { headers: { cookie } }));
+  return { session, read };
+}
+
+test("an account's owner-route requests are limited, so one account can't spend the platform quota every owner shares", async t => {
+  const counted = fakePlatform({ portfolio: "owner.near" });
+  const { session, read } = await limitedServer(t, counted.platform, 3);
+  const stranger = await session(intruder);
+  const answers = [];
+  for (let i = 0; i < 4; i++) answers.push(await read(stranger, `nosuch-${i}`));
+  assert.deepEqual(answers.map(answer => answer.status), [403, 403, 403, 429]);
+  assert.deepEqual(answers[3]!.body, { ok: false, kind: "refused", code: "rate_limited" });
+  assert.equal(counted.calls.length, 3, "4 requests, 3 platform calls");
+  assert.equal((await read(await session(owner), "portfolio")).status, 200, "another account isn't affected");
+});
+
+test("asking twice for the same missing agent is two platform calls, each counted against the limit", async t => {
+  const counted = fakePlatform({});
+  const { session, read } = await limitedServer(t, counted.platform, 2);
+  const stranger = await session(intruder);
+  assert.deepEqual([(await read(stranger, "nosuch")).status, (await read(stranger, "nosuch")).status, (await read(stranger, "nosuch")).status], [403, 403, 429]);
+  assert.deepEqual(counted.calls, ["identity nosuch", "identity nosuch"], "not read again anew: a refusal that wasn't reused");
+});
+
+test("the anew read after a reused refusal counts against the limit too, so strangers can't use it to force fresh reads", async t => {
+  const counted = fakePlatform({ transferred: "owner.near" }, { stale: { transferred: "previous.near" } });
+  const { session, read } = await limitedServer(t, counted.platform, 2);
+  const stranger = await session(intruder);
+  assert.equal((await read(stranger, "transferred")).status, 403, "reused answer, then the anew read: two counted");
+  assert.equal((await read(stranger, "transferred")).status, 429);
+  assert.deepEqual(counted.calls, ["identity transferred (fresh)"], "one platform call");
+});
+
+test("after a transfer, a reused answer naming the previous owner is read once more anew, so the new owner isn't locked out", async () => {
+  const cookie = await signIn(owner);
+  fake.calls.length = 0;
+  const { status, body } = await json(await call("GET", "/api/agents/transferred", { cookie }));
+  assert.equal(status, 200);
+  assert.equal(body.value.owner, "owner.near");
+  assert.deepEqual(fake.calls, ["identity transferred (fresh)"]);
 });
 
 test("signing in again ends the session the browser carried", async () => {
