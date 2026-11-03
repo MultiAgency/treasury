@@ -206,7 +206,8 @@ export function reads(name: string, viewer: string | null) {
       refetchInterval: 30_000 }),
     /** The instance's agent and whether it executes. */
     instance: queryOptions({ queryKey: [key, "instance"], queryFn: ({ signal }) => api.read("instance", undefined, { signal }), retry: false }),
+    /** Read again every few seconds only while an action's outcome is pending. */
     ownerActions: queryOptions({ queryKey: [key, "owner/actions"], queryFn: ({ signal }) => api.read("owner/actions", undefined, { signal }), retry: false,
-      refetchInterval: 5_000 }),
+      refetchInterval: query => query.state.data?.some(a => a.stage === "prepared" || a.stage === "submitted") ? 5_000 : false }),
   };
 }

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { reads, type OwnerActionRecord as Record } from "../../platform";
 import { AGENT } from "../../app/location";
@@ -44,10 +44,6 @@ export function OwnerActions() {
     const control = actions.error ? failure.current?.querySelector("button") : refreshControl.current;
     control?.focus({ preventScroll: true });
   }, [actions.error, actions.isFetching]);
-  const hash = useLocation({ select: location => location.hash });
-  useEffect(() => {
-    if (hash.startsWith("owner-") && actions.data) document.getElementById(hash)?.scrollIntoView({ block: "start" });
-  }, [hash, actions.data]);
   return <Section title="Owner actions" description="Actions recorded on this instance. Owner approval and payment settlement are separate outcomes."
     action={!actions.error && <Button ref={refreshControl} variant="outline" size="sm" disabled={actions.isFetching} aria-busy={actions.isFetching} onClick={refresh}>Refresh owner actions</Button>}>
     {actions.error && <div ref={failure}><ReadFailure label="Owner actions" error={actions.error} retry={refresh} retained={actions.data !== undefined} updatedAt={actions.dataUpdatedAt} /></div>}

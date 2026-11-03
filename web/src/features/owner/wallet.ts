@@ -1,5 +1,6 @@
 import { NearConnector } from "@fastnear/near-connect";
 import type { Intent, Transaction } from "../../platform";
+import type { Wallets } from "./owner-flow";
 import { fromBase64, HOT_WALLETS, namespaced, wallet, walletSession } from "../../app/wallet";
 
 /**
@@ -18,6 +19,9 @@ export async function ensureDao(daoId: string) {
 
 /** Sends a transaction from the signed-in member's own wallet, such as a DAO proposal they file. */
 export const sendAsMember = (transaction: Transaction) => wallet.send(transaction);
+
+/** Whether the signed-in member's own wallet is connected. */
+export const memberConnected = async () => ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length ?? 0) > 0;
 
 /**
  * The connected account as an agent owner. Some wallets report the key only with a signature, so a missing key is
@@ -56,3 +60,6 @@ export async function signIntent(intent: Intent): Promise<Record<string, unknown
       throw new Error(`This dashboard signs NEAR intents only, not ${intent.standard}`);
   }
 }
+
+/** The wallet steps an owner action takes, for `runOwnerAction`. */
+export const wallets: Wallets = { signIntent, ownerWallet, memberConnected, sendAsMember, ensureDao, sendAsDao: transaction => dao.send(transaction) };

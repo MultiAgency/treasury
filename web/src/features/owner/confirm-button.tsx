@@ -65,7 +65,11 @@ export function ConfirmButton({
           if (trigger.current?.disabled) document.getElementById("agent-main")?.focus();
           else trigger.current?.focus();
         }}
-        onClick={(e) => e.target === dialog.current && dialog.current.close()}
+        onClick={(e) => {
+          // The backdrop only: a click outside the dialog's box. Its padding is inside the box, so it doesn't close.
+          const box = dialog.current?.getBoundingClientRect();
+          if (e.target === dialog.current && box && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom)) dialog.current.close();
+        }}
         className={reviewDialog}
       >
         <div className="flex flex-col gap-6">

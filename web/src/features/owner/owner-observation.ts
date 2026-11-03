@@ -36,3 +36,12 @@ export function ownerActionState<T extends { stage: string; ownerSucceeded?: boo
     succeeded: records.find(a => a.ownerSucceeded),
   };
 }
+
+/**
+ * The first record of `types` whose outcome isn't known yet: a submission attempted (`submitted`), or a DAO proposal
+ * filed and awaiting its vote (`prepared` with signer `dao`). While one exists, no other is signed or proposed. A wallet
+ * action only prepared was never signed, so it doesn't block.
+ */
+export function awaitingOutcome<T extends { type: string; stage: string; signer: string }>(records: readonly T[], types: readonly string[]) {
+  return records.find(a => types.includes(a.type) && (a.stage === "submitted" || (a.stage === "prepared" && a.signer === "dao")));
+}
