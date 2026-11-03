@@ -21,8 +21,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: The owner UI
-        run: pnpm --filter @treasury/web typecheck && pnpm --filter @treasury/web test && pnpm --filter @treasury/web build
+      - name: Every workspace package
+        run: pnpm check && pnpm build
 
   stack:
     name: Stack tests (platform 1a7fe98, simulated)
