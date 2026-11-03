@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { useCanCall } from "../../app/viewer";
-import type { Strategy } from "../../platform";
+import { failureKind, type Strategy } from "../../platform";
 import { confirmDiscard, useDirtyDraft } from "../../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../../shared/form";
 import { Button, Details, ErrorBox, errorMessage, Spinner } from "../../shared/ui";
@@ -29,10 +29,13 @@ export function StrategyEditor({ strategy, digest, latest, nameOf, onSave, onClo
   const canSave = useCanCall("strategy/save");
   const heading = useRef<HTMLHeadingElement>(null);
   const [baseDigest, setBaseDigest] = useState(digest);
-  const stale = Boolean(latest && latest.digest !== baseDigest);
+  const [busy, setBusy] = useState(false);
+  /** Set after a save whose outcome is unknown: a changed strategy may then be this draft's own save. */
+  const [maybeSaved, setMaybeSaved] = useState(false);
+  // Not while this draft's own save runs: the strategy is read again before the editor closes.
+  const stale = Boolean(!busy && latest && latest.digest !== baseDigest);
   const [draft, setDraft] = useState(() => strategyDraft(strategy));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => { heading.current?.focus(); }, []);
   const [saved, setSaved] = useState(false);
@@ -46,15 +49,16 @@ export function StrategyEditor({ strategy, digest, latest, nameOf, onSave, onClo
     if (busy || stale || !canSave) return;
     setBusy(true); setError(undefined);
     try { await onSave(next, baseDigest); setSaved(true); onClose(); }
-    catch (e) { setError(errorMessage(e)); }
+    catch (e) { setError(errorMessage(e)); setMaybeSaved(failureKind(e) === "unknown"); }
     finally { setBusy(false); }
   };
   return <div className="flex flex-col gap-4">
     <h4 ref={heading} tabIndex={-1} className="scroll-mt-48 font-medium">Edit strategy</h4>
     {stale && latest && <div className="flex flex-col gap-3" role="alert">
-      <p>The saved strategy changed. Your draft is preserved. Compare the current settings below before reviewing your draft again.</p>
+      <p>{maybeSaved ? "The saved strategy changed, and your save’s outcome is unknown: it may have applied. Your draft is preserved. Review the current strategy below before saving again."
+        : "The saved strategy changed. Your draft is preserved. Compare the current settings below before reviewing your draft again."}</p>
       <StrategySummary strategy={latest.strategy} nameOf={nameOf} />
-      <Button variant="outline" disabled={busy} onClick={() => { setBaseDigest(latest.digest); setError(undefined); }}>Review against latest strategy</Button>
+      <Button variant="outline" disabled={busy} onClick={() => { setBaseDigest(latest.digest); setError(undefined); setMaybeSaved(false); }}>Review against latest strategy</Button>
     </div>}
     <form className="flex flex-col gap-4" noValidate onSubmit={(e) => {
       e.preventDefault();

@@ -4,7 +4,7 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import type { OwnerActionRecord, OwnerStatus, StrategyStatus } from "../src/platform.ts";
 
@@ -14,10 +14,12 @@ import type { OwnerActionRecord, OwnerStatus, StrategyStatus } from "../src/plat
  */
 async function attach() {
   const started = await startStack({ args: ["--frontend", join(import.meta.dirname, "..", "dist")] });
-  const state = started.state();
-  const browser = await chromium.connectOverCDP(state.cdp!);
-  const close = async () => { await browser.close().catch(() => {}); await started.stop(); };
+  let browser: Browser | undefined;
+  // Ends whatever was started, so a failure anywhere after the stack starts never leaves it running.
+  const close = async () => { await browser?.close().catch(() => {}); await started.stop(); };
   try {
+    const state = started.state();
+    browser = await chromium.connectOverCDP(state.cdp!);
     // An attached client's own connection must accept the stack's local certificate (the platform's docs/testing.md).
     await (await browser.newBrowserCDPSession()).send("Security.setIgnoreCertificateErrors", { ignore: true });
     // The owner's page is the one the stack signed in at /a/payout/ (the payee's is the invoice page).

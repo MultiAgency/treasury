@@ -1,5 +1,4 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAgent, useAgentReads } from "../../app/frame";
 import { AGENT } from "../../app/location";
@@ -25,7 +24,6 @@ export function StrategyWorkflow() {
   const { setup, data } = useAgent();
   const api = useMemo(() => agent(AGENT!), []);
   const canSave = useCanCall("strategy/save");
-  const canStop = useCanCall("autopilot/stop");
   const canSchedule = useCanCall("autopilot/enable");
   const executor = setup.executor !== false;
   const queryClient = useQueryClient();
@@ -39,6 +37,7 @@ export function StrategyWorkflow() {
   const signer = useSigner(setup);
   const stopControl = useStopSchedule();
   const operation = useAttempt();
+  const cardHeading = useRef<HTMLHeadingElement>(null);
   const editTrigger = useRef<HTMLButtonElement>(null);
   const reviewTrigger = useRef<HTMLButtonElement>(null);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
@@ -50,23 +49,27 @@ export function StrategyWorkflow() {
   const [checkingOwner, setCheckingOwner] = useState(false);
   const [editing, setEditing] = useState<StrategyStatus>();
   /** The page's latest action, whose outcome is the one shown: an earlier action's notice or error never stays beside it. */
-  const [last, setLast] = useState<"save" | "authorize" | "enable" | "stop">();
+  const [last, setLast] = useState<"save" | "authorize" | "authorized" | "enable" | "stop">();
   const [review, setReview] = useState<StrategyStatus>();
   const [renewalOpen, setRenewalOpen] = useState(false);
   useEffect(() => {
+    // A control focus can land on: enabled and rendered, not inside a collapsed disclosure. Else the card's heading.
+    const usable = (target?: HTMLElement | null) => target && !(target as HTMLButtonElement).disabled && target.getClientRects().length > 0
+      && !target.closest("details:not([open])") ? target : undefined;
+    const enable = () => enableRegion.current?.querySelector("button");
     if (review) reviewHeading.current?.focus();
     else if (previousReview.current) {
-      const next = advanceAfterAuthorization.current ? enableRegion.current?.querySelector("button") : reviewTrigger.current;
-      (next ?? reviewTrigger.current ?? enableRegion.current?.querySelector("button"))?.focus();
+      const next = advanceAfterAuthorization.current ? usable(enable()) : undefined;
+      (next ?? usable(reviewTrigger.current) ?? usable(enable()) ?? cardHeading.current)?.focus();
       advanceAfterAuthorization.current = false;
     }
-    if (!review && !editing && previousEditing.current) editTrigger.current?.focus();
+    if (!review && !editing && previousEditing.current) (usable(editTrigger.current) ?? cardHeading.current)?.focus();
     previousEditing.current = Boolean(editing);
     previousReview.current = Boolean(review);
   }, [editing, review]);
   const nameOf = (asset: string) => symbolOf(asset, data.book);
   const busy = operation.busy || owner.busy || checkingOwner || stopControl.busy;
-  const view = strategyPresentation({ status, schedule, actions, review, executor, canSave, canStop, canSchedule, busy,
+  const view = strategyPresentation({ status, schedule, actions, review, executor, canSave, canSchedule, busy,
     canSign: signer.canSign && !owner.unknown });
   const { value, ready, currentReview, pendingGrant } = view;
   const progress = value ? strategyProgress({ editing: Boolean(editing), statusUnknown: Boolean(status.error),
@@ -75,12 +78,14 @@ export function StrategyWorkflow() {
   const stop = () => { setLast("stop"); void stopControl.stop(); };
   return <Card>
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="font-medium">Targets and schedule</h2>
+      <h2 ref={cardHeading} tabIndex={-1} className="font-medium">Targets and schedule</h2>
       {view.scheduleLabel && <Badge>{view.scheduleLabel}</Badge>}
-      {view.showStop && <Button variant="outline" disabled={stopControl.disabled} onClick={stop}>Turn off</Button>}
     </div>
-    {view.showStop && <p className="text-sm text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p>}
-    {view.showStop && <StopBlocked control={stopControl} />}
+    {view.showStop && <div className="flex flex-col items-start gap-3 text-sm">
+      <Button variant="outline" disabled={stopControl.disabled} onClick={stop}>Turn off</Button>
+      <p className="text-muted-foreground">{SCHEDULE_STOP_SCOPE}</p>
+      <StopBlocked control={stopControl} />
+    </div>}
     {schedule.isPending && <Loading label="Checking autopilot settings…" />}
     {schedule.error && <QueryError error={schedule.error} retry={() => schedule.refetch()} />}
     {status.isPending && <Loading label="Checking strategy authorization…" />}
@@ -124,7 +129,7 @@ export function StrategyWorkflow() {
         <h3 className="font-medium">Owner authorization</h3>
         {!executor && <p className="text-sm">Review authorization and configure the strategy on its executor.</p>}
         {executor && schedule.data?.on && <p className="text-sm">Turn the schedule off before reviewing {value.grantMatches ? "a grant renewal" : "a new authorization"}.</p>}
-        {executor && !pendingGrant && !review && <Button disabled={!view.canReview} onClick={() => { setLast(undefined); setReview(value); }}>Review authorization</Button>}
+        {executor && !pendingGrant && !review && <Button ref={reviewTrigger} disabled={!view.canReview} onClick={() => { setLast(undefined); setReview(value); }}>Review authorization</Button>}
         {review && <div className="flex flex-col gap-3 border-t pt-4">
           <h4 ref={reviewHeading} tabIndex={-1} className="scroll-mt-48 font-medium">{review.grantMatches ? "Renew the grant for this saved strategy" : "Authorize this saved strategy"}</h4>
           <StrategySummary strategy={review.strategy} nameOf={nameOf} />
@@ -146,6 +151,8 @@ export function StrategyWorkflow() {
                 const [records, strategyNow, scheduleNow] = await Promise.all([actions.refetch(), status.refetch(), schedule.refetch()]);
                 if (records.error || awaitingOutcome(records.data ?? [], ["grant_issue"])) return;
                 if (strategyNow.error || strategyNow.data?.digest !== review.digest || scheduleNow.error || scheduleNow.data?.on !== false) return;
+                // A grant for it settled meanwhile (another tab, or the DAO): a second one isn't signed.
+                if (!review.grantMatches && strategyNow.data.grantMatches) { setLast("authorized"); setReview(undefined); return; }
                 setLast("authorize");
                 if (await owner.run({ type: "grant_issue", label: "treasury", expectedStrategyDigest: review.digest })) {
                   advanceAfterAuthorization.current = true;
@@ -169,7 +176,7 @@ export function StrategyWorkflow() {
       </section>}
       {ready && schedule.data?.on && !schedule.error && !editing && !review && <div className="flex flex-col items-start gap-2">
         <p className="text-sm">Next: follow the scheduled run, or review Run now on the run page.</p>
-        <Button asChild variant="outline"><Link to="/follow/run">Follow treasury runs</Link></Button>
+        <LinkButton to="/follow/run">Follow treasury runs</LinkButton>
       </div>}
       {!editing && !review && value.grantMatches && executor && <Details summary="Grant renewal" open={renewalOpen}>
         {schedule.data?.on && <p className="text-sm">Turn the schedule off before reviewing a grant renewal.</p>}
@@ -184,6 +191,7 @@ export function StrategyWorkflow() {
     {owner.label && <p role="status" className="text-sm">{owner.label}</p>}
     {owner.unknown && <p role="status" className="text-sm">{owner.unknown}</p>}
     <ErrorBox error={last === "authorize" ? owner.error : last === "enable" ? operation.error : undefined} />
+    {last === "authorized" && <p role="status" className="text-sm">This saved strategy is already authorized: a matching grant is in place. Nothing was signed.</p>}
     {last === "save" && <p role="status" className="text-sm">Strategy saved. Schedule off; review authorization before enabling.</p>}
     {last === "enable" && operation.message && <p role="status" className="text-sm">{operation.message}</p>}
     {last === "stop" && <StopResult control={stopControl} />}

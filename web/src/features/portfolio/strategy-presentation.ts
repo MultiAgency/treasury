@@ -1,14 +1,15 @@
 import type { StrategyStatus } from "../../platform";
 import { awaitingOutcome } from "../owner/owner-observation";
+import { offersStop } from "../owner/task-recovery";
 
 type Read<T> = { data?: T; error: unknown };
 /** Current observations and UI permissions only; server controls still authorize every change. */
-export function strategyPresentation({ status, schedule, actions, review, executor, canSave, canStop, canSchedule, busy, canSign }: {
+export function strategyPresentation({ status, schedule, actions, review, executor, canSave, canSchedule, busy, canSign }: {
   status: Read<StrategyStatus>;
   schedule: Read<{ on: boolean }>;
   actions: Read<{ type: string; stage: string; signer: string; correlationId: string }[]> & { isSuccess: boolean };
   review?: StrategyStatus;
-  executor: boolean; canSave: boolean; canStop: boolean; canSchedule: boolean; busy: boolean; canSign: boolean;
+  executor: boolean; canSave: boolean; canSchedule: boolean; busy: boolean; canSign: boolean;
 }) {
   const value = status.data?.readiness && status.data?.strategy ? status.data : undefined;
   // A grant submitted, or proposed to the DAO and awaiting its vote: never signed or proposed again from here.
@@ -24,8 +25,9 @@ export function strategyPresentation({ status, schedule, actions, review, execut
     readinessLabel: !current ? "Readiness unknown" : !executor ? "Approve-only host"
       : value!.readiness.state === "blocked" ? "Blocked"
         : value!.grantMatches ? schedule.data!.on ? "Ready for scheduled runs" : "Off · strategy authorized" : "Needs owner authorization",
-    // Offered unless the schedule's latest read confirms it off, as on the Overview.
-    showStop: canStop && executor && Boolean(!schedule.data || schedule.error || schedule.data.on),
+    // Offered unless the schedule's latest read confirms it off, as on the Overview; when it can't be stopped from here,
+    // it's shown disabled with the reason.
+    showStop: executor && offersStop(schedule),
     canEdit: canSave && executor && !busy && !pendingGrant,
     canReview: executor && off && Boolean(ownerRead) && !busy,
     canAuthorize: executor && off && currentReview && Boolean(ownerRead) && canSign && !busy,
