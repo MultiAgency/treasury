@@ -21,14 +21,17 @@ const origin = z.url({ protocol: /^https?$/ }).transform(value => new URL(value)
 const Settings = z.object({
   /** The platform host's origin, where `/apps/v1` is served. */
   TREASURY_PLATFORM_ORIGIN: origin,
-  /** This app's deployment name, as the operator issued its credential. */
+  /** This app's deployment name, as the operator issued its credential: every agent's identity must name it. */
   TREASURY_DEPLOYMENT: z.string().regex(/^[a-z0-9-]{1,32}$/),
-  /** A 0600 file holding the deployment's `tap_` credential; re-read when it changes. */
+  /** A 0600 file holding the deployment's `tap_` credential; checked on every call and read again when it changes. */
   TREASURY_CREDENTIAL_FILE: z.string().min(1),
   /** This server's own origin: the sign-in recipient and the only `Origin` accepted on writes. */
   TREASURY_PUBLIC_ORIGIN: origin,
-  /** Where the audit trail and other durable records are kept. */
-  TREASURY_DATA_DIR: z.string().min(1),
+  /**
+   * How many reverse proxies in front of this server to trust for the client's address (`X-Forwarded-For`), which the
+   * challenge rate limit is keyed on. 0, the default, trusts none: the connection's own address is used.
+   */
+  TREASURY_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
   /** Overrides the chain RPC; otherwise FastNEAR's, as the platform's `src/chain.ts` does. */
   NEAR_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),

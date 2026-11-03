@@ -17,7 +17,7 @@ function environment(credentialMode = 0o600) {
   return {
     PATH: process.env.PATH, PORT: "0",
     TREASURY_PLATFORM_ORIGIN: "https://platform.test", TREASURY_DEPLOYMENT: "treasury", TREASURY_CREDENTIAL_FILE: credential,
-    TREASURY_PUBLIC_ORIGIN: "https://treasury.test", TREASURY_DATA_DIR: join(dir, "data"),
+    TREASURY_PUBLIC_ORIGIN: "https://treasury.test",
   };
 }
 
@@ -30,7 +30,11 @@ function start(t: TestContext, env: Record<string, string | undefined>) {
   t.after(() => { if (child.exitCode === null) child.kill("SIGKILL"); });
   let stdout = "", stderr = "";
   child.stderr.on("data", chunk => { stderr += chunk; });
-  const exited = new Promise<{ code: number | null; stderr: string }>(resolve => child.once("exit", code => resolve({ code, stderr })));
+  // Its own deadline: a process that never exits would otherwise leave the test waiting forever, cancelled, not failed.
+  const exited = new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+    const deadline = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("still running after 10 s")); }, 10_000);
+    child.once("exit", code => { clearTimeout(deadline); resolve({ code, stderr }); });
+  });
   const listening = Promise.race([
     new Promise<{ listening: number }>(resolve => child.stdout.on("data", chunk => {
       stdout += chunk;

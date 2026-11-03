@@ -3,14 +3,21 @@ import assert from "node:assert/strict";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import * as contract from "../src/contract.ts";
-import { COOKIE, createServer, routes } from "../src/http.ts";
+import type { IncomingMessage } from "node:http";
+import { clientAddress, COOKIE, createServer, routes } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
 import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
-const fake = fakePlatform({ portfolio: "owner.near" });
+const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near" }, {
+  foreign: ["elsewhere-agent"],
+  failing: {
+    revoked: { ok: false, kind: "session", status: 401, error: "Invalid, expired or revoked app credential" },
+    down: { ok: false, kind: "unavailable" },
+  },
+});
 const clock = { now: Date.now() };
 let server: Server, base: string;
 
@@ -21,6 +28,8 @@ before(async () => {
       keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey], "intruder.near": [intruder.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
     publicOrigin: ORIGIN,
+    deployment: "treasury",
+    trustedProxyHops: 0,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -87,12 +96,71 @@ test("the owner reads their agent, with one ownership read", async () => {
   assert.deepEqual(fake.calls, ["identity portfolio"]);
 });
 
-test("an agent name that isn't one is refused before the platform is asked; an unknown agent is the platform's refusal", async () => {
+test("an agent name that isn't one is refused before the platform is asked", async () => {
   const cookie = await signIn(owner);
   fake.calls.length = 0;
   assert.equal((await json(await call("GET", "/api/agents/Not_An_Agent", { cookie }))).body.code, "bad_request");
   assert.deepEqual(fake.calls, []);
-  assert.deepEqual(await json(await call("GET", "/api/agents/missing", { cookie })), { status: 404, body: { ok: false, kind: "refused", code: "platform", error: "No such agent" } });
+});
+
+test("a missing agent and someone else's agent get the same answer, so a stranger can't tell which exist", async () => {
+  const cookie = await signIn(intruder);
+  const missing = await json(await call("GET", "/api/agents/missing", { cookie }));
+  const owned = await json(await call("GET", "/api/agents/portfolio", { cookie }));
+  assert.deepEqual(missing, { status: 403, body: { ok: false, kind: "not_owner" } });
+  assert.deepEqual(owned, missing);
+});
+
+test("the platform's failures are never forwarded: a revoked credential or an outage is just unavailable", async () => {
+  const cookie = await signIn(owner);
+  for (const agent of ["revoked", "down"]) {
+    const answer = await json(await call("GET", `/api/agents/${agent}`, { cookie }));
+    assert.deepEqual(answer, { status: 503, body: { ok: false, kind: "unavailable" } }, agent);
+    assert.ok(!JSON.stringify(answer).includes("credential"), "no platform text reaches the browser");
+  }
+});
+
+test("an agent whose identity names another deployment is refused as a misconfiguration", async () => {
+  const cookie = await signIn(owner);
+  assert.deepEqual(await json(await call("GET", "/api/agents/elsewhere-agent", { cookie })), { status: 503, body: { ok: false, kind: "unavailable" } });
+});
+
+test("a malformed percent-encoding is a bad request, not a server error", async () => {
+  const cookie = await signIn(owner);
+  assert.deepEqual(await json(await call("GET", "/api/agents/%E0%A4%A", { cookie })), { status: 400, body: { ok: false, kind: "refused", code: "bad_request" } });
+});
+
+test("an account ID that isn't one is refused before any verification", async () => {
+  const { body: issued } = await json(await call("POST", "/api/session/challenge"));
+  const signed = owner.sign(issued.value);
+  assert.equal((await json(await call("POST", "/api/session", { body: { ...signed, accountId: "Owner.NEAR" } }))).body.code, "bad_request");
+});
+
+test("signing in again ends the session the browser carried", async () => {
+  const first = await signIn(owner);
+  const { body: issued } = await json(await call("POST", "/api/session/challenge"));
+  const again = await call("POST", "/api/session", { body: owner.sign(issued.value), cookie: first });
+  const second = again.headers.get("set-cookie")!.split(";")[0]!;
+  assert.notEqual(second, first);
+  assert.equal((await json(await call("GET", "/api/agents/portfolio", { cookie: first }))).body.kind, "not_signed_in");
+  assert.equal((await call("GET", "/api/agents/portfolio", { cookie: second })).status, 200);
+});
+
+test("sign-out clears the cookie even when the session has already ended", async () => {
+  const cookie = await signIn(owner);
+  clock.now += 30 * 60_000 + 1;
+  const response = await call("DELETE", "/api/session", { cookie });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("set-cookie")!, /Max-Age=0/);
+  clock.now = Date.now();
+});
+
+test("the client's address is the connection's, unless proxies are trusted", () => {
+  const req = (forwarded?: string) => ({ socket: { remoteAddress: "10.0.0.1" }, headers: forwarded ? { "x-forwarded-for": forwarded } : {} }) as unknown as IncomingMessage;
+  assert.equal(clientAddress(req("6.6.6.6"), 0), "10.0.0.1", "with no trusted proxy, a client can't choose its own address");
+  assert.equal(clientAddress(req("6.6.6.6, 203.0.113.9"), 1), "203.0.113.9", "the address the trusted proxy saw");
+  assert.equal(clientAddress(req("6.6.6.6, 203.0.113.9, 10.0.0.5"), 2), "203.0.113.9");
+  assert.equal(clientAddress(req(), 1), "10.0.0.1", "no header falls back to the connection");
 });
 
 test("sign-out clears the cookie and ends the session", async () => {

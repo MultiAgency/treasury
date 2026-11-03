@@ -6,15 +6,21 @@ import type { Challenge } from "../src/signin.ts";
 export const HOST = "treasury.test";
 export const ORIGIN = `https://${HOST}`;
 
-/** A platform that knows a fixed set of agents and their owners, and records every call it's asked. */
-export function fakePlatform(owners: Record<string, string>) {
+/**
+ * A platform that knows a fixed set of agents and their owners, and records every call it's asked. `failing` makes
+ * the platform answer a failure for an agent instead, and `foreign` names agents another deployment's identity covers.
+ */
+export function fakePlatform(owners: Record<string, string>, { failing = {}, foreign = [] }: {
+  failing?: Record<string, Awaited<ReturnType<Platform["identity"]>>>; foreign?: string[];
+} = {}) {
   const calls: string[] = [];
   const platform: Platform = {
     async identity(agent) {
       calls.push(`identity ${agent}`);
+      if (failing[agent]) return failing[agent];
       const owner = owners[agent];
       return owner
-        ? { ok: true, value: { agent, owner, agentId: `id-${agent}`, created: true, host: "platform.test", deployment: "treasury" } }
+        ? { ok: true, value: { agent, owner, agentId: `id-${agent}`, created: true, host: "platform.test", deployment: foreign.includes(agent) ? "elsewhere" : "treasury" } }
         : { ok: false, kind: "refused", status: 404, error: "No such agent" };
     },
   };

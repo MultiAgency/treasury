@@ -22,10 +22,10 @@ SDK and platform feedback goes to [MultiAgency/platform](https://github.com/Mult
 
 `apps/server/` is its own package in the pnpm workspace: Node running TypeScript directly, `node:http`, `@multiagency/sdk` 0.4.0 and `near-kit` 0.20.2. It holds the deployment's `tap_` credential and calls the platform with `appClient`. Its design, rules and plan are in #20. The first version so far:
 
-- **Owner sign-in:** a NEP-413 challenge addressed to this server, verified with `near-kit` before any chain call, then a full-access key of the signing account on chain (FastNEAR's RPC, configured as the platform's `src/chain.ts`). Each challenge is single-use and expires in 5 minutes.
-- **Sessions:** a `Secure`, httpOnly, `SameSite=Strict` cookie, ended after 30 minutes idle, 12 hours or sign-out; in memory, so a restart signs everyone out. Every write checks `Origin` and requires JSON.
-- **Per-agent authorization:** every `/api/agents/:agent` route checks that the signed-in account is the agent's owner, read fresh from the platform on each request.
-- **Configuration** is checked at startup (`src/config.ts`); secrets print as `[secret]`. The credential file must be 0600 and is re-read on every call, so rotating it needs no restart.
+- **Owner sign-in:** a NEP-413 challenge addressed to this server, verified with `near-kit` before any chain call, then a full-access key of the signing account on chain (FastNEAR's RPC, configured as the platform's `src/chain.ts`). Each challenge is single-use and expires in 5 minutes; challenges are rate-limited per client address and capped overall.
+- **Sessions:** a `Secure`, httpOnly, `SameSite=Strict` cookie, ended after 30 minutes idle, 12 hours or sign-out, and swept when abandoned; in memory, so a restart signs everyone out. Signing in again ends the previous session, and sign-out always clears the cookie. Every write checks `Origin` and requires JSON.
+- **Per-agent authorization:** every `/api/agents/:agent` route checks that the signed-in account is the agent's owner, read fresh from the platform on each request, and that the agent's identity names this deployment. A missing agent and someone else's get the same answer, and the platform's error text is logged, never sent to the browser.
+- **Configuration** is checked at startup (`src/config.ts`); secrets print as `[secret]`. The credential file must be 0600; it's checked on every call and read again when it changes, so rotating it needs no restart. The challenge rate limit uses the connection's address unless `TREASURY_TRUSTED_PROXY_HOPS` says how many reverse proxies to trust for `X-Forwarded-For`.
 
 ```sh
 pnpm --filter @treasury/server typecheck
@@ -34,7 +34,7 @@ pnpm --filter @treasury/server test:stack    # against a fresh stack started wit
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check against near-kit's local NEAR node; not run in CI
 ```
 
-To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN` and `TREASURY_DATA_DIR` (and optionally `FASTNEAR_API_KEY` or `NEAR_RPC_URL`), then `pnpm --filter @treasury/server start`.
+To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE` and `TREASURY_PUBLIC_ORIGIN` (and optionally `FASTNEAR_API_KEY`, `NEAR_RPC_URL` or `TREASURY_TRUSTED_PROXY_HOPS`), then `pnpm --filter @treasury/server start`.
 
 ## The owner UI
 

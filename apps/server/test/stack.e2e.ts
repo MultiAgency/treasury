@@ -45,6 +45,8 @@ before(async () => {
       keyLookup: standInKeyLookup({ [owner]: [state.testPublicKey], [intruder.accountId]: [intruder.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
     publicOrigin: ORIGIN,
+    deployment: state.app.deployment,
+    trustedProxyHops: 0,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

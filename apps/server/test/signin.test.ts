@@ -74,3 +74,9 @@ test("challenges are rate-limited per client and minute", () => {
   clock.now += 60_001;
   assert.equal(signIn.challenge("a").ok, true, "the window moves on");
 });
+
+test("outstanding challenges are capped overall, however many addresses ask", () => {
+  const signIn = createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 10, maxOutstanding: 3, keyLookup: async () => "full" });
+  for (const client of ["a", "b", "c"]) assert.equal(signIn.challenge(client).ok, true);
+  assert.deepEqual(signIn.challenge("d"), { ok: false, kind: "refused", code: "too_many_challenges" });
+});

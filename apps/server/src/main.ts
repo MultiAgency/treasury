@@ -10,7 +10,11 @@ import { createSignIn } from "./signin.ts";
 
 const { settings, secrets } = loadConfig();
 const credential = createCredential(settings.TREASURY_CREDENTIAL_FILE);
-credential.get(); // Refuse to start without a readable 0600 credential.
+await credential.get(); // Refuse to start without a readable 0600 credential.
+
+const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS });
+// Ended sessions are also swept every minute, so abandoned ones don't accumulate between sign-ins.
+setInterval(sessions.sweep, 60_000).unref();
 
 const rpcUrl = rpcUrlFor(settings.NEAR_RPC_URL, secrets.FASTNEAR_API_KEY);
 const handler = createServer({
@@ -21,8 +25,10 @@ const handler = createServer({
     ttlMs: settings.CHALLENGE_TTL_MS,
     perMinute: settings.CHALLENGES_PER_MINUTE,
   }),
-  sessions: createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS }),
+  sessions,
   publicOrigin: settings.TREASURY_PUBLIC_ORIGIN,
+  deployment: settings.TREASURY_DEPLOYMENT,
+  trustedProxyHops: settings.TREASURY_TRUSTED_PROXY_HOPS,
 });
 
 const server = createHttpServer(handler).listen(settings.PORT, () => {

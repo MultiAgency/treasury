@@ -8,7 +8,15 @@ import type { SignIn } from "./signin.ts";
 export const COOKIE = "__Host-treasury_session";
 const MAX_BODY = 16 * 1024;
 
-export type Deps = { platform: Platform; signIn: SignIn; sessions: Sessions; publicOrigin: string };
+export type Deps = {
+  platform: Platform; signIn: SignIn; sessions: Sessions;
+  /** This server's own origin: the only `Origin` accepted on writes. */
+  publicOrigin: string;
+  /** This app's deployment: an agent whose identity names another is refused as a misconfiguration. */
+  deployment: string;
+  /** How many reverse proxies to trust for the client's address (`X-Forwarded-For`); 0 uses the connection's. */
+  trustedProxyHops: number;
+};
 
 /** Who may call a route: anyone, a signed-in session, or the signed-in owner of the route's `:agent`. */
 export type Access = "public" | "session" | "owner";
@@ -20,14 +28,12 @@ type Route = { method: "GET" | "POST" | "DELETE"; path: string; access: Access; 
 
 const ok = (value: unknown, status = 200): Reply => ({ status, body: { ok: true, value } });
 const fail = (status: number, body: contract.ServerFailure): Reply => ({ status, body });
-const refused = (status: number, code: string, error?: string) => fail(status, { ok: false, kind: "refused", code, ...(error && { error }) });
+const refused = (status: number, code: string) => fail(status, { ok: false, kind: "refused", code });
+const notOwner = () => fail(403, { ok: false, kind: "not_owner" });
+const unavailable = () => fail(503, { ok: false, kind: "unavailable" });
 
-/** A platform failure, passed through by kind with the status it came with. */
-function platformFailure(result: { ok: false; kind: "session" | "forbidden" | "refused" | "unavailable"; status?: number; error?: string }): Reply {
-  if (result.kind === "refused") return refused(result.status ?? 400, "platform", result.error);
-  const status = result.kind === "session" ? 502 : result.kind === "forbidden" ? 403 : 503;
-  return fail(status, { ok: false, kind: result.kind, ...(result.error && { error: result.error }) });
-}
+/** Logs what the browser isn't told: the event and its details, never a request's cookie, body or credential. */
+const log = (event: string, details: Record<string, unknown>) => console.error(JSON.stringify({ event, ...details }));
 
 const parse = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> | undefined => {
   const result = schema.safeParse(value);
@@ -37,27 +43,42 @@ const parse = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> | un
 const cookieFor = (token: string, maxMs: number) => `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(maxMs / 1000)}`;
 const clearedCookie = `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 
+/**
+ * The client's address for the challenge rate limit. With no trusted proxies, the connection's own address. Behind
+ * `hops` trusted proxies, the address the outermost of them saw: the `hops`-th entry from the right of
+ * `X-Forwarded-For`, since anything left of it can be written by the client itself.
+ */
+export function clientAddress(req: IncomingMessage, hops: number) {
+  const direct = req.socket.remoteAddress ?? "unknown";
+  if (hops === 0) return direct;
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",").map(part => part.trim()).filter(Boolean);
+  return forwarded[forwarded.length - hops] ?? direct;
+}
+
 /** Every route the server answers. Tests walk this table, so a new route is covered by the access tests as it's added. */
 export const routes: Route[] = [
   {
     method: "POST", path: "/api/session/challenge", access: "public",
-    async handle({ req }, { signIn }) {
-      const issued = signIn.challenge(req.socket.remoteAddress ?? "unknown");
+    async handle({ req }, { signIn, trustedProxyHops }) {
+      const issued = signIn.challenge(clientAddress(req, trustedProxyHops));
       return issued.ok ? ok(issued.value) : refused(429, issued.code);
     },
   },
   {
     method: "POST", path: "/api/session", access: "public",
-    async handle({ body }, { signIn, sessions }) {
+    async handle({ body, token }, { signIn, sessions }) {
       const signed = parse(contract.signIn, body);
       if (!signed) return refused(400, "bad_request");
       const result = await signIn.verify(signed);
-      if (!result.ok) return result.kind === "unavailable" ? fail(503, { ok: false, kind: "unavailable" }) : refused(401, result.code);
+      if (!result.ok) return result.kind === "unavailable" ? unavailable() : refused(401, result.code);
+      // A sign-in replaces the session the browser carried, which ends here rather than living on until it expires.
+      sessions.end(token);
       return { ...ok({ account: result.account }), cookie: cookieFor(sessions.start(result.account), sessions.maxMs) };
     },
   },
   {
-    method: "DELETE", path: "/api/session", access: "session",
+    // Public, so a browser whose session has already ended still gets its cookie cleared.
+    method: "DELETE", path: "/api/session", access: "public",
     async handle({ token }, { sessions }) {
       sessions.end(token);
       return { ...ok({}), cookie: clearedCookie };
@@ -72,14 +93,16 @@ export const routes: Route[] = [
   },
 ];
 
-function match(route: Route, method: string, pathname: string): Record<string, string> | undefined {
+/** A route's parameters for `pathname`; `malformed` when a parameter's percent-encoding is broken. */
+function match(route: Route, method: string, pathname: string): Record<string, string> | "malformed" | undefined {
   if (route.method !== method) return undefined;
   const want = route.path.split("/"), got = pathname.split("/");
   if (want.length !== got.length) return undefined;
   const params: Record<string, string> = {};
   for (const [i, part] of want.entries()) {
-    if (part.startsWith(":")) params[part.slice(1)] = decodeURIComponent(got[i]!);
-    else if (part !== got[i]) return undefined;
+    if (part.startsWith(":")) {
+      try { params[part.slice(1)] = decodeURIComponent(got[i]!); } catch { return "malformed"; }
+    } else if (part !== got[i]) return undefined;
   }
   return params;
 }
@@ -110,6 +133,10 @@ async function readBody(req: IncomingMessage): Promise<{ ok: true; body: unknown
  * route needs a live session. An owner route also needs the session's account to be the agent's owner, read fresh
  * from the platform on every request because ownership can change: the platform's own checks prove this server may
  * act for the agent, not that the person in the browser owns it.
+ *
+ * An agent that doesn't exist and an agent someone else owns get the same answer, `not_owner`, so a signed-in
+ * stranger can't tell which agents exist. The platform's own failures are logged, never forwarded: the browser gets
+ * `not_owner` or `unavailable`.
  */
 async function admit(route: Route, call: Call, deps: Deps): Promise<Reply | Identity | undefined> {
   if (route.method !== "GET") {
@@ -121,8 +148,16 @@ async function admit(route: Route, call: Call, deps: Deps): Promise<Reply | Iden
   if (route.access === "session") return undefined;
   if (!parse(contract.agentName, call.params.agent)) return refused(400, "bad_request");
   const identity = await deps.platform.identity(call.params.agent!);
-  if (!identity.ok) return platformFailure(identity);
-  if (identity.value.owner !== call.account) return fail(403, { ok: false, kind: "not_owner" });
+  if (!identity.ok) {
+    log("platform_identity_failed", { agent: call.params.agent, kind: identity.kind, ..."status" in identity && { status: identity.status }, ..."error" in identity && { error: identity.error } });
+    // No such agent, or one this deployment can't see: to the browser, the same as someone else's agent.
+    return identity.kind === "refused" || identity.kind === "forbidden" ? notOwner() : unavailable();
+  }
+  if (identity.value.deployment !== deps.deployment) {
+    log("deployment_mismatch", { agent: call.params.agent, expected: deps.deployment, got: identity.value.deployment });
+    return unavailable();
+  }
+  if (identity.value.owner !== call.account) return notOwner();
   const { agent, owner, agentId, host } = identity.value;
   return { agent, owner, agentId, host };
 }
@@ -142,6 +177,7 @@ export function createServer(deps: Deps) {
       let found: { route: Route; params: Record<string, string> } | undefined;
       for (const route of routes) {
         const params = match(route, req.method ?? "", pathname);
+        if (params === "malformed") return send(refused(400, "bad_request"));
         if (params) { found = { route, params }; break; }
       }
       if (!found) return send(refused(404, "not_found"));
@@ -153,9 +189,8 @@ export function createServer(deps: Deps) {
       if (admitted && "status" in admitted) return send(admitted);
       send(await found.route.handle({ ...call, ...(admitted && { identity: admitted }) }, deps));
     } catch (error) {
-      // The error's own name and message only: never the request, its cookie or its body.
-      console.error(JSON.stringify({ error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), path: req.url?.split("?")[0] }));
-      if (!res.headersSent) send(fail(500, { ok: false, kind: "unavailable", error: "internal error" }));
+      log("internal_error", { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), path: req.url?.split("?")[0] });
+      if (!res.headersSent) send(unavailable());
       else res.destroy();
     }
   };

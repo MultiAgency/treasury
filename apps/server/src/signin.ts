@@ -5,20 +5,22 @@ export type Challenge = { message: string; recipient: string; nonce: string };
 export type SignedChallenge = { accountId: string; publicKey: string; signature: string; nonce: string };
 export type SignInResult =
   | { ok: true; account: string }
-  | { ok: false; kind: "refused"; code: "rate_limited" | "unknown_challenge" | "expired" | "bad_signature" | "not_full_access" }
+  | { ok: false; kind: "refused"; code: "rate_limited" | "too_many_challenges" | "unknown_challenge" | "expired" | "bad_signature" | "not_full_access" }
   | { ok: false; kind: "unavailable" };
 
 /**
  * Owner sign-in with a NEP-413 signature over a challenge this server issued, addressed to this server's own host.
  * The signature is checked first, with no RPC call; only then does the chain say whether the key is a full-access key
  * of the signing account. Each challenge is single-use: it's spent by the first attempt, whatever that attempt's outcome.
+ * At most `maxOutstanding` challenges are outstanding at once, however many addresses ask, so memory stays bounded.
  */
-export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Date.now }: {
+export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, maxOutstanding = 10_000, now = Date.now }: {
   /** This server's host: the NEP-413 recipient, never the platform's. */
   recipient: string;
   keyLookup: KeyLookup;
   ttlMs: number;
   perMinute: number;
+  maxOutstanding?: number;
   now?: () => number;
 }) {
   const message = `Sign in to the Treasury app at ${recipient}`;
@@ -33,11 +35,12 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
   };
   return {
     /** A fresh challenge for `client` (its address), at most `perMinute` a minute. */
-    challenge(client: string): { ok: true; value: Challenge } | { ok: false; kind: "refused"; code: "rate_limited" } {
+    challenge(client: string): { ok: true; value: Challenge } | { ok: false; kind: "refused"; code: "rate_limited" | "too_many_challenges" } {
       const at = now();
       prune(at);
       const times = asked.get(client) ?? [];
       if (times.length >= perMinute) return { ok: false, kind: "refused", code: "rate_limited" };
+      if (issued.size >= maxOutstanding) return { ok: false, kind: "refused", code: "too_many_challenges" };
       asked.set(client, [...times, at]);
       const nonce = Buffer.from(generateNonce()).toString("base64");
       issued.set(nonce, at + ttlMs);
