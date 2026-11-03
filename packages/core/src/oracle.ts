@@ -12,9 +12,11 @@ export const ORACLE_DEFAULTS = {
   maxDisagreementPct: 2,
   /** A quote older than this many milliseconds is stale. */
   maxStalenessMs: 5 * 60_000,
+  /** A quote dated this far ahead of `now` is still accepted (clock skew between a source and this machine). */
+  maxFutureSkewMs: 5_000,
 } as const;
 
-export type OracleLimits = { minSources: number; maxDisagreementPct: number; maxStalenessMs: number };
+export type OracleLimits = { minSources: number; maxDisagreementPct: number; maxStalenessMs: number; maxFutureSkewMs: number };
 
 export type PriceQuote = {
   source: string;
@@ -40,28 +42,34 @@ export function median(values: readonly number[]): number {
 
 /**
  * Checks one asset's quotes at `now`.
- * - A quote counts only if it is for this asset, has a finite price above zero, and wasn't observed in the future.
- * - If a source appears twice, only its newest quote counts.
+ * - A quote counts only if it is for this asset, has a finite price above zero, and isn't dated more than
+ *   `maxFutureSkewMs` ahead of `now` (a little clock skew is tolerated; the skew value is to be calibrated against the
+ *   real sources, H5).
+ * - If a source appears twice, only its newest quote counts. Source names are compared ignoring case and surrounding
+ *   spaces, so "Binance" and "binance " are one source.
  * - A quote older than `maxStalenessMs` is stale and doesn't count.
  * - Fewer than `minSources` counted quotes freezes the reading (`stale` when stale quotes caused the shortfall,
- *   else `insufficient-sources`). Counted quotes more than `maxDisagreementPct` apart freeze it as `disagreement`.
+ *   else `insufficient-sources`). At least one fresh quote is always required, even if `minSources` is set lower, so an
+ *   empty set freezes and never reaches the median. Counted quotes more than `maxDisagreementPct` apart freeze it as `disagreement`.
  */
 export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: number, limits: OracleLimits = ORACLE_DEFAULTS): QuoteCheck {
   const newest = new Map<string, PriceQuote>();
   for (const q of quotes) {
-    if (q.asset !== asset || !Number.isFinite(q.price) || q.price <= 0 || !Number.isFinite(q.observedAt) || q.observedAt > now) continue;
-    const seen = newest.get(q.source);
-    if (!seen || q.observedAt > seen.observedAt) newest.set(q.source, q);
+    if (q.asset !== asset || !Number.isFinite(q.price) || q.price <= 0 || !Number.isFinite(q.observedAt) || q.observedAt > now + limits.maxFutureSkewMs) continue;
+    const key = q.source.trim().toLowerCase();
+    const seen = newest.get(key);
+    if (!seen || q.observedAt > seen.observedAt) newest.set(key, q);
   }
   const valid = [...newest.values()];
   const fresh = valid.filter(q => now - q.observedAt <= limits.maxStalenessMs);
 
-  if (fresh.length < limits.minSources) {
+  const needed = Math.max(1, limits.minSources);
+  if (fresh.length < needed) {
     const stale = valid.length - fresh.length;
     return {
       frozen: true,
-      reason: stale > 0 && valid.length >= limits.minSources ? "stale" : "insufficient-sources",
-      detail: `${fresh.length} fresh of ${limits.minSources} needed sources (${stale} stale)`,
+      reason: stale > 0 && valid.length >= needed ? "stale" : "insufficient-sources",
+      detail: `${fresh.length} fresh of ${needed} needed sources (${stale} stale)`,
       quotes: fresh,
     };
   }
