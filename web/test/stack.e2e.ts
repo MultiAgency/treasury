@@ -47,7 +47,7 @@ const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ st
 test("signed in, the Treasury's frame shows its owner, the wallet and the page asked for", async () => {
   await home.goto(`${dashboard}/a/portfolio/`);
   await visible(home.getByRole("region", { name: "Treasury owner" }));
-  assert.match(await home.getByRole("region", { name: "Treasury owner" }).innerText(), new RegExp(account.replace(".", "\\.")));
+  assert.match(await home.getByRole("region", { name: "Treasury owner" }).innerText(), new RegExp(account.replaceAll(".", "\\.")));
   await visible(home.getByRole("button", { name: `Wallet: ${account}`, exact: true }));
   assert.equal(await home.title(), "Treasury · Overview");
   assert.equal(await home.getByRole("link", { name: "Back to overview" }).count(), 0, "the overview has no way back to itself");

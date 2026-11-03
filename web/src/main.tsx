@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
+import { hashKey, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { gatewayRead, isTreasury, scopeOfKey, type Gateway } from "./platform";
@@ -39,7 +39,7 @@ onSessionChange(() => { void queryClient.invalidateQueries({ queryKey: gatewayRe
 // tab), every earlier account's agent records leave memory.
 let viewer: string | null | undefined;
 queryClient.getQueryCache().subscribe(event => {
-  if (event.type !== "updated" || event.action.type !== "success" || event.query.queryHash !== JSON.stringify(gatewayRead.queryKey)) return;
+  if (event.type !== "updated" || event.action.type !== "success" || event.query.queryHash !== hashKey(gatewayRead.queryKey)) return;
   const session = (event.query.state.data as Gateway | undefined)?.viewer ?? null;
   // The refreshed permissions answer for the account now signed in, so earlier denials no longer stand in for them.
   settleDenials(session);

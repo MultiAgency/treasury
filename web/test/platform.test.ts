@@ -100,6 +100,8 @@ test("the gateway's session: discovery is parsed or refused, never guessed", asy
   await assert.rejects(gateway.me(), /unexpected response/);
   answers.push(json({ agents: "nope" }));
   await assert.rejects(gateway.me(), /invalid discovery data/);
+  answers.push(() => new Response("<html>", { headers: { "content-type": "text/html" } }));
+  await assert.rejects(gateway.challenge(), /unexpected response/);
 });
 
 test("self-service Treasury: a gateway that names no setup areas sets up every area", async () => {

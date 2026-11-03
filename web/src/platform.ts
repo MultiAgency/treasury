@@ -53,9 +53,14 @@ export type Challenge = { message: string; recipient: string; nonce: string };
 /** The wallet's NEP-413 signature over a challenge, with the callback URLs some wallets sign without saying. */
 export type SignedChallenge = { accountId: string; publicKey: string; signature: string; nonce: string; callbackUrls: string[] };
 
-/** One call to a gateway route; its `{ error }` answer is thrown, and a 401/403 is reported as a denial first. */
+const unexpected = (status: number) => new Error(`The hosted gateway returned an unexpected response (${status}).`);
+const isJson = (response: Response) => response.headers.get("content-type")?.includes("application/json") ?? false;
+
+/** One call to a gateway route; its `{ error }` answer is thrown, and a 401/403 is reported as a denial first. A success
+ * that isn't JSON throws: never an empty answer in its place. */
 async function gw<T>(path: `/gw/${string}`, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
+  if (response.ok && !isJson(response)) throw unexpected(response.status);
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (response.ok) return body;
   const message = body.error ?? `${path}: ${response.status}`;
@@ -71,8 +76,7 @@ export const gateway = {
   /** Who is signed in on this host and the agents they may see. A missing or malformed answer throws: never a guess. */
   async me(): Promise<Gateway> {
     const response = await fetch("/gw/me");
-    if (!response.headers.get("content-type")?.includes("application/json"))
-      throw new Error(`The hosted gateway returned an unexpected response (${response.status}).`);
+    if (!isJson(response)) throw unexpected(response.status);
     const body: unknown = await response.json();
     if (!response.ok) {
       const failure = z.object({ error: z.string() }).safeParse(body);

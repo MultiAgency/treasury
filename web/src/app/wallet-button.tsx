@@ -33,8 +33,14 @@ export function WalletButton() {
       <ErrorBox error={error} />
     </div>;
   }
-  return <Button variant="outline" size="sm" className="h-auto max-w-full whitespace-normal py-3" disabled={wallet.status === "connecting"} onClick={() => connect().catch(() => {})}>
-    {wallet.status === "connecting" ? <Spinner /> : <WalletIcon size={16} />}
-    Connect wallet
-  </Button>;
+  return <div className="flex max-w-sm flex-col items-end gap-2">
+    <Button variant="outline" size="sm" className="h-auto max-w-full whitespace-normal py-3" disabled={wallet.status === "connecting"} onClick={() => {
+      setError(undefined);
+      connect().catch(e => setError(errorMessage(e)));
+    }}>
+      {wallet.status === "connecting" ? <Spinner /> : <WalletIcon size={16} />}
+      Connect wallet
+    </Button>
+    <ErrorBox error={error} />
+  </div>;
 }
