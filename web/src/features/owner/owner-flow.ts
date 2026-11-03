@@ -1,4 +1,5 @@
 import { answered, failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type OwnerActionRecord, type Setup, type Transaction } from "../../platform.ts";
+import { transactionOutcome } from "../../app/wallet-transaction.ts";
 import { awaitingOutcome, CONFIRM_GRACE_MS, observeOwnerAction, pendingNote } from "./owner-observation.ts";
 
 export { CONFIRM_GRACE_MS } from "./owner-observation.ts";
@@ -131,9 +132,10 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
     // A member who may also vote files and casts their vote together; the DAO threshold still applies.
     const filing = access?.canVote && prepared.dao.proposalAndVote ? prepared.dao.proposalAndVote : prepared.dao.proposal;
     if (ownWallet && filing) {
-      const outcome = (await wallets.sendAsMember(filing)) as { status?: { Failure?: unknown } } | undefined;
-      // Reverted as one, so nothing was filed: most likely another proposal took the id the vote named.
-      if (outcome?.status?.Failure) throw new Error(`The transaction failed, so nothing was filed. Try again. ${JSON.stringify(outcome.status.Failure)}`);
+      const outcome = transactionOutcome(await wallets.sendAsMember(filing));
+      // Reverted as one, so nothing was filed: most likely another proposal took the id the vote named. Any outcome the
+      // wallet doesn't report as settled is followed by its record below, never filed again.
+      if (outcome.kind === "failed") throw new Error(`The transaction failed, so nothing was filed. Try again. ${JSON.stringify(outcome.failure)}`);
     } else {
       // The member's own filing needs the DAO's policy, which the server couldn't read: Trezu files it instead.
       if (ownWallet) await wallets.ensureDao(setup.dao.id);

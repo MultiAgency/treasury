@@ -14,7 +14,9 @@ import { ago, fromUnits, toUnits } from "../../shared/format";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, input, Loading, QueryError, Section, short, Spinner } from "../../shared/ui";
 import { ConfirmButton } from "../owner/confirm-button";
 import { dao } from "../owner/wallet";
-import { decimalsOf, fundingTransfer, type Funding, type FundingAsset, type Transfer } from "./funding-transaction";
+import { transactionOutcome } from "../../app/wallet-transaction";
+import { blockFunding, useFundingBlock } from "./funding-block";
+import { decimalsOf, expiryProblem, fundingTransfer, type Funding, type FundingAsset, type Transfer } from "./funding-transaction";
 
 const api = () => agent(AGENT!);
 
@@ -117,9 +119,10 @@ function Fund({ treasury }: { treasury: Treasury }) {
   const queryClient = useQueryClient();
   const reads = useAgentReads();
   const fund = useAttempt();
-  // After a wallet or Trezu error, whether the transfer went out (or the proposal was filed) isn't known: not offered again.
-  const [mayHaveSent, setMayHaveSent] = useState(false);
-  const canFund = useCanCall("treasury/fund") && !fund.unknown && !mayHaveSent;
+  // After a wallet or Trezu error, or an outcome it doesn't report, whether the transfer went out (or the proposal was
+  // filed) isn't known: not offered again while the page is loaded, even if this component mounts again.
+  const blocked = useFundingBlock(AGENT!);
+  const canFund = useCanCall("treasury/fund") && !fund.unknown && !blocked;
   const signer = useTreasurySigner(treasury);
   const [asset, setAsset] = useState<FundingAsset>("USDC");
   const [value, setValue] = useState("");
@@ -135,7 +138,7 @@ function Fund({ treasury }: { treasury: Treasury }) {
   const prepare = (amount: string) => fund.attempt(async () => {
     setWaiting("Preparing the transfer…");
     const funding = answered(await api().act("treasury/fund", { asset, amount }));
-    const read = fundingTransfer(funding, asset, amount);
+    const read = fundingTransfer(funding, asset, amount, { dao: signer.isDao });
     if ("problem" in read) throw new Error(read.problem);
     setReview({ funding, transfer: read.transfer, account: treasury.accountId });
   });
@@ -145,22 +148,30 @@ function Fund({ treasury }: { treasury: Treasury }) {
     setWaiting("Complete funding in your wallet…");
     const linked = await queryClient.fetchQuery({ ...reads.treasury, staleTime: 0 });
     if (linked?.accountId !== reviewed.account) throw new Error(`The linked account is no longer ${reviewed.account}. Nothing was sent; review the transfer again.`);
-    let outcome: unknown;
+    // The address may have come close to expiring while the review was open.
+    const expired = expiryProblem(reviewed.funding.deposit.expiresAt, Date.now());
+    if (expired) throw new Error(expired);
+    const mayHaveSent = signer.isDao
+      ? `The proposal may have been filed: check ${reviewed.account}'s requests in Trezu before filing again.`
+      : `The transfer may have been sent: check ${reviewed.account} and this agent's balances before sending again.`;
+    let sent: unknown;
     try {
-      outcome = await signer.send(reviewed.funding.transaction);
+      sent = await signer.send(reviewed.funding.transaction);
     } catch (error) {
-      setMayHaveSent(true);
-      throw new Error(`${errorMessage(error)} ${signer.isDao
-        ? `The proposal may have been filed: check ${reviewed.account}'s requests in Trezu before filing again.`
-        : `The transfer may have been sent: check ${reviewed.account} and this agent's balances before sending again.`}`);
+      blockFunding(AGENT!, mayHaveSent);
+      throw new Error(`${errorMessage(error)} ${mayHaveSent}`);
     }
+    const outcome = transactionOutcome(sent);
     // One receipt, reverted as one: nothing moved, or nothing was filed.
-    const failure = (outcome as { status?: { Failure?: unknown } } | undefined)?.status?.Failure;
-    if (failure) throw new Error(`The transaction failed, so nothing was ${signer.isDao ? "filed" : "sent"}. ${JSON.stringify(failure)}`);
+    if (outcome.kind === "failed") throw new Error(`The transaction failed, so nothing was ${signer.isDao ? "filed" : "sent"}. ${JSON.stringify(outcome.failure)}`);
+    if (outcome.kind === "unknown") {
+      blockFunding(AGENT!, mayHaveSent);
+      throw new Error(`The wallet didn't report how the transaction ended. ${mayHaveSent}`);
+    }
     setValue("");
     setSubmitted(false);
     if (!signer.isDao) return "Sent. The book updates once the deposit lands.";
-    const id = proposalId(outcome);
+    const id = proposalId(sent);
     setProposal(id);
     return `Filed in Trezu${id === null ? "" : ` as proposal #${id}`}. It pays out once the DAO approves.`;
   });
@@ -184,8 +195,9 @@ function Fund({ treasury }: { treasury: Treasury }) {
           <code className="break-all rounded-xl bg-muted px-4 py-3">{review.transfer.address}</code>
           <p className="text-muted-foreground">
             Through the <code className="break-all">{review.transfer.contract}</code> contract, with {review.transfer.storage} NEAR attached to
-            register the address.{review.funding.deposit.expiresAt && ` The address expires ${ago(review.funding.deposit.expiresAt)}.`}
+            register the address.{review.transfer.expiresAt && ` The address expires ${ago(review.transfer.expiresAt)}.`}
           </p>
+          {review.transfer.caveat && <p className="text-warning-muted-foreground">{review.transfer.caveat}</p>}
           <div className="flex flex-wrap justify-end gap-3">
             <Button variant="ghost" disabled={fund.busy} onClick={() => setReview(undefined)}>Cancel</Button>
             <Button disabled={fund.busy || !canFund || !signer.ready} onClick={() => sign(review)}>{signLabel}</Button>
@@ -227,6 +239,7 @@ function Fund({ treasury }: { treasury: Treasury }) {
       )}
       <p role="status" className="text-sm text-success-muted-foreground">{fund.busy ? waiting : fund.message}</p>
       {proposal !== undefined && <a className="text-sm underline" href={`https://trezu.app/${treasury.accountId}/requests${proposal === null ? "" : `/${proposal}`}`} target="_blank" rel="noopener noreferrer">Review and vote in Trezu</a>}
+      {blocked && !fund.error && <p role="status" className="text-sm text-warning-muted-foreground">{blocked}</p>}
       <ErrorBox error={fund.error} />
     </div>
   );
@@ -337,8 +350,10 @@ function ConfidentialSetting({ treasury }: { treasury: Treasury }) {
 }
 
 export function TreasurySection() {
-  const { treasury, data, setup } = useAgent();
-  const linked = useQuery({ ...useAgentReads().treasury, enabled: false });
+  const { data, setup } = useAgent();
+  // This section's own read: a failure is shown here, never as the frame's, and nothing else waits for it.
+  const linked = useQuery(useAgentReads().treasury);
+  const treasury = linked.data ?? null;
   const unlink = useAttempt();
   const empty = data.book.every((h) => BigInt(h.public) + BigInt(h.confidential) === 0n);
   if (linked.error) return <Section title="Receive funds"><p>Linked account could not be checked.</p><QueryError error={linked.error} retry={() => linked.refetch()} /></Section>;

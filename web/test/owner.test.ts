@@ -170,6 +170,26 @@ test("a DAO proposal: Trezu unless the member may propose with a connected walle
   assert.deepEqual(member.asked, ["sendAsMember"], "filed from the member's own wallet, without Trezu");
 });
 
+test("a member's filing the wallet reports as failed, as a string or an object, filed nothing; one it doesn't report is followed", async () => {
+  const daoPrepared = json({ json: { correlationId: "d1", preview: { summary: "Freeze" }, expiresAt: "2030-01-01T00:00:00Z", digest: null,
+    dao: { owner: "dao.near", transaction: { receiverId: "dao", actions: [] }, proposal: { receiverId: "dao", actions: [] }, proposalAndVote: null } } });
+  const asMember = { setup: daoSetup, signer: "dao" as const, access: { canPropose: true, canVote: false } };
+  for (const status of ["Failure", { Failure: { ActionError: {} } }]) {
+    sent.length = 0;
+    const member = wallet({ memberConnected: async () => true, sendAsMember: async () => ({ status }) });
+    answers.push(none, daoPrepared);
+    const ended = await freeze(member.wallets, asMember);
+    assert.match(!ended.ok ? (ended.error as Error).message : "", /^The transaction failed, so nothing was filed\./, JSON.stringify(status));
+    assert.deepEqual(sent, ["owner/actions", "owner/prepare"], "not followed: nothing was filed");
+  }
+  // Started, but not reported settled: whether it was filed isn't known, so its record is followed, never filed again.
+  sent.length = 0;
+  const started = wallet({ memberConnected: async () => true, sendAsMember: async () => ({ status: "Started" }) });
+  answers.push(none, daoPrepared, json({ json: { stage: "submitted", status: "SUCCESS" } }));
+  assert.deepEqual(await freeze(started.wallets, asMember), { ok: true });
+  assert.deepEqual(sent, ["owner/actions", "owner/prepare", "owner/status"]);
+});
+
 test("a confirm answer: nothing is signed or submitted here; the owner is sent to the confirm page and the action is followed", async () => {
   const { wallets, asked } = wallet();
   const confirming = json({ json: { correlationId: "p1", preview: { summary: "Change the policy" }, expiresAt: "2030-01-01T00:00:00Z", digest: "sha256:d",
