@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/
 import type { ComponentType, ReactNode } from "react";
 import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
 import { OwnerControls } from "../features/owner/owner";
+import { TreasuryDesk } from "../features/portfolio/treasury-desk";
 import { Shell, useAgent } from "./frame";
 import { BASE } from "./location";
 import { PAGES, type Page } from "./pages";
@@ -39,7 +40,7 @@ function ActivityPage() {
 }
 
 /** A page that has moved here; a pending one shows its placeholder, with any ported feature it belongs to below it. */
-const PORTED: Partial<Record<Page, () => ReactNode>> = { "/activity": ActivityPage };
+const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/activity": ActivityPage };
 const BELOW_PLACEHOLDER: Partial<Record<Page, ComponentType>> = { "/policy": Freeze };
 
 const root = createRootRoute({ component: Shell });

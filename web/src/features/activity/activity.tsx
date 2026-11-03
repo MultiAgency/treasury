@@ -139,10 +139,11 @@ export function Unresolved() {
 const PROBE_KINDS = new Set(["refusal", "verify-refusal", "probe"]);
 const isProbe = (op: { kind: string }) => PROBE_KINDS.has(op.kind);
 
-function Row({ op, book, nameOf }: { op: ActivityRow; book: Overview["book"]; nameOf: (account: string) => string }) {
+/** One recorded operation. `idPrefix` keeps its anchor unique where it's listed twice; `showRefusalCode` adds the raw code. */
+export function Row({ op, book, nameOf, idPrefix = "", showRefusalCode = false }: { op: ActivityRow; book: Overview["book"]; nameOf: (account: string) => string; idPrefix?: string; showRefusalCode?: boolean }) {
   const probe = isProbe(op);
   return (
-    <li id={op.correlationId ? `operation-${op.correlationId}` : undefined} className="scroll-mt-48 flex flex-wrap items-center gap-x-4 gap-y-1 border-b py-3 text-sm last:border-0">
+    <li id={op.correlationId ? `${idPrefix}operation-${op.correlationId}` : undefined} className="scroll-mt-48 flex flex-wrap items-center gap-x-4 gap-y-1 border-b py-3 text-sm last:border-0">
       <span className="whitespace-nowrap text-muted-foreground sm:w-32">{ago(op.at)}</span>
       <span className="w-20 font-medium capitalize">{probe ? "Policy test" : op.kind}</span>
       <span className="order-last basis-full tabular-nums sm:order-none sm:basis-0 sm:flex-1">{describeRequest(op.request, book, nameOf)}</span>
@@ -159,6 +160,7 @@ function Row({ op, book, nameOf }: { op: ActivityRow; book: Overview["book"]; na
           <Badge tone={statusTone(op.status)}>{op.status?.toLowerCase() ?? "unsettled"}</Badge>
         )}
       </span>
+      {showRefusalCode && op.refused && <p className="order-last basis-full break-all text-xs text-muted-foreground">Refusal code: <code>{op.refused}</code></p>}
       {op.correlationId && (
         <Details summary="Operation reference" className="order-last basis-full">
           <span className="flex flex-wrap items-center gap-2">

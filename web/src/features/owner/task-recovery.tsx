@@ -12,7 +12,11 @@ export const SCHEDULE_STOP_SCOPE = "Stopping the schedule prevents future schedu
 /** Reads a stop changes: the schedule and the strategy it runs. */
 const scheduleRead = (key: readonly unknown[]) => typeof key[1] === "string" && /^(autopilot|strategy)\//.test(key[1]);
 
-export function StopSchedule() {
+/**
+ * Stopping the schedule, wherever it's offered: who may stop it here and why not, the stop sent once per click, and its
+ * result kept for the caller to show.
+ */
+export function useStopSchedule() {
   const viewer = useViewer();
   const api = useMemo(() => agent(AGENT!), []);
   const queryClient = useQueryClient();
@@ -21,6 +25,11 @@ export function StopSchedule() {
   const canStop = useCanCall("autopilot/stop");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OwnerResult<unknown>>();
+  const reason = !canStop ? "Your account cannot stop the schedule."
+    : instance.isPending ? "Checking executor identity…"
+    : instance.error ? "Executor identity is unavailable. Check again before stopping the schedule."
+    : instance.data?.executor === false ? "Stop the schedule on the executor; this instance is approve-only."
+    : !instance.data?.agentId ? "No agent is configured on this instance." : undefined;
   const stop = async () => {
     setBusy(true);
     setResult(undefined);
@@ -30,16 +39,28 @@ export function StopSchedule() {
     // An unknown outcome may have changed anything: every read is read again, and nothing is sent again.
     await queryClient.invalidateQueries(!stopped.ok && stopped.kind === "unknown" ? undefined : { predicate: query => scheduleRead(query.queryKey) });
   };
+  return { stop, busy, result, instance, reason, disabled: reason !== undefined || busy };
+}
+
+/** Why the schedule can't be stopped here, and a failed identity read with its retry; nothing when it can. */
+export function StopBlocked({ control: { instance, reason } }: { control: ReturnType<typeof useStopSchedule> }) {
+  return <>
+    {reason && (instance.isPending ? <Loading label={reason} /> : <p>{reason}</p>)}
+    {instance.error && <QueryError error={instance.error} retry={() => instance.refetch()} />}
+  </>;
+}
+
+/** The stop's outcome: its status once stopped, or its failure. */
+export function StopResult({ control: { result } }: { control: ReturnType<typeof useStopSchedule> }) {
+  return <>{result?.ok && <p role="status">{SCHEDULE_STOPPED}</p>}<ErrorBox error={result && !result.ok ? failureMessage(result) : undefined} /></>;
+}
+
+export function StopSchedule() {
+  const control = useStopSchedule();
   return <Section title="Schedule">
     <p>{SCHEDULE_STOP_SCOPE}</p>
-    {!canStop ? <p>Your account cannot stop the schedule.</p>
-      : instance.isPending ? <Loading label="Checking executor identity…" />
-      : instance.error ? <p>Executor identity is unavailable. Check again before stopping the schedule.</p>
-      : instance.data?.executor === false ? <p>Stop the schedule on the executor; this instance is approve-only.</p>
-      : !instance.data?.agentId ? <p>No agent is configured on this instance.</p> : null}
-    {instance.error && <QueryError error={instance.error} retry={() => instance.refetch()} />}
-    <Button variant="outline" disabled={!canStop || !instance.data?.agentId || instance.data.executor !== true || busy}
-      onClick={stop}>Turn off</Button>
-    {result?.ok && <p role="status">{SCHEDULE_STOPPED}</p>}<ErrorBox error={result && !result.ok ? failureMessage(result) : undefined} />
+    <StopBlocked control={control} />
+    <Button variant="outline" disabled={control.disabled} onClick={control.stop}>Turn off</Button>
+    <StopResult control={control} />
   </Section>;
 }
