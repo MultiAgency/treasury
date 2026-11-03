@@ -220,5 +220,7 @@ export function reads(name: string, viewer: string | null) {
     unresolved: queryOptions({ queryKey: [key, "unresolved"], queryFn: ({ signal }) => api.read("unresolved", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
     books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
+    autopilot: queryOptions({ queryKey: [key, "autopilot/get"], queryFn: ({ signal }) => api.read("autopilot/get", undefined, { signal }), retry: false,
+      refetchInterval: 30_000 }),
   };
 }

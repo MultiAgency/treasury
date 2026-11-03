@@ -12,13 +12,10 @@ export const SCHEDULE_STOP_SCOPE = "Stopping the schedule prevents future schedu
 /** Reads a stop changes: the schedule and the strategy it runs. */
 const scheduleRead = (key: readonly unknown[]) => typeof key[1] === "string" && /^(autopilot|strategy)\//.test(key[1]);
 
-export function StopSchedule() {
-  const viewer = useViewer();
+/** Stopping the schedule, wherever it's offered: sent once per click, and its result kept for the caller to show. */
+export function useStopSchedule() {
   const api = useMemo(() => agent(AGENT!), []);
   const queryClient = useQueryClient();
-  // Provider-independent identity is an observation, never permission to send.
-  const instance = useQuery(reads(AGENT!, viewer?.account ?? null).instance);
-  const canStop = useCanCall("autopilot/stop");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OwnerResult<unknown>>();
   const stop = async () => {
@@ -30,6 +27,15 @@ export function StopSchedule() {
     // An unknown outcome may have changed anything: every read is read again, and nothing is sent again.
     await queryClient.invalidateQueries(!stopped.ok && stopped.kind === "unknown" ? undefined : { predicate: query => scheduleRead(query.queryKey) });
   };
+  return { stop, busy, result };
+}
+
+export function StopSchedule() {
+  const viewer = useViewer();
+  // Provider-independent identity is an observation, never permission to send.
+  const instance = useQuery(reads(AGENT!, viewer?.account ?? null).instance);
+  const canStop = useCanCall("autopilot/stop");
+  const { stop, busy, result } = useStopSchedule();
   return <Section title="Schedule">
     <p>{SCHEDULE_STOP_SCOPE}</p>
     {!canStop ? <p>Your account cannot stop the schedule.</p>

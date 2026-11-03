@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { dropSignatureResponse, dropSwapResponse, revealOwnerOutcome, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import type { OwnerActionRecord, OwnerStatus } from "../src/platform.ts";
 
 
@@ -62,6 +62,43 @@ test("signed in, the Treasury's frame shows its owner, the wallet and the page a
   await home.waitForURL(`${dashboard}/a/portfolio/funding`);
 });
 
+test("the Overview shows the schedule, the book, its allocation against the target and the signed limits", async () => {
+  await home.goto(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("heading", { level: 1, name: "Treasury overview", exact: true }));
+  const schedule = home.getByRole("region", { name: "Schedule status" });
+  await visible(schedule.getByRole("status").filter({ hasText: "Schedule: off" }));
+  assert.equal(await schedule.getByRole("button", { name: "Turn off schedule" }).count(), 0, "an off schedule offers nothing to turn off");
+
+  await visible(home.getByText("Book value", { exact: true }));
+  await visible(home.getByText("Held privately", { exact: true }));
+  await visible(home.getByRole("heading", { level: 2, name: "Allocation", exact: true }));
+  for (const symbol of ["USDC", "wNEAR", "ETH"])
+    await visible(home.getByRole("row").filter({ has: home.getByText(symbol, { exact: true }) }).first());
+
+  await visible(home.getByRole("heading", { level: 2, name: "Signed limits", exact: true }));
+  const windows = home.getByRole("table", { name: "USD budget windows" });
+  for (const period of ["Daily", "Weekly", "Monthly"]) await visible(windows.getByRole("rowheader", { name: period, exact: true }));
+
+  await home.getByRole("navigation", { name: "Treasury tools" }).getByRole("link", { name: "Set targets and schedule" }).click();
+  await home.waitForURL(`${dashboard}/a/portfolio/automations`);
+});
+
+test("the Overview reads the saved target and the book: a saved strategy and public funds show on reload", async () => {
+  await setTargets(target, { [USDC]: 7000, [WNEAR]: 2000, [ETH]: 1000 });
+  await home.goto(`${dashboard}/a/portfolio/`);
+  const row = (symbol: string) => home.getByRole("row").filter({ has: home.getByText(symbol, { exact: true }) }).first();
+  await visible(row("USDC").getByText(/· 70%/));
+  await visible(row("wNEAR").getByText(/· 20%/));
+  await visible(row("ETH").getByText(/· 10%/));
+
+  const held = async () => Number((await row("USDC").getByText(/ USDC$/).innerText()).replace(/ USDC$/, ""));
+  const before = await held();
+  await fundPublic(target, USDC, "2500000");
+  await home.reload();
+  await visible(row("USDC"));
+  assert.equal(await held(), before + 2.5, "2.5 USDC arrived on the public balance");
+});
+
 test("the host's root opens the account's treasury; another area's agent isn't shown", async () => {
   await home.goto(`${dashboard}/`);
   await home.waitForURL(`${dashboard}/a/portfolio/`);
@@ -95,9 +132,10 @@ test("disconnecting the wallet signs out this tab and the others; connecting sig
 /** axe's WCAG 2.x A and AA rules, at any impact: a violation is a defect, not a warning. Best-practice rules aren't run. */
 const axe = async (page: Page) => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations.map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
 
-test("no axe violations on the signed-out page or the signed-in frame", async () => {
+test("no axe violations on the signed-out page or the Overview", async () => {
   await home.goto(`${dashboard}/a/portfolio/`);
-  await visible(home.getByRole("region", { name: "Treasury owner" }));
+  await visible(home.getByRole("heading", { level: 1, name: "Treasury overview", exact: true }));
+  await visible(home.getByRole("status").filter({ hasText: "Schedule: off" }));
   assert.deepEqual(await axe(home), []);
   // A page this connection opens has no session: the signed-out page.
   const signedOut = await owner.newPage();
@@ -341,6 +379,18 @@ test("after a lost swap reply, Activity lists the unresolved operation and says 
     assert.equal((await rpc<unknown[]>(home, "unresolved")).length, 1, `still unresolved after check ${time}`);
     assert.equal((await rpc<unknown[]>(home, "activity")).length, rows, `nothing new was recorded by check ${time}`);
   }
+});
+
+test("after the lost swap reply, the Overview shows the unresolved operation, and its recorded refusals leave it out", async () => {
+  await home.goto(`${dashboard}/a/portfolio/`);
+  await visible(home.getByRole("heading", { level: 1, name: "Treasury overview", exact: true }));
+  await visible(home.getByRole("heading", { name: "Unresolved operations", exact: true }));
+  await visible(home.getByRole("status").filter({ hasText: /^New sends are blocked by 1 unresolved operation\.$/ }));
+  // The simulated provider refuses no swap, so the stack records none: the lost swap is in Activity, but it wasn't refused.
+  assert.equal((await rpc<unknown[]>(home, "activity")).length, 1);
+  await home.getByText("Review recorded refusals", { exact: true }).click();
+  await visible(home.getByText("No refusals found in the retained records returned.", { exact: true }));
+  assert.deepEqual(await axe(home), []);
 });
 
 test("the overview fails while setup loads: Activity still lists the unresolved operation, under the overview's error", async () => {

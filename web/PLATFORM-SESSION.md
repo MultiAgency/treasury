@@ -34,10 +34,21 @@ Kept, with the same role, name and meaning:
 | Ledger CSV | button | | #8 |
 | Review existing operation records | link (setup unavailable, off Activity) | | #8 |
 | Retained records remain available. Current provider outcomes are not confirmed here. | status text | | #8 |
+| Treasury overview | heading (level 1) | | #7 PR 1 |
+| Schedule status | region | | #7 PR 1 |
+| Schedule: `on · every <n> minutes`, `off`, `checking…` or `unavailable` | status | | #7 PR 1 |
+| Turn off schedule | button (while the schedule is on or unconfirmed): #6's stop, as "Turn off" sends it | | #7 PR 1 |
+| Book value, Budget or `<period>` budget left, Held privately | figure labels | | #7 PR 1 |
+| Allocation, Signed limits | heading (level 2) | | #7 PR 1 |
+| USD budget windows | table, with row headers Daily, Weekly, Monthly | | #7 PR 1 |
+| Edit policy | link | | #7 PR 1 |
+| Treasury tools: Set targets and schedule, View treasury runs, Balances and funding | navigation, links | | #7 PR 1 |
+| View activity | link | | #7 PR 1 |
+| Review recorded refusals | disclosure summary, under Signed limits; its rows are Activity's, with "Refusal code: `<code>`" | | #7 PR 1 |
 
 The Activity page's text comes from the prototype's A8 (`send-block`) change, which exists only uncommitted in `dao/treasury`'s working tree, not at `d999861`: `BlockedSummary` and `blockedBy` (`src/shared/send-block.ts`), and its wording of a replacement as an "operation", not a "payment". `/does not establish that nothing was sent/` stays in `Activity`'s per-plan view, which the portfolio's plan outcome uses (#7); the treasury-migration spec asserts it absent after a refusal before sending.
 
-Added: each page has an `<h1>` with its title (Overview, Strategy, and so on), placeholder or ported (Activity: "Operation status"). In A, only the Overview ("Treasury overview") and the guided run had one.
+Added: each page has an `<h1>` with its title (Strategy, Runs, and so on), placeholder or ported (Activity: "Operation status"). In A, only the Overview ("Treasury overview", kept) and the guided run had one.
 
 Page titles are unchanged: `Treasury · <page>`, with the prototype's page names (Overview, Strategy, Runs, Balances & funding, Policy & grants, Guided walkthrough, Operation status).
 
@@ -49,10 +60,13 @@ Changed or not present yet:
 | Setup unavailable | The retained-records task (operation status, run timeline) below the alert | The alert and "Retry setup"; on `/automations` the "Schedule" section with "Turn off", and on `/activity` the retained records (unresolved operations, owner actions and operation history), as in A; elsewhere a "Review existing operation records" link to `/activity`. Records already loaded stay shown when a later setup read fails | #9 (run): the run timeline on `/follow/run` |
 | An agent not yet created | Onboarding | Status text: "This Treasury agent hasn't been created yet." | #12 (creation) |
 | A self-service host's root | Treasury creation | A "Your treasuries" heading with a link per treasury agent | #12 (creation) |
-| Every page under `/a/<agent>/` but Activity | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9–#12 |
+| Every page under `/a/<agent>/` but the Overview and Activity | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9–#12 |
 | The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered: the frame leaves those two pages to their own control, as in A, and the pages are placeholders | #7 (portfolio) |
 | `/policy` | The "Owner controls" section (`h2`), with "Freeze the agent" or "Unfreeze the agent" (`h3`) and Freeze or Unfreeze | Below the placeholder: "Freeze the agent" or "Unfreeze the agent" (`h2`, as no section holds it yet) and Freeze or Unfreeze | #10 (policy) |
 | An owner action's "Follow the payment outcome" | A link to `/follow/payment?payment=<id>` | A link to `/activity`: this app has no page for one payment | Permanent |
+| The Overview's rebalance: the "Quoted rebalance" region (Preview, Execute, the policy's no-swaps note) and the followed plan's outcome ("Follow the outcome") | Shown | Not shown | #7 PR 3 |
+| The Overview's "Confidential sweep" region (Shield) | Shown | Not shown | #11 (funding's `sweep.tsx`); its send block with #7 PR 3 |
+| The Overview's "Known limitations" section and its "Requirements and evidence" disclosure | Shown | Not shown: both come from `features/evidence` (showcase), which the brief leaves behind | Permanent |
 | The frame on a new agent | The setup's next step (`SetupNextStep`) | Not shown | #12 (creation) |
 
 A wallet connected to another account than the session's shows a status note under the wallet button ("This wallet is connected to `<wallet>`, but you're signed in as `<account>`. Owner actions are unavailable until they match."), and owner controls stay disabled; a sign-out the gateway doesn't confirm shows its error there instead of reloading. Neither changes a name the specs query.
@@ -76,7 +90,7 @@ An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not
 
 - **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe's WCAG A and AA rules on every page it opens (any violation fails it) and checks the keyboard paths.
 - **`contract.json` is checked both ways** (`test/contract.test.ts`): every procedure and gateway route the app calls is covered by a required capability, and every required capability is used, per the SDK's `ownerCapabilities`.
-- **`features/workspace` is left behind.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Its one live module, `attention.ts`, moves with portfolio. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
+- **`features/workspace` is left behind.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Nor does `attention.ts`: it renders only through `DaoHome` and portfolio's `overview.tsx`, and `overview.tsx` only through `legacy/surface.ts` (the `@legacy` alias is `absent.ts` unless `PUBLIC_TREASURY_ONLY` is `"false"`). A's Treasury build serves `TreasuryDesk` at `/`, so B's Overview ports that, without the "Needs attention" list; `overview.tsx` and `attention.ts` stay behind. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
 - **Treasury creation** (`create-treasury`, `onboarding`, `setup-progress`) is its own issue.
 - **`@orpc/tanstack-query` is dropped.** A's data layer wrapped an oRPC proxy client in `@orpc/tanstack-query` (beta.44), a second oRPC beside the SDK's bundled beta.47. `src/platform.ts` builds TanStack Query options for reads itself; actions and streams never go through a query.
 - **`contract.json` grows per feature.** Step 1 requires `gateway-session-v1` and `agent-observe-v1`; Activity adds `treasury-observe-v1` (`reconcileBooks`, `ledgerCsv`) and `treasury-recovery-v1` (`recover`); each feature adds the capabilities its procedures need (platform `src/contract/owner-capabilities.ts`).

@@ -1,12 +1,17 @@
 import { ASSETS } from "@multiagency/sdk";
 import type { Overview } from "../platform";
+import { totalUsd } from "./prices";
+export { fromUnits } from "./amounts";
 
-type Holding = Overview["book"][number];
+export type Holding = Overview["book"][number];
 
 /** Whether the policy lets the agent swap. The target allocation, rebalancing and the steward apply only then. */
 export const swaps = (data: Overview) => Boolean(data.policy.policy?.actions.includes("swap"));
 
-const units = (raw: bigint | string, decimals: number) => Number(raw) / 10 ** decimals;
+export const units = (raw: bigint | string, decimals: number) => Number(raw) / 10 ** decimals;
+
+/** The book's value at the API's prices. */
+export const bookValue = (data: Pick<Overview, "book">) => totalUsd(data.book);
 
 /** Payouts are confidential USDC, which an empty wallet's book doesn't list. */
 const USDC = { asset: ASSETS.USDC, decimals: 6, symbol: "USDC" };
@@ -27,11 +32,16 @@ export function describeRequest(request: Record<string, unknown>, book: Holding[
       : JSON.stringify(request);
 }
 
-const amount = (raw: bigint | string, h: Pick<Holding, "decimals" | "symbol">) => {
+export const amount = (raw: bigint | string, h: Pick<Holding, "decimals" | "symbol">) => {
   const n = units(raw, h.decimals);
   const digits = n === 0 ? 0 : n < 1 ? 5 : n < 100 ? 3 : 2;
   return `${n.toLocaleString("en-US", { maximumFractionDigits: digits })} ${h.symbol}`;
 };
+
+export const usd = (n: number | string | null | undefined) =>
+  n == null
+    ? "—"
+    : Number(n).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 export function ago(iso: string) {
@@ -40,3 +50,10 @@ export function ago(iso: string) {
     if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
   return relative.format(Math.round(seconds), "second");
 }
+
+/** Per-asset colour, used everywhere an asset appears in a chart. */
+export const ASSET_COLOR: Record<string, string> = {
+  USDC: "bg-chart-3",
+  wNEAR: "bg-chart-2",
+  ETH: "bg-chart-1",
+};
