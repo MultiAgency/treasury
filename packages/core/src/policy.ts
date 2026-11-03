@@ -23,7 +23,10 @@ export type PolicyLimits = {
   maxSlippageBps: number;
 };
 
-export type PolicyRule = "INVALID_INPUT" | "ORDER_SIZE" | "DAILY_TURNOVER" | "ORDER_RATE" | "SLIPPAGE";
+export type PolicyRule = "INVALID_INPUT" | "ORDER_SIZE" | "DAILY_TURNOVER" | "ORDER_RATE" | "SLIPPAGE" | "VENUE_EXPOSURE" | "CASH_FLOOR";
+
+/** The order rules are reported in: the first failing one is the result's `rule`. */
+export const RULE_ORDER: readonly PolicyRule[] = ["INVALID_INPUT", "ORDER_SIZE", "DAILY_TURNOVER", "ORDER_RATE", "SLIPPAGE", "VENUE_EXPOSURE", "CASH_FLOOR"];
 
 /** What the check needs. The treasury value is one snapshot taken when the order was proposed, never re-read mid-check. */
 export type PolicyContext = {
