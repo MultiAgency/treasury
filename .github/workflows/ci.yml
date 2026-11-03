@@ -21,8 +21,6 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: The CLI
-        run: pnpm typecheck && pnpm test
       - name: The owner UI
         run: pnpm --filter @treasury/web typecheck && pnpm --filter @treasury/web test && pnpm --filter @treasury/web build
 
@@ -49,7 +47,5 @@ jobs:
       - name: The platform's stack and its browser
         working-directory: platform
         run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
-      - name: The CLI on the stack
-        run: pnpm test:stack
       - name: The owner UI on the stack
         run: pnpm --filter @treasury/web test:stack

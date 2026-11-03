@@ -4,7 +4,6 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { ROLES, type Role } from "../src/config.ts";
 
 /** The platform commit the stack runs from: the one `@multiagency/sdk` 0.4.0 was published from (tag `sdk-v0.4.0`). */
 export const PLATFORM_COMMIT = "1a7fe98";
@@ -16,9 +15,9 @@ export const ETH = "nep141:eth.omft.near";
 export type Stack = { directory: string; origin: string; agent: string; ca: string };
 
 export function stack(directory: string): Stack {
-  const state = JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as { treasury?: { agent: string; machineBase: string } };
+  const state = JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as { dashboard: string; treasury?: { agent: string } };
   if (!state.treasury) throw new Error("Start the stack with --treasury");
-  return { directory, origin: new URL(state.treasury.machineBase).origin, agent: state.treasury.agent, ca: join(directory, "environment", "localhost.crt") };
+  return { directory, origin: new URL(state.dashboard).origin, agent: state.treasury.agent, ca: join(directory, "environment", "localhost.crt") };
 }
 
 /**
@@ -71,24 +70,14 @@ async function control<T>({ directory }: Stack, command: Record<string, unknown>
   return result.value;
 }
 
-/** The platform's credential lifetimes (`src/gateway/machine-auth.ts` at 1a7fe98). */
-export const TTL = { min: 60, max: 86_400 } as const;
-
-/** The owner issues a `portfolio` machine credential for the role, with its scopes, as on its access page. Returns the token. */
-export async function issue(target: Stack, role: Role, ttlSeconds: number): Promise<string> {
-  if (!Number.isInteger(ttlSeconds) || ttlSeconds < TTL.min || ttlSeconds > TTL.max)
-    throw new Error(`ttlSeconds must be an integer from ${TTL.min} to ${TTL.max}`);
-  return (await control<{ token: string }>(target, { command: "machineCredential", label: `treasury ${role}`, scopes: ROLES[role].scopes, ttlSeconds })).token;
-}
-
 /** The owner saves `portfolio`'s targets through `strategy/save`, which turns autopilot off. Answers the strategy's digest. */
 export async function setTargets(target: Stack, targetBps: Record<string, number>): Promise<string> {
   return (await control<{ digest: string }>(target, { command: "setTargets", targetBps })).digest;
 }
 
 /**
- * The owner signs a grant bound to `portfolio`'s saved strategy, which a machine credential's `executePlan` needs. Saving
- * the strategy again unbinds it. Answers the digest the grant binds.
+ * The owner signs a grant bound to `portfolio`'s saved strategy, which turning autopilot on and an app's `executePlan`
+ * need (the platform's `src/strategy-readiness.ts`, `src/planning/strategy-grant.ts`). Saving the strategy again unbinds it. Answers the digest the grant binds.
  */
 export async function authorizeStrategy(target: Stack): Promise<string> {
   return (await control<{ digest: string }>(target, { command: "authorizeStrategy" })).digest;
