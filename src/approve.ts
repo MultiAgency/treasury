@@ -25,7 +25,7 @@ export async function sweep(sweeper: Machine<"sweep">, execute: boolean, onEvent
     onEvent(event);
   }, sent);
   // A preview takes no money lock and returns after its plan event, before any dispatch (the platform's
-  // `src/treasury.ts:157`, `:172` at 766b3f3): a lost preview is a lost read.
+  // `src/treasury.ts:157`, `:172` at 1a7fe98): a lost preview is a lost read.
   if (!execute && !ended.ok && ended.kind === "unknown") return { ok: false, kind: "unavailable" };
   return settle(ended, legs, null, sent);
 }

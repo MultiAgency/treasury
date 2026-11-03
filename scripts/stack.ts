@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 766b3f3), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 1a7fe98), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { ROLES, type Role } from "../src/config.ts";
 
-/** The platform commit the stack runs from: the one `@multiagency/sdk` 0.3.1 was published from (tag `sdk-v0.3.1`). */
-export const PLATFORM_COMMIT = "766b3f3";
+/** The platform commit the stack runs from: the one `@multiagency/sdk` 0.4.0 was published from (tag `sdk-v0.4.0`). */
+export const PLATFORM_COMMIT = "1a7fe98";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";
@@ -71,7 +71,7 @@ async function control<T>({ directory }: Stack, command: Record<string, unknown>
   return result.value;
 }
 
-/** The platform's credential lifetimes (`src/gateway/machine-auth.ts` at 766b3f3). */
+/** The platform's credential lifetimes (`src/gateway/machine-auth.ts` at 1a7fe98). */
 export const TTL = { min: 60, max: 86_400 } as const;
 
 /** The owner issues a `portfolio` machine credential for the role, with its scopes, as on its access page. Returns the token. */
@@ -84,6 +84,14 @@ export async function issue(target: Stack, role: Role, ttlSeconds: number): Prom
 /** The owner saves `portfolio`'s targets through `strategy/save`, which turns autopilot off. Answers the strategy's digest. */
 export async function setTargets(target: Stack, targetBps: Record<string, number>): Promise<string> {
   return (await control<{ digest: string }>(target, { command: "setTargets", targetBps })).digest;
+}
+
+/**
+ * The owner signs a grant bound to `portfolio`'s saved strategy, which a machine credential's `executePlan` needs. Saving
+ * the strategy again unbinds it. Answers the digest the grant binds.
+ */
+export async function authorizeStrategy(target: Stack): Promise<string> {
+  return (await control<{ digest: string }>(target, { command: "authorizeStrategy" })).digest;
 }
 
 /** Funds arriving on `portfolio`'s public balance (raw units), outside a confidential deposit: what a sweep shields. */

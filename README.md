@@ -1,6 +1,6 @@
 # treasury
 
-The Treasury app, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.3.1. It shows two SDK surfaces for Treasury agents:
+The Treasury app, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.4.0. It shows two SDK surfaces for Treasury agents:
 
 | | Surface | Reached with | Where |
 | --- | --- | --- | --- |
@@ -9,7 +9,7 @@ The Treasury app, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@m
 
 Under direction B, both move to the app's own routes on the platform (`/apps/v1`). For the UI, that switch is confined to its one platform module, `web/src/platform.ts`. The app path today (`appClient`, owner consents, payout requests) is demonstrated by the MultiAgency dashboard.
 
-The machine route covers Treasury agents owned by a wallet only. A DAO-owned agent is refused, since a member's permissions aren't the DAO's consent. The platform host doesn't serve the machine route yet, so both surfaces run against the platform's simulated stack at [`766b3f3`](https://github.com/MultiAgency/platform/commit/766b3f3) (tag `sdk-v0.3.1`, the commit SDK 0.3.1 was published from). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. The CLI's host, agent and credentials live in `.env`.
+The machine route covers Treasury agents owned by a wallet only. A DAO-owned agent is refused, since a member's permissions aren't the DAO's consent. The platform host doesn't serve the machine route yet, so both surfaces run against the platform's simulated stack at [`1a7fe98`](https://github.com/MultiAgency/platform/commit/1a7fe98) (tag `sdk-v0.4.0`, the commit SDK 0.4.0 was published from). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. The CLI's host, agent and credentials live in `.env`.
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
 
@@ -28,15 +28,15 @@ Nothing on this route signs owner actions or changes policy, grants, schedules o
 
 Two limits are the owner's to manage, not the route's:
 
-- **An execute credential runs any eligible saved plan of this Treasury** within that plan's 5-minute life, not only the one you mean to approve. The gateway checks the credential's scope, not which plan it executes (the platform's `src/gateway/machine-auth.ts`). Execute only the plan ID you mean, and issue execute credentials with a short lifetime.
-- **An execute credential has no spending budget of its own.** Each plan runs exactly its saved actions, but the credential can execute any number of eligible plans. Autopilot's per-run `maxUsd` applies only to autopilot (the platform's `src/autopilot.ts`). Only the owner's policy and grants cap the total, and spending caps don't cap market exposure.
+- **An execute credential runs any eligible saved plan of this Treasury** within that plan's 5-minute life, not only the one you mean to approve. The gateway checks the credential's scope, not which plan it executes (the platform's `src/gateway/machine-auth.ts`). A plan is eligible only while the owner's live grant binds the strategy it was planned under, which the owner signs once per saved strategy; saving the strategy again, by the owner or an app, refuses its plans until the owner signs again (the platform's `src/planning/strategy-grant.ts`). Execute only the plan ID you mean, and issue execute credentials with a short lifetime.
+- **An execute credential has no spending budget of its own.** Each plan runs exactly its saved actions, but the credential can execute any number of eligible plans. Autopilot's per-run `maxUsd` applies only to autopilot (the platform's `src/autopilot.ts`). Only the owner's policy and grants cap the total, and spending caps don't cap market exposure. The strategy-bound grant fixes which strategy plans run under, not how many.
 
 ## Run it on the simulated stack
 
 Requires Node ≥ 24.22 and pnpm 12.15.
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 766b3f3
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 1a7fe98
 (cd ../platform && pnpm install --frozen-lockfile && pnpm test:e2e:stack --no-browser --treasury)
 ```
 
@@ -47,9 +47,12 @@ pnpm install
 pnpm stack:credential <run>/stack propose        # the owner issues a read + prepare credential into .env
 export NODE_EXTRA_CA_CERTS=<run>/stack/environment/localhost.crt
 pnpm treasury status
+pnpm stack:authorize <run>/stack                 # the owner signs a grant bound to the saved strategy; prints its digest
 ```
 
 `stack:credential` acts as the owner through the stack's `machineCredential` control. It takes a role (`propose`, `execute` or `sweep`) and an optional lifetime in whole seconds from 60 to 86400 (default 3600), and prints the platform's error if issuing fails. It writes the token into `.env` through a new 0600 file renamed over it, so the token is never readable under another mode. Other lines, comments and blank lines are kept, and the token is never printed. Node reads `NODE_EXTRA_CA_CERTS` before it loads `.env`, so the stack's CA is exported in the shell instead.
+
+`stack:authorize` acts as the owner through the stack's `authorizeStrategy` control: it signs a grant bound to the saved strategy and prints the strategy's digest. `execute` refuses every plan until it has run, and again after the strategy is saved, so run it again then.
 
 ## Commands
 
@@ -93,7 +96,7 @@ pnpm stack:credential <run>/stack execute 600
 pnpm stack:credential <run>/stack sweep 600
 ```
 
-On the stack, the simulator quotes a swap between any two listed tokens, so `rebalance` works against the stack's default targets (USDC 50%, wNEAR 25%, ETH 25%). The stack test sets the owner's targets with the stack's `setTargets` control, which saves them through `strategy/save` as the owner and turns autopilot off. This repository reaches the stack only through its state file and control files.
+On the stack, the simulator quotes a swap between any two listed tokens, so `rebalance` works against the stack's default targets (USDC 50%, wNEAR 25%, ETH 25%). The stack test sets the owner's targets with the stack's `setTargets` control, which saves them through `strategy/save` as the owner and turns autopilot off, then signs the owner's grant bound to that strategy with the `authorizeStrategy` control. This repository reaches the stack only through its state file and control files.
 
 ## Checks
 
@@ -103,7 +106,7 @@ pnpm test                                  # unit tests
 pnpm test:stack                            # the CLI end to end on a fresh stack it starts and stops
 ```
 
-The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`), which must be checked out at 766b3f3 with its dependencies installed, and stops it afterwards. The stack's files go under the platform's `.test-artifacts/`, as its own runs' do. A run takes under a minute. It issues its own credentials, kept in memory and never written to `.env`, and covers:
+The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`), which must be checked out at 1a7fe98 with its dependencies installed, and stops it afterwards. The stack's files go under the platform's `.test-artifacts/`, as its own runs' do. A run takes under a minute. It issues its own credentials, kept in memory and never written to `.env`, and covers:
 - a proposed rebalance executed once with the owner's confirmation, and refused when executed again;
 - a swap the agent refuses to plan (`refused`, exit 2);
 - scope refusals;
@@ -111,11 +114,11 @@ The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`),
 - an outage of the agent's provider (`setUnavailable` on `portfolio`), which the gateway answers with `forbidden`;
 - last, a lost swap reply (`dropSwapResponse`): `execute` exits 3, reads the records, and the swap was applied once and not resent. The operation stays unresolved until the owner's `recover`, which leaves that stack blocked; it's stopped afterwards anyway.
 
-`test/commands.test.ts` covers the same outcomes with a faked client (`provider`, `unavailable`, `unknown`: their exit codes, and that `unknown` reads `unresolved` and `activity` and never resends). It also covers every row of the execution mapping above: rejected before any leg, rejected after a leg, `FAILED`/`REFUNDED` legs, unsettled legs and shields, sweep shields, a lost preview, a throw mid-stream, and usage errors. `test/stack-credential.test.ts` runs the credential script against a fake stack directory.
+`test/commands.test.ts` covers the same outcomes with a faked client (`provider`, `unavailable`, `unknown`: their exit codes, and that `unknown` reads `unresolved` and `activity` and never resends). It also covers every row of the execution mapping above: rejected before any leg, rejected after a leg, `FAILED`/`REFUNDED` legs, unsettled legs and shields, sweep shields, a lost preview, a throw mid-stream, and usage errors. `test/stack-credential.test.ts` and `test/stack-authorize.test.ts` run the credential and authorize scripts against a fake stack directory (`test/fake-stack.ts`).
 
 ## The owner UI
 
-`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.3.1 only. Nothing is imported from the platform's or the prototype's source.
+`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.4.0 only. Nothing is imported from the platform's or the prototype's source.
 
 - **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.
 - **Features port one at a time** from MultiAgency/treasury-prototype's `web/src`, each in its own issue. So far: the session and access (sign-in and out, account switches, access denials, the agent frame). The other pages show where their feature will land.
@@ -131,4 +134,4 @@ pnpm --filter @treasury/web test:stack  # builds, then drives the build on a fre
 
 The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
 
-CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests and the build for both packages on every pull request and push to `main`, then both stack tests on a stack from the platform at 766b3f3. It needs `../platform` (or `TREASURY_PLATFORM`) at 766b3f3 with its dependencies installed, as the CLI's stack test does.
+CI (`.github/workflows/ci.yml`) runs typecheck, the unit tests and the build for both packages on every pull request and push to `main`, then both stack tests on a stack from the platform at 1a7fe98. It needs `../platform` (or `TREASURY_PLATFORM`) at 1a7fe98 with its dependencies installed, as the CLI's stack test does.

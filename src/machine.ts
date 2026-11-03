@@ -2,7 +2,7 @@ import { ownerClient, type OwnerClient, type OwnerFailure, type OwnerInputs, typ
 import { token, type Config, type Granted, type Role } from "./config.ts";
 
 /**
- * What each machine credential scope reaches on `/machine/v1` (the platform's `src/gateway/machine-auth.ts` at 766b3f3).
+ * What each machine credential scope reaches on `/machine/v1` (the platform's `src/gateway/machine-auth.ts` at 1a7fe98).
  * Scopes don't imply one another: preparing doesn't permit executing, and executing doesn't permit reading.
  */
 export const SCOPES = {

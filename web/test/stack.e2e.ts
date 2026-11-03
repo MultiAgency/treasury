@@ -1,4 +1,4 @@
-// The owner UI on a fresh simulated stack (the platform at 766b3f3) that serves this build: `pnpm test:stack`.
+// The owner UI on a fresh simulated stack (the platform at 1a7fe98) that serves this build: `pnpm test:stack`.
 // The stack's browser starts the owner signed in; these tests attach to it over CDP, as the platform's specs' clients do.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
