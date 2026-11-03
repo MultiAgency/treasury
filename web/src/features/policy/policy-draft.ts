@@ -1,6 +1,6 @@
 import type { OwnerAction, Overview } from "../../platform.ts";
 // With their extensions: test/policy.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
-import { fromUnits, type Holding, toUnits, usd } from "../../shared/format.ts";
+import { fromUnits, type Holding, symbolOf, toUnits } from "../../shared/format.ts";
 
 /** The policy form's model, apart from any page: what the owner may edit, and what a draft changes. */
 
@@ -52,14 +52,17 @@ export function draftOf(policy: AgentPolicy, book: Holding[]): Draft {
   };
 }
 
-/** The changes a draft asks for, or the first field that isn't a valid amount. */
+/**
+ * The changes a draft asks for, or the first field that isn't a valid amount. A cap is read only for an asset the draft
+ * allows: the form hides the others, so their caps stay as signed.
+ */
 export function changesOf(draft: Draft, book: Holding[], policy: AgentPolicy): { changes: PolicyChanges } | { invalid: string } {
   const limits: Partial<Record<Window, Record<string, string>>> = {};
   for (const [window, label] of WINDOWS) {
     // Preserve caps for assets this form cannot display or edit.
     const entries: Record<string, string> = { ...policy.limits?.[window] };
     for (const h of book) {
-      if (!Object.hasOwn(draft.caps[window], h.asset)) continue;
+      if (!Object.hasOwn(draft.caps[window], h.asset) || !allowsAsset(draft, h.asset)) continue;
       const value = draft.caps[window][h.asset]?.trim();
       if (!value) { delete entries[h.asset]; continue; }
       const existing = policy.limits?.[window]?.[h.asset];
@@ -75,8 +78,10 @@ export function changesOf(draft: Draft, book: Holding[], policy: AgentPolicy): {
   >;
   for (const [key, label] of BUDGET)
     if (budget[key] !== null && !/^\d+(\.\d+)?$/.test(budget[key])) return { invalid: `the budget ${label}` };
-  const rate = draft.rate.trim() ? Number(draft.rate) : null;
-  if (rate !== null && !(Number.isInteger(rate) && rate > 0)) return { invalid: "actions an hour" };
+  // Digits only, so what is reviewed is what is signed: Number() would read "0x10" as 16 and "1e3" as 1000.
+  const typed = draft.rate.trim();
+  if (typed && !(/^[1-9]\d*$/.test(typed) && Number.isSafeInteger(Number(typed)))) return { invalid: "actions an hour" };
+  const rate = typed ? Number(typed) : null;
   return {
     changes: {
       swap: draft.swap,
@@ -89,22 +94,26 @@ export function changesOf(draft: Draft, book: Holding[], policy: AgentPolicy): {
   };
 }
 
-/** One line per field the draft changes, in the words the envelope uses. */
+/**
+ * One line per field the draft changes, in the words the envelope uses, with each value exactly as it is signed: the
+ * typed budget, not one rounded for display. A hidden asset's caps aren't changed, so they aren't listed.
+ */
 export function differences(before: Draft, after: Draft, book: Holding[]) {
-  const symbol = (asset: string) => book.find((h) => h.asset === asset)?.symbol ?? asset;
-  const list = (assets: Draft["assets"]) => assets === "any" ? "any asset" : assets.map(symbol).sort().join(", ") || "none";
+  const list = (assets: Draft["assets"]) => assets === "any" ? "any asset" : assets.map(a => symbolOf(a, book)).sort().join(", ") || "none";
   const lines: string[] = [];
   const change = (label: string, from: string, to: string) => from !== to && lines.push(`${label}: ${from} → ${to}`);
   change("Swaps", before.swap ? "allowed" : "off", after.swap ? "allowed" : "off");
   change("Assets", list(before.assets), list(after.assets));
   change("Owner approval", before.ownerApproval ? "every payment" : "not required", after.ownerApproval ? "every payment" : "not required");
-  change("Actions an hour", before.rate || "no cap", after.rate || "no cap");
-  for (const [key, label] of BUDGET)
-    change(`Budget ${label}`, before.budget[key] ? usd(before.budget[key]) : "none", after.budget[key] ? usd(after.budget[key]) : "none");
+  change("Actions an hour", before.rate.trim() || "no cap", after.rate.trim() || "no cap");
+  for (const [key, label] of BUDGET) {
+    const was = before.budget[key].trim(), now = after.budget[key].trim();
+    change(`Budget ${label}`, was ? `${was} USD` : "none", now ? `${now} USD` : "none");
+  }
   for (const [window, label] of WINDOWS)
-    for (const h of book) {
-      const was = before.caps[window][h.asset];
-      const now = after.caps[window][h.asset];
+    for (const h of book.filter(h => allowsAsset(after, h.asset))) {
+      const was = before.caps[window][h.asset]?.trim();
+      const now = after.caps[window][h.asset]?.trim();
       change(`${h.symbol} ${label.toLowerCase()}`, was ? `${was} ${h.symbol}` : "none", now ? `${now} ${h.symbol}` : "none");
     }
   return lines;

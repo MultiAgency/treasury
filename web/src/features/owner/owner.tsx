@@ -9,7 +9,7 @@ import { useCanCall, useViewer } from "../../app/viewer";
 import { connect, useWallet } from "../../app/wallet";
 import { Button, ErrorBox, Spinner, errorMessage } from "../../shared/ui";
 import { ownerSigner, runOwnerAction, type Signer, type Step } from "./owner-flow";
-import { awaitingOutcome } from "./owner-observation";
+import { awaitingOutcome, pendingNote } from "./owner-observation";
 import { wallets } from "./wallet";
 
 export { ownerSigner, type Signer } from "./owner-flow";
@@ -31,7 +31,9 @@ const minutesSeconds = (seconds: number) => `${Math.floor(seconds / 60)}:${Strin
 
 /**
  * One owner action at a time, through `runOwnerAction`, as React state. After a submission whose outcome is unknown,
- * nothing is signed again from this page until a status read settles it.
+ * nothing is signed again from this page until a status read settles it. `pending(types)` is the recorded action of
+ * those types whose outcome isn't known yet, on this page or another, after a reload too: while there is one, the page
+ * offers none of them, and `run` reads the records again before preparing.
  */
 export function useOwnerAction(setup: Setup) {
   const api = useMemo(() => agent(AGENT!), []);
@@ -40,6 +42,7 @@ export function useOwnerAction(setup: Setup) {
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; observation.current?.abort(); }; }, []);
   const viewer = useViewer();
+  const records = useQuery(reads(AGENT!, viewer?.account ?? null).ownerActions);
   const canPrepare = useCanCall("owner/prepare");
   // A caller may await fresh records before invoking an older render's run callback.
   const permissions = useRef({ viewer, canPrepare });
@@ -81,6 +84,7 @@ export function useOwnerAction(setup: Setup) {
     } });
     unsettled.current = ended.ok ? undefined : ended.unknown;
     live(() => {
+      if (!ended.ok && ended.earlier) setCorrelationId(ended.earlier.correlationId);
       setUnknown(unsettled.current);
       if (!ended.ok) setError(errorMessage(ended.error));
       setStep("idle");
@@ -108,7 +112,8 @@ export function useOwnerAction(setup: Setup) {
     correlationId && <Link key="follow" to="/activity" hash={`owner-${correlationId}`} className="underline">Follow owner action</Link>,
   ].filter(Boolean);
   const label = parts.length ? <>{parts.flatMap((part, i) => i ? [" · ", part] : [part])}</> : null;
-  return { run, correlationId, busy: step !== "idle", unknown, label, error, digest };
+  const pending = (types: readonly OwnerAction["type"][]) => awaitingOutcome(records.data ?? [], types);
+  return { run, pending, correlationId, busy: step !== "idle", unknown, label, error, digest };
 }
 
 /**
@@ -138,11 +143,9 @@ export function useSigner(setup: Setup) {
  */
 export function OwnerControls({ setup, frozen }: { setup: Setup; frozen: boolean }) {
   const wallet = useWallet();
-  const viewer = useViewer();
   const action = useOwnerAction(setup);
   const { viaDao, needsWallet, connectedNotOwner, permitted } = useSigner(setup);
-  const records = useQuery(reads(AGENT!, viewer?.account ?? null).ownerActions);
-  const waiting = awaitingOutcome(records.data ?? [], ["agent_freeze", "agent_unfreeze"]);
+  const waiting = action.pending(["agent_freeze", "agent_unfreeze"]);
   const [connectError, setConnectError] = useState<string>();
   const type = frozen ? "agent_unfreeze" : "agent_freeze";
   const verb = frozen ? "unfreeze" : "freeze";
@@ -153,7 +156,6 @@ export function OwnerControls({ setup, frozen }: { setup: Setup; frozen: boolean
     else await action.run({ type });
   };
 
-  const earlier = waiting && waiting.type.replace("agent_", "");
   return (
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center gap-3">
@@ -163,13 +165,22 @@ export function OwnerControls({ setup, frozen }: { setup: Setup; frozen: boolean
           {viaDao ? `Propose to ${verb}` : wallet.status === "connected" ? (frozen ? "Unfreeze" : "Freeze") : `Connect to ${verb}`}
         </Button>
       </div>
-      {(action.unknown || (waiting && !action.busy)) && <p role="status" className="max-w-prose text-right text-sm">
-        {action.unknown ?? <>{waiting!.stage === "submitted"
-          ? `An earlier ${earlier} was submitted and its outcome is still being checked. Do not sign again.`
-          : `An earlier ${earlier} was proposed to ${setup.dao?.id ?? "the DAO"} and awaits its vote. Do not propose again.`} <Link to="/activity" hash={`owner-${waiting!.correlationId}`} className="underline">Follow owner action</Link></>}
-      </p>}
+      <PendingNote action={action} waiting={waiting} setup={setup} className="max-w-prose text-right" />
       {connectedNotOwner && <span className="text-xs text-muted-foreground">Only {ownerName(setup)} can {verb}</span>}
       <ErrorBox error={connectError ?? action.error} />
     </div>
   );
+}
+
+/**
+ * Why an owner action isn't offered: the unknown outcome of this page's own submission, or an earlier recorded one of
+ * the same kind, with its record to follow.
+ */
+export function PendingNote({ action, waiting, setup, className = "" }: {
+  action: { unknown?: string; busy: boolean }; waiting?: { type: string; stage: string; signer: string; correlationId: string }; setup: Setup; className?: string;
+}) {
+  if (!action.unknown && !(waiting && !action.busy)) return null;
+  return <p role="status" className={`text-sm ${className}`}>
+    {action.unknown ?? <>{pendingNote(waiting!, setup.dao?.id)} <Link to="/activity" hash={`owner-${waiting!.correlationId}`} className="underline">Follow owner action</Link></>}
+  </p>;
 }

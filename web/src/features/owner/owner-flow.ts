@@ -1,5 +1,7 @@
-import { answered, failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type Setup, type Transaction } from "../../platform.ts";
-import { observeOwnerAction } from "./owner-observation.ts";
+import { answered, failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type OwnerActionRecord, type Setup, type Transaction } from "../../platform.ts";
+import { awaitingOutcome, CONFIRM_GRACE_MS, observeOwnerAction, pendingNote } from "./owner-observation.ts";
+
+export { CONFIRM_GRACE_MS } from "./owner-observation.ts";
 
 export type Signer = "wallet" | "dao";
 export type Step = "preparing" | "signing" | "confirming" | "filing" | "voting" | "settling";
@@ -32,9 +34,13 @@ export type Progress = {
 
 /**
  * How a run ended. `unknown` is set when a submission's outcome was unknown and no status read has settled it since:
- * nothing may be signed or submitted again while it is.
+ * nothing may be signed or submitted again while it is. `earlier` is the record of the same action whose outcome isn't
+ * known yet, when that is why nothing was prepared.
  */
-export type Ended = { ok: true } | { ok: false; error: unknown; unknown?: string };
+export type Ended = { ok: true } | { ok: false; error: unknown; unknown?: string; earlier?: OwnerActionRecord };
+
+/** How long a status that knows of no signature is still read for, for a window this page can't read: as long as any window the platform gives. */
+const CONFIRM_UNREAD_MS = 60 * 60_000;
 
 /**
  * One owner action end to end. The owner's wallet signs the API's payload directly, unless the platform answers
@@ -43,11 +49,38 @@ export type Ended = { ok: true } | { ok: false; error: unknown; unknown?: string
  * to sign, and the server submits the signature once the vote passes, inside the API's signing window. A submission
  * whose outcome is unknown is followed by its `correlationId`: never signed or submitted again.
  */
-export async function runOwnerAction({ api, wallets, setup, access, action, signer, signal, progress, intervalMs }: {
+export async function runOwnerAction({ api, wallets, setup, access, action, signer, signal, progress, intervalMs, now = Date.now }: {
   api: ReturnType<typeof agent>; wallets: Wallets; setup: Setup; access: { canPropose: boolean; canVote: boolean } | null;
-  action: OwnerAction; signer: Signer; signal: AbortSignal; progress: Progress; intervalMs?: number;
+  action: OwnerAction; signer: Signer; signal: AbortSignal; progress: Progress; intervalMs?: number; now?: () => number;
 }): Promise<Ended> {
   let unknown: string | undefined;
+  let earlier: OwnerActionRecord | undefined;
+
+  /** The record of this same action (for a vote, on the same payment) whose outcome isn't known yet, read now. */
+  async function pending() {
+    const records = await api.read("owner/actions", undefined);
+    return awaitingOutcome(action.type === "approval_vote" ? records.filter(r => r.payment?.correlationId === action.correlationId) : records,
+      [action.type], now());
+  }
+  /** Stops here, before anything more is prepared or signed, while such a record exists. */
+  function holdFor(record: OwnerActionRecord): never {
+    earlier = record;
+    throw new Error(pendingNote(record, setup.dao?.id));
+  }
+  /**
+   * Prepares the action. When the answer was lost the server may have recorded it (a DAO's, or a policy update the
+   * confirm page can sign): then that record is followed, not prepared again.
+   */
+  async function prepare(input: { action: OwnerAction; signer: Signer }) {
+    const result = await api.act("owner/prepare", input);
+    if (!result.ok && result.kind === "unknown") {
+      const record = await pending().catch(() => {
+        throw new Error("Preparing was interrupted, and the owner actions couldn’t be read to see whether it was recorded. Check them before preparing again.");
+      });
+      if (record) holdFor(record);
+    }
+    return answered(result);
+  }
 
   /** Whether an owner action ended the way it was meant to: a rejected payment is a reject vote's success. */
   async function ended(id: string, status?: string, failureCode?: string | null) {
@@ -60,17 +93,27 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
     if (!status) throw new Error("The owner action’s outcome isn’t confirmed. Check its record before signing again.");
     throw new Error(failureCode ?? `Ended ${status.toLowerCase()}`);
   }
-  /** Follows the action by its id. Until `unsigned` passes, a status that knows of no signature yet is read again. */
+  /**
+   * Follows the action by its id. For one held for the confirm page (`unsigned`, its window's end), a status that knows
+   * of no signature yet is read again: the platform's own expired, failed or submitted ends it. Only well past the
+   * window does this page stop reading, with the outcome still unknown.
+   */
   async function follow(id: string, unsigned?: string) {
+    const left = unsigned === undefined ? 0 : Date.parse(unsigned) - now();
+    const giveUp = now() + (Number.isNaN(left) ? CONFIRM_UNREAD_MS : Math.max(0, left) + CONFIRM_GRACE_MS);
     const state = await observeOwnerAction(signal => api.read("owner/status", { correlationId: id }, { signal }), signal,
       state => { if (state.stage === "submitting") progress.step("settling"); }, intervalMs,
-      state => state.stage === "voting" || state.stage === "submitting" || (state.stage === "unknown" && unsigned !== undefined && Date.now() < Date.parse(unsigned)));
+      state => state.stage === "voting" || state.stage === "submitting" || (state.stage === "unknown" && unsigned !== undefined && now() < giveUp));
     // A status read that ends in one of these settles the outcome; an unknown stage doesn't.
     if (state.stage === "submitted" || state.stage === "expired" || state.stage === "failed") unknown = undefined;
     if (state.stage === "submitted") return ended(id, state.status, state.failureCode);
     if (state.stage === "expired") throw new Error("The signing window closed. Review the existing owner action.");
     if (state.stage === "failed") throw new Error(state.error ?? "Owner action failed");
-    if (unsigned !== undefined) throw new Error("The confirm page's signing window closed with no signature recorded. Review the existing owner action before preparing it again.");
+    if (unsigned !== undefined) {
+      unknown = "The confirm page’s outcome isn’t known: no signature was recorded, and the platform hasn’t said the window closed. Follow the owner action’s record; nothing is prepared or signed again from here.";
+      progress.unknown(unknown);
+      throw new Error(unknown);
+    }
     throw new Error("Owner action needs review. Follow its existing record before signing again.");
   }
 
@@ -80,7 +123,7 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
     // signs; otherwise Trezu files it, as a generic "sign on v1.signer". Either is ready before anything is prepared.
     const ownWallet = Boolean(access?.canPropose) && await wallets.memberConnected();
     if (!ownWallet) await wallets.ensureDao(setup.dao.id);
-    const prepared = answered(await api.act("owner/prepare", { action, signer: "dao" }));
+    const prepared = await prepare({ action, signer: "dao" });
     if (!prepared.dao) throw new Error("The server did not prepare a DAO signature");
     progress.prepared(prepared.correlationId, prepared.digest);
     signal.throwIfAborted();
@@ -102,10 +145,10 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
   }
 
   async function viaWallet() {
-    const prepared = answered(await api.act("owner/prepare", {
+    const prepared = await prepare({
       action: action.type === "agent_create" ? { ...action, owner: await wallets.ownerWallet() } : action,
       signer: "wallet",
-    }));
+    });
     if (!prepared.intent && !prepared.confirm) throw new Error("The server did not prepare a wallet signature");
     progress.prepared(prepared.correlationId, prepared.digest);
     if (prepared.confirm) {
@@ -136,9 +179,12 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
 
   try {
     progress.step("preparing");
+    // Read first: an earlier one of these whose outcome isn't known is followed, never signed or proposed again.
+    const record = await pending().catch(() => { throw new Error("The owner actions couldn’t be read, so nothing was prepared. Try again."); });
+    if (record) holdFor(record);
     await (signer === "dao" ? viaDao() : viaWallet());
     return { ok: true };
   } catch (error) {
-    return { ok: false, error, ...(unknown && { unknown }) };
+    return { ok: false, error, ...(unknown && { unknown }), ...(earlier && { earlier }) };
   }
 }

@@ -299,6 +299,27 @@ test("Policy & grants: the policy in force, the owner's controls and the grants,
   assert.deepEqual(await axe(home), []);
 });
 
+test("with no policy to read, /policy still offers Freeze and the grants, and says the frozen state isn't confirmed", async () => {
+  // The overview answered with its policy unreadable (`policy.policy` null), as the provider can report it. The answer is
+  // read in the page: `route.fetch` runs in Node, which refuses the stack's self-signed certificate.
+  await home.goto(`${dashboard}/a/portfolio/policy`);
+  const body = await home.evaluate(async () => (await fetch("/a/portfolio/rpc/overview", { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ json: undefined }) })).json() as Promise<{ json: Overview; meta?: unknown }>);
+  body.json.policy.policy = null;
+  await home.route("**/a/portfolio/rpc/overview", route => route.fulfill({ json: body }));
+  try {
+    await home.goto(`${dashboard}/a/portfolio/policy`);
+    await visible(home.getByText("No policy available to review."));
+    await visible(home.getByRole("heading", { level: 3, name: "Freeze the agent", exact: true }));
+    await visible(home.getByText("The policy isn’t available, so whether the agent is frozen now isn’t confirmed."));
+    assert.equal(await home.getByRole("button", { name: "Freeze", exact: true }).isEnabled(), true);
+    await visible(home.getByRole("list", { name: "Live grants" }));
+    assert.deepEqual(await axe(home), []);
+  } finally {
+    await home.unroute("**/a/portfolio/rpc/overview");
+  }
+});
+
 test("a strategy-bound grant is listed under its label, as the current grant", async () => {
   // Signed the way #7's Strategy page signs it: bound to the strategy saved above.
   await authorizeStrategy(target);

@@ -6,7 +6,7 @@ import { connect, useWallet } from "../../app/wallet";
 import { ago } from "../../shared/format";
 import { Badge, Button, Card, Details, ErrorBox, Section, Spinner } from "../../shared/ui";
 import { ConfirmButton } from "../owner/confirm-button";
-import { useOwnerAction, useSigner } from "../owner/owner";
+import { PendingNote, useOwnerAction, useSigner } from "../owner/owner";
 
 /**
  * The agent's grants, including ended access. A live grant's token permits acting inside the policy;
@@ -19,6 +19,9 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
   const action = useOwnerAction(setup);
   const { viaDao, canSign, needsWallet, connectedNotOwner } = useSigner(setup);
   const [revoking, setRevoking] = useState<string>();
+  // An earlier revocation whose outcome isn't known, recorded on this page or another: no other is signed meanwhile.
+  const waiting = action.pending(["grant_revoke"]);
+  const blocked = action.busy || Boolean(action.unknown) || Boolean(waiting) || !canSign;
   const now = Date.now();
   const live = data.grants.filter((g) => !g.revoked_at && Date.parse(g.expires_at) > now);
   const ended = data.grants.filter((g) => g.revoked_at || Date.parse(g.expires_at) <= now);
@@ -50,7 +53,9 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
       <Section title="Grants" description="No live grant: the agent can't send until the owner issues one.">
         <Card>
           {issueButton}
+          {connectedNotOwner && <p className="text-xs text-muted-foreground">Only {ownerName(setup)} can revoke or issue grants. Connect that account.</p>}
           {ended.length > 0 && <Details summary={`Ended grants (${ended.length})`}>{history}</Details>}
+          <PendingNote action={action} waiting={waiting} setup={setup} />
           {action.label && <p className="text-sm text-muted-foreground">{action.label}</p>}
           <ErrorBox error={action.error} />
         </Card>
@@ -67,7 +72,7 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
     ) : held ? (
       <ConfirmButton
         label={label}
-        disabled={action.busy || Boolean(action.unknown) || !canSign}
+        disabled={blocked}
         path="owner/prepare"
         title="Revoke the current grant?"
         description="The agent stops: nothing moves until the owner issues a new grant. Operations it already committed still finish."
@@ -75,7 +80,7 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
         onConfirm={() => revoke(g.grant_id)}
       />
     ) : (
-      <Button size="sm" variant="outline" disabled={action.busy || Boolean(action.unknown) || !canSign} onClick={() => revoke(g.grant_id)}>
+      <Button size="sm" variant="outline" disabled={blocked} onClick={() => revoke(g.grant_id)}>
         {label}
       </Button>
     );
@@ -106,7 +111,7 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
           {connectedNotOwner && <p className="text-xs text-muted-foreground">Only {ownerName(setup)} can revoke or issue grants. Connect that account.</p>}
         <Details summary="Issue or renew a grant" open={hash === "grants"} className="border-t pt-3">{issueButton}</Details>
         {ended.length > 0 && <Details summary={`Ended grants (${ended.length})`}>{history}</Details>}
-        {action.unknown && <p role="status" className="text-sm">{action.unknown}</p>}
+        <PendingNote action={action} waiting={waiting} setup={setup} />
         {action.label && <p className="text-sm text-muted-foreground">{action.label}</p>}
           <ErrorBox error={action.error} />
       </Card>

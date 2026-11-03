@@ -7,7 +7,7 @@ type Read<T> = { data?: T; error: unknown };
 export function strategyPresentation({ status, schedule, actions, review, executor, canSave, canSchedule, busy, canSign }: {
   status: Read<StrategyStatus>;
   schedule: Read<{ on: boolean }>;
-  actions: Read<{ type: string; stage: string; signer: string; correlationId: string }[]> & { isSuccess: boolean };
+  actions: Read<{ type: string; stage: string; signer: string; correlationId: string; expiresAt: string }[]> & { isSuccess: boolean };
   review?: StrategyStatus;
   executor: boolean; canSave: boolean; canSchedule: boolean; busy: boolean; canSign: boolean;
 }) {

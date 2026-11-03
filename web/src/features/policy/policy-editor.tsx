@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Overview, Setup } from "../../platform";
-import { ownerSigner, useOwnerAction, useSigner } from "../owner/owner";
+import { PendingNote, useOwnerAction, useSigner } from "../owner/owner";
 import { type AgentPolicy, allowsAsset, BUDGET, changesOf, type Draft, differences, draftOf, WINDOWS } from "./policy-draft";
 import { focusInvalid } from "../../shared/form";
 import { useDirtyDraft, confirmDiscard } from "../../shared/dirty-draft";
@@ -25,7 +25,10 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
   const [reviewing, setReviewing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const action = useOwnerAction(setup);
-  const { canSign } = useSigner(setup);
+  const { canSign, viaDao } = useSigner(setup);
+  // An earlier update whose outcome isn't known, recorded on this page or another: no second one is signed.
+  const waiting = action.pending(["policy_update"]);
+  const held = Boolean(action.unknown) || Boolean(waiting);
   useEffect(() => { if (!canSign) setReviewing(false); }, [canSign]);
   const result = changesOf(draft, data.book, policy);
   const lines = differences(baseline.draft, draft, data.book);
@@ -40,7 +43,6 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
     setReviewing(false);
     setDraft({ ...draft, ...patch });
   };
-  const viaDao = ownerSigner(setup) === "dao";
   const dirty = lines.length > 0;
   useDirtyDraft((dirty || stale) && !action.busy && !signing);
   const invalid = submitted && "invalid" in result ? result.invalid : undefined;
@@ -53,7 +55,7 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
         e.preventDefault();
         setSubmitted(true);
         if ("invalid" in result) { focusInvalid(e.currentTarget); return; }
-        if (dirty && !stale && !action.busy && canSign) setReviewing(true);
+        if (dirty && !stale && !action.busy && !held && canSign) setReviewing(true);
       }}>
       <div className="flex flex-col gap-3">
         <h3 className="text-lg font-medium">What the agent may do</h3>
@@ -171,14 +173,14 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
             </ul>
           </div>
         )}
-        {action.unknown && <p role="status" className="text-sm">{action.unknown}</p>}
+        <PendingNote action={action} waiting={signing ? undefined : waiting} setup={setup} />
         <ErrorBox error={action.error} />
         <div className="flex flex-wrap items-center gap-3">
           {reviewing && !stale && "changes" in result ? (
             <Button
-              disabled={signing || action.busy || Boolean(action.unknown) || !canSign}
+              disabled={signing || action.busy || held || !canSign}
               onClick={async () => {
-                if (signing || stale || !baseline.policy || !canSign) return;
+                if (signing || stale || held || !baseline.policy || !canSign) return;
                 setSigning(true);
                 if (await action.run({ type: "policy_update", changes: result.changes, expectedPolicy: baseline.policy })) onDone();
                 else setSigning(false);
@@ -187,7 +189,7 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
               {action.busy && <Spinner />} {viaDao ? "Propose in Trezu" : "Sign update"}
             </Button>
           ) : (
-            <Button type="submit" disabled={action.busy || Boolean(action.unknown) || !dirty || stale || !canSign}>
+            <Button type="submit" disabled={action.busy || held || !dirty || stale || !canSign}>
               Review changes
             </Button>
           )}
