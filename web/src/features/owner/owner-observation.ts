@@ -3,11 +3,13 @@ import { failureKind } from "../../platform.ts";
 /**
  * Observes an existing intent only. It never prepares, signs, or submits one. A status read whose answer was lost is
  * read again at the next interval: it says nothing about the action, so it neither ends the observation nor offers it again.
+ * It reads on while `pending` says the state isn't final: by default, while a DAO votes or a submission settles.
  */
 export type OwnerObservation = { stage: string; status?: string; failureCode?: string | null; error?: string };
 export async function observeOwnerAction<T extends OwnerObservation>(
   read: (signal: AbortSignal) => Promise<T>, signal: AbortSignal,
   onObservation: (state: T) => void = () => {}, intervalMs = 5_000,
+  pending: (state: T) => boolean = state => state.stage === "voting" || state.stage === "submitting",
 ): Promise<T> {
   while (true) {
     signal.throwIfAborted();
@@ -18,7 +20,7 @@ export async function observeOwnerAction<T extends OwnerObservation>(
     signal.throwIfAborted();
     if (state) {
       onObservation(state);
-      if (!["voting", "submitting"].includes(state.stage)) return state;
+      if (!pending(state)) return state;
     }
     await new Promise<void>((resolve, reject) => {
       const abort = () => { clearTimeout(timer); reject(signal.reason); };

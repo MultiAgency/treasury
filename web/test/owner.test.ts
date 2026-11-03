@@ -89,7 +89,7 @@ const wallet = (overrides: Partial<Wallets> = {}) => {
   };
   return { wallets, asked };
 };
-const quiet: Progress = { step() {}, prepared() {}, unknown() {} };
+const quiet: Progress = { step() {}, prepared() {}, confirm() {}, unknown() {} };
 const setup = { owner: { type: "near", account_id: "owner.near" }, dao: null } as unknown as Setup;
 const daoSetup = { owner: { type: "near", account_id: "dao.near" }, dao: { id: "dao.sputnik-dao.near", owner: { account_id: "dao.near" } } } as unknown as Setup;
 const freeze = (wallets: Wallets, extra: Partial<Parameters<typeof runOwnerAction>[0]> = {}) => runOwnerAction({ api: agent("portfolio"), wallets, setup,
@@ -149,4 +149,28 @@ test("a DAO proposal: Trezu unless the member may propose with a connected walle
   answers.push(daoPrepared, json({ json: { stage: "submitted", status: "SUCCESS" } }));
   assert.deepEqual(await freeze(member.wallets, { setup: daoSetup, signer: "dao", access: { canPropose: true, canVote: false } }), { ok: true });
   assert.deepEqual(member.asked, ["sendAsMember"], "filed from the member's own wallet, without Trezu");
+});
+
+test("a confirm answer: nothing is signed or submitted here; the owner is sent to the confirm page and the action is followed", async () => {
+  const { wallets, asked } = wallet();
+  const confirming = json({ json: { correlationId: "p1", preview: { summary: "Change the policy" }, expiresAt: "2030-01-01T00:00:00Z", digest: "sha256:d",
+    confirm: { url: "https://platform.test/confirm/t1", expiresAt: "2030-01-01T00:00:00Z" } } });
+  const steps: string[] = [], pages: string[] = [];
+  const progress: Progress = { ...quiet, step: step => steps.push(step), confirm: url => pages.push(url) };
+  // Not yet signed on the page, then signed and settling, then settled.
+  answers.push(confirming, json({ json: { stage: "unknown" } }), json({ json: { stage: "submitting" } }), json({ json: { stage: "submitted", status: "SUCCESS" } }));
+  assert.deepEqual(await freeze(wallets, { progress }), { ok: true });
+  assert.deepEqual(pages, ["https://platform.test/confirm/t1"]);
+  assert.deepEqual(steps, ["preparing", "confirming", "settling"]);
+  assert.deepEqual(sent, ["owner/prepare", "owner/status", "owner/status", "owner/status"], "never owner/submit");
+  assert.deepEqual(asked, [], "the wallet signs nothing here");
+
+  // The confirm page's window closes with nothing signed: the action needs review, and isn't prepared again.
+  sent = [];
+  const closed = json({ json: { correlationId: "p2", preview: { summary: "Change the policy" }, expiresAt: "2000-01-01T00:00:00Z", digest: null,
+    confirm: { url: "https://platform.test/confirm/t2", expiresAt: "2000-01-01T00:00:00Z" } } });
+  answers.push(closed, json({ json: { stage: "unknown" } }));
+  const ended = await freeze(wallets);
+  assert.equal(!ended.ok && (ended.error as Error).message, "The confirm page's signing window closed with no signature recorded. Review the existing owner action before preparing it again.");
+  assert.deepEqual(sent, ["owner/prepare", "owner/status"]);
 });

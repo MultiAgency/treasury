@@ -2,7 +2,7 @@ import { answered, failureMessage, PlatformError, type agent, type Intent, type 
 import { observeOwnerAction } from "./owner-observation.ts";
 
 export type Signer = "wallet" | "dao";
-export type Step = "preparing" | "signing" | "filing" | "voting" | "settling";
+export type Step = "preparing" | "signing" | "confirming" | "filing" | "voting" | "settling";
 /** Who signs this agent's owner actions: the linked DAO when its owner account owns the agent. */
 export const ownerSigner = (setup: Setup): Signer =>
   setup.dao && setup.owner?.type === "near" && setup.owner.account_id === setup.dao.owner.account_id ? "dao" : "wallet";
@@ -19,10 +19,14 @@ export type Wallets = {
   sendAsDao(transaction: Transaction): Promise<unknown>;
 };
 
-/** What the flow reports as it goes. `unknown` is the message for a submission whose outcome is unknown. */
+/**
+ * What the flow reports as it goes. `confirm` is the platform's confirm page, where the owner signs an action the
+ * platform holds for them. `unknown` is the message for a submission whose outcome is unknown.
+ */
 export type Progress = {
   step(step: Step, deadline?: string): void;
   prepared(correlationId: string, digest: string | null): void;
+  confirm(url: string): void;
   unknown(message: string): void;
 };
 
@@ -33,10 +37,11 @@ export type Progress = {
 export type Ended = { ok: true } | { ok: false; error: unknown; unknown?: string };
 
 /**
- * One owner action end to end. The owner's wallet signs the API's payload directly; a DAO files one proposal through
- * Trezu or the member's own wallet, asking its MPC key to sign, and the server submits the signature once the vote
- * passes, inside the API's signing window. A submission whose outcome is unknown is followed by its `correlationId`:
- * never signed or submitted again.
+ * One owner action end to end. The owner's wallet signs the API's payload directly, unless the platform answers
+ * `confirm` instead of an intent (a NEP-366 delegate it holds): the owner signs it on the platform's confirm page, and
+ * this page follows its status. A DAO files one proposal through Trezu or the member's own wallet, asking its MPC key
+ * to sign, and the server submits the signature once the vote passes, inside the API's signing window. A submission
+ * whose outcome is unknown is followed by its `correlationId`: never signed or submitted again.
  */
 export async function runOwnerAction({ api, wallets, setup, access, action, signer, signal, progress, intervalMs }: {
   api: ReturnType<typeof agent>; wallets: Wallets; setup: Setup; access: { canPropose: boolean; canVote: boolean } | null;
@@ -55,14 +60,17 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
     if (!status) throw new Error("The owner action’s outcome isn’t confirmed. Check its record before signing again.");
     throw new Error(failureCode ?? `Ended ${status.toLowerCase()}`);
   }
-  async function follow(id: string) {
+  /** Follows the action by its id. Until `unsigned` passes, a status that knows of no signature yet is read again. */
+  async function follow(id: string, unsigned?: string) {
     const state = await observeOwnerAction(signal => api.read("owner/status", { correlationId: id }, { signal }), signal,
-      state => { if (state.stage === "submitting") progress.step("settling"); }, intervalMs);
+      state => { if (state.stage === "submitting") progress.step("settling"); }, intervalMs,
+      state => state.stage === "voting" || state.stage === "submitting" || (state.stage === "unknown" && unsigned !== undefined && Date.now() < Date.parse(unsigned)));
     // A status read that ends in one of these settles the outcome; an unknown stage doesn't.
     if (state.stage === "submitted" || state.stage === "expired" || state.stage === "failed") unknown = undefined;
     if (state.stage === "submitted") return ended(id, state.status, state.failureCode);
     if (state.stage === "expired") throw new Error("The signing window closed. Review the existing owner action.");
     if (state.stage === "failed") throw new Error(state.error ?? "Owner action failed");
+    if (unsigned !== undefined) throw new Error("The confirm page's signing window closed with no signature recorded. Review the existing owner action before preparing it again.");
     throw new Error("Owner action needs review. Follow its existing record before signing again.");
   }
 
@@ -98,11 +106,17 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
       action: action.type === "agent_create" ? { ...action, owner: await wallets.ownerWallet() } : action,
       signer: "wallet",
     }));
-    if (!prepared.intent) throw new Error("The server did not prepare a wallet signature");
+    if (!prepared.intent && !prepared.confirm) throw new Error("The server did not prepare a wallet signature");
     progress.prepared(prepared.correlationId, prepared.digest);
+    if (prepared.confirm) {
+      // The platform holds the bytes to sign; the owner reads its record and signs on its page, which submits once.
+      progress.confirm(prepared.confirm.url);
+      progress.step("confirming", prepared.confirm.expiresAt);
+      return follow(prepared.correlationId, prepared.confirm.expiresAt);
+    }
     signal.throwIfAborted();
     progress.step("signing");
-    const signedData = await wallets.signIntent(prepared.intent);
+    const signedData = await wallets.signIntent(prepared.intent!);
     progress.step("settling");
     const submitted = await api.act("owner/submit", { correlationId: prepared.correlationId, signedData });
     if (submitted.ok) {

@@ -42,10 +42,13 @@ export const answered = <T,>(result: OwnerResult<T>): T => {
 const PREVIEWS = new Set<string>(["rebalance", "steward/propose"]);
 /** Actions that only read (outcome checks): an interrupted one changed nothing. */
 const CHECKS = new Set<string>(["recover"]);
+/** Preparing an owner action holds what is to be signed; nothing takes effect until it is signed and submitted. */
+const PREPARES = new Set<string>(["owner/prepare"]);
 export function failureMessage(failure: OwnerFailure): string {
   if (failure.kind === "unknown") return PREVIEWS.has(failure.procedure)
     ? "The preview was interrupted, so a plan may have been saved. Nothing was sent. Observations are read again; preview again for a fresh plan, and any earlier plan expires unused."
     : CHECKS.has(failure.procedure) ? "The check was interrupted. It only reads; check again."
+    : PREPARES.has(failure.procedure) ? "Preparing was interrupted. Nothing was signed, so nothing took effect; any intent already prepared expires unsigned. Prepare again."
     : `The outcome is unknown: this ${failure.procedure} request may have taken effect. Check the recorded operations before any other action; nothing is sent again automatically.`;
   if (failure.kind === "unavailable") return "This read failed or returned an answer that could not be verified. Reading again is safe.";
   return failure.error;
@@ -231,6 +234,8 @@ export function reads(name: string, viewer: string | null) {
     books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
     strategy: queryOptions({ queryKey: [key, "strategy/get"], queryFn: ({ signal }) => api.read("strategy/get", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
+    /** Every revision of the policy, with its digest. Not retried: the policy page shows a failed read with its own retry. */
+    policyHistory: queryOptions({ queryKey: [key, "policyHistory"], queryFn: ({ signal }) => api.read("policyHistory", undefined, { signal }), retry: false }),
     autopilot: queryOptions({ queryKey: [key, "autopilot/get"], queryFn: ({ signal }) => api.read("autopilot/get", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
   };

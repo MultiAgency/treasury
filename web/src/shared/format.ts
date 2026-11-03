@@ -47,6 +47,16 @@ const amount = (raw: bigint | string, h: Pick<Holding, "decimals" | "symbol">) =
   return `${n.toLocaleString("en-US", { maximumFractionDigits: digits })} ${h.symbol}`;
 };
 
+/** "1.5" at 6 decimals → "1500000"; null unless it is a positive decimal that fits. */
+export function toUnits(value: string, decimals: number) {
+  const match = /^(\d*)(?:\.(\d*))?$/.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  const [, whole = "", fraction = ""] = match;
+  if (fraction.length > decimals) return null;
+  const raw = BigInt(whole || "0") * 10n ** BigInt(decimals) + BigInt(fraction.padEnd(decimals, "0") || "0");
+  return raw > 0n ? raw.toString() : null;
+}
+
 export const usd = (n: number | string | null | undefined) =>
   n == null
     ? "—"

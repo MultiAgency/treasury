@@ -53,7 +53,9 @@ export function useOwnerAction(setup: Setup) {
   const unsettled = useRef<string>(undefined);
   /** For a policy update, the digest of the mandate being signed. */
   const [digest, setDigest] = useState<string | null>(null);
-  const left = useCountdown(step === "voting" ? deadline : undefined);
+  /** The platform's confirm page, where the owner signs an action it holds for them. */
+  const [confirmUrl, setConfirmUrl] = useState<string>();
+  const left = useCountdown(step === "voting" || step === "confirming" ? deadline : undefined);
   const live = (update: () => void) => { if (mounted.current) update(); };
 
   /** Whether the action ended as meant; otherwise `error` says why. */
@@ -69,10 +71,12 @@ export function useOwnerAction(setup: Setup) {
     observation.current?.abort();
     const controller = observation.current = new AbortController();
     setCorrelationId(undefined);
+    setConfirmUrl(undefined);
     setError(undefined);
     const ended = await runOwnerAction({ api, wallets, setup, access: current.viewer?.access ?? null, action, signer, signal: controller.signal, progress: {
       step: (next, until) => live(() => { setStep(next); if (until) setDeadline(until); }),
       prepared: (id, mandate) => live(() => { setCorrelationId(id); setDigest(mandate); }),
+      confirm: url => live(() => setConfirmUrl(url)),
       unknown: message => { unsettled.current = message; live(() => setUnknown(message)); },
     } });
     unsettled.current = ended.ok ? undefined : ended.unknown;
@@ -82,6 +86,7 @@ export function useOwnerAction(setup: Setup) {
       setStep("idle");
       setDeadline(undefined);
       setDigest(null);
+      setConfirmUrl(undefined);
     });
     await queryClient.invalidateQueries({ queryKey: [scope(AGENT!, current.viewer?.account ?? null)] });
     return ended.ok;
@@ -91,12 +96,14 @@ export function useOwnerAction(setup: Setup) {
     idle: null,
     preparing: "Preparing…",
     signing: "Approve in your wallet…",
+    confirming: `Sign it on the platform’s confirm page${left === null ? "" : ` · ${minutesSeconds(left)} left`}`,
     filing: viewer?.access?.canPropose ? `Confirm the proposal${viewer.access.canVote ? " and your vote" : ""} in your wallet…` : "File the proposal in Trezu…",
     voting: `Waiting for ${setup.dao?.id ?? "the DAO"} to approve${left === null ? "" : ` · ${minutesSeconds(left)} left`}`,
     settling: "Checking the owner action’s outcome…",
   }[step];
   const parts: ReactNode[] = [
     stepLabel && <Fragment key="step">{stepLabel}</Fragment>,
+    step === "confirming" && confirmUrl && <a key="confirm" className="underline" target="_blank" rel="noopener noreferrer" href={confirmUrl}>Open the confirm page</a>,
     setup.dao && (step === "voting" || step === "settling") && <a key="trezu" className="underline" target="_blank" rel="noopener noreferrer" href={`https://trezu.app/${setup.dao.id}/requests`}>Review and vote in Trezu</a>,
     correlationId && <Link key="follow" to="/activity" hash={`owner-${correlationId}`} className="underline">Follow owner action</Link>,
   ].filter(Boolean);
