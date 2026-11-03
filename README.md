@@ -47,9 +47,12 @@ pnpm install
 pnpm stack:credential <run>/stack propose        # the owner issues a read + prepare credential into .env
 export NODE_EXTRA_CA_CERTS=<run>/stack/environment/localhost.crt
 pnpm treasury status
+pnpm stack:authorize <run>/stack                 # the owner signs a grant bound to the saved strategy; prints its digest
 ```
 
 `stack:credential` acts as the owner through the stack's `machineCredential` control. It takes a role (`propose`, `execute` or `sweep`) and an optional lifetime in whole seconds from 60 to 86400 (default 3600), and prints the platform's error if issuing fails. It writes the token into `.env` through a new 0600 file renamed over it, so the token is never readable under another mode. Other lines, comments and blank lines are kept, and the token is never printed. Node reads `NODE_EXTRA_CA_CERTS` before it loads `.env`, so the stack's CA is exported in the shell instead.
+
+`stack:authorize` acts as the owner through the stack's `authorizeStrategy` control: it signs a grant bound to the saved strategy and prints the strategy's digest. `execute` refuses every plan until it has run, and again after the strategy is saved, so run it again then.
 
 ## Commands
 
@@ -111,7 +114,7 @@ The stack test starts a fresh stack from `../platform` (or `TREASURY_PLATFORM`),
 - an outage of the agent's provider (`setUnavailable` on `portfolio`), which the gateway answers with `forbidden`;
 - last, a lost swap reply (`dropSwapResponse`): `execute` exits 3, reads the records, and the swap was applied once and not resent. The operation stays unresolved until the owner's `recover`, which leaves that stack blocked; it's stopped afterwards anyway.
 
-`test/commands.test.ts` covers the same outcomes with a faked client (`provider`, `unavailable`, `unknown`: their exit codes, and that `unknown` reads `unresolved` and `activity` and never resends). It also covers every row of the execution mapping above: rejected before any leg, rejected after a leg, `FAILED`/`REFUNDED` legs, unsettled legs and shields, sweep shields, a lost preview, a throw mid-stream, and usage errors. `test/stack-credential.test.ts` runs the credential script against a fake stack directory.
+`test/commands.test.ts` covers the same outcomes with a faked client (`provider`, `unavailable`, `unknown`: their exit codes, and that `unknown` reads `unresolved` and `activity` and never resends). It also covers every row of the execution mapping above: rejected before any leg, rejected after a leg, `FAILED`/`REFUNDED` legs, unsettled legs and shields, sweep shields, a lost preview, a throw mid-stream, and usage errors. `test/stack-credential.test.ts` and `test/stack-authorize.test.ts` run the credential and authorize scripts against a fake stack directory (`test/fake-stack.ts`).
 
 ## The owner UI
 

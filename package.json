@@ -10,6 +10,7 @@
   "scripts": {
     "treasury": "node --env-file-if-exists=.env src/cli.ts",
     "stack:credential": "node scripts/stack-credential.ts",
+    "stack:authorize": "node scripts/stack-authorize.ts",
     "typecheck": "tsc",
     "test": "node --test test/*.test.ts",
     "test:stack": "node --test test/stack.e2e.ts"
