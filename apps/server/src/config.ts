@@ -29,6 +29,8 @@ const Settings = z.object({
   TREASURY_DEPLOYMENT: z.string().regex(/^[a-z0-9-]{1,32}$/),
   /** A 0600 file holding the deployment's `tap_` credential; checked on every call and read again when it changes. */
   TREASURY_CREDENTIAL_FILE: z.string().min(1),
+  /** Where relayed owner actions (consents, revocations) are recorded: an append-only file of JSON lines, owner-only. */
+  TREASURY_AUDIT_FILE: z.string().min(1),
   /** This server's own origin: the sign-in recipient and the only `Origin` accepted on writes. */
   TREASURY_PUBLIC_ORIGIN: publicOrigin,
   /**
@@ -45,6 +47,8 @@ const Settings = z.object({
   CHALLENGES_PER_MINUTE: z.coerce.number().int().positive().default(10),
   /** Owner-route requests per signed-in account a minute; each may cost a call against the platform's shared quota. */
   OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  /** New consents per signed-in account a day: the platform caps a deployment's unexpired consents, revoked ones included. */
+  CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
   PLATFORM_TIMEOUT_MS: duration(15_000),
   CHAIN_TIMEOUT_MS: duration(10_000),
 });

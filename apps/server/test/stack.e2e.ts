@@ -4,11 +4,14 @@
 // stand-in built from the stack's own owner account and key.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { request } from "node:https";
 import type { AddressInfo } from "node:net";
 import { signOwner, startStack, type Stack } from "../../../scripts/stack.ts";
+import { fileAudit } from "../src/audit.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
@@ -31,6 +34,7 @@ const stackFetch = (ca: Buffer): typeof fetch => async (input, init) => new Prom
 
 const intruder = wallet("intruder.near");
 const clock = { now: Date.now() };
+const audit = fileAudit(join(mkdtempSync(join(tmpdir(), "treasury-stack-")), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string, server: Server, base: string;
 
 before(async () => {
@@ -48,6 +52,8 @@ before(async () => {
     deployment: state.app.deployment,
     ownerRequestsPerMinute: 1_000,
     trustedProxyHops: 0,
+    audit,
+    consentsPerDay: 1_000,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -109,4 +115,44 @@ test("without a session, from another origin, or after sign-out or idle time, th
   const fresh = cookieOf(await post("/api/session", { ...await signOwner(target, again), nonce: again.nonce }));
   await fetch(`${base}/api/session`, { method: "DELETE", headers: { ...write, cookie: fresh } });
   assert.equal((await get(`/api/agents/${target.agent}`, fresh)).status, 401, "signed out");
+});
+
+/** Signs the stack's owner in, then connects the agent with a consent the owner's wallet signs; answers both. */
+async function connect() {
+  const issued = await challenge();
+  const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const agent = `/api/agents/${target.agent}`;
+  const text = ((await (await post(`${agent}/consent/text`, {}, cookie)).json()) as { value: { message: string; nonce: string; recipient: string } }).value;
+  assert.equal(text.recipient, new URL(stack.state().dashboard).host);
+  const signed = await signOwner(target, text);
+  const connected = await post(`${agent}/consent`, { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie);
+  const stored = await connected.json() as { value: { consent: { id: string; scopes: string[]; expiresAt: number } } };
+  assert.equal(connected.status, 200, JSON.stringify(stored));
+  return { cookie, agent, consent: stored.value.consent, signature: signed.signature };
+}
+
+test("the owner connects the agent with a consent their wallet signs, the platform stores it, and disconnecting revokes it", async () => {
+  const { cookie, agent, consent, signature } = await connect();
+  assert.deepEqual(consent.scopes, ["read", "treasury"]);
+  assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent } }, "the platform's own record");
+  const revoked = await post(`${agent}/consent/revoke`, {}, cookie);
+  assert.deepEqual(await revoked.json(), { ok: true, value: { revoked: 1 } });
+  assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent: null } });
+  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  assert.deepEqual(lines.map(line => [line.action, line.stage, line.who, line.subject, line.answer?.ok]),
+    [["consent", "attempt", owner, undefined, undefined], ["consent", "result", owner, consent.id, true],
+     ["revoke", "attempt", owner, consent.id, undefined], ["revoke", "result", owner, consent.id, true]], "each action recorded before and after");
+  assert.ok(!readFileSync(audit.file, "utf8").includes(signature), "no signature in the audit trail");
+});
+
+test("a rotated credential is used at once, without a restart, and the consent carries over to it", async () => {
+  const { cookie, agent, consent } = await connect();
+  const { deployment, credentialFile } = stack.state().app!;
+  const before = stack.appCredential("list").split("\n").filter(line => line.includes(` ${deployment} `) && !line.includes("revoked")).map(line => line.split(/\s+/)[0]!);
+  assert.equal(before.length, 1, "one live credential before");
+  const issued = stack.appCredential("issue", deployment, new URL(stack.state().dashboard).host).trim().split("\n");
+  writeFileSync(credentialFile, `${issued.at(-1)!}\n`, { mode: 0o600 });
+  stack.appCredential("revoke", before[0]!);
+  assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent } },
+    "read under the new credential, the old one revoked: consents are bound to the deployment, not the credential");
 });

@@ -3,21 +3,21 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const MAIN = join(import.meta.dirname, "..", "src", "main.ts");
 const tap = `tap_00000000-0000-4000-8000-000000000000.${"a".repeat(43)}`;
 
-function environment(credentialMode = 0o600) {
+function environment(credentialMode = 0o600, audit?: string) {
   const dir = mkdtempSync(join(tmpdir(), "treasury-main-")), credential = join(dir, "app-credential");
   writeFileSync(credential, tap, { mode: 0o600 });
   chmodSync(credential, credentialMode);
   return {
     PATH: process.env.PATH, PORT: "0",
     TREASURY_PLATFORM_ORIGIN: "https://platform.test", TREASURY_DEPLOYMENT: "treasury", TREASURY_CREDENTIAL_FILE: credential,
-    TREASURY_PUBLIC_ORIGIN: "https://treasury.test",
+    TREASURY_PUBLIC_ORIGIN: "https://treasury.test", TREASURY_AUDIT_FILE: audit ?? join(dir, "audit.jsonl"),
   };
 }
 
@@ -53,6 +53,13 @@ test("a missing setting stops startup, naming it", async t => {
   assert.match(stderr, /TREASURY_DEPLOYMENT/);
 });
 
+test("an audit trail it can't append to stops startup", async t => {
+  const blocked = join(mkdtempSync(join(tmpdir(), "treasury-audit-")), "file");
+  writeFileSync(blocked, "");
+  const { code } = await start(t, environment(0o600, join(blocked, "audit.jsonl"))).exited;
+  assert.notEqual(code, 0, "its directory is a file");
+});
+
 test("a credential file others can read stops startup", async t => {
   const { code, stderr } = await start(t, environment(0o644)).exited;
   assert.notEqual(code, 0);
@@ -60,12 +67,14 @@ test("a credential file others can read stops startup", async t => {
 });
 
 test("with valid settings it listens, issues challenges for its own host, refuses other origins, and stops cleanly", async t => {
-  const { child, exited, listening } = start(t, environment());
+  const env = environment();
+  const { child, exited, listening } = start(t, env);
   const base = `http://127.0.0.1:${(await listening).listening}`;
   const challenge = await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: "https://treasury.test", "content-type": "application/json" } });
   assert.equal(((await challenge.json()) as { value: { recipient: string } }).value.recipient, "treasury.test");
   const elsewhere = await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: "https://evil.test", "content-type": "application/json" } });
   assert.equal(elsewhere.status, 403);
+  assert.equal(statSync(env.TREASURY_AUDIT_FILE).mode & 0o777, 0o600, "the audit trail it records to is ready, owner-only");
   child.kill("SIGTERM");
   assert.equal((await exited).code, 0, "a shutdown signal ends it cleanly");
 });

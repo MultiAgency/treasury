@@ -2,6 +2,8 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { parseConsentMessage } from "@multiagency/sdk";
+import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
 import type { IncomingMessage } from "node:http";
 import { clientAddress, COOKIE, createServer, routes } from "../src/http.ts";
@@ -11,7 +13,9 @@ import { createSignIn } from "../src/signin.ts";
 import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
-const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near", transferred: "owner.near" }, {
+const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near", transferred: "owner.near", unborn: "owner.near", recreated: "owner.near" }, {
+  unborn: ["unborn"],
+  recreated: { recreated: "id-before" },
   stale: { transferred: "previous.near" },
   foreign: ["elsewhere-agent"],
   failing: {
@@ -25,6 +29,9 @@ const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.n
   },
 });
 const clock = { now: Date.now() };
+const audited: AuditEntry[] = [];
+/** Makes the audit trail fail at one stage, as a full disk would. */
+const auditFails: { stage?: AuditEntry["stage"] } = {};
 let server: Server, base: string;
 
 before(async () => {
@@ -37,6 +44,8 @@ before(async () => {
     deployment: "treasury",
     trustedProxyHops: 0,
     ownerRequestsPerMinute: 1_000,
+    audit: { append: async entry => { if (entry.stage === auditFails.stage) throw new Error("disk full"); audited.push(entry); } },
+    consentsPerDay: 1_000,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -176,7 +185,7 @@ test("sign-in attempts are limited per client, by the address the trusted proxy 
     platform: fake.platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 2, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -196,7 +205,7 @@ async function limitedServer(t: { after(fn: () => void): void }, platform: Retur
     platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "intruder.near": [intruder.publicKey], "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute, audit: { append: async () => {} }, consentsPerDay: 1_000,
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -314,4 +323,215 @@ test("answers are never cached or sniffed", async () => {
   const response = await call("GET", "/api/nothing");
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+});
+
+/** The owner connects `agent`: the server's text, signed by the owner's wallet as the platform host's recipient. */
+async function signedConsent(cookie: string, agent = "portfolio") {
+  const { status, body } = await json(await call("POST", `/api/agents/${agent}/consent/text`, { cookie, body: {} }));
+  assert.equal(status, 200, JSON.stringify(body));
+  contract.consentText.parse(body.value);
+  const signed = owner.sign(body.value);
+  return { text: body.value, submission: { message: body.value.message, nonce: body.value.nonce, publicKey: signed.publicKey, signature: signed.signature } };
+}
+/** Starts a consent test from nothing: no consents on the platform, no calls, no records, the audit trail writable. */
+function clean() { fake.consents.length = 0; fake.calls.length = 0; audited.length = 0; delete auditFails.stage; }
+const record = (id: string, change: Partial<(typeof fake.consents)[number]> = {}) => ({ id: id.padEnd(64, "0"), deployment: "treasury", host: "platform.test",
+  organization: "owner--near", owner: "owner.near", agent: "portfolio", agentId: "id-portfolio", scopes: ["read", "treasury"] as ("read" | "treasury" | "owner")[],
+  expiresAt: Date.now() + 86_400_000, createdAt: 0, publicKey: "k", revoked: false, revokedAt: null, ...change });
+const results = () => audited.filter(entry => entry.stage === "result");
+
+test("connecting: the server's text from a fresh identity, the owner's signature over it, relayed once, recorded before and after", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const { text, submission } = await signedConsent(cookie);
+  assert.equal(text.recipient, "platform.test");
+  assert.deepEqual(parseConsentMessage(text.message)?.scopes, ["read", "treasury"]);
+  assert.equal(parseConsentMessage(text.message)?.organization, "owner--near");
+  fake.calls.length = 0;
+  const { status, body } = await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission }));
+  assert.equal(status, 200);
+  assert.ok(contract.consent.parse(body.value).consent, "the page's own schema: what was granted and until when");
+  assert.equal(fake.calls[0], "identity portfolio (fresh)", "a write reads the identity anew");
+  assert.deepEqual(fake.calls.filter(line => line.startsWith("consents.submit")), [`consents.submit ${submission.nonce}`]);
+  const sha = audited[0]!.signedTextSha256;
+  assert.match(sha!, /^[0-9a-f]{64}$/);
+  assert.deepEqual(audited.slice(0, 2), [
+    { who: "owner.near", action: "consent", agent: "portfolio", signedTextSha256: sha, stage: "attempt" },
+    { who: "owner.near", action: "consent", agent: "portfolio", signedTextSha256: sha, stage: "result", subject: body.value.consent.id, answer: { ok: true } },
+  ], "the attempt is recorded before the platform is asked");
+  assert.ok(!JSON.stringify(audited).includes(submission.signature), "no signature in the record");
+  const shown = await json(await call("GET", "/api/agents/portfolio/consent", { cookie }));
+  contract.consent.parse(shown.body.value);
+  assert.deepEqual(shown, { status: 200, body: { ok: true, value: { consent: body.value.consent } } });
+});
+
+test("a re-created agent's text names its current ID, not the one a reused answer had", async () => {
+  clean();
+  const { text } = await signedConsent(await signIn(owner), "recreated");
+  assert.equal(parseConsentMessage(text.message)?.agentId, "id-recreated");
+});
+
+test("a signed text that isn't the consent this server asks for is refused before the platform sees it", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  const other = await signedConsent(cookie, "transferred");
+  fake.calls.length = 0;
+  for (const body of [{ ...other.submission }, { ...submission, message: submission.message.replace('"treasury"]', '"treasury","treasury-execute"]') }]) {
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body })),
+      { status: 400, body: { ok: false, kind: "refused", code: "not_this_consent" } });
+  }
+  for (const body of [{ ...submission, extra: 1 }, { ...submission, message: "x".repeat(2_049) }, { ...submission, nonce: submission.nonce.slice(0, -1) }])
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body })),
+      { status: 400, body: { ok: false, kind: "refused", code: "bad_request" } }, "the SDK's own schema, with a canonical nonce");
+  assert.ok(!fake.calls.some(line => line.startsWith("consents.submit")), "nothing relayed");
+  assert.deepEqual(audited, [], "nothing relayed, so nothing recorded");
+});
+
+test("an agent not created yet can't be connected", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  for (const path of ["/api/agents/unborn/consent/text", "/api/agents/unborn/consent"])
+    assert.deepEqual(await json(await call("POST", path, { cookie, body: {} })), { status: 409, body: { ok: false, kind: "refused", code: "not_created" } }, path);
+});
+
+test("a lost answer resubmits the same signed body once; the platform's answers map to the browser's and are recorded with their code", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  fake.consentAnswers.push({ ok: false, kind: "unavailable" });
+  assert.equal((await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })).status, 200, "the second try was stored");
+  assert.deepEqual(fake.calls.filter(line => line.startsWith("consents.submit")), [`consents.submit ${submission.nonce}`, `consents.submit ${submission.nonce}`]);
+  const answers: [Awaited<ReturnType<typeof fake.platform.consents.submit>>[], number, unknown, unknown][] = [
+    [[{ ok: false, kind: "unavailable" }, { ok: false, kind: "unavailable" }], 503, { ok: false, kind: "unavailable" }, { ok: false, kind: "unavailable" }],
+    [[{ ok: false, kind: "refused", status: 409, error: "The consent names another agent identity." }], 409, { ok: false, kind: "refused", code: "agent_changed" },
+      { ok: false, kind: "refused", status: 409, code: "agent_changed" }],
+    [[{ ok: false, kind: "refused", status: 400, error: "Signature didn't verify" }], 400, { ok: false, kind: "refused", code: "consent_refused" },
+      { ok: false, kind: "refused", status: 400, code: "consent_refused" }],
+    [[{ ok: false, kind: "refused", status: 429, error: "Request limit reached" }], 503, { ok: false, kind: "unavailable" },
+      { ok: false, kind: "refused", status: 429 }],
+    [[{ ok: false, kind: "forbidden", status: 403, error: "This host has no such agent owned by the signer" }], 403, { ok: false, kind: "not_owner" },
+      { ok: false, kind: "forbidden", status: 403, code: "not_owner" }],
+  ];
+  for (const [queued, status, body, recorded] of answers) {
+    clean();
+    const fresh = (await signedConsent(cookie)).submission;
+    fake.consentAnswers.push(...queued);
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: fresh })), { status, body });
+    assert.deepEqual(results().map(entry => entry.stage === "result" && entry.answer), [recorded], "recorded with the platform's status and the browser's code");
+    assert.ok(!JSON.stringify(body).match(/identity|verify|signer|limit/), "no platform text reaches the browser");
+  }
+});
+
+test("an agent already connected isn't offered a new signature, and a reconnect revokes the owner's older consents for it", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const first = (await signedConsent(cookie)).submission, second = (await signedConsent(cookie)).submission;
+  const kept = (await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: first }))).body.value.consent;
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/text", { cookie, body: {} })),
+    { status: 409, body: { ok: false, kind: "refused", code: "already_connected" } });
+  audited.length = 0;
+  const latest = (await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: second }))).body.value.consent;
+  assert.equal(fake.consents.find(consent => consent.id === kept.id)?.revoked, true, "the older one is revoked");
+  assert.equal(fake.consents.find(consent => consent.id === latest.id)?.revoked, false);
+  assert.ok(results().some(entry => entry.action === "revoke" && entry.subject === kept.id && entry.answer.ok), "and recorded");
+});
+
+test("new consents are limited per account a day, since even revoked ones count against the deployment's cap", async t => {
+  const counted = fakePlatform({ portfolio: "owner.near" });
+  const limited = createHttpServer(createServer({
+    platform: counted.platform,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1,
+  }));
+  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
+  t.after(() => limited.close());
+  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
+  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(owner.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const post = async (path: string, body: unknown) => json(await fetch(`${at}${path}`, { method: "POST", headers: { ...write, cookie }, body: JSON.stringify(body) }));
+  const texts = [(await post("/api/agents/portfolio/consent/text", {})).body.value, (await post("/api/agents/portfolio/consent/text", {})).body.value];
+  const submit = (text: { message: string; nonce: string }) => { const signed = owner.sign(text as never); return post("/api/agents/portfolio/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }); };
+  assert.equal((await submit(texts[0])).status, 200);
+  assert.deepEqual(await submit(texts[1]), { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" } });
+  assert.equal(counted.calls.filter(line => line.startsWith("consents.submit")).length, 1, "the second wasn't relayed");
+});
+
+test("the shown consent is the agent's live one with read and treasury, never a setup consent or an earlier agent's", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  fake.consents.push(record("setup", { agentId: "unborn", scopes: ["owner"] }), record("earlier", { agentId: "id-old" }), record("expired", { expiresAt: Date.now() - 1 }));
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/consent", { cookie })), { status: 200, body: { ok: true, value: { consent: null } } });
+  assert.equal((await json(await call("POST", "/api/agents/portfolio/consent/text", { cookie, body: {} }))).status, 200, "so it isn't already connected");
+});
+
+test("disconnecting revokes this agent's live consents only, found by the platform's list, never by an id the browser sends", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  fake.consents.push(record("live"), record("expired", { expiresAt: Date.now() - 1 }), record("other", { agent: "transferred" }), record("setup", { agentId: "unborn", scopes: ["owner"] }));
+  const { status, body } = await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: { id: record("other").id } }));
+  assert.deepEqual({ status, body }, { status: 200, body: { ok: true, value: { revoked: 1 } } });
+  assert.deepEqual(fake.consents.filter(consent => consent.revoked).map(consent => consent.id), [record("live").id], "not the expired, another agent's, or a setup consent");
+  assert.equal(fake.calls[0], "identity portfolio (fresh)", "a write reads the identity anew");
+  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.subject]), [["revoke", "attempt", record("live").id], ["revoke", "result", record("live").id]]);
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/consent", { cookie })), { status: 200, body: { ok: true, value: { consent: null } } });
+});
+
+test("disconnecting revokes at most five consents a request; the rest answer unavailable, and trying again finishes", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  for (let i = 0; i < 7; i++) fake.consents.push(record(`many${i}`));
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 503, body: { ok: false, kind: "unavailable" } });
+  assert.equal(fake.calls.filter(line => line.startsWith("consents.revoke")).length, 5);
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 200, body: { ok: true, value: { revoked: 2 } } });
+});
+
+test("a revocation the platform doesn't confirm answers unavailable, is recorded as such, and is safe to try again", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  fake.consents.push(record("live"));
+  const revoke = fake.platform.consents.revoke;
+  fake.platform.consents.revoke = async () => ({ ok: false, kind: "unavailable" });
+  try {
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 503, body: { ok: false, kind: "unavailable" } });
+    assert.deepEqual(results().map(entry => entry.stage === "result" && entry.answer), [{ ok: false, kind: "unavailable" }]);
+  } finally { fake.platform.consents.revoke = revoke; }
+  assert.equal((await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} }))).status, 200, "trying again revokes it");
+});
+
+test("an audit trail that can't record the attempt stops the action before the platform sees it", async t => {
+  clean();
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  fake.consents.push(record("live"));
+  auditFails.stage = "attempt";
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })), { status: 503, body: { ok: false, kind: "unavailable" } });
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 503, body: { ok: false, kind: "unavailable" } });
+  assert.ok(!fake.calls.some(line => line.startsWith("consents.submit") || line.startsWith("consents.revoke")), "nothing unrecorded reached the platform");
+});
+
+test("a result the audit trail can't record is logged, and the action's answer and the remaining revocations go on", async t => {
+  clean();
+  const logged = t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  auditFails.stage = "result";
+  assert.equal((await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })).status, 200, "stored, and its attempt is on record");
+  fake.consents.length = 0;
+  fake.consents.push(record("one"), record("two"));
+  assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 200, body: { ok: true, value: { revoked: 2 } } });
+  assert.ok(logged.mock.calls.filter(call => String(call.arguments[0]).includes("audit_failed")).length >= 3);
+});
+
+test("the consent routes answer unavailable when the platform's consent list doesn't answer", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const list = fake.platform.consents.list;
+  fake.platform.consents.list = async () => ({ ok: false, kind: "unavailable" });
+  try {
+    for (const [method, path] of [["GET", "/api/agents/portfolio/consent"], ["POST", "/api/agents/portfolio/consent/revoke"], ["POST", "/api/agents/portfolio/consent/text"]] as const)
+      assert.deepEqual(await json(await call(method, path, { cookie, ...(method === "POST" && { body: {} }) })), { status: 503, body: { ok: false, kind: "unavailable" } }, path);
+  } finally { fake.platform.consents.list = list; }
 });

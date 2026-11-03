@@ -1,5 +1,6 @@
 import { createServer as createHttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { fileAudit } from "./audit.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
@@ -11,6 +12,8 @@ import { createSignIn } from "./signin.ts";
 const { settings, secrets } = loadConfig();
 const credential = createCredential(settings.TREASURY_CREDENTIAL_FILE);
 await credential.get(); // Refuse to start without a readable 0600 credential.
+const audit = fileAudit(settings.TREASURY_AUDIT_FILE);
+await audit.check(); // Refuse to start without an audit trail it can append to.
 
 const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS });
 // Ended sessions are also swept every minute, so abandoned ones don't accumulate between sign-ins.
@@ -30,6 +33,8 @@ const handler = createServer({
   deployment: settings.TREASURY_DEPLOYMENT,
   trustedProxyHops: settings.TREASURY_TRUSTED_PROXY_HOPS,
   ownerRequestsPerMinute: settings.OWNER_REQUESTS_PER_MINUTE,
+  audit,
+  consentsPerDay: settings.CONSENTS_PER_DAY,
 });
 
 const server = createHttpServer(handler).listen(settings.PORT, () => {

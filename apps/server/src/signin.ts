@@ -52,7 +52,7 @@ export function createSignIn({ recipient, keyLookup, ttlMs, perMinute, now = Dat
   const mac = (signed: Buffer) => createHmac("sha256", key).update(signed).digest().subarray(0, 16);
   const spent = new Map<string, number>();
   // Challenges and sign-in attempts per client, each limited to `perMinute`.
-  const challenges = createRateLimit({ perMinute, now }), attempts = createRateLimit({ perMinute, now });
+  const challenges = createRateLimit({ limit: perMinute, now }), attempts = createRateLimit({ limit: perMinute, now });
   // Spent nonces are dropped once expired, in a pass at most every 10 seconds.
   let sweptAt = -Infinity;
   const sweep = (at: number) => {

@@ -1,7 +1,10 @@
 import { appClient, type AppBase } from "@multiagency/sdk";
 import type { Credential } from "./credential.ts";
 
-export type IdentityAnswer = Awaited<ReturnType<ReturnType<typeof appClient>["identity"]>>;
+type App = ReturnType<typeof appClient>;
+export type IdentityAnswer = Awaited<ReturnType<App["identity"]>>;
+/** A consent as the platform lists and stores it. */
+export type ConsentRecord = Extract<Awaited<ReturnType<App["consents"]["list"]>>, { ok: true }>["value"]["consents"][number];
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
 export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
 
@@ -13,6 +16,12 @@ export type Platform = {
    * set up a moment later must be reachable at once, and the per-account request limit bounds repeated lookups.
    */
   identity(agent: string, options?: { fresh?: boolean }): Promise<IdentityRead>;
+  /** This deployment's consents: an Organization's, the owner's signed consent stored, or one revoked. */
+  consents: {
+    list(organization: string): ReturnType<App["consents"]["list"]>;
+    submit(submission: Parameters<App["consents"]["submit"]>[0]): ReturnType<App["consents"]["submit"]>;
+    revoke(id: string): ReturnType<App["consents"]["revoke"]>;
+  };
 };
 
 
@@ -64,6 +73,11 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
         if (reuse && reuse.until > now()) return { answer: reuse.answer, cached: true };
       }
       return { answer: await ((!fresh && reading.get(agent)) || read(agent)), cached: false };
+    },
+    consents: {
+      list: async organization => (await client()).consents.list(organization),
+      submit: async submission => (await client()).consents.submit(submission),
+      revoke: async id => (await client()).consents.revoke(id),
     },
   };
 }
