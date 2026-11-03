@@ -6,6 +6,7 @@ import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { failureKind } from "../platform";
+import { assetColor } from "./format";
 
 export { Button };
 /** Native input/select callers share the same states as the Input component. */
@@ -45,6 +46,24 @@ export function Section({ title, description, action, children }: { title: strin
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
   return <div className={cn("flex min-w-0 flex-col gap-6 rounded-2xl bg-card p-6 text-base text-card-foreground ring-1 ring-foreground/10", className)}>{children}</div>;
 }
+
+/** A card's icon, title (`h3`) and one-line description. */
+export function CardHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
+  return <div className="flex gap-4">
+    <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-muted text-brand-strong">{icon}</div>
+    <div className="flex min-w-0 flex-col gap-1">
+      <h3 className="font-heading text-lg font-medium">{title}</h3>
+      <p className="text-sm text-muted-foreground">{description}</p>
+    </div>
+  </div>;
+}
+
+export function Note({ children }: { children: ReactNode }) {
+  return <p className="text-sm text-muted-foreground">{children}</p>;
+}
+
+/** An asset's chart colour, as a dot beside its name. */
+export const Dot = ({ symbol }: { symbol: string }) => <span className={`size-2 rounded-full ${assetColor(symbol)}`} />;
 
 export function Spinner() {
   return <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />;
@@ -86,10 +105,12 @@ export function ReadFailure({ label, error, retry, retained, updatedAt }: {
   </div>;
 }
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({ status, failureCode, children }: { status: string; failureCode?: string | null; children?: ReactNode }) {
   return (
     <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-2 text-xs">
+      {children && <span className="min-w-0 break-all">{children}</span>}
       <Badge tone={statusTone(status)}>{status.toLowerCase()}</Badge>
+      {failureCode && <code className="min-w-0 break-all text-muted-foreground">{failureCode}</code>}
     </span>
   );
 }

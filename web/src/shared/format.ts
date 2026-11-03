@@ -31,6 +31,14 @@ function assetInfo(asset: string, book: Holding[]): Pick<Holding, "decimals" | "
 /** An asset's symbol: the book's, else the platform's for its own assets, else its id. */
 export const symbolOf = (asset: string, book: Holding[]) => assetInfo(asset, book)?.symbol ?? asset;
 
+/** Exact payment terms for a decision: never rounded, and the account never replaced with an alias. */
+export function exactPayment(request: Record<string, unknown>, book: Holding[]) {
+  const { amount: raw, asset, recipient } = request;
+  if (typeof raw !== "string" || !/^\d+$/.test(raw) || typeof asset !== "string" || typeof recipient !== "string") return "Payment terms unavailable";
+  const token = assetInfo(asset, book);
+  return `${token ? `${fromUnits(raw, token.decimals)} ${token.symbol}` : `${raw} raw units of ${asset}`} to ${recipient}`;
+}
+
 /** A money action's request in words: what moves, how much, and to whom. */
 export function describeRequest(request: Record<string, unknown>, book: Holding[], nameOf: (account: string) => string = (a) => a) {
   const r = request as Partial<Record<"origin_asset" | "destination_asset" | "asset" | "amount" | "recipient", string>>;
@@ -41,7 +49,7 @@ export function describeRequest(request: Record<string, unknown>, book: Holding[
       : JSON.stringify(request);
 }
 
-const amount = (raw: bigint | string, h: Pick<Holding, "decimals" | "symbol">) => {
+export const amount = (raw: bigint | string, h: Pick<Holding, "decimals" | "symbol">) => {
   const n = units(raw, h.decimals);
   const digits = n === 0 ? 0 : n < 1 ? 5 : n < 100 ? 3 : 2;
   return `${n.toLocaleString("en-US", { maximumFractionDigits: digits })} ${h.symbol}`;

@@ -236,6 +236,25 @@ test("the policy's revisions are policyHistory, keyed with the agent's other rea
   assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/policyHistory"]);
 });
 
+test("funding's reads: the linked account is treasury/get, retried only when its answer was lost; held payouts never are", async () => {
+  const { treasury, held } = reads("portfolio", "owner.near");
+  assert.deepEqual(treasury.queryKey, [scope("portfolio", "owner.near"), "treasury/get"]);
+  assert.equal(treasury.retry, retryLost);
+  assert.equal(held.retry, false);
+  assert.notDeepEqual(treasury.queryKey, reads("portfolio", "member.near").treasury.queryKey);
+  answers.push(json({ json: null }), json({ json: [] }));
+  assert.equal(await treasury.queryFn!({ signal: new AbortController().signal } as never), null);
+  assert.deepEqual(await held.queryFn!({ signal: new AbortController().signal } as never), []);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/treasury/get", "/a/portfolio/rpc/held"]);
+});
+
+test("a deposit address is an action: a lost answer is unknown, and it's sent once", async () => {
+  answers.push(lost);
+  const deposit = await agent("portfolio").act("deposit", undefined);
+  assert.equal(deposit.ok ? "ok" : deposit.kind, "unknown");
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/deposit"]);
+});
+
 test("a cached read is retried only when its answer was lost", () => {
   const failed = (kind: "unavailable" | "forbidden" | "session" | "refused" | "provider") => new PlatformError(
     kind === "unavailable" ? { ok: false, kind } : kind === "forbidden" || kind === "session"

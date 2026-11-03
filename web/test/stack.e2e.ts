@@ -1,12 +1,13 @@
 // The owner UI on a fresh simulated stack (the platform at 1a7fe98) that serves this build: `pnpm test:stack`.
 // The stack's browser starts the owner signed in; these tests attach to it over CDP, as the platform's specs' clients do.
-import { after, before, test } from "node:test";
+import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { authorizeStrategy, dropSignatureResponse, dropSwapResponse, ETH, fundPublic, revealOwnerOutcome, setTargets, setUnavailable, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import type { OwnerActionRecord, OwnerStatus, Overview, StrategyStatus } from "../src/platform.ts";
+import { fromUnits } from "../src/shared/format.ts";
 
 
 /**
@@ -520,6 +521,93 @@ test("a provider outage reads as the owner session answers it: by kind, the prov
   }
 });
 
+/** `portfolio`'s managed holding of `asset` in its overview: its raw public and confidential balances. */
+const holding = async (page: Page, asset: string) => {
+  const { book } = await rpc<{ book: { asset: string; public: string; confidential: string }[] }>(page, "overview");
+  const found = book.find(h => h.asset === asset);
+  assert.ok(found, `${asset} is in the book`);
+  return { public: BigInt(found.public), confidential: BigInt(found.confidential) };
+};
+/** Sweeps `page` sends with `execute: true` (a preview sends `execute: false`), as the platform's specs count them. */
+const shieldsSent = (page: Page) => {
+  const sent: string[] = [];
+  const onRequest = (request: { url(): string; postData(): string | null }) => {
+    if (request.url().endsWith("/rpc/sweep") && /"execute":true/.test(request.postData() ?? "")) sent.push(request.url());
+  };
+  page.on("request", onRequest);
+  return { sent, stop: () => page.off("request", onRequest) };
+};
+const SEND_BLOCK = "New sends are blocked by 1 unresolved operation. Preview is still available.";
+
+// On a stack of their own: the shield and the deposit address are recorded as operations, which the shared stack's
+// Activity and Overview tests count.
+describe("Balances & funding", () => {
+  let close: () => Promise<void>, target: Stack, home: Page, dashboard: string;
+  before(async () => { ({ close, target, home, dashboard } = await attach()); }, { timeout: 180_000 });
+  after(async () => { await close?.(); });
+
+  test("Balances & funding: a public balance is previewed, then shielded once into the confidential balance", async () => {
+    await fundPublic(target, WNEAR, "1000000000000000000000000");
+    const before = await holding(home, WNEAR);
+    assert.equal(before.public > 0n, true, "a public wNEAR balance to shield");
+    await home.goto(`${dashboard}/a/portfolio/funding`);
+    await visible(home.getByRole("heading", { level: 1, name: "Balances & funding", exact: true }));
+    assert.equal(await home.title(), "Treasury · Balances & funding");
+    await visible(home.getByRole("heading", { level: 2, name: "Balances", exact: true }));
+    await visible(home.getByRole("table", { name: "Managed assets, public and confidential balances" }).getByRole("rowheader", { name: "wNEAR", exact: true }));
+    assert.equal(await home.getByText("moves here from the Treasury prototype").count(), 0, "the placeholder is gone");
+
+    const sweep = home.getByRole("region", { name: "Shield public funds", exact: true });
+    await sweep.getByText("Shield public funds", { exact: true }).click();
+    const shield = sweep.getByRole("button", { name: "Shield", exact: true });
+    assert.equal(await shield.isDisabled(), true, "nothing to shield before a preview");
+    await sweep.getByRole("button", { name: "Preview", exact: true }).click();
+    await visible(sweep.getByText(/^1 wNEAR public/));
+    assert.deepEqual(await axe(home), []);
+
+    const shields = shieldsSent(home);
+    try {
+      await until(async () => !(await shield.isDisabled()), 15_000);
+      await shield.click();
+      const dialog = home.getByRole("dialog", { name: "Shield these managed balances?" });
+      await visible(dialog);
+      // The dialog lists the previewed balance exactly, not rounded.
+      await visible(dialog.getByRole("list", { name: "Public balances to shield" }).getByText(`${fromUnits(before.public.toString(), 24)} wNEAR`, { exact: true }));
+      await dialog.getByRole("button", { name: "Shield", exact: true }).click();
+      await visible(sweep.getByText("success", { exact: true }).first());
+      await until(async () => (await shield.isDisabled()) && !(await sweep.getByText("Shielding").count()), 30_000);
+      assert.equal(shields.sent.length, 1, "one sweep with execute: true");
+    } finally {
+      shields.stop();
+    }
+    assert.equal(await sweep.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
+    const after = await holding(home, WNEAR);
+    assert.equal(after.public, 0n, "nothing of wNEAR stays public");
+    assert.equal(after.confidential, before.confidential + before.public, "the public balance moved to the confidential one");
+  });
+
+  test("Balances & funding: a deposit address is read, once per request", async () => {
+    await home.goto(`${dashboard}/a/portfolio/funding`);
+    await visible(home.getByRole("heading", { level: 2, name: "Receive funds", exact: true }));
+    const requested: string[] = [];
+    const onRequest = (request: { url(): string }) => { if (request.url().endsWith("/rpc/deposit")) requested.push(request.url()); };
+    home.on("request", onRequest);
+    try {
+      await home.getByRole("button", { name: "Get a deposit address", exact: true }).click();
+      await visible(home.getByText("Deposit address", { exact: true }));
+      await visible(home.getByRole("button", { name: "Get a new deposit address", exact: true }));
+      assert.equal(requested.length, 1, "one deposit request");
+    } finally {
+      home.off("request", onRequest);
+    }
+    assert.equal(await home.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
+    assert.deepEqual(await axe(home), []);
+    // The frame's own Connect wallet stays first in document order, whatever this page adds.
+    const connects = home.getByRole("button", { name: "Connect wallet", exact: true });
+    if (await connects.count()) assert.equal(await connects.first().evaluate(button => Boolean(button.closest("header"))), true);
+  });
+});
+
 // The unresolved operation it leaves blocks every later money action: only reads follow it.
 test("after a lost swap reply, Activity lists the unresolved operation and says resolving it is the owner's separate step", async () => {
   await dropSwapResponse(target);
@@ -564,6 +652,34 @@ test("after the lost swap reply, the Overview shows the unresolved operation, an
   await home.getByText("Review recorded refusals", { exact: true }).click();
   await visible(home.getByText("No refusals found in the retained records returned.", { exact: true }));
   assert.deepEqual(await axe(home), []);
+});
+
+test("with an operation unresolved, Shield isn't offered on Balances & funding or the Overview, and says why", async () => {
+  await fundPublic(target, WNEAR, "1000000000000000000000000");
+  const shields = shieldsSent(home);
+  try {
+    await home.goto(`${dashboard}/a/portfolio/funding`);
+    await visible(home.getByRole("heading", { level: 1, name: "Balances & funding", exact: true }));
+    await visible(home.getByRole("link", { name: "Review unresolved operations" }));
+    const sweep = home.getByRole("region", { name: "Shield public funds", exact: true });
+    await sweep.getByText("Shield public funds", { exact: true }).click();
+    // Preview still answers, and lists the public balance; Shield is disabled with the reason.
+    await sweep.getByRole("button", { name: "Preview", exact: true }).click();
+    await visible(sweep.getByText(/^1 wNEAR public/));
+    await visible(sweep.getByText(SEND_BLOCK, { exact: true }));
+    assert.equal(await sweep.getByRole("button", { name: "Shield" }).isDisabled(), true);
+    assert.deepEqual(await axe(home), []);
+
+    await home.goto(`${dashboard}/a/portfolio/`);
+    const overview = home.getByRole("region", { name: "Confidential sweep", exact: true });
+    await overview.getByRole("button", { name: "Preview", exact: true }).click();
+    await visible(overview.getByText(/^1 wNEAR public/));
+    await visible(overview.getByText(SEND_BLOCK, { exact: true }));
+    assert.equal(await overview.getByRole("button", { name: "Shield" }).isDisabled(), true);
+    assert.equal(shields.sent.length, 0, "no sweep with execute: true");
+  } finally {
+    shields.stop();
+  }
 });
 
 test("the overview fails while setup loads: Activity still lists the unresolved operation, under the overview's error", async () => {

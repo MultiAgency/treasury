@@ -76,6 +76,28 @@ Kept, with the same role, name and meaning:
 | Live grants | list | | #10 |
 | Revoke, Connect to revoke, Propose to revoke | button | | #10 |
 | Revoke the current grant?, its Revoke | dialog, button | | #10 |
+| Confidential sweep | region, on the Overview, holding the sweep below | treasury-migration | #11 |
+| Sweep, Preview, Shield (`Shielding` while it runs) | heading (level 3), button, button: the sweep, on the Overview and in Balances & funding | treasury-migration (`Shield`, `Preview`) | #11 |
+| New sends are blocked by `<n>` unresolved operation(s). Preview is still available. | text, in the sweep while Shield is disabled for it | treasury-migration | #11 |
+| Shield these managed balances?, its Shield | dialog, button | | #11 |
+| Public balances to shield | list, in that dialog: each previewed balance exactly, as `<amount> <symbol>` | | #11 |
+| Balances & funding | heading (level 1) | | #11 |
+| Balances, Receive funds or Treasury account | heading (level 2) | | #11 |
+| Managed assets, public and confidential balances | table, with row headers per asset | | #11 |
+| Other assets, Balance checks | heading (level 3) | | #11 |
+| Held payout records | list | | #11 |
+| Review unresolved operations | link (to `/activity`, while unresolved operations are reported) | treasury-migration | #11 |
+| Shield public funds | region, and its disclosure summary | | #11 |
+| Get a deposit address, Get a new deposit address | button | | #11 |
+| Link a treasury account, Treasury settings | disclosure summary | | #11 |
+| Use `<account>` or Use my account, Connect a DAO with Trezu, Link | button | | #11 |
+| Treasury NEAR account, Funding amount, Funding asset | textbox, textbox, combobox | | #11 |
+| Review transfer or Review proposal; Connect wallet or Connect in Trezu (while the treasury's signer isn't connected) | button. This "Connect wallet" comes after the frame's in document order | treasury-migration, shared-reader, account-switch (the frame's, `.first()`) | #11 |
+| Funding transfer to sign, with Cancel and Send or File funding proposal | group, buttons | | #11 |
+| Review and vote in Trezu, Open payment in Trezu | link | | #11 |
+| Confidential in Trezu | checkbox | | #11 |
+| Unlink this treasury, and its dialog's Unlink treasury | button | | #11 |
+| Continue to rebalance preview | link (to the Overview's `#rebalance`) | | #11 |
 
 The Activity page's text comes from the prototype's A8 (`send-block`) change, which exists only uncommitted in `dao/treasury`'s working tree, not at `d999861`: `BlockedSummary` and `blockedBy` (`src/shared/send-block.ts`), and its wording of a replacement as an "operation", not a "payment". `/does not establish that nothing was sent/` stays in `Activity`'s per-plan view, which the portfolio's plan outcome uses (#7); the treasury-migration spec asserts it absent after a refusal before sending.
 
@@ -91,7 +113,7 @@ Changed or not present yet:
 | Setup unavailable | The retained-records task (operation status, run timeline) below the alert | The alert and "Retry setup"; on `/automations` the "Schedule" section with "Turn off", and on `/activity` the retained records (unresolved operations, owner actions and operation history), as in A; elsewhere a "Review existing operation records" link to `/activity`. Records already loaded stay shown when a later setup read fails | #9 (run): the run timeline on `/follow/run` |
 | An agent not yet created | Onboarding | Status text: "This Treasury agent hasn't been created yet." | #12 (creation) |
 | A self-service host's root | Treasury creation | A "Your treasuries" heading with a link per treasury agent | #12 (creation) |
-| Every page under `/a/<agent>/` but the Overview, Strategy, Activity and Policy & grants | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9, #11, #12 |
+| Every page under `/a/<agent>/` but the Overview, Strategy, Balances & funding, Activity and Policy & grants | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9, #12 |
 | The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A. Strategy's own "Turn off" is there; `/follow/run` is a placeholder | #7 PR 4 (runs) |
 | Strategy's heading levels | The page's "Strategy" (`h2`, a section), "Targets and schedule" (`h3`), its sections and the review's heading (`h4`), and the editor's "Edit strategy" (`h3`) | "Strategy" is the page's `h1`; "Targets and schedule" `h2`, its sections `h3`, and the review's heading and "Edit strategy" `h4`. Names unchanged | Permanent |
 | Strategy's "Preview a manual rebalance on the overview" link | Shown | Not shown: the overview has no rebalance yet | #7 PR 3 |
@@ -103,7 +125,8 @@ Changed or not present yet:
 | `/policy`'s "Issue a new grant" and "Propose a new grant" | Rendered for an agent that isn't a Treasury agent; a Treasury agent gets the "Review strategy authorization" link | Not present: every agent in this build is a Treasury agent, whose grant is bound to the saved strategy and signed on the Strategy page (#7 PR 2). `portfolio` refuses a `grant_issue` without the strategy's digest | Permanent |
 | An owner action's "Follow the payment outcome" | A link to `/follow/payment?payment=<id>` | A link to `/activity`: this app has no page for one payment | Permanent |
 | The Overview's rebalance: the "Quoted rebalance" region (Preview, Execute, the policy's no-swaps note) and the followed plan's outcome ("Follow the outcome") | Shown | Not shown | #7 PR 3 |
-| The Overview's "Confidential sweep" region (Shield) | Shown | Not shown | #11 (funding's `sweep.tsx`); its send block with #7 PR 3 |
+| Balances & funding's "Continue to rebalance preview" | Opens the Overview at its "Quoted rebalance" (`#rebalance`) | Opens the Overview at the top: it has no `#rebalance` yet | #7 PR 3 |
+| A held payout's "Review payment `<id>`" (Balances & funding) | A link to `/follow/payment?payment=<id>` | A link to `/activity`, as for an owner action's payment | Permanent |
 | The Overview's "Known limitations" section and its "Requirements and evidence" disclosure | Shown | Not shown: both come from `features/evidence` (showcase), which the brief leaves behind | Permanent |
 | The frame on a new agent | The setup's next step (`SetupNextStep`) | Not shown | #12 (creation) |
 
@@ -148,6 +171,14 @@ Added in #10:
 
 Activity renders once setup has loaded, even while the overview is loading or has failed (under the frame's "Some agent details could not be loaded." and its error); amounts in the books then show in raw units. An interrupted "Check operation outcomes" (`recover` answered `unknown`) says "The check was interrupted. It only reads; check again.", not that it may have taken effect, and the check stays offered.
 
+Added in #11:
+- The sweep is decided from the shields it reports, not from how its stream ends, by `shared/execution-outcome.ts`'s `settle` (the CLI's `settle`, generalised to `executePlan` and proposals). A shield that was sent and hasn't settled, or a stream lost after any event, is unknown: "The outcome is unknown: this sweep request may have taken effect. …". One that was sent while another wasn't, or that failed or was refunded, or a stream that ends in a failure after one was sent, says "At least one send went out, and not every one succeeded. Funds may have moved; review Activity and unresolved operations before acting again." None sent: "Nothing was sent." In A, only each shield's status showed, and the stream's end decided the error. A preview whose answer was lost reads as a lost read ("This read failed …"), not unknown.
+- After a shield that is unknown or partly sent, Shield stays disabled on that page, even after a new Preview (A offered it again after a Preview). Likewise after an unknown outcome of "Get a deposit address", Link, the funding request, "Confidential in Trezu" or Unlink: that control isn't offered again on the page (A offered each again).
+- The frame reads the linked funding account (`treasury/get`) on the Overview and Balances & funding, as A's did. A failed read is shown only in Balances & funding ("Linked account could not be checked." with its error and "Check again" under "Receive funds"). In A it was also the frame's error ("Some agent details could not be loaded." or "Refresh failed. …"), and on Balances & funding it offered the frame's "Turn off".
+- After a wallet or Trezu error while sending a funding transfer or filing its proposal, Send (File funding proposal) stays disabled on the page, and the error adds "The transfer may have been sent: check `<account>` and this agent's balances before sending again." (or "The proposal may have been filed: check `<dao>`'s requests in Trezu before filing again."). The amount is cleared after a send. A offered Send again with the same amount. The block lasts only as long as the page: no platform read reports whether a funding transfer was sent. `treasury/fund`'s deposit address carries only `correlationId`, `address`, `memo`, `minAmount` and `expiresAt` (platform `src/contract/owner-outputs.ts`, `depositOutput`, at 1a7fe98), and `treasury/get` lists no deposit addresses, so after a reload Send is offered again. A platform gap: a funding transfer's own record would let the block outlast the page.
+- Funding is prepared, then signed. "Review transfer" (a DAO's "Review proposal") calls `treasury/fund` and shows the transaction it prepared, read from the transaction itself: the exact amount, unrounded, the deposit address, the token contract and the NEAR attached to register the address. Only then do Send or File funding proposal sign it, after `treasury/get` is read again and still names the account reviewed. A transaction that doesn't pay exactly the amount entered into its own deposit address, or a deposit address that needs a memo or a minimum above the amount, is refused before the wallet with "… Nothing was sent." A transaction the wallet reports as failed says "The transaction failed, so nothing was sent." (or filed). A sent `treasury/fund`'s transaction straight to the wallet, and said "Sent." whatever the wallet's outcome.
+- Shield's dialog lists the previewed public balances exactly ("Public balances to shield"), and says the agent reads its balances again when it runs, so anything that arrived since the preview is shielded too. A new Preview while it is open makes the review no longer current. A's dialog said it moved "the listed" balances, shown rounded.
+
 Activity's "Back to Activity" (`ActivityReturn`) and "Review invoices in Payments" don't render in a Treasury-only build in A either, and aren't ported.
 
 An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not found` (A: `Treasury · Overview`) and offers "Back to overview".
@@ -158,8 +189,9 @@ An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not
 - **`contract.json` is checked both ways** (`test/contract.test.ts`): every procedure and gateway route the app calls is covered by a required capability, and every required capability is used, per the SDK's `ownerCapabilities`.
 - **`features/workspace` is left behind.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Nor does `attention.ts`: it renders only through `DaoHome` and portfolio's `overview.tsx`, and `overview.tsx` only through `legacy/surface.ts` (the `@legacy` alias is `absent.ts` unless `PUBLIC_TREASURY_ONLY` is `"false"`). A's Treasury build serves `TreasuryDesk` at `/`, so B's Overview ports that, without the "Needs attention" list; `overview.tsx` and `attention.ts` stay behind. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
 - **Treasury creation** (`create-treasury`, `onboarding`, `setup-progress`) is its own issue.
+- **`features/funding/topup.tsx` is left behind** (the user's decision, 2026-11-03). It is the payout agent's "Top up from the treasury", through `pay`, and only payables' `overview.tsx` mounts it, so it never renders in A's Treasury-only build. The deposit address #11 lists beside it is `treasury.tsx`'s "Receive funds", which is ported.
 - **`@orpc/tanstack-query` is dropped.** A's data layer wrapped an oRPC proxy client in `@orpc/tanstack-query` (beta.44), a second oRPC beside the SDK's bundled beta.47. `src/platform.ts` builds TanStack Query options for reads itself; actions and streams never go through a query.
-- **`contract.json` grows per feature.** Step 1 requires `gateway-session-v1` and `agent-observe-v1`; Activity adds `treasury-observe-v1` (`reconcileBooks`, `ledgerCsv`) and `treasury-recovery-v1` (`recover`); each feature adds the capabilities its procedures need (platform `src/contract/owner-capabilities.ts`).
+- **`contract.json` grows per feature.** Step 1 requires `gateway-session-v1` and `agent-observe-v1`; Activity adds `treasury-observe-v1` (`reconcileBooks`, `ledgerCsv`) and `treasury-recovery-v1` (`recover`); Balances & funding adds `agent-funding-v1` (`deposit`) and `owner-treasury-v1` (`treasury/*`, `sweep`); each feature adds the capabilities its procedures need (platform `src/contract/owner-capabilities.ts`).
 
 ## Driving the build on the stack
 

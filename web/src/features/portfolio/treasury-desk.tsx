@@ -4,6 +4,7 @@ import { useAgent, useAgentReads } from "../../app/frame";
 import { Button, QueryError } from "../../shared/ui";
 import { useValuedBook } from "../../shared/valuation";
 import { Unresolved } from "../activity/activity";
+import { Sweep } from "../funding/sweep";
 import { offersStop, SCHEDULE_STOP_SCOPE, StopBlocked, StopResult, useStopSchedule } from "../owner/task-recovery";
 import { Allocation, Figures } from "./book";
 import { TreasuryLimits } from "./treasury-limits";
@@ -24,6 +25,7 @@ export function TreasuryDesk() {
       <Button asChild variant="outline"><Link to="/follow/run">View treasury runs</Link></Button>
       <Button asChild variant="outline"><Link to="/funding">Balances and funding</Link></Button>
     </nav>
+    <section id="sweep" aria-label="Confidential sweep" className="scroll-mt-8"><Sweep /></section>
     <Button asChild variant="outline" className="self-start"><Link to="/activity">View activity</Link></Button>
   </>;
 }

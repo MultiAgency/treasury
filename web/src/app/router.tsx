@@ -1,6 +1,7 @@
 import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { Activity, BooksDisclosure, Unresolved } from "../features/activity/activity";
+import { Funding } from "../features/funding/funding";
 import { Policy } from "../features/policy/policy";
 import { StrategyWorkflow } from "../features/portfolio/strategy-workflow";
 import { TreasuryDesk } from "../features/portfolio/treasury-desk";
@@ -52,7 +53,7 @@ function PolicyPage() {
 }
 
 /** A page that has moved here; a pending one shows its placeholder. */
-const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/automations": StrategyPage, "/policy": PolicyPage, "/activity": ActivityPage };
+const PORTED: Partial<Record<Page, () => ReactNode>> = { "/": TreasuryDesk, "/automations": StrategyPage, "/policy": PolicyPage, "/funding": Funding, "/activity": ActivityPage };
 
 const root = createRootRoute({ component: Shell });
 const page = (path: Page) => createRoute({ getParentRoute: () => root, path, component: PORTED[path] ?? (() => <Pending title={PAGES[path]} />) });

@@ -4,7 +4,7 @@ import { ArrowClockwise } from "@phosphor-icons/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RecoveryActivity } from "../features/activity/activity";
 import { StopSchedule } from "../features/owner/task-recovery";
-import { reads, type Overview, type Setup } from "../platform";
+import { reads, type Overview, type Setup, type Treasury } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
 import { TreasuryBrand } from "./brand";
 import { useGateway } from "./gateway-context";
@@ -14,8 +14,11 @@ import { PAGES, pageTitle } from "./pages";
 import { useCanCall, useViewer } from "./viewer";
 import { WalletButton } from "./wallet-button";
 
-/** The selected agent's setup and overview, for the pages inside the frame. */
-const AgentContext = createContext<{ setup: Setup; data: Overview } | null>(null);
+/**
+ * The selected agent's setup and overview, for the pages inside the frame, and its linked funding account on the pages
+ * that read it (`TREASURY_PAGES`): null until that read answers, or when no account is linked.
+ */
+const AgentContext = createContext<{ setup: Setup; data: Overview; treasury: Treasury | null } | null>(null);
 export function useAgent() {
   const agent = useContext(AgentContext);
   if (!agent) throw new Error("Agent observations unavailable");
@@ -63,6 +66,8 @@ function Notice({ children }: { children: ReactNode }) {
 
 /** Pages with their own schedule control: the frame doesn't offer a second one there once the page is shown. */
 const SCHEDULE_PAGES = ["/", "/automations", "/follow/run"];
+/** Pages that show the linked funding account: the frame reads it there. */
+const TREASURY_PAGES = ["/", "/funding"];
 
 /**
  * The agent's frame: its owner, the wallet and the shared reads. Until the agent exists, nothing else is shown. A
@@ -92,10 +97,12 @@ function AgentFrame() {
   const recovering = Boolean(setup.error) || (failedFor === account && !setup.isSuccess);
   const ready = Boolean(setup.data?.agentId) && !recovering;
   const overview = useQuery({ ...agentReads.overview, enabled: ready });
+  const page = (pathname.startsWith(`/a/${AGENT}`) ? pathname.slice(`/a/${AGENT}`.length) : pathname).replace(/\/$/, "") || "/";
+  const treasury = useQuery({ ...agentReads.treasury, enabled: ready && TREASURY_PAGES.includes(page) });
   // Records already shown stay shown when a later setup read fails; only a first failure replaces the frame.
   const loaded = Boolean(setup.data?.agentId && overview.data);
+  // A failed treasury/get is the page's own to show (Receive funds): it says nothing about setup, the book or the schedule.
   const error = setup.error ?? overview.error;
-  const page = (pathname.startsWith(`/a/${AGENT}`) ? pathname.slice(`/a/${AGENT}`.length) : pathname).replace(/\/$/, "") || "/";
   const title = pageTitle(page);
   useEffect(() => { document.title = `Treasury · ${title}`; }, [title]);
   // The operation records stay reviewable while setup or the overview can't be read: they are the agent's own, not the provider's.
@@ -150,7 +157,7 @@ function AgentFrame() {
     {error && canStop && setup.data.executor === true && !(SCHEDULE_PAGES.includes(page) && overview.data) && <StopSchedule />}
     <SetupContext.Provider value={setup.data}>
       {overview.data
-        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
+        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data, treasury: treasury.data ?? null }}><Outlet /></AgentContext.Provider>
         // Activity reads the agent's own records: it doesn't wait for the overview, nor hide when it fails.
         : retained ? <Outlet /> : error ? null : <Loading label="Loading the book…" />}
     </SetupContext.Provider>

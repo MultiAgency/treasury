@@ -5,6 +5,8 @@
     "gateway-session-v1",
     "agent-observe-v1",
     "agent-schedule-stop-v1",
+    "agent-funding-v1",
+    "owner-treasury-v1",
     "owner-intents-v1",
     "treasury-observe-v1",
     "treasury-strategy-v1",
