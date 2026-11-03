@@ -18,8 +18,13 @@ export type Deps = {
   trustedProxyHops: number;
 };
 
-/** Who may call a route: anyone, a signed-in session, or the signed-in owner of the route's `:agent`. */
-export type Access = "public" | "session" | "owner";
+/**
+ * Who may call a route: anyone, a signed-in session, or the signed-in owner of the route's `:agent`. `owner` may use an
+ * identity the platform answered within the last minute: for routes that forward to the platform, which checks the
+ * owner again on every forwarded call (a consent is live only while its signer owns the agent). `owner-fresh` reads it
+ * anew: for routes that answer from this server's own records, which nothing else re-checks.
+ */
+export type Access = "public" | "session" | "owner" | "owner-fresh";
 type Identity = { agent: string; owner: string; agentId: string | null; host: string };
 /** A call as its handler sees it. `identity` is the agent's, read fresh by the owner check, on owner routes only. */
 type Call = { req: IncomingMessage; body: unknown; token: string | undefined; account: string | undefined; params: Record<string, string>; identity?: Identity };
@@ -52,7 +57,11 @@ export function clientAddress(req: IncomingMessage, hops: number) {
   const direct = req.socket.remoteAddress ?? "unknown";
   if (hops === 0) return direct;
   const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",").map(part => part.trim()).filter(Boolean);
-  return forwarded[forwarded.length - hops] ?? direct;
+  const address = forwarded[forwarded.length - hops];
+  if (address) return address;
+  // Every such client shares the proxy's own bucket: the proxy isn't forwarding as configured.
+  log("proxy_address_missing", { hops, forwarded: forwarded.length });
+  return direct;
 }
 
 /** Every route the server answers. Tests walk this table, so a new route is covered by the access tests as it's added. */
@@ -66,11 +75,11 @@ export const routes: Route[] = [
   },
   {
     method: "POST", path: "/api/session", access: "public",
-    async handle({ body, token }, { signIn, sessions }) {
+    async handle({ req, body, token }, { signIn, sessions, trustedProxyHops }) {
       const signed = parse(contract.signIn, body);
       if (!signed) return refused(400, "bad_request");
-      const result = await signIn.verify(signed);
-      if (!result.ok) return result.kind === "unavailable" ? unavailable() : refused(401, result.code);
+      const result = await signIn.verify(clientAddress(req, trustedProxyHops), signed);
+      if (!result.ok) return result.kind === "unavailable" ? unavailable() : refused(result.code === "rate_limited" ? 429 : 401, result.code);
       // A sign-in replaces the session the browser carried, which ends here rather than living on until it expires.
       sessions.end(token);
       return { ...ok({ account: result.account }), cookie: cookieFor(sessions.start(result.account), sessions.maxMs) };
@@ -129,29 +138,35 @@ async function readBody(req: IncomingMessage): Promise<{ ok: true; body: unknown
 }
 
 /**
- * Checks a call before its handler runs. A write must come from this server's own origin and carry JSON. A session
- * route needs a live session. An owner route also needs the session's account to be the agent's owner, read fresh
- * from the platform on every request because ownership can change: the platform's own checks prove this server may
- * act for the agent, not that the person in the browser owns it.
+ * Checks a call before its handler runs. A write must come from this server's own origin and carry JSON, unless it's a
+ * DELETE without a body. A session
+ * route needs a live session. An owner route also needs the session's account to be the agent's owner, as the
+ * platform answers it (within the last minute, or anew for `owner-fresh`; see `Access`), because ownership can change:
+ * the platform's own checks prove this server may act for the agent, not that the person in the browser owns it.
  *
- * An agent that doesn't exist and an agent someone else owns get the same answer, `not_owner`, so a signed-in
- * stranger can't tell which agents exist. The platform's own failures are logged, never forwarded: the browser gets
- * `not_owner` or `unavailable`.
+ * An agent that doesn't exist or that this deployment can't see (the platform's 404, or `forbidden`) and one someone
+ * else owns get the same answer, `not_owner`, so a signed-in stranger can't tell which agents exist. Any other platform
+ * refusal, such as the credential's hourly limit (429), says nothing about ownership, so it's `unavailable`. The
+ * platform only ever names the credential's own deployment, so an identity naming another means this server's
+ * `TREASURY_DEPLOYMENT` is misconfigured: every agent answers `unavailable`. Platform failures are logged, never forwarded.
  */
 async function admit(route: Route, call: Call, deps: Deps): Promise<Reply | Identity | undefined> {
   if (route.method !== "GET") {
     if (call.req.headers.origin !== deps.publicOrigin) return refused(403, "origin");
-    if (!/^application\/json(;|$)/.test(call.req.headers["content-type"] ?? "")) return refused(415, "content_type");
+    // A body must be JSON; a DELETE without one (sign-out) needs no content type.
+    const bodyless = route.method === "DELETE" && call.body === undefined;
+    if (!bodyless && !/^application\/json(;|$)/.test(call.req.headers["content-type"] ?? "")) return refused(415, "content_type");
   }
   if (route.access === "public") return undefined;
   if (!call.account) return fail(401, { ok: false, kind: "not_signed_in" });
   if (route.access === "session") return undefined;
   if (!parse(contract.agentName, call.params.agent)) return refused(400, "bad_request");
-  const identity = await deps.platform.identity(call.params.agent!);
+  const identity = await deps.platform.identity(call.params.agent!, { fresh: route.access === "owner-fresh" });
   if (!identity.ok) {
-    log("platform_identity_failed", { agent: call.params.agent, kind: identity.kind, ..."status" in identity && { status: identity.status }, ..."error" in identity && { error: identity.error } });
-    // No such agent, or one this deployment can't see: to the browser, the same as someone else's agent.
-    return identity.kind === "refused" || identity.kind === "forbidden" ? notOwner() : unavailable();
+    log("platform_identity_failed", { agent: call.params.agent, kind: identity.kind, ..."status" in identity && { status: identity.status },
+      ..."httpStatus" in identity && { httpStatus: identity.httpStatus }, ..."error" in identity && { error: identity.error } });
+    const unseen = (identity.kind === "refused" && identity.status === 404) || identity.kind === "forbidden";
+    return unseen ? notOwner() : unavailable();
   }
   if (identity.value.deployment !== deps.deployment) {
     log("deployment_mismatch", { agent: call.params.agent, expected: deps.deployment, got: identity.value.deployment });

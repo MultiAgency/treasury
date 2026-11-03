@@ -85,12 +85,13 @@ test("a signed-in account that doesn't own the agent is refused, by the platform
   assert.deepEqual({ status: agent.status, body: await agent.json() }, { status: 403, body: { ok: false, kind: "not_owner" } });
 });
 
-test("the owner's signature over another recipient, or a reused challenge, doesn't sign in", async () => {
+test("the owner's signature over another recipient doesn't sign in, and a challenge signs in once", async () => {
   const issued = await challenge();
   const elsewhere = await signOwner(target, { ...issued, recipient: new URL(stack.state().dashboard).host });
   assert.equal(((await (await post("/api/session", { ...elsewhere, nonce: issued.nonce })).json()) as { code: string }).code, "bad_signature");
-  const reused = await signOwner(target, issued);
-  assert.equal(((await (await post("/api/session", { ...reused, nonce: issued.nonce })).json()) as { code: string }).code, "unknown_challenge");
+  const signed = await signOwner(target, issued);
+  assert.equal((await post("/api/session", { ...signed, nonce: issued.nonce })).status, 200, "a bad signature didn't use the challenge up");
+  assert.equal(((await (await post("/api/session", { ...signed, nonce: issued.nonce })).json()) as { code: string }).code, "unknown_challenge", "a signed-in challenge is spent");
 });
 
 test("without a session, from another origin, or after sign-out or idle time, the agent isn't reachable", async () => {

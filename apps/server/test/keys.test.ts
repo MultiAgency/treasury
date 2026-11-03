@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AccessKeyDoesNotExistError, AccountDoesNotExistError, InvalidAccountIdError, NetworkError } from "near-kit";
+import { AccessKeyDoesNotExistError, AccountDoesNotExistError, NetworkError } from "near-kit";
 import { Secret } from "../src/config.ts";
 import { chainKeyLookup, rpcHeaders, rpcUrlFor, type AccessKeyRpc } from "../src/keys.ts";
 
@@ -14,7 +14,6 @@ test("a full-access key is full, a function-call key limited, and a missing key 
   assert.equal(await lookup(async () => ({ permission: { FunctionCall: { receiver_id: "x.near", method_names: [] } } })), "limited");
   assert.equal(await lookup(async () => { throw new AccessKeyDoesNotExistError("owner.near", KEY); }), "none");
   assert.equal(await lookup(async () => { throw new AccountDoesNotExistError("owner.near"); }), "none");
-  assert.equal(await lookup(async () => { throw new InvalidAccountIdError("Owner.NEAR"); }), "none", "an invalid account ID is a refusal, not an outage");
 });
 
 test("an RPC that fails or doesn't answer in time is unavailable, never a missing key", async () => {

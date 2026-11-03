@@ -15,14 +15,15 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
 } = {}) {
   const calls: string[] = [];
   const platform: Platform = {
-    async identity(agent) {
-      calls.push(`identity ${agent}`);
+    async identity(agent, { fresh = false } = {}) {
+      calls.push(`identity ${agent}${fresh ? " (fresh)" : ""}`);
       if (failing[agent]) return failing[agent];
       const owner = owners[agent];
       return owner
         ? { ok: true, value: { agent, owner, agentId: `id-${agent}`, created: true, host: "platform.test", deployment: foreign.includes(agent) ? "elsewhere" : "treasury" } }
         : { ok: false, kind: "refused", status: 404, error: "No such agent" };
     },
+    forget(agent) { calls.push(`forget ${agent}`); },
   };
   return { platform, calls };
 }

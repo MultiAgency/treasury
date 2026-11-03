@@ -13,7 +13,8 @@ export const signIn = z.strictObject({
   accountId,
   publicKey: z.string().regex(/^ed25519:[1-9A-HJ-NP-Za-km-z]{32,64}$/),
   signature: z.string().min(1).max(200),
-  nonce: z.string().min(1).max(64),
+  // Exactly the canonical base64 of 32 bytes: base64 decoding is lenient, and a spent nonce is matched by its text.
+  nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
 });
 export const session = z.strictObject({ account: z.string() });
 export const agent = z.strictObject({ agent: z.string(), owner: z.string(), agentId: z.string().nullable(), host: z.string() });

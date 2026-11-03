@@ -1,4 +1,4 @@
-import { AccessKeyDoesNotExistError, AccountDoesNotExistError, InvalidAccountIdError, Near } from "near-kit";
+import { AccessKeyDoesNotExistError, AccountDoesNotExistError, Near } from "near-kit";
 import type { Secret } from "./config.ts";
 
 /** Whether `publicKey` is a full-access key of `accountId` now; `unavailable` when the chain didn't answer in time. */
@@ -24,7 +24,7 @@ export function rpcHeaders(rpcUrl: string, apiKey: Secret | undefined): Record<s
 export type AccessKeyRpc = { getAccessKey(accountId: string, publicKey: string, options: { finality: "final" }): Promise<{ permission: unknown }> };
 
 /**
- * The chain's answer through near-kit's RPC client, at final finality. A missing key or account, or an invalid account ID, is `none`, a key that
+ * The chain's answer through near-kit's RPC client, at final finality. A missing key or account is `none`, a key that
  * isn't `"FullAccess"` is `limited`, and anything else (a network error, a timeout) is `unavailable`. `Near.getAccessKey`
  * isn't used: it turns every error into `null`, so an outage would read as a missing key. One retry at most and a
  * timeout, so a slow RPC makes sign-in fail rather than hang.
@@ -41,7 +41,8 @@ export function chainKeyLookup({ rpcUrl, apiKey, timeoutMs, rpc }: {
       if (key === "timeout") return "unavailable";
       return key.permission === "FullAccess" ? "full" : "limited";
     } catch (error) {
-      const missing = error instanceof AccessKeyDoesNotExistError || error instanceof AccountDoesNotExistError || error instanceof InvalidAccountIdError;
+      // An invalid account ID never gets here: `contract.accountId` refuses it before any lookup.
+      const missing = error instanceof AccessKeyDoesNotExistError || error instanceof AccountDoesNotExistError;
       return missing ? "none" : "unavailable";
     } finally {
       clearTimeout(timer);
