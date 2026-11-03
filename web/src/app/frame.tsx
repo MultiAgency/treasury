@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { ArrowClockwise } from "@phosphor-icons/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { StopSchedule } from "../features/owner/task-recovery";
 import { reads, type Overview, type Setup } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
 import { TreasuryBrand } from "./brand";
@@ -9,7 +10,7 @@ import { useGateway } from "./gateway-context";
 import { useHashTarget } from "./hash-target";
 import { AGENT } from "./location";
 import { PAGES, pageTitle } from "./pages";
-import { useViewer } from "./viewer";
+import { useCanCall, useViewer } from "./viewer";
 import { WalletButton } from "./wallet-button";
 
 /** The selected agent's setup and overview, for the pages inside the frame. */
@@ -44,12 +45,16 @@ function Notice({ children }: { children: ReactNode }) {
   return <div className="flex items-center gap-3 p-8 text-muted-foreground">{children}</div>;
 }
 
+/** Pages with their own schedule control: the frame doesn't offer a second one there. */
+const SCHEDULE_PAGES = ["/automations", "/follow/run"];
+
 /**
  * The agent's frame: its owner, the wallet and the shared reads. Until the agent exists, nothing else is shown. A
- * failed read never hides records already loaded.
+ * failed read never hides records already loaded; where the schedule can be stopped, stopping it stays offered.
  */
 function AgentFrame() {
   const viewer = useViewer();
+  const canStop = useCanCall("autopilot/stop");
   const pathname = useLocation({ select: location => location.pathname });
   const previousPath = useRef(pathname);
   useEffect(() => {
@@ -74,7 +79,8 @@ function AgentFrame() {
   // Records already shown stay shown when a later setup read fails; only a first failure replaces the frame.
   const loaded = Boolean(setup.data?.agentId && overview.data);
   const error = setup.error ?? overview.error;
-  const title = pageTitle(pathname.startsWith(`/a/${AGENT}`) ? pathname.slice(`/a/${AGENT}`.length) : pathname);
+  const page = (pathname.startsWith(`/a/${AGENT}`) ? pathname.slice(`/a/${AGENT}`.length) : pathname).replace(/\/$/, "") || "/";
+  const title = pageTitle(page);
   useEffect(() => { document.title = `Treasury · ${title}`; }, [title]);
 
   if (recovering && !loaded)
@@ -90,6 +96,7 @@ function AgentFrame() {
           {setup.isFetching ? "Retrying setup…" : "Retry setup"}
         </Button>
       </div>
+      {page === "/automations" && <StopSchedule />}
     </main>;
   if (!setup.data) return <Notice><Spinner /> Loading…</Notice>;
   if (!setup.data.agentId)
@@ -114,6 +121,7 @@ function AgentFrame() {
       <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
       <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
     </>}
+    {error && canStop && setup.data.executor === true && !SCHEDULE_PAGES.includes(page) && <StopSchedule />}
     {overview.data
       ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
       : error ? null : <Loading label="Loading the book…" />}

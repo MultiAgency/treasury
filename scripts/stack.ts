@@ -102,3 +102,9 @@ export const dropSwapResponse = (target: Stack) => control(target, { command: "d
 
 /** An outage of `portfolio`'s provider only. */
 export const setUnavailable = (target: Stack, value: boolean) => control(target, { command: "setUnavailable", agent: "portfolio", value });
+
+/** `portfolio`'s provider accepts the owner's next signature but loses the reply, and withholds the owner outcome: an `unknown` submission. */
+export const dropSignatureResponse = (target: Stack) => control(target, { command: "dropSignatureResponse", agent: "portfolio" });
+
+/** `portfolio`'s provider answers owner outcomes again, after `dropSignatureResponse`. */
+export const revealOwnerOutcome = (target: Stack) => control(target, { command: "revealOwnerOutcome", agent: "portfolio" });

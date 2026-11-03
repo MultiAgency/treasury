@@ -1,6 +1,6 @@
 import { type DataStorage, NearConnector } from "@fastnear/near-connect";
 import { useSyncExternalStore } from "react";
-import type { Challenge, SignedChallenge } from "../platform";
+import type { Challenge, SignedChallenge, Transaction } from "../platform";
 
 type WalletState = { status: "idle" | "connecting" | "connected"; accountId?: string; publicKey?: string };
 
@@ -8,20 +8,20 @@ type WalletState = { status: "idle" | "connecting" | "connected"; accountId?: st
  * HOT's near-connect wallet list. It declares delegate actions for more wallets than FastNear's, which owner actions
  * need. Not pinned: each wallet's own code loads from addresses that change anyway.
  */
-const HOT_WALLETS = "https://raw.githubusercontent.com/hot-dao/near-selector/refs/heads/main/repository/manifest.json";
+export const HOT_WALLETS = "https://raw.githubusercontent.com/hot-dao/near-selector/refs/heads/main/repository/manifest.json";
 
-/** Keeps the member's connection apart from any other in the same browser. */
-const namespaced = (prefix: string): DataStorage => ({
+/** Keeps each connection's session apart from the others in the same browser. */
+export const namespaced = (prefix: string): DataStorage => ({
   get: async key => localStorage.getItem(`${prefix}:${key}`),
   set: async (key, value) => localStorage.setItem(`${prefix}:${key}`, value),
   remove: async key => localStorage.removeItem(`${prefix}:${key}`),
 });
 
 /**
- * The owner's wallet, which also signs the member in: NEP-413 messages for sign-in and grants, NEP-366 delegate actions
- * for creating and freezing, so only wallets offering both are listed. One connection as an external store.
+ * One wallet connection as an external store: its account, connect and disconnect, and sending a transaction as that
+ * account. `walletId` connects that wallet without asking which.
  */
-function walletSession() {
+export function walletSession(createConnector: () => NearConnector, walletId?: string) {
   let instance: NearConnector | undefined;
   let state: WalletState = { status: "idle" };
   const listeners = new Set<() => void>();
@@ -31,7 +31,7 @@ function walletSession() {
   };
   const connector = () => {
     if (!instance) {
-      instance = new NearConnector({ network: "mainnet", manifest: HOT_WALLETS, features: { signMessage: true, signDelegateActions: true }, storage: namespaced("member") });
+      instance = createConnector();
       instance.on("wallet:signIn", sync);
       instance.on("wallet:signOut", () => update({ status: "idle" }));
       void sync();
@@ -48,6 +48,7 @@ function walletSession() {
   }
   return {
     get connector() { return connector(); },
+    update,
     use: () => useSyncExternalStore(listener => {
       listeners.add(listener);
       connector();
@@ -55,21 +56,33 @@ function walletSession() {
     }, () => state),
     async connect() {
       update({ status: "connecting" });
-      try { await connector().connect(); } finally { await sync(); }
+      try { await connector().connect(walletId ? { walletId } : undefined); } finally { await sync(); }
     },
     async disconnect() {
       await connector().disconnect();
       update({ status: "idle" });
     },
+    /** Sends `transaction` as the connected account. Through Trezu that files it as a DAO proposal. */
+    async send(transaction: Transaction) {
+      const { wallet, accounts } = await connector().getConnectedWallet();
+      const signerId = accounts[0]?.accountId;
+      if (!signerId) throw new Error("Connect a wallet first");
+      return wallet.signAndSendTransaction({ signerId, ...transaction });
+    },
   };
 }
 
-const wallet = walletSession();
+/**
+ * The owner's wallet, which also signs the member in: NEP-413 messages for sign-in and grants, NEP-366 delegate actions
+ * for creating and freezing, so only wallets offering both are listed.
+ */
+export const wallet = walletSession(() => new NearConnector({ network: "mainnet", manifest: HOT_WALLETS,
+  features: { signMessage: true, signDelegateActions: true }, storage: namespaced("member") }));
 export const useWallet = wallet.use;
 export const connect = () => wallet.connect();
 export const disconnect = () => wallet.disconnect();
 
-const fromBase64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
+export const fromBase64 = (value: string) => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 
 /** Signs the gateway's sign-in challenge with the member's wallet, connecting first. */
 export async function signChallenge({ message, recipient, nonce }: Challenge): Promise<SignedChallenge> {
