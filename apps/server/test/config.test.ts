@@ -8,6 +8,7 @@ const env = {
   TREASURY_DEPLOYMENT: "treasury",
   TREASURY_CREDENTIAL_FILE: "/run/secrets/tap",
   TREASURY_PUBLIC_ORIGIN: "https://treasury.test",
+  TREASURY_AUDIT_FILE: "/var/lib/treasury/audit.jsonl",
 };
 
 test("the configuration is checked at startup, with defaults for lifetimes and limits", () => {
@@ -19,6 +20,7 @@ test("the configuration is checked at startup, with defaults for lifetimes and l
   assert.equal(settings.CHALLENGES_PER_MINUTE, 10);
   assert.equal(settings.TREASURY_TRUSTED_PROXY_HOPS, 0, "no proxy is trusted unless configured");
   assert.equal(settings.OWNER_REQUESTS_PER_MINUTE, 60);
+  assert.equal(settings.CONSENTS_PER_DAY, 5);
   assert.equal(secrets.FASTNEAR_API_KEY, undefined);
 });
 

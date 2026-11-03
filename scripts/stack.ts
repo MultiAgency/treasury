@@ -25,6 +25,8 @@ export function stack(directory: string): Stack {
  * installed (`../platform` by default, or TREASURY_PLATFORM), as the platform's own specs do, and answers it with a
  * `stop` that ends it. `args` are the stack's other flags: without a browser by default, or `--frontend <dist>` to serve
  * an owner build in the stack's browser, whose owner page starts signed in (`state().cdp` attaches to it).
+ * `appCredential` runs the platform's operator command for app credentials (`pnpm app-credential …`) in the stack's
+ * gateway, as the stack itself does to issue its first: `issue`, `list` or `revoke`.
  */
 export async function startStack({ args = ["--no-browser"], platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform") }: { args?: string[]; platform?: string } = {}) {
   const head = execFileSync("git", ["-C", platform, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -56,7 +58,9 @@ export async function startStack({ args = ["--no-browser"], platform = process.e
     /** With `--app <deployment>`: the app's base and the 0600 file holding its `tap_` credential. */
     app: { deployment: string; base: string; credentialFile: string } | null;
   };
-  return { target: stack(directory), state, stop };
+  const appCredential = (...command: string[]) => execFileSync(process.execPath, ["--import", "tsx", join(platform, "src", "app-credential.ts"), ...command],
+    { cwd: join(directory, "environment", "gateway"), encoding: "utf8", env: { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS } });
+  return { target: stack(directory), state, stop, appCredential };
 }
 
 let sequence = 0;
