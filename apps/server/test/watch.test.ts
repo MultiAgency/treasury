@@ -265,7 +265,7 @@ test("forbidden without a live consent: the agent stops, reads why, and resumes 
 });
 
 test("forbidden with a live consent holds the agent for the backoff, then it reads again: a platform stopping answers so too", async () => {
-  // "Access ended before forwarding" (`app-routes.ts:182-186`) comes while the platform stops, the consent still live.
+  // "Access ended before forwarding" (`app-routes.ts:462-466`) comes while the platform stops, the consent still live.
   const w = await world();
   w.answers.overview = failure("forbidden") as never;
   const event = await w.tick();
@@ -293,7 +293,7 @@ test("forbidden when the consents can't be read: the agent waits for a live cons
 });
 
 test("withdrawn on a resend: made under a consent since replaced, so it's dropped and the agent proposes again, not stopped", async () => {
-  // The platform answers withdrawn only through a live consent (`app-routes.ts:141-143`): the owner connected again
+  // The platform answers withdrawn only through a live consent (`app-routes.ts:411-413`): the owner connected again
   // after a lost answer, and the proposal made under the old consent was withdrawn (`service.ts:52-58`).
   const w = await world();
   w.answers.create.push(failure("unavailable") as ProposalAnswer, refused("withdrawn"));
