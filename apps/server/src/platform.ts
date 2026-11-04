@@ -1,4 +1,4 @@
-import { appClient, type AppBase, type ProposalView } from "@multiagency/sdk";
+import { appClient, type AppBase, type AppInputs, type OwnerOutput, type OwnerResult, type ProposalView } from "@multiagency/sdk";
 import type { Credential } from "./credential.ts";
 
 type App = ReturnType<typeof appClient>;
@@ -13,6 +13,22 @@ type Signed = { message: string; nonce: string; publicKey: string; signature: st
 export type ConsentRecord = Extract<Awaited<ReturnType<App["consents"]["list"]>>, { ok: true }>["value"]["consents"][number];
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
 export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
+
+/**
+ * What `watch` may ask the platform: an agent's three reads it decides from, its own proposals' create, read and list,
+ * and the identity and consents that tell it why it was refused. Nothing that approves, executes, withdraws, consents,
+ * changes a strategy or autopilot, or plans: those are out of its reach by type (`test/watch-platform.test.ts`).
+ */
+export type WatchPlatform = {
+  overview(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"overview">>>;
+  unresolved(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"unresolved">>>;
+  autopilot(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"autopilot/get">>>;
+  list(organization: string, agent: string): Promise<ProposalListAnswer>;
+  get(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
+  create(organization: string, agent: string, input: AppInputs["proposals/create"]): Promise<ProposalAnswer>;
+  identity: Platform["identity"];
+  consents(organization: string): ReturnType<App["consents"]["list"]>;
+};
 
 /** What the server asks the platform. Every call goes through here; tests replace it with a fake. */
 export type Platform = {
@@ -56,7 +72,7 @@ export type Platform = {
  */
 export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000, now = Date.now, fetch: send = fetch }: {
   origin: string; credential: Credential; timeoutMs: number; cacheMs?: number; now?: () => number; fetch?: typeof fetch;
-}): Platform {
+}): Platform & { watch: WatchPlatform } {
   const timed: typeof fetch = (input, init) =>
     send(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
   let current: { secret: Awaited<ReturnType<Credential["get"]>>; client: ReturnType<typeof appClient> } | undefined;
@@ -83,25 +99,38 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     reading.set(agent, pending);
     return pending;
   };
+  const identity: Platform["identity"] = async (agent, { fresh = false } = {}) => {
+    if (!fresh) {
+      const reuse = kept.get(agent);
+      if (reuse && reuse.until > now()) return { answer: reuse.answer, cached: true };
+    }
+    return { answer: await ((!fresh && reading.get(agent)) || read(agent)), cached: false };
+  };
+  const proposals: Platform["proposals"] = {
+    list: async (organization, agent) => (await client()).agent(organization, agent).call("proposals/list") as Promise<ProposalListAnswer>,
+    get: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/get", { id }) as Promise<ProposalAnswer>,
+    approve: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/approve", input) as Promise<ProposalAnswer>,
+    reject: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/reject", input) as Promise<ProposalAnswer>,
+    execute: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/execute", { id }) as Promise<ProposalAnswer>,
+  };
+  const consents: Platform["consents"] = {
+    list: async organization => (await client()).consents.list(organization),
+    submit: async submission => (await client()).consents.submit(submission),
+    revoke: async id => (await client()).consents.revoke(id),
+  };
   return {
-    async identity(agent, { fresh = false } = {}) {
-      if (!fresh) {
-        const reuse = kept.get(agent);
-        if (reuse && reuse.until > now()) return { answer: reuse.answer, cached: true };
-      }
-      return { answer: await ((!fresh && reading.get(agent)) || read(agent)), cached: false };
-    },
-    proposals: {
-      list: async (organization, agent) => (await client()).agent(organization, agent).call("proposals/list") as Promise<ProposalListAnswer>,
-      get: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/get", { id }) as Promise<ProposalAnswer>,
-      approve: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/approve", input) as Promise<ProposalAnswer>,
-      reject: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/reject", input) as Promise<ProposalAnswer>,
-      execute: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/execute", { id }) as Promise<ProposalAnswer>,
-    },
-    consents: {
-      list: async organization => (await client()).consents.list(organization),
-      submit: async submission => (await client()).consents.submit(submission),
-      revoke: async id => (await client()).consents.revoke(id),
+    identity,
+    proposals,
+    consents,
+    watch: {
+      overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
+      unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
+      autopilot: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/get"),
+      list: proposals.list,
+      get: proposals.get,
+      create: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/create", input) as Promise<ProposalAnswer>,
+      identity,
+      consents: consents.list,
     },
   };
 }

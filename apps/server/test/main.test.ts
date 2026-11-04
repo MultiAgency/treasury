@@ -78,3 +78,40 @@ test("with valid settings it listens, issues challenges for its own host, refuse
   child.kill("SIGTERM");
   assert.equal((await exited).code, 0, "a shutdown signal ends it cleanly");
 });
+
+/** An agents file for `watch` and a place for its stored requests, beside the rest of `env`. */
+function withWatch(env: ReturnType<typeof environment>, agents: unknown[]) {
+  const dir = mkdtempSync(join(tmpdir(), "treasury-main-watch-")), file = join(dir, "watch.json");
+  writeFileSync(file, JSON.stringify({ agents }), { mode: 0o600 });
+  return { ...env, TREASURY_WATCH_FILE: file, TREASURY_REQUESTS_FILE: join(dir, "requests.json"), PLATFORM_TIMEOUT_MS: "500" };
+}
+
+test("watch agents past the read budget stop startup, naming the budget", async t => {
+  const agents = Array.from({ length: 4 }, (_, i) => ({ organization: "owner--near", agent: `a${i}`, intervalS: 60 }));
+  const { code, stderr } = await start(t, withWatch(environment(), agents)).exited;
+  assert.notEqual(code, 0);
+  assert.match(stderr, /720 calls an hour/);
+});
+
+test("with watch configured it ticks each agent, logs each event as a line, and still stops cleanly", async t => {
+  const env = withWatch(environment(), [{ organization: "owner--near", agent: "portfolio" }]);
+  const { child, exited, listening } = start(t, env);
+  let stdout = "";
+  // Read from the start, so an event in the listening line's chunk isn't missed; with its own deadline.
+  const event = new Promise<Record<string, unknown>>((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error(`no watch event after 8 s: ${stdout}`)), 8_000);
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+      const line = stdout.split("\n").find(text => text.includes("\"agent\":\"portfolio\""));
+      if (line) { clearTimeout(deadline); resolve(JSON.parse(line)); }
+    });
+  });
+  await listening;
+  // The platform's host doesn't answer here: the tick's reads fail, and nothing is proposed.
+  const logged = await event;
+  assert.equal(logged.event, "watch");
+  assert.equal(logged.organization, "owner--near");
+  assert.ok(logged.failed, JSON.stringify(logged));
+  child.kill("SIGTERM");
+  assert.equal((await exited).code, 0);
+});

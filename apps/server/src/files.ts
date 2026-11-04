@@ -1,5 +1,31 @@
-import { mkdir, open } from "node:fs/promises";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir, open, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+/** Flushes a directory, so a rename or a new file in it survives a crash. */
+async function syncDir(dir: string) {
+  const handle = await open(dir, "r");
+  try { await handle.sync(); } finally { await handle.close(); }
+}
+
+/**
+ * Replaces `path` with `data` atomically and owner-only: a uniquely named temporary file beside it, flushed, then
+ * renamed over it, and the directory flushed. A crash leaves the old file or the new one, never a torn one, and a
+ * leftover temporary file never blocks a later write, since every write uses a fresh name.
+ */
+export async function writeAtomic(path: string, data: string) {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = join(dirname(path), `.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temporary, "wx", 0o600);
+    try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
+    await rename(temporary, path);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+  await syncDir(dirname(path));
+}
 
 /**
  * Opens `path` for appending, creating it and its directory owner-only if missing, so a path that can't be written

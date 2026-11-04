@@ -11,20 +11,23 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
-import { signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
+import { ETH, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import { fileAudit } from "../src/audit.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createPlatform } from "../src/platform.ts";
+import { createRequests } from "../src/requests.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
+import { createWatch } from "../src/watch.ts";
 import { HOST, ORIGIN, wallet } from "./fakes.ts";
 
 const intruder = wallet("intruder.near");
 const clock = { now: Date.now() };
 const audit = fileAudit(join(mkdtempSync(join(tmpdir(), "treasury-stack-")), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string, server: Server, base: string;
+let platform: ReturnType<typeof createPlatform>;
 
 before(async () => {
   stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
@@ -33,8 +36,9 @@ before(async () => {
   owner = state.ownerAccount;
   assert.ok(state.app, "the stack was started with --app");
   const keyLookup = standInKeyLookup({ [owner]: [state.testPublicKey], [intruder.accountId]: [intruder.publicKey] });
+  platform = createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) });
   server = createHttpServer(createServer({
-    platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
+    platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
     publicOrigin: ORIGIN,
@@ -192,4 +196,29 @@ test("the owner reads, approves and executes a proposal through the server, and 
     ["approve", "attempt", undefined], ["approve", "result", true], ["execute", "attempt", undefined], ["execute", "result", true],
     ["reject", "attempt", undefined], ["reject", "result", true],
   ], "the second execute was answered from the read: nothing sent, nothing to record");
+});
+
+test("watch proposes for the drifted agent under the owner's consent: the request stored, the proposal open, and the next tick held", async () => {
+  const issued = await challenge();
+  const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  if (((await (await get(`/api/agents/${target.agent}/consent`, cookie)).json()) as { value: { consent: unknown } }).value.consent === null) await connect();
+  // All of it in wNEAR: whatever the agent holds now, the book drifts from that.
+  await setTargets(target, { [USDC]: 0, [WNEAR]: 10_000, [ETH]: 0 });
+  const requests = await createRequests(join(mkdtempSync(join(tmpdir(), "treasury-stack-watch-")), "requests.json"));
+  const watch = createWatch({ platform: platform.watch, requests, publicOrigin: ORIGIN });
+  const organization = owner.replaceAll(".", "--");
+  const watched = { organization, agent: target.agent, driftPoints: 1, intervalS: 300, proposalHours: 24 };
+  const event = await watch.tick(watched);
+  assert.ok(event.proposed, JSON.stringify(event));
+  const [stored] = requests.of(organization, target.agent);
+  assert.equal(stored!.proposalId, event.proposed, "the request on disk names its proposal");
+  const read = await platform.watch.get(organization, target.agent, event.proposed as string);
+  assert.ok(read.ok, JSON.stringify(read));
+  assert.equal(read.value.state, "proposed");
+  assert.equal(read.value.requestId, stored!.requestId);
+  assert.match(read.value.note ?? "", /^Drift \d+\.\d points from the targets$/);
+  assert.deepEqual(await watch.tick(watched), { organization, agent: target.agent, skipped: "live proposal", proposalId: event.proposed, state: "proposed" });
+  // Sent again under its requestId, the platform answers the same proposal and stores nothing new.
+  const again = await platform.watch.create(organization, target.agent, requests.input(stored!));
+  assert.ok(again.ok && again.value.id === event.proposed, JSON.stringify(again));
 });

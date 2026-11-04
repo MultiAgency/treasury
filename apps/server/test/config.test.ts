@@ -54,3 +54,11 @@ test("a secret never prints: not as a string, in JSON or when inspected", () => 
   for (const printed of [String(secrets.FASTNEAR_API_KEY), JSON.stringify(secrets), inspect(secrets), `${secrets.FASTNEAR_API_KEY}`])
     assert.ok(!printed.includes("fn_real_key"), printed);
 });
+
+test("watch runs only when its agents' file is named, and then needs a file for its stored requests", () => {
+  const { settings } = loadConfig(env);
+  assert.equal(settings.TREASURY_WATCH_FILE, undefined, "off unless configured");
+  assert.throws(() => loadConfig({ ...env, TREASURY_WATCH_FILE: "/etc/treasury/watch.json" }), /TREASURY_REQUESTS_FILE: required with TREASURY_WATCH_FILE/);
+  const on = loadConfig({ ...env, TREASURY_WATCH_FILE: "/etc/treasury/watch.json", TREASURY_REQUESTS_FILE: "/var/lib/treasury/requests.json" }).settings;
+  assert.equal(on.TREASURY_REQUESTS_FILE, "/var/lib/treasury/requests.json");
+});
