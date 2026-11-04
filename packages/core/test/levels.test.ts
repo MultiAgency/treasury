@@ -46,3 +46,11 @@ test("an unknown level or an unusable value rejects as invalid", () => {
   const noValue = checkLevel(order(1_000), 1, 0, limits);
   assert.deepEqual([noValue.ok, noValue.ok === false && noValue.rule], [false, "INVALID_INPUT"]);
 });
+
+test("an unusable order size rejects at every level, so L1's cap can't be skipped by NaN", () => {
+  for (const level of [0, 1, 2, 3, 4] as Level[])
+    for (const size of [Number.NaN, Number.POSITIVE_INFINITY, -1, 0]) {
+      const r = checkLevel(order(size, "sell-volatile"), level, VALUE, limits);
+      assert.equal(r.ok === false && r.rule, "INVALID_INPUT", `L${level} ${size}`);
+    }
+});

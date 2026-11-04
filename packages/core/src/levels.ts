@@ -6,6 +6,7 @@
 import type { Intent } from "./bands.ts";
 import type { PolicyResult } from "./policy.ts";
 import { isPct, report } from "./validate.ts";
+import { withinOrderCap } from "./caps.ts";
 
 /** Escalation level. Rises on its own; only a human lowers it, one step at a time (A15). */
 export type Level = 0 | 1 | 2 | 3 | 4;
@@ -34,13 +35,15 @@ export function checkLevel(order: Intent, level: Level, treasuryValueUsd: number
   const badLimits = levelProblems(limits);
   if (badLimits.length > 0) return { ok: false, rule: "INVALID_INPUT", detail: `invalid limits: ${badLimits.join("; ")}`, failed: ["INVALID_INPUT"] };
   if (!isLevel(level)) return { ok: false, rule: "INVALID_INPUT", detail: "unknown escalation level", failed: ["INVALID_INPUT"] };
+  // L1 compares the size against a cap, and NaN compares false, so an unusable size rejects at every level.
+  if (typeof order.sizeUsd !== "number" || !Number.isFinite(order.sizeUsd) || order.sizeUsd <= 0) return { ok: false, rule: "INVALID_INPUT", detail: "order size must be above zero", failed: ["INVALID_INPUT"] };
   switch (level) {
     case 0:
       return { ok: true };
     case 1: {
       if (!Number.isFinite(treasuryValueUsd) || treasuryValueUsd <= 0) return { ok: false, rule: "INVALID_INPUT", detail: "no usable treasury value", failed: ["INVALID_INPUT"] };
       const cap = limits.l1OrderCapFactor * limits.maxOrderPctOfTreasury;
-      return order.sizeUsd * 100 > cap * treasuryValueUsd ? reject(`L1: orders are limited to ${cap}% of the treasury`) : { ok: true };
+      return !withinOrderCap(order.sizeUsd, treasuryValueUsd, cap) ? reject(`L1: orders are limited to ${cap}% of the treasury`) : { ok: true };
     }
     case 2:
       return { ok: "needs-approval", reason: "L2: a human must approve this order" };
