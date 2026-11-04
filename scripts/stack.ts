@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 0a1f80e), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 6ba0831), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -6,8 +6,8 @@ import { request } from "node:https";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-/** The platform commit the stack runs from: the one `@multiagency/sdk` 0.4.1 was published from (tag `sdk-v0.4.1`). */
-export const PLATFORM_COMMIT = "0a1f80e";
+/** The platform commit the stack runs from: the one `@multiagency/sdk` 0.5.0 was published from (tag `sdk-v0.5.0`). */
+export const PLATFORM_COMMIT = "6ba0831";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";

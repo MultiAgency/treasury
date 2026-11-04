@@ -1,4 +1,4 @@
-// The owner UI on a fresh simulated stack (the platform at 0a1f80e) that serves this build: `pnpm test:stack`.
+// The owner UI on a fresh simulated stack (the platform at 6ba0831) that serves this build: `pnpm test:stack`.
 // The stack's browser starts the owner signed in; these tests attach to it over CDP, as the platform's specs' clients do.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -336,7 +336,7 @@ test("a strategy-bound grant is listed under its label, as the current grant", a
 });
 
 test("revoking the current grant: reviewed in the dialog, prepared once; the stack's provider fails it and the grant stays live", async () => {
-  // The stack's simulated provider has no grant_revoke (platform 0a1f80e, test/e2e/provider.mjs): owner/prepare answers
+  // The stack's simulated provider has no grant_revoke (platform 6ba0831, test/e2e/provider.mjs): owner/prepare answers
   // 500 there, so this follows the revoke up to that failure. A signed revoke can't be tested on this stack.
   await home.goto(`${dashboard}/a/portfolio/policy`);
   const current = home.getByRole("list", { name: "Live grants" }).getByRole("listitem").filter({ hasText: "Current" });
