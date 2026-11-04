@@ -20,11 +20,12 @@ const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: setti
 setInterval(sessions.sweep, 60_000).unref();
 
 const rpcUrl = rpcUrlFor(settings.NEAR_RPC_URL, secrets.FASTNEAR_API_KEY);
+const keyLookup = chainKeyLookup({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
 const handler = createServer({
   platform: createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS }),
   signIn: createSignIn({
     recipient: new URL(settings.TREASURY_PUBLIC_ORIGIN).host,
-    keyLookup: chainKeyLookup({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS }),
+    keyLookup,
     ttlMs: settings.CHALLENGE_TTL_MS,
     perMinute: settings.CHALLENGES_PER_MINUTE,
   }),
@@ -35,6 +36,7 @@ const handler = createServer({
   ownerRequestsPerMinute: settings.OWNER_REQUESTS_PER_MINUTE,
   audit,
   consentsPerDay: settings.CONSENTS_PER_DAY,
+  keyLookup,
 });
 
 const server = createHttpServer(handler).listen(settings.PORT, () => {
