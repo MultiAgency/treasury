@@ -255,6 +255,27 @@ test("a recorded action of the same kind whose outcome is pending blocks prepari
   assert.deepEqual(sent, ["owner/actions"]);
 });
 
+test("freeze and unfreeze hold each other: neither is prepared while the other awaits its outcome, on any page", async () => {
+  // The platform doesn't refuse an unfreeze while a wallet's freeze is pending (`owner-intents.ts` prepare, at 0a1f80e),
+  // so this read is the last guard; the page's own pairing reads a cached query that another tab may not have refreshed.
+  const unfreeze = (wallets: Wallets, extra: Partial<Parameters<typeof runOwnerAction>[0]> = {}) => freeze(wallets, { action: { type: "agent_unfreeze" }, ...extra });
+  const cases: [string, typeof freeze, Parameters<typeof actions>[0], string][] = [
+    ["an unfreeze after a submitted freeze", unfreeze, { type: "agent_freeze", stage: "submitted" }, "An earlier freeze was submitted and its outcome is still being checked. Do not sign again."],
+    ["a freeze after a submitted unfreeze", freeze, { type: "agent_unfreeze", stage: "submitted" }, "An earlier unfreeze was submitted and its outcome is still being checked. Do not sign again."],
+    ["an unfreeze after a freeze awaiting the DAO's vote", unfreeze, { type: "agent_freeze", stage: "prepared", signer: "dao" }, "An earlier freeze was proposed to the DAO and awaits its vote. Do not propose again."],
+  ];
+  for (const [name, run, record, note] of cases) {
+    const { wallets, asked } = wallet();
+    sent = [];
+    answers.push(actions(record));
+    const held = await run(wallets);
+    assert.equal(!held.ok && (held.error as Error).message, note, name);
+    assert.equal(!held.ok && held.earlier?.correlationId, "r0", `${name}: its record is the one to follow`);
+    assert.deepEqual(sent, ["owner/actions"], `${name}: nothing prepared`);
+    assert.deepEqual(asked, [], `${name}: nothing signed`);
+  }
+});
+
 test("a lost owner/prepare: a record it left is followed; with none, nothing took effect and it can be prepared again", async () => {
   const { wallets } = wallet();
   answers.push(none, lost, actions({ type: "agent_freeze", stage: "prepared", signer: "dao" }));
