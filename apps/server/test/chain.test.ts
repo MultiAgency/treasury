@@ -152,6 +152,46 @@ test("an entry has no room for a credential, session or signature, by name or by
   await audit.append({ ...entry(1), signedTextSha256: "ab".repeat(32) }); // a hash of what was signed is fine
 });
 
+test("asset and PRNG fields are recorded: a token is an asset here and a seed is a PRNG's (#90)", async () => {
+  const file = fresh();
+  const audit = open(file, () => T0);
+  await audit.check();
+  await audit.append({ kind: "order", token: "nep141:wrap.near", amount: "1" });
+  await audit.append({ kind: "oracle", tokens: ["USDC"] });
+  await audit.append({ kind: "fill", tokenIn: "USDC", tokenOut: "wNEAR" });
+  await audit.append({ kind: "note", replay: { seed: 1, sources: ["a"] } });
+  await audit.append({ kind: "note", seedSamples: 3 });
+  const v = verifyChain(readFileSync(file, "utf8"));
+  assert.equal(v.ok && v.count, 5);
+});
+
+test("credentials are refused by their exact names, in any case or separator, and as a name's ending (#90)", async () => {
+  const audit = open(fresh(), () => T0);
+  await audit.check();
+  for (const key of ["signature", "credential", "secret", "password", "privateKey", "private_key", "cookie", "Authorization",
+    "mnemonic", "seedPhrase", "seed_phrase", "apiKey", "api-key", "accessToken", "sessionToken", "refreshToken", "ownerSignature"])
+    await assert.rejects(audit.append({ ...entry(1), [key]: "x" }), /no field for a credential/, key);
+});
+
+test("an append whose line reached the disk before it failed doesn't reuse its sequence number (#90)", async () => {
+  const file = fresh();
+  let failNext = false;
+  const flaky = async (path: string, line: string) => {
+    appendFileSync(path, `${line}\n`);
+    if (failNext) { failNext = false; throw new Error("flush failed"); }
+  };
+  const audit = chainedFileAudit<Record<string, unknown>>(file, () => T0, flaky);
+  await audit.check();
+  await audit.append(entry(1));
+  failNext = true;
+  await assert.rejects(audit.append(entry(2)), /flush failed/);
+  await audit.append(entry(3));
+  assert.deepEqual(audit.head().seq, 3, "the head was read back from the file");
+  const reopened = open(file);
+  await reopened.check();
+  assert.equal(reopened.head().seq, 3);
+});
+
 test("a newline in a value can't break the one-line-per-record format", async () => {
   const file = fresh();
   const audit = open(file, () => T0);
