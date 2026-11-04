@@ -48,6 +48,28 @@ function heldBy(zone: BandZone, disarmed: BandZone | undefined) {
   const side = SIDES.find(s => s.includes(zone));
   return side !== undefined && side.includes(disarmed) && side.indexOf(zone) <= side.indexOf(disarmed);
 }
+/** The action that trades on each side of `SIDES`: trims sell, DCA buys. */
+const ACTION_OF: readonly Exclude<IntentAction, "hold">[] = ["sell-volatile", "buy-volatile"];
+
+/**
+ * What is wrong with the state, if anything. The state is only ever written whole by `nextState`, so a part missing or
+ * unreadable (an action without its time, a time without its action, an action that isn't a buy or a sell, a disarmed
+ * zone off the last action's side) means it was corrupted or hand-built: the gate holds instead of guessing.
+ */
+export function stateProblems(s: WhipsawState): string[] {
+  const r = report();
+  r.need(s.lastActionAt === undefined || (typeof s.lastActionAt === "number" && Number.isFinite(s.lastActionAt)), "lastActionAt must be a time");
+  r.need(s.lastAction === undefined || s.lastAction === "buy-volatile" || s.lastAction === "sell-volatile", "lastAction must be a buy or a sell");
+  // The cooldown and the reversal lock need both: with only one, neither can be checked.
+  r.need((s.lastAction === undefined) === (s.lastActionAt === undefined), "lastAction and lastActionAt must be set together");
+  if (s.disarmed !== undefined) {
+    const side = SIDES.findIndex(zones => zones.includes(s.disarmed!));
+    r.need(side >= 0, "disarmed must be a trim or DCA zone");
+    r.need(side < 0 || s.lastAction === ACTION_OF[side], "disarmed must be on the side of the last action");
+  }
+  return r.problems;
+}
+
 /** The next less extreme zone on `zone`'s side, or undefined past the first. */
 const lessExtreme = (zone: BandZone) => { const side = SIDES.find(s => s.includes(zone)); return side?.[side.indexOf(zone) - 1]; };
 
@@ -57,9 +79,8 @@ export function gate(p: Intent, state: WhipsawState, regime: Regime, now: number
   const bad = whipsawProblems(limits);
   if (bad.length > 0) return hold(p, `invalid anti-whipsaw configuration: ${bad.join("; ")}`);
   if (regime !== "normal") return hold(p, `regime ${regime}: not trading`);
-  // The cooldown and the reversal lock need both: with only one, neither can be checked, so nothing trades.
-  if ((state.lastAction === undefined) !== (state.lastActionAt === undefined)) return hold(p, "the anti-whipsaw state is incomplete");
-  if (state.lastActionAt !== undefined && !Number.isFinite(state.lastActionAt)) return hold(p, "the last action's time is unreadable");
+  const badState = stateProblems(state);
+  if (badState.length > 0) return hold(p, `unusable anti-whipsaw state: ${badState.join("; ")}`);
   if (heldBy(p.zone, state.disarmed)) return hold(p, `${state.disarmed} already traded: ${p.zone} waits to re-arm`);
   if (state.lastActionAt !== undefined) {
     const since = now - state.lastActionAt;
