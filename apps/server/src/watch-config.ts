@@ -1,0 +1,57 @@
+import { readFile, stat } from "node:fs/promises";
+import { z } from "zod";
+import { notifier } from "./notify.ts";
+import { WATCH, type WatchedAgent } from "./watch.ts";
+
+/** The platform's calls an hour per app credential (`hourlyLimit(1_200)` in its `app-routes.ts`), shared by every owner. */
+export const APP_HOURLY_LIMIT = 1_200;
+/** What `watch` may spend of it: the rest is left for owners using the proposals page. */
+export const WATCH_HOURLY_BUDGET = APP_HOURLY_LIMIT / 2;
+/** Reads a tick makes when no proposal of the agent's own is open: overview, unresolved and autopilot. */
+const READS_PER_TICK = 3;
+
+const agentSettings = z.strictObject({
+  organization: z.string().regex(/^[a-z0-9_-]+$/, "an Organization, as consents name it (the owner's account, \".\" written \"--\")"),
+  agent: z.string().regex(/^[a-z0-9-]{1,32}$/, "an agent's name: lowercase letters, digits and hyphens, at most 32"),
+  driftPoints: z.number().gt(0).max(100).default(WATCH.driftPoints),
+  intervalS: z.number().int().min(WATCH.minIntervalS).default(WATCH.intervalS),
+  // The platform allows a proposal at most 7 days.
+  proposalHours: z.number().int().min(1).max(168).default(WATCH.proposalHours),
+  /** A command and its arguments, run without a shell for each proposal (`notify.ts`). */
+  notify: z.array(z.string().min(1)).min(1).optional(),
+});
+const watchFile = z.strictObject({ agents: z.array(agentSettings) });
+
+/**
+ * Calls an hour the agents' ticks make in steady state: 3 a tick, or 1 while a proposal of the agent's own is open. A
+ * tick that proposes, or that reads why it was refused, makes up to 5; neither repeats every tick.
+ */
+export const readsPerHour = (agents: readonly Pick<WatchedAgent, "intervalS">[]) =>
+  Math.ceil(agents.reduce((sum, { intervalS }) => sum + READS_PER_TICK * 3_600 / intervalS, 0));
+
+/**
+ * The agents `watch` proposes for, from an owner-only JSON file: `{ "agents": [{ "organization", "agent", … }] }`. It
+ * names a command the server runs, so others may not read or write it. Refused, naming the problem, when a setting is
+ * out of range, an agent is named twice, or the agents would spend more than `WATCH_HOURLY_BUDGET` of the platform's limit.
+ */
+export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
+  if ((await stat(path)).mode & 0o077) throw new Error(`${path} is readable by others: it must be 0600`);
+  let parsed: z.output<typeof watchFile>;
+  try {
+    parsed = watchFile.parse(JSON.parse(await readFile(path, "utf8")));
+  } catch (error) {
+    const detail = error instanceof z.ZodError ? error.issues.map(issue => `${issue.path.join(".")}: ${issue.message}`).join("; ") : "not JSON";
+    throw new Error(`${path}: ${detail}`);
+  }
+  const seen = new Set<string>();
+  for (const { organization, agent } of parsed.agents) {
+    const key = `${organization}/${agent}`;
+    if (seen.has(key)) throw new Error(`${path}: ${key} is named twice`);
+    seen.add(key);
+  }
+  const spent = readsPerHour(parsed.agents);
+  if (spent > WATCH_HOURLY_BUDGET) {
+    throw new Error(`${path}: these agents would make ${spent} calls an hour, more than watch's ${WATCH_HOURLY_BUDGET} (half the platform's ${APP_HOURLY_LIMIT}): fewer agents, or longer intervals`);
+  }
+  return parsed.agents.map(({ notify, ...settings }) => ({ ...settings, ...(notify && { notify: notifier(notify as [string, ...string[]]) }) }));
+}

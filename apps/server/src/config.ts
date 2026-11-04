@@ -40,6 +40,10 @@ const Settings = z.object({
   TREASURY_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
   /** The proposals page's build (`web/dist-proposals`), which this server serves; unset, it answers only its API. */
   TREASURY_PAGE_DIR: z.string().min(1).optional(),
+  /** The agents `watch` proposes for (`watch-config.ts`), a 0600 JSON file; unset, `watch` doesn't run. */
+  TREASURY_WATCH_FILE: z.string().min(1).optional(),
+  /** Where `watch` stores each proposal request before sending it (`requests.ts`), owner-only; needed with `TREASURY_WATCH_FILE`. */
+  TREASURY_REQUESTS_FILE: z.string().min(1).optional(),
   PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
   /** Overrides the chain RPC; otherwise FastNEAR's, as the platform's `src/chain.ts` does. */
   NEAR_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),
@@ -76,5 +80,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map(issue => `${issue.path.join(".")}: ${issue.message}`);
   if (problems.length || !settings.success || !secrets.success) throw new Error(`Invalid configuration:\n${problems.join("\n")}`);
   if (settings.data.SESSION_IDLE_MS > settings.data.SESSION_MAX_MS) throw new Error("Invalid configuration:\nSESSION_IDLE_MS: longer than SESSION_MAX_MS");
+  if (settings.data.TREASURY_WATCH_FILE && !settings.data.TREASURY_REQUESTS_FILE) throw new Error("Invalid configuration:\nTREASURY_REQUESTS_FILE: required with TREASURY_WATCH_FILE");
   return { settings: settings.data, secrets: secrets.data };
 }

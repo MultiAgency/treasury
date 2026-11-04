@@ -1,4 +1,5 @@
 import { createServer as createHttpServer } from "node:http";
+import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { fileAudit } from "./audit.ts";
 import { loadConfig } from "./config.ts";
@@ -7,8 +8,11 @@ import { createServer } from "./http.ts";
 import { chainKeyLookup, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
+import { createRequests } from "./requests.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
+import { loadWatchConfig } from "./watch-config.ts";
+import { createWatch, runWatch } from "./watch.ts";
 
 const { settings, secrets } = loadConfig();
 const credential = createCredential(settings.TREASURY_CREDENTIAL_FILE);
@@ -22,8 +26,16 @@ setInterval(sessions.sweep, 60_000).unref();
 
 const rpcUrl = rpcUrlFor(settings.NEAR_RPC_URL, secrets.FASTNEAR_API_KEY);
 const keyLookup = chainKeyLookup({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
+// Refuse to start with watch named but its agents or its stored requests unreadable, or past the read budget.
+const watched = settings.TREASURY_WATCH_FILE ? {
+  agents: await loadWatchConfig(settings.TREASURY_WATCH_FILE),
+  requests: await createRequests(settings.TREASURY_REQUESTS_FILE!),
+} : undefined;
+
+// One platform client for the routes and watch, so they share the identity cache and the credential's reads.
+const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS });
 const handler = createServer({
-  platform: createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS }),
+  platform,
   signIn: createSignIn({
     recipient: new URL(settings.TREASURY_PUBLIC_ORIGIN).host,
     keyLookup,
@@ -47,7 +59,22 @@ const server = createHttpServer(handler).listen(settings.PORT, () => {
   console.log(JSON.stringify({ listening: port, platform: settings.TREASURY_PLATFORM_ORIGIN, rpc: new URL(rpcUrl).host }));
 });
 
-// On shutdown, take no new requests and let the ones in flight finish.
+// watch proposes for its agents beside the routes, through its own narrow view of the platform.
+const stopWatch = new AbortController();
+const watching = watched
+  ? runWatch({
+    watch: createWatch({ platform: platform.watch, requests: watched.requests, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN }),
+    agents: watched.agents,
+    log: event => console.log(JSON.stringify({ event: "watch", ...event })),
+    sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),
+    signal: stopWatch.signal,
+  })
+  : Promise.resolve();
+
+// On shutdown, take no new requests and start no tick, and let the requests and ticks in flight finish.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => server.close(() => process.exit(0)));
+  process.once(signal, () => {
+    stopWatch.abort();
+    server.close(() => { void watching.then(() => process.exit(0)); });
+  });
 }
