@@ -12,5 +12,5 @@
     "build": "pnpm -r --if-present build",
     "check": "pnpm typecheck && pnpm test"
   },
-  "packageManager": "pnpm@12.15.0"
+  "packageManager": "pnpm@12.16.1"
 }
