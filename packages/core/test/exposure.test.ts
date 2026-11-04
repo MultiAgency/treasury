@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkExposure, EXPOSURE_CONFIG_DEFAULTS, splitHoldings, type ExposureContext } from "../src/exposure.ts";
-import type { Proposal } from "../src/bands.ts";
+import type { Intent } from "../src/bands.ts";
 
-const order = (sizeUsd: number, action: Proposal["action"] = "buy-volatile"): Proposal =>
+const order = (sizeUsd: number, action: Intent["action"] = "buy-volatile"): Intent =>
   ({ id: "p", zone: "dca-1", action, sizeUsd, dcaUnits: 1, reason: "", at: 1 });
 // 1,000,000 USD treasury; 25% venue cap = 250,000; spend 10,000/month → 6-month floor 60,000.
 const ctx: ExposureContext = { treasuryValueUsd: 1_000_000, venueExposureUsd: 100_000, cashUsd: 100_000, spendsCashUsd: 0 };

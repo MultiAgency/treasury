@@ -3,11 +3,11 @@
 // pct × value, and floating point made the two disagree on about one total in fifteen (the review on #30, item 9).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { Proposal } from "../src/bands.ts";
+import type { Intent } from "../src/bands.ts";
 import { checkLimits, POLICY_DEFAULTS } from "../src/policy.ts";
-import { SIZING_DEFAULTS, sizeProposal } from "../src/sizing.ts";
+import { SIZING_DEFAULTS, sizeIntent } from "../src/sizing.ts";
 
-const buy: Proposal = { id: "p", zone: "dca-3", action: "buy-volatile", sizeUsd: 0, dcaUnits: 0, reason: "", at: 1 };
+const buy: Intent = { id: "p", zone: "dca-3", action: "buy-volatile", sizeUsd: 0, dcaUnits: 0, reason: "", at: 1 };
 
 test("an order sizing caps at 2% passes the policy's 2% check, for every total sampled", () => {
   let seed = 42;
@@ -16,7 +16,7 @@ test("an order sizing caps at 2% passes the policy's 2% check, for every total s
   for (let i = 0; i < 20_000; i++) {
     const total = Math.round(next() * 1e9) / 100;
     // All in reserve: dca-3 wants 6% of it, so the 2% cap is what sizes the order.
-    const sized = sizeProposal(buy, { volatileUsd: 0, reserveUsd: total, cashUsd: 0 }, { volatileMinPct: 0, volatileMaxPct: 100 }, { dcaUnitsUsed: 0 });
+    const sized = sizeIntent(buy, { volatileUsd: 0, reserveUsd: total, cashUsd: 0 }, { volatileMinPct: 0, volatileMaxPct: 100 }, { dcaUnitsUsed: 0 });
     const r = checkLimits(sized, { treasuryValueUsd: total, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 10 });
     if (r.ok === false && r.rule === "ORDER_SIZE") rejected.push(total);
   }

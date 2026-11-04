@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
 const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
- import { BAND_DEFAULTS, bandProblems, classifyZone, proposeZone } from "../src/bands.ts";
+ import { BAND_DEFAULTS, bandProblems, classifyZone, intentForZone } from "../src/bands.ts";
 
 const reading = (twap15m: number) => ({ frozen: false as const, asset: "wNEAR", at: NOW, quotes: [], median: twap15m, ema30d: 100, twap15m });
 
@@ -16,7 +16,7 @@ test("unusable band thresholds make no zone and hold, instead of trading on a br
   ];
   for (const bands of bad) {
     assert.equal(classifyZone(120, 100, bands), null, JSON.stringify(bands));
-    const p = proposeZone(reading(120), bands);
+    const p = intentForZone(reading(120), bands);
     assert.deepEqual([p.action, p.sizeUsd], ["hold", 0]);
     assert.match(p.reason, /invalid band configuration/);
   }

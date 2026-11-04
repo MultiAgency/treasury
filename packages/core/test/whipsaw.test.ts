@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gate, nextState, WHIPSAW_DEFAULTS, type WhipsawState } from "../src/whipsaw.ts";
-import { classifyZone, type BandZone, type Proposal } from "../src/bands.ts";
+import { classifyZone, type BandZone, type Intent } from "../src/bands.ts";
 
 const NOW = 1_800_000_000_000;
 const HOUR = 3_600_000;
-const buy = (zone: BandZone = "dca-1"): Proposal => ({ id: "p", zone, action: "buy-volatile", sizeUsd: 100, dcaUnits: 1, reason: zone, at: NOW });
-const sell = (zone: BandZone = "trim-1"): Proposal => ({ ...buy(zone), action: "sell-volatile" });
+const buy = (zone: BandZone = "dca-1"): Intent => ({ id: "p", zone, action: "buy-volatile", sizeUsd: 100, dcaUnits: 1, reason: zone, at: NOW });
+const sell = (zone: BandZone = "trim-1"): Intent => ({ ...buy(zone), action: "sell-volatile" });
 const none: WhipsawState = {};
 
 test("the first action in a normal regime passes", () => {
@@ -48,7 +48,7 @@ test("an action records its time, direction and zone", () => {
 });
 
 test("a disarmed buy zone re-arms 2 points back inside its line, not before", () => {
-  const hold: Proposal = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
+  const hold: Intent = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
   const state: WhipsawState = { lastActionAt: NOW, lastAction: "buy-volatile", disarmed: "dca-1" }; // line −15
   assert.equal(nextState(state, hold, -15.5, NOW + HOUR).disarmed, "dca-1");
   assert.equal(nextState(state, hold, -13.5, NOW + HOUR).disarmed, "dca-1");
@@ -85,7 +85,7 @@ test("a price alternating across a line between two zones trades once, not on ev
 });
 
 test("a disarmed trim zone re-arms 2 points back below its line", () => {
-  const hold: Proposal = { ...sell(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
+  const hold: Intent = { ...sell(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
   const state: WhipsawState = { lastActionAt: NOW, lastAction: "sell-volatile", disarmed: "trim-2" }; // line +25
   assert.equal(nextState(state, hold, 24, NOW).disarmed, "trim-2");
   assert.equal(nextState(state, hold, 23, NOW).disarmed, "trim-1", "back below trim-2's line: trim-1 is still disarmed");
@@ -94,7 +94,7 @@ test("a disarmed trim zone re-arms 2 points back below its line", () => {
 });
 
 test("with no usable deviation a disarmed zone stays disarmed", () => {
-  const hold: Proposal = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
+  const hold: Intent = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
   const state: WhipsawState = { disarmed: "dca-1" };
   assert.equal(nextState(state, hold, null, NOW), state);
 });
@@ -105,9 +105,9 @@ test("price bouncing across one line trades once", () => {
   // Deviation crosses −15 and back several times inside the cooldown and the hysteresis band.
   for (const [i, dev] of [-16, -14, -16, -14.5, -16, -15.2].entries()) {
     const now = NOW + i * 5 * 60_000;
-    const proposed = gate({ ...buy("dca-1"), action: dev <= -15 ? "buy-volatile" : "hold" }, state, "normal", now);
-    if (proposed.action !== "hold") trades.push(i);
-    state = nextState(state, proposed, dev, now);
+    const intended = gate({ ...buy("dca-1"), action: dev <= -15 ? "buy-volatile" : "hold" }, state, "normal", now);
+    if (intended.action !== "hold") trades.push(i);
+    state = nextState(state, intended, dev, now);
   }
   assert.deepEqual(trades, [0]);
 });
