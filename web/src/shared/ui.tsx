@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
+import { TextShimmer } from "@/components/arc/text-shimmer/text-shimmer";
 import { assetColor } from "./format";
 
 export { Button };
@@ -13,7 +14,7 @@ export { inputStyles as input } from "@/components/ui/input";
 
 /** Maia surface only; native dialog focus and each review's authorization remain with the caller. */
 export const reviewDialog =
-  "m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-4xl border-0 bg-popover p-6 text-popover-foreground ring-1 ring-foreground/5 backdrop:bg-black/80 backdrop:backdrop-blur-xs";
+  "m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-surface border bg-popover p-6 text-popover-foreground shadow-floating backdrop:bg-black/45 backdrop:backdrop-blur-[7px] open:animate-in open:zoom-in-[.97] open:slide-in-from-bottom-2 open:duration-300";
 
 export type Tone = "neutral" | "success" | "warning" | "info" | "destructive";
 
@@ -30,11 +31,11 @@ export function LinkButton(props: ComponentProps<typeof Link>) {
 }
 
 export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
-  return <section className="flex flex-col gap-6">
+  return <section data-section="" className="flex min-w-0 flex-col gap-5 rounded-2xl border bg-card p-5 shadow-resting sm:p-7">
     <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+      <div className="flex flex-col gap-1.5">
+        <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+        {description && <p className="max-w-prose text-sm text-pretty text-muted-foreground">{description}</p>}
       </div>
       {action}
     </div>
@@ -43,13 +44,13 @@ export function Section({ title, description, action, children }: { title: strin
 }
 
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex min-w-0 flex-col gap-6 rounded-2xl bg-card p-6 text-base text-card-foreground ring-1 ring-foreground/10", className)}>{children}</div>;
+  return <div data-card="" className={cn("flex min-w-0 flex-col gap-6 rounded-2xl border bg-card p-5 text-base text-card-foreground shadow-resting transition-[border-color,box-shadow] duration-200 ease-arc hover:border-border-strong/70 sm:p-6", className)}>{children}</div>;
 }
 
 /** A card's icon, title (`h3`) and one-line description. */
 export function CardHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return <div className="flex gap-4">
-    <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-muted text-brand-strong">{icon}</div>
+    <div className="grid size-10 shrink-0 place-items-center rounded-lg border border-[color-mix(in_oklab,var(--accent)_25%,var(--border))] bg-brand-muted text-brand-strong">{icon}</div>
     <div className="flex min-w-0 flex-col gap-1">
       <h3 className="font-heading text-lg font-medium">{title}</h3>
       <p className="text-sm text-muted-foreground">{description}</p>
@@ -65,7 +66,7 @@ export function Note({ children }: { children: ReactNode }) {
 export const Dot = ({ symbol }: { symbol: string }) => <span className={`size-2 rounded-full ${assetColor(symbol)}`} />;
 
 export function Spinner() {
-  return <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />;
+  return <span aria-hidden="true" className="size-4 shrink-0 animate-spin rounded-full border-2 border-current/25 border-t-current" />;
 }
 
 /** Why an action failed, in the server's or wallet's words; nothing when it didn't. */
@@ -77,7 +78,7 @@ export function ErrorBox({ error }: { error?: string }) {
 
 /** A query still on its way: what is loading, so an empty list is never shown in its place. */
 export function Loading({ label }: { label: string }) {
-  return <p role="status" className="flex items-center gap-3 text-sm text-muted-foreground"><Spinner /> {label}</p>;
+  return <p role="status" className="flex items-center gap-3 text-sm text-muted-foreground"><Spinner /> <TextShimmer>{label}</TextShimmer></p>;
 }
 
 /** A query that failed: the server's words, and a retry, so a failure never reads as "nothing here". */
@@ -125,7 +126,7 @@ export function CopyButton({ text }: { text: string }) {
 /** Detail most readers skip, such as identifiers and rare controls, folded under a one-line summary. */
 export function Details({ summary, open, className = "", children }: { summary: string; open?: boolean; className?: string; children: ReactNode }) {
   return <details open={open} className={cn("text-sm", className)}>
-    <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground">{summary}</summary>
+    <summary className="min-h-11 cursor-pointer rounded-md py-3 text-muted-foreground transition-colors">{summary}</summary>
     <div className="mt-2 flex flex-col gap-2">{children}</div>
   </details>;
 }

@@ -41,7 +41,7 @@ function ChooseAgent() {
     location.assign(`/agents/${encodeURIComponent(checked.data)}`);
   };
   return <>
-    <h1 className="text-2xl font-semibold">Treasury proposals</h1>
+    <h1 className="page-title">Treasury proposals</h1>
     <form onSubmit={open} className="flex max-w-md flex-col gap-3">
       <label htmlFor="agent" className="text-sm font-medium">Agent name</label>
       <input id="agent" className={input} value={name} onChange={event => { setName(event.target.value.trim()); setError(undefined); }}
@@ -59,7 +59,7 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
   const failure = failureOf(identity.error);
   const title = id ? "Proposal" : "Treasury proposals";
   const heading = <div className="flex flex-col gap-1">
-    <h1 className="text-2xl font-semibold">{title}</h1>
+    <h1 className="page-title">{title}</h1>
     <p className="text-sm text-muted-foreground">Agent <span className="font-mono">{name}</span></p>
   </div>;
   if (identity.isPending) return <>{heading}<Loading label="Checking your session…" /></>;

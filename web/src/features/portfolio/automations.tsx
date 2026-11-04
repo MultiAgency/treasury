@@ -92,7 +92,7 @@ export function Rebalance({ disabledReason, onExecute, onResult }: { disabledRea
       <CardHeader icon={<ArrowsLeftRight size={20} weight="bold" />} title="Rebalance"
         description={`Swap toward ${split}. Swaps below ${usd(data.rebalance.minLegUsd)} or above the ${data.rebalance.maxCostBps / 100}% cost limit are skipped.`} />
 
-      <div className="flex min-h-40 flex-1 flex-col gap-3">
+      <div className="flex flex-1 flex-col gap-3">
         {!plan && !preview.running && <Note>Preview the swaps and their estimated costs. Execute only after reviewing the saved plan.</Note>}
         {!plan && preview.running && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Spinner /> Checking balances…</p>}
         {plan && legs.length === 0 && <p className="flex items-center gap-2 text-sm text-muted-foreground"><CheckCircle size={20} className="text-success" /> No swaps are needed at the current targets and minimum swap size.</p>}

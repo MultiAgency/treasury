@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft } from "@phosphor-icons/react";
+import { BlurFade } from "@/components/magicui/blur-fade";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RecoveryActivity } from "../features/activity/activity";
 import { StopSchedule } from "../features/owner/task-recovery";
@@ -10,6 +11,7 @@ import { SetupNextStep } from "../features/setup/setup-progress";
 import { reads, type Overview, type Setup } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
 import { TreasuryBrand } from "./brand";
+import { Backdrop, PageNav, ThemeToggle, TopBar } from "./chrome";
 import { useGateway } from "./gateway-context";
 import { useHashTarget } from "./hash-target";
 import { AGENT } from "./location";
@@ -54,16 +56,18 @@ export function Shell() {
   const gateway = useGateway();
   useHashTarget();
   return <>
-    <a href="#agent-main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
+    <a href="#agent-main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:border focus:bg-background focus:p-3">Skip to main content</a>
+    <Backdrop />
     <AgentFrame />
-    <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 border-t px-4 py-5 text-sm sm:px-8">
+    <footer className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 border-t px-4 py-6 text-sm text-subtle-foreground sm:px-8">
+      <span>Agentic Treasury</span>
       {gateway?.selfServiceTreasury && <Button asChild variant="outline"><a href="/">Your treasuries</a></Button>}
     </footer>
   </>;
 }
 
 function Notice({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-3 p-8 text-muted-foreground">{children}</div>;
+  return <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-16 text-muted-foreground sm:px-8">{children}</div>;
 }
 
 /** Pages with their own schedule control: the frame doesn't offer a second one there once the page is shown. */
@@ -108,9 +112,9 @@ function AgentFrame() {
 
   if (recovering && !loaded)
     return <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10 sm:px-8">
-      <TreasuryBrand />
-      <h1 className="text-2xl font-semibold">Available records</h1>
-      <div className="flex flex-col items-start gap-3 rounded-2xl bg-destructive-muted p-6 text-sm text-destructive-muted-foreground">
+      <div className="flex items-center justify-between gap-4"><TreasuryBrand /><ThemeToggle /></div>
+      <h1 className="page-title">Available records</h1>
+      <div className="flex flex-col items-start gap-3 rounded-2xl border border-[color-mix(in_oklab,var(--danger)_22%,var(--border))] bg-destructive-muted p-6 text-sm text-destructive-muted-foreground">
         <p role="alert">Setup unavailable</p>
         <p>Retained records can still be reviewed when access is authorized. Setup, balances, policy and grant status are not confirmed here.</p>
         {setup.error && <p>{setup.error.message}</p>}
@@ -133,23 +137,27 @@ function AgentFrame() {
       </main>
       : <Notice><Spinner /> Loading…</Notice>;
   if (!setup.data.agentId)
-    return <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-12 px-4 py-10 sm:px-8">
-      <header className="flex min-w-0 flex-wrap items-center justify-between gap-4"><TreasuryBrand /><WalletButton /></header>
-      <Onboarding setup={setup.data} />
-    </main>;
+    return <>
+      <TopBar><TreasuryBrand /><div className="flex items-start gap-1"><ThemeToggle /><WalletButton /></div></TopBar>
+      <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-12 px-4 py-10 sm:px-8">
+        <BlurFade><Onboarding setup={setup.data} /></BlurFade>
+      </main>
+    </>;
 
-  return <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
-    <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+  return <>
+    <TopBar>
+      <div className="flex min-w-0 items-center gap-4">
         <TreasuryBrand />
-        <section aria-label="Treasury owner"><dl className="text-sm">
-          <dt className="text-muted-foreground">Owner</dt>
-          <dd className="break-words">{ownerName(setup.data)}</dd>
+        <section aria-label="Treasury owner" className="min-w-0 border-l pl-4"><dl className="text-xs leading-tight">
+          <dt className="text-subtle-foreground">Owner</dt>
+          <dd className="max-w-40 truncate font-medium sm:max-w-64" title={ownerName(setup.data)}>{ownerName(setup.data)}</dd>
         </dl></section>
       </div>
-      <WalletButton />
-    </header>
-    {title !== PAGES["/"] && <Button asChild variant="outline" className="self-start"><Link to="/">Back to overview</Link></Button>}
+      <div className="flex items-start gap-1"><ThemeToggle /><WalletButton /></div>
+      <div className="w-full"><PageNav current={page} /></div>
+    </TopBar>
+  <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
+    {title !== PAGES["/"] && <Button asChild variant="ghost" size="sm" className="-ml-3 self-start"><Link to="/"><ArrowLeft aria-hidden="true" />Back to overview</Link></Button>}
     {/* The setup's next step, while the grant is missing or just arrived: reads only, every action stays on its page. */}
     <SetupNextStep setup={setup.data} overview={overview.error ? undefined : overview.data} />
     {error && <>
@@ -159,9 +167,10 @@ function AgentFrame() {
     {error && canStop && setup.data.executor === true && !(SCHEDULE_PAGES.includes(page) && overview.data) && <StopSchedule />}
     <SetupContext.Provider value={setup.data}>
       {overview.data
-        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
+        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><BlurFade key={page} className="flex flex-col gap-8"><Outlet /></BlurFade></AgentContext.Provider>
         // Activity reads the agent's own records: it doesn't wait for the overview, nor hide when it fails.
         : retained ? <Outlet /> : error ? null : <Loading label="Loading the book…" />}
     </SetupContext.Provider>
-  </main>;
+  </main>
+  </>;
 }

@@ -14,7 +14,7 @@ export function AuthenticatedApp({ gateway }: { gateway: Gateway }) {
     if (gateway.viewer && treasury && !AGENT && !gateway.selfServiceTreasury) location.replace(`/a/${treasury.name}/`);
   }, [gateway.viewer?.account, gateway.selfServiceTreasury, treasury?.name]);
   if (AGENT && !gateway.agents.some(agent => agent.name === AGENT && isTreasury(agent)))
-    return <main className="mx-auto flex max-w-xl flex-col gap-4 p-8"><h1 className="text-xl font-semibold">Treasury unavailable</h1><p>This workspace contains Treasury agents only.</p><a href="/" className="underline">Open your treasuries</a></main>;
+    return <main className="mx-auto flex max-w-xl flex-col gap-4 p-8"><h1 className="page-title">Treasury unavailable</h1><p>This workspace contains Treasury agents only.</p><a href="/" className="underline">Open your treasuries</a></main>;
   // A self-service host's root: the account's treasuries, and reserving a new one.
   if (!AGENT && gateway.selfServiceTreasury)
     return <ViewerContext.Provider value={gateway.viewer ? viewerOf(gateway.viewer, null) : null}><CreateTreasury gateway={gateway} /></ViewerContext.Provider>;

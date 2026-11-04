@@ -19,7 +19,7 @@ import { HIDDEN_PAGES, PAGES } from "./pages";
 /** The Activity page: unresolved operations, the owner's actions with the operation history, and the books. */
 function ActivityPage() {
   return <>
-    <h1 className="text-2xl font-semibold">{PAGES["/activity"]}</h1>
+    <h1 className="page-title">{PAGES["/activity"]}</h1>
     <Unresolved />
     <Activity />
     <BooksDisclosure />
@@ -30,7 +30,7 @@ function ActivityPage() {
 function StrategyPage() {
   const { setup, data } = useAgent();
   return <>
-    <h1 className="text-2xl font-semibold">{PAGES["/automations"]}</h1>
+    <h1 className="page-title">{PAGES["/automations"]}</h1>
     <p className="text-sm text-muted-foreground">Configure, authorize and schedule the strategy.</p>
     {setup.executor === false && <p className="text-sm text-muted-foreground">Preview, execution and automation settings are available on the executor with the corresponding account permissions.</p>}
     {!setup.grant && <p className="text-sm text-muted-foreground">A grant is required for new automation actions. <LinkButton to="/policy" hash="grants">Review grants and permissions</LinkButton>.</p>}
@@ -45,7 +45,7 @@ function StrategyPage() {
 function RunsPage() {
   const schedule = useQuery(useAgentReads().autopilot);
   return <>
-    <h1 className="text-2xl font-semibold">{PAGES["/follow/run"]}</h1>
+    <h1 className="page-title">{PAGES["/follow/run"]}</h1>
     {offersStop(schedule) && <StopSchedule />}
     <RunTimeline />
   </>;
@@ -59,7 +59,7 @@ function DemoPage() {
 /** The steward, reached by address only. */
 function StewardPage() {
   return <>
-    <h1 className="text-2xl font-semibold">{HIDDEN_PAGES["/steward"]}</h1>
+    <h1 className="page-title">{HIDDEN_PAGES["/steward"]}</h1>
     <Steward />
   </>;
 }
@@ -67,7 +67,7 @@ function StewardPage() {
 /** The Policy & grants page: the policy in force and its editor, the owner's controls with the grants, and the policy's evidence. */
 function PolicyPage() {
   return <>
-    <h1 className="text-2xl font-semibold">{PAGES["/policy"]}</h1>
+    <h1 className="page-title">{PAGES["/policy"]}</h1>
     <Policy />
   </>;
 }

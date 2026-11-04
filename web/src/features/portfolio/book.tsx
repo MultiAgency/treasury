@@ -2,14 +2,21 @@ import { bindingWindow, PERIOD } from "../../shared/budget";
 import type { Overview as Book } from "../../platform";
 import { ago, assetColor, bookValue, fromUnits, type Holding, units, usd } from "../../shared/format";
 import { priceState } from "../../shared/prices";
+import { BorderBeam } from "@/components/magicui/border-beam";
+import { NumberTicker } from "@/components/magicui/number-ticker";
 import { Section } from "../../shared/ui";
 
-function Figure({ label, value, children }: { label: string; value: string; children?: React.ReactNode }) {
+/** Arc's metric card: the label, the figure (rolling in with Magic UI's number ticker when it is an amount) and its context. */
+function Figure({ label, value, amount, format = usd, featured = false, children }: { label: string; value: string; amount?: number | null; format?: (n: number) => string; featured?: boolean; children?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className="font-heading text-3xl font-semibold tabular-nums">{value}</span>
-      {children}
+    <div className="relative flex min-w-0 flex-col gap-3 overflow-hidden rounded-2xl border bg-card p-5 shadow-resting sm:p-6">
+      {featured && <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-80" style={{ background: "radial-gradient(28rem 10rem at 0% 0%, var(--accent-subtle), transparent 70%)" }} />}
+      <span className="relative text-sm text-muted-foreground">{label}</span>
+      <span className="relative font-heading text-3xl font-semibold tabular-nums sm:text-4xl" style={{ letterSpacing: "var(--tracking-display)" }}>
+        {amount != null && Number.isFinite(amount) ? <NumberTicker value={amount} format={format} /> : value}
+      </span>
+      <div className="relative mt-auto flex flex-col gap-2.5">{children}</div>
+      {featured && <BorderBeam size={120} duration={9} />}
     </div>
   );
 }
@@ -17,10 +24,12 @@ function Figure({ label, value, children }: { label: string; value: string; chil
 function Meter({ value, className = "bg-brand" }: { value: number; className?: string }) {
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-      <div className={`h-full rounded-full ${className}`} style={{ width: `${Math.min(100, value * 100)}%` }} />
+      <div className={`h-full origin-left rounded-full transition-[width] duration-700 ease-arc ${className}`} style={{ width: `${Math.min(100, value * 100)}%` }} />
     </div>
   );
 }
+
+const percent = (n: number) => `${Math.round(n)}%`;
 
 export function Figures({ data }: { data: Book }) {
   const total = bookValue(data);
@@ -28,7 +37,7 @@ export function Figures({ data }: { data: Book }) {
   const window = bindingWindow(data.policy.usage.budget);
   const limit = Number(window?.limit_usd ?? 0);
   const budget = window ? (
-    <Figure label={`${PERIOD[window.period]} budget left`} value={usd(window.remaining_usd)}>
+    <Figure label={`${PERIOD[window.period]} budget left`} value={usd(window.remaining_usd)} amount={Number(window.remaining_usd)}>
       {/* A zero limit is spent before anything is: full, not empty. */}
       <Meter value={limit ? Number(window.spent_usd) / limit : 1} />
       <span className="text-sm text-muted-foreground">
@@ -41,12 +50,12 @@ export function Figures({ data }: { data: Book }) {
     </Figure>
   );
   return (
-    <div className="grid gap-10 sm:grid-cols-3">
-      <Figure label="Book value" value={total === null ? "Unavailable" : usd(total)}>
+    <div className="grid gap-4 md:grid-cols-3">
+      <Figure label="Book value" value={total === null ? "Unavailable" : usd(total)} amount={total} featured>
         <span className="text-sm text-muted-foreground">{total === null ? "Some held assets lack a fresh price. Balances remain available; no complete USD total is shown." : `Across ${data.book.length} assets at API prices`}</span>
       </Figure>
       {budget}
-      <Figure label="Held privately" value={total && shielded !== null ? `${Math.round((shielded / total) * 100)}%` : "—"}>
+      <Figure label="Held privately" value={total && shielded !== null ? `${Math.round((shielded / total) * 100)}%` : "—"} amount={total && shielded !== null ? Math.round((shielded / total) * 100) : null} format={percent}>
         <Meter value={total && shielded !== null ? shielded / total : 0} className="bg-chart-3" />
         <span className="text-sm text-muted-foreground">
           {usd(shielded)} in the confidential balance
@@ -60,11 +69,11 @@ export function Figures({ data }: { data: Book }) {
 export function Allocation({ data, now }: { data: Book; now: number }) {
   const total = bookValue(data);
   const bar = (share: (h: Holding) => number) => (
-    <div className="flex h-3 gap-0.5 overflow-hidden rounded-full">
+    <div className="flex h-3.5 gap-1 overflow-hidden rounded-full bg-muted">
       {data.book.map((h) => (
         <div
           key={h.asset}
-          className={assetColor(h.symbol)}
+          className={`${assetColor(h.symbol)} rounded-full transition-[width] duration-700 ease-arc`}
           style={{ width: `${share(h) * 100}%` }}
         />
       ))}

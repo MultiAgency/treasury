@@ -148,6 +148,8 @@ Kept, with the same role, name and meaning:
 | Open the guided walkthrough | link, on the Overview | | #9 |
 | Your treasuries | heading (level 1) and navigation (a link per Treasury agent, named by its owner), at a self-service host's root | | #12 |
 | Create your Treasury | heading (level 2), the reservation form | | #12 |
+| Treasury pages | navigation (in the sticky top bar): links Overview, Strategy, Runs, Balances & funding, Policy & grants, Operation status; the current one has `aria-current="page"` | | Arc UI overhaul |
+| Switch to light theme, Switch to dark theme | button (in the top bar, signed in and out) | | Arc UI overhaul |
 | Treasury owner, with My NEAR account and A DAO | radiogroup, radios (A: a toggle group of the same names) | | #12 |
 | DAO account | textbox | | #12 |
 | Continue (`Opening…` while it runs) | button | | #12 |

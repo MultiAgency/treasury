@@ -63,7 +63,7 @@ export function CreateTreasury({ gateway }: { gateway: Gateway }) {
 
   return <main id="treasury-main" className="mx-auto flex max-w-xl flex-col gap-8 px-5 py-10">
     <header className="flex flex-wrap items-center justify-between gap-4"><TreasuryBrand /><WalletButton /></header>
-    <h1 className="text-2xl font-semibold">Your treasuries</h1>
+    <h1 className="page-title">Your treasuries</h1>
     {treasuries.length > 0
       ? <nav aria-label="Your treasuries" className="flex flex-col gap-3">{treasuries.map(agent => <Button key={agent.name} asChild variant="outline" className="h-auto justify-start whitespace-normal break-all"><a href={`/a/${agent.name}/`}>{agent.owner}</a></Button>)}</nav>
       : <p className="text-sm text-muted-foreground">No Treasury agent is available to this account yet.</p>}

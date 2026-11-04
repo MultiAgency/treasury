@@ -15,7 +15,7 @@ export function TreasuryRun() {
   const { followed, followPlan, stopFollowing, refreshResult } = useFollowedPlan();
   return <section aria-label="Guided Treasury run" className="flex min-w-0 flex-col gap-6">
     <div className="flex flex-col gap-3">
-      <h1 className="font-heading text-2xl font-semibold">Run it with your treasury</h1>
+      <h1 className="page-title">Run it with your treasury</h1>
       <div className="flex flex-wrap items-center gap-3"><Badge tone="warning">Real actions · mainnet</Badge><p className="text-sm">You choose and confirm each action.</p></div>
       <p className="max-w-prose text-sm text-muted-foreground">Each step uses this agent’s real controls. Steps mark nothing complete; your wallet or the DAO’s voting flow authorizes each exact prepared request.</p>
     </div>

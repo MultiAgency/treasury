@@ -9,9 +9,9 @@ import { AGENT } from "./app/location";
 import { onSessionChange } from "./app/session-signal";
 import { Button, ErrorBox, Loading } from "./shared/ui";
 import "./styles.css";
-import "./treasury-theme.css";
+import { initTheme } from "./shared/theme";
 
-document.documentElement.classList.add("treasury-theme", "dark");
+initTheme();
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWindowFocus: false } } });
 
@@ -57,7 +57,7 @@ function GatewayPage() {
   const query = useQuery(gatewayRead);
   if (query.isPending) return <main className="mx-auto max-w-xl p-8"><Loading label="Loading dashboard…" /></main>;
   if (query.isError && query.data === undefined) return <main className="mx-auto flex max-w-xl flex-col items-start gap-4 p-8">
-    <h1 className="text-xl font-semibold">Dashboard unavailable</h1>
+    <h1 className="page-title">Dashboard unavailable</h1>
     <ErrorBox error={`The dashboard can't load right now: ${query.error.message}`} />
     <Button variant="outline" disabled={query.isFetching} onClick={() => query.refetch()}>{query.isFetching ? "Retrying…" : "Retry"}</Button>
   </main>;
@@ -65,7 +65,7 @@ function GatewayPage() {
   const denied = deniedAt(access, AGENT);
   const missing = gateway.viewer && AGENT && !gateway.viewer.access[AGENT];
   if (gateway.viewer && (denied || missing)) return <main className="mx-auto flex max-w-xl flex-col items-start gap-4 p-8">
-    <h1 className="text-xl font-semibold">Access unavailable</h1>
+    <h1 className="page-title">Access unavailable</h1>
     <p role="alert">{denied?.message ?? "This account may no longer access this agent."} Private records are hidden.</p>
     <Button variant="outline" onClick={recheckAccess}>Check access again</Button>
     <a href="/" className="underline">Return to Home</a>

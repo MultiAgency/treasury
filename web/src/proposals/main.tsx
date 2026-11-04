@@ -4,9 +4,9 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app";
 import { onSessionEnded } from "./queries";
 import "../styles.css";
-import "../treasury-theme.css";
+import { initTheme } from "../shared/theme";
 
-document.documentElement.classList.add("treasury-theme", "dark");
+initTheme();
 
 const queryClient: QueryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },

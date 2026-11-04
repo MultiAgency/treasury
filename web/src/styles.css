@@ -4,91 +4,66 @@
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
+/* Arc UI's tokens (https://uiarc.dev, free tier): neutrals, surfaces, tones, radii, shadows, motion and keyboard focus. */
+@import "./components/arc/foundation.css";
 
-@custom-variant dark (&:where(.dark, .dark *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /*
- * Maia geometry with the existing CityNode-derived palette, re-tuned around one brand blue,
- * #0091fd: neutrals and the navy primary share its hue, info and the third chart colour move to violet so
- * neither reads as brand, and success stays green. Text in blue uses --brand-strong (5.9:1 on white).
- * Cards use the 2xl radius; controls and review dialogs use 4xl. Shared controls retain a 44px
- * minimum height, and table/list spacing remains local to each task.
+ * One theme, Arc's, in light and dark (`data-theme` on <html>, set in theme.ts) with Arc's amber accent
+ * (`data-accent`), which keeps the Treasury's yellow. The shadcn names the components use are mapped onto Arc's tokens
+ * here, so every page follows them. Arc's `--accent` is the brand colour; shadcn's hover surface (`bg-accent`) is
+ * Arc's muted surface. Status tints follow Arc's badge formula: the tone mixed into the surface, the tone deepened
+ * toward the foreground for text. Controls keep a 44px minimum height.
  */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.99 0.003 251);
-  --foreground: oklch(0.22 0.02 251);
-  --card: oklch(1 0 0);
+  --radius: 1.125rem;
+  --card: var(--surface);
   --card-foreground: var(--foreground);
-  --popover: var(--card);
+  --popover: var(--surface-raised);
   --popover-foreground: var(--foreground);
-  --primary: oklch(0.25 0.035 252);
-  --primary-foreground: oklch(0.99 0 0);
-  --muted: oklch(0.965 0.005 251);
-  --muted-foreground: oklch(0.5 0.016 251);
-  --secondary: var(--muted);
+  --primary: var(--foreground);
+  --primary-foreground: var(--background);
+  --secondary: var(--surface-muted);
   --secondary-foreground: var(--foreground);
-  --accent: oklch(0.955 0.03 251);
-  --accent-foreground: var(--foreground);
-  --highlight: #ffed9e;
-  --border: oklch(0.92 0.006 251);
-  --border-strong: oklch(0.64 0.012 251);
-  /* Control boundaries need more contrast than card dividers. */
+  --muted: var(--surface-muted);
+  --muted-foreground: var(--text-secondary);
+  /* Quieter than secondary text, still AA on the surface (Arc's --text-muted is for large or non-text marks in light). */
+  --subtle-foreground: oklch(52% 0 0);
+  --hover: var(--surface-muted);
+  --hover-foreground: var(--foreground);
+  --highlight: color-mix(in oklab, var(--tone-amber) 30%, var(--surface));
   --input: var(--border-strong);
-  --input-surface: var(--border);
-  --ring: oklch(0.52 0.17 251);
-  --brand: oklch(0.65 0.19 251);
-  --brand-strong: oklch(0.5 0.17 252);
-  --brand-muted: oklch(0.955 0.035 251);
-  --success: oklch(0.56 0.14 158);
-  --success-muted: oklch(0.96 0.035 158);
-  --success-muted-foreground: oklch(0.38 0.09 158);
-  --warning-muted: oklch(0.97 0.04 85);
-  --warning-muted-foreground: oklch(0.44 0.1 60);
-  --info-muted: oklch(0.96 0.025 295);
-  --info-muted-foreground: oklch(0.42 0.13 295);
-  --destructive-muted: oklch(0.965 0.02 25);
-  --destructive-muted-foreground: oklch(0.45 0.16 27);
+  --input-surface: var(--surface);
+  --ring: var(--accent-strong);
+  --brand: var(--accent);
+  --brand-strong: var(--accent-strong);
+  --brand-muted: var(--accent-subtle);
+  --tint: 10%;
+  --ink: 84%;
+  --success-muted: color-mix(in oklab, var(--success) var(--tint), var(--surface));
+  --success-muted-foreground: color-mix(in oklab, var(--success) var(--ink), var(--foreground));
+  --warning-muted: color-mix(in oklab, var(--warning) var(--tint), var(--surface));
+  --warning-muted-foreground: color-mix(in oklab, var(--warning) var(--ink), var(--foreground));
+  --info-muted: color-mix(in oklab, var(--info) var(--tint), var(--surface));
+  --info-muted-foreground: color-mix(in oklab, var(--info) var(--ink), var(--foreground));
+  --destructive-muted: color-mix(in oklab, var(--danger) var(--tint), var(--surface));
+  --destructive-muted-foreground: color-mix(in oklab, var(--danger) var(--ink), var(--foreground));
   --destructive: var(--destructive-muted-foreground);
   --destructive-foreground: var(--background);
-  --chart-1: oklch(0.25 0.035 252);
-  --chart-2: oklch(0.65 0.19 251);
-  --chart-3: oklch(0.58 0.16 295);
-  /* The logo: the brand blue itself in both themes, as the favicon draws it. */
-  --logo: oklch(0.65 0.19 251);
-  /* The door's tint behind the frame: lighter on dark, where .28 turns muddy. */
+  --chart-1: var(--series-1);
+  --chart-2: var(--series-2);
+  --chart-3: var(--series-3);
+  --chart-4: var(--series-4);
+  --logo: var(--accent);
   --logo-tint: 0.28;
 }
 
-.dark {
-  --background: oklch(0.16 0.012 251);
-  --foreground: oklch(0.96 0.004 251);
-  --card: oklch(0.2 0.014 251);
-  --primary: oklch(0.96 0.004 251);
-  --primary-foreground: oklch(0.2 0.02 252);
-  --muted: oklch(0.24 0.014 251);
-  --muted-foreground: oklch(0.72 0.012 251);
-  --accent: oklch(0.3 0.06 251);
-  --highlight: #67531a;
-  --border: oklch(1 0 0 / 10%);
-  --border-strong: oklch(0.62 0.012 251);
-  --ring: oklch(0.72 0.15 251);
-  --brand: oklch(0.7 0.17 251);
-  --brand-strong: oklch(0.78 0.13 251);
-  --brand-muted: oklch(0.28 0.06 251);
-  --success: oklch(0.7 0.15 158);
-  --success-muted: oklch(0.27 0.05 158);
-  --success-muted-foreground: oklch(0.86 0.1 158);
-  --warning-muted: oklch(0.29 0.05 70);
-  --warning-muted-foreground: oklch(0.9 0.1 85);
-  --info-muted: oklch(0.28 0.05 295);
-  --info-muted-foreground: oklch(0.86 0.08 295);
-  --destructive-muted: oklch(0.28 0.06 25);
-  --destructive-muted-foreground: oklch(0.86 0.09 25);
-  --chart-1: oklch(0.96 0.004 251);
-  --chart-2: oklch(0.7 0.17 251);
-  --chart-3: oklch(0.7 0.14 295);
-  --logo-tint: 0.5;
+:root[data-theme="dark"] {
+  --subtle-foreground: var(--text-muted);
+  --tint: 13%;
+  --ink: 94%;
+  --logo-tint: 0.4;
 }
 
 @theme inline {
@@ -97,6 +72,8 @@
   --font-mono: "Geist Mono Variable", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -105,12 +82,14 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--hover);
+  --color-accent-foreground: var(--hover-foreground);
   --color-highlight: var(--highlight);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-input-surface: var(--input-surface);
@@ -132,44 +111,89 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --color-logo: var(--logo);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: var(--radius-control);
+  --radius-2xl: var(--radius-panel);
+  --radius-3xl: var(--radius-panel);
+  --radius-4xl: var(--radius-control);
+  --radius-surface: var(--radius-surface);
+  --shadow-resting: var(--shadow-resting);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-floating: var(--shadow-floating);
+  --ease-arc: var(--ease-standard);
+  --ease-arc-enter: var(--ease-enter);
+  --animate-shiny-text: shiny-text 8s infinite;
+
+  @keyframes shiny-text {
+    0%, 90%, 100% { background-position: calc(-100% - var(--shiny-width)) 0; }
+    30%, 60% { background-position: calc(100% + var(--shiny-width)) 0; }
+  }
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring;
+    @apply border-border;
   }
 
   body {
     @apply m-0 min-h-dvh bg-background font-sans text-foreground antialiased;
+    letter-spacing: var(--tracking-body);
   }
 
   h1,
   h2,
   h3 {
     @apply font-heading;
+    letter-spacing: -0.02em;
   }
 
   code {
     @apply font-mono;
   }
-}
 
-@layer base {
-  :root { color-scheme: light; }
-  .dark { color-scheme: dark; }
-  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+  ::selection { background: var(--accent-subtle); }
   input, select, textarea { scroll-margin-block: 14rem 2rem; }
-  select { background-color: var(--card); color: var(--foreground); }
+  select { background-color: var(--surface); color: var(--foreground); }
   dialog { overscroll-behavior: contain; }
+  /* Arc shows a text field's focus by its border, not an outline: kept for fields drawn with the shared input styles. */
+  :is(input, select, textarea):focus-visible { border-color: var(--foreground); box-shadow: 0 0 0 3px var(--accent-subtle); }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   }
+}
+
+@layer components {
+  /* A page's title (its h1), in Arc's display type. */
+  .page-title {
+    @apply font-heading text-3xl font-semibold text-balance sm:text-4xl;
+    letter-spacing: var(--tracking-display);
+    line-height: var(--leading-display);
+  }
+
+  /* A card inside a section panel sits inset, on the muted surface, rather than as a second raised panel. */
+  [data-section] [data-card], [data-section] [data-section] {
+    background: color-mix(in oklab, var(--surface-muted) 45%, var(--surface));
+    box-shadow: none;
+    border-radius: calc(var(--radius-panel) - 0.375rem);
+  }
+
+  /* Tables read as Arc lists: quiet headers, hairline rows, a soft hover. */
+  main table thead { @apply text-xs tracking-wide text-subtle-foreground uppercase; }
+  main table tbody tr { transition: background-color var(--duration-fast) var(--ease-standard); }
+  @media (hover: hover) { main table tbody tr:hover { background: color-mix(in oklab, var(--surface-muted) 55%, transparent); } }
+
+  /* Disclosures: the summary as a quiet row with a turning chevron. */
+  details > summary { list-style: none; display: flex; align-items: center; gap: 0.5rem; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before {
+    content: ""; flex: none; width: 0.45rem; height: 0.45rem; margin-inline: 0.15rem 0.1rem;
+    border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+    transform: rotate(-45deg); transition: transform var(--duration-standard) var(--ease-standard);
+  }
+  details[open] > summary::before { transform: rotate(45deg); }
+  details > summary:hover { color: var(--foreground); }
 }

@@ -3,14 +3,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "cn"
 
 const alertVariants = cva(
-  "group/alert relative grid w-full min-w-0 gap-1 rounded-xl px-4 py-3 text-left text-sm wrap-anywhere has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_minmax(0,1fr)] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
+  "group/alert relative grid w-full min-w-0 gap-1 rounded-xl border px-4 py-3.5 text-left text-sm wrap-anywhere has-data-[slot=alert-action]:pr-18 has-[>svg]:grid-cols-[auto_minmax(0,1fr)] has-[>svg]:gap-x-2.5 *:[svg]:row-span-2 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "border bg-card text-card-foreground",
-        warning: "bg-warning-muted text-warning-muted-foreground",
+        default: "bg-card text-card-foreground shadow-resting",
+        warning: "border-[color-mix(in_oklab,var(--warning)_22%,var(--border))] bg-warning-muted text-warning-muted-foreground",
         destructive:
-          "bg-destructive-muted text-destructive-muted-foreground",
+          "border-[color-mix(in_oklab,var(--danger)_22%,var(--border))] bg-destructive-muted text-destructive-muted-foreground",
       },
     },
     defaultVariants: {
