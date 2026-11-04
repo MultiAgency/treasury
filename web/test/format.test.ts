@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { amountOf, describeRequest, symbolOf } from "../src/shared/format.ts";
+import { amountOf, describeRequest, exactPayment, symbolOf } from "../src/shared/format.ts";
 
 const usdc = { asset: ASSETS.USDC, symbol: "USDC", decimals: 6 } as Parameters<typeof amountOf>[2][number];
 
@@ -27,4 +27,12 @@ test("an asset's symbol is the book's, or the platform's for its own assets on a
   assert.equal(symbolOf(ASSETS.USDC, [{ ...usdc, symbol: "USDC.e" }]), "USDC.e");
   assert.deepEqual([ASSETS.USDC, ASSETS.wNEAR, ASSETS.ETH].map(asset => symbolOf(asset, [])), ["USDC", "wNEAR", "ETH"]);
   assert.equal(symbolOf("nep141:other.near", []), "nep141:other.near");
+});
+
+test("a payment's exact terms: the platform's assets in their units, unrounded; any other in raw units", () => {
+  const to = { recipient: "payee.near" };
+  assert.equal(exactPayment({ ...to, asset: ASSETS.USDC, amount: "1234567" }, [usdc]), "1.234567 USDC to payee.near");
+  assert.equal(exactPayment({ ...to, asset: ASSETS.wNEAR, amount: "1000000000000000000000001" }, []), "1.000000000000000000000001 wNEAR to payee.near");
+  assert.equal(exactPayment({ ...to, asset: "nep141:other.near", amount: "5" }, []), "5 raw units of nep141:other.near to payee.near");
+  assert.equal(exactPayment({ ...to, asset: ASSETS.USDC, amount: "1.5" }, []), "Payment terms unavailable");
 });

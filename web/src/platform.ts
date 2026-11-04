@@ -1,7 +1,8 @@
 /**
  * Every call this app makes to the platform; no other module calls it. Today that is the owner's session on this host:
- * the gateway's own routes (`/gw/...`) and each agent's owner procedures through `ownerClient`, same-origin. Under
- * direction B it calls the app's own server (`/apps/v1`) instead, behind these same signatures.
+ * the gateway's own routes (`/gw/...`) and each agent's owner procedures through `ownerClient`, same-origin. The owner
+ * pages stay on the owner's session. Only the proposals page (#20) goes through the app server's own `/api/` routes,
+ * which call `/apps/v1` from the server: `/apps/v1` is server to server, and refuses any request with an Origin or Cookie.
  *
  * Reads may be cached and retried (`reads`). Actions and streams return their result: the caller decides by `kind`,
  * and nothing here ever sends an action again.
@@ -10,6 +11,7 @@ import { gatewayDenialScope, gatewayDiscovery, ownerClient, ownerStreams, type G
   type OwnerInputs, type OwnerOutput, type OwnerProcedure, type OwnerResult } from "@multiagency/sdk";
 import { queryOptions } from "@tanstack/react-query";
 import { z } from "zod";
+import type { PartialOutcome } from "./shared/execution-outcome.ts";
 
 // Denials ---------------------------------------------------------------------------------------------------------
 
@@ -44,7 +46,9 @@ const PREVIEWS = new Set<string>(["rebalance", "steward/propose"]);
 const CHECKS = new Set<string>(["recover"]);
 /** Preparing an owner action holds what is to be signed; nothing takes effect until it is signed and submitted. */
 const PREPARES = new Set<string>(["owner/prepare"]);
-export function failureMessage(failure: OwnerFailure): string {
+export function failureMessage(failure: OwnerFailure | PartialOutcome): string {
+  if (failure.kind === "partial") return `At least one send went out, and not every one succeeded. Funds may have moved; review Activity and unresolved operations before acting again${failure.problems ? `: ${failure.problems.join("; ")}` : "."}`;
+  if (failure.kind === "refused" && failure.code === "NOT_SENT") return failure.error ? `Nothing was sent: ${failure.error}` : "Nothing was sent.";
   if (failure.kind === "unknown") return PREVIEWS.has(failure.procedure)
     ? "The preview was interrupted, so a plan may have been saved. Nothing was sent. Observations are read again; preview again for a fresh plan, and any earlier plan expires unused."
     : CHECKS.has(failure.procedure) ? "The check was interrupted. It only reads; check again."
@@ -143,6 +147,11 @@ export type Books = OwnerOutput<"reconcileBooks">;
 export type Strategy = OwnerInputs["strategy/save"]["strategy"];
 /** The saved strategy with its digest, whether the live grant approves it, and whether its schedule may be turned on. */
 export type StrategyStatus = OwnerOutput<"strategy/get">;
+/** The account linked to fund the agent: a DAO through Trezu, or a NEAR account. */
+export type Treasury = NonNullable<OwnerOutput<"treasury/get">>;
+export type SweepEvent = OwnerOutput<"sweep">;
+/** A one-time deposit address for the agent. */
+export type Deposit = OwnerOutput<"deposit">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
 export { mayCall, type Access } from "@multiagency/sdk";
 type Options = { signal?: AbortSignal };
@@ -231,6 +240,10 @@ export function reads(name: string, viewer: string | null) {
     activity: queryOptions({ queryKey: [key, "activity"], queryFn: ({ signal }) => api.read("activity", undefined, { signal }), retry: retryLost }),
     unresolved: queryOptions({ queryKey: [key, "unresolved"], queryFn: ({ signal }) => api.read("unresolved", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
+    /** Held payouts, read apart from balances: not additional funds. */
+    held: queryOptions({ queryKey: [key, "held"], queryFn: ({ signal }) => api.read("held", undefined, { signal }), retry: false }),
+    /** The linked funding account. */
+    treasury: queryOptions({ queryKey: [key, "treasury/get"], queryFn: ({ signal }) => api.read("treasury/get", undefined, { signal }), retry: retryLost }),
     books: queryOptions({ queryKey: [key, "reconcileBooks"], queryFn: ({ signal }) => api.read("reconcileBooks", undefined, { signal }), retry: retryLost }),
     strategy: queryOptions({ queryKey: [key, "strategy/get"], queryFn: ({ signal }) => api.read("strategy/get", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),

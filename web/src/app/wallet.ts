@@ -1,6 +1,7 @@
 import { type DataStorage, NearConnector } from "@fastnear/near-connect";
 import { useSyncExternalStore } from "react";
 import type { Challenge, SignedChallenge, Transaction } from "../platform";
+import { asSigner } from "./wallet-transaction";
 
 type WalletState = { status: "idle" | "connecting" | "connected"; accountId?: string; publicKey?: string };
 
@@ -67,7 +68,7 @@ export function walletSession(createConnector: () => NearConnector, walletId?: s
       const { wallet, accounts } = await connector().getConnectedWallet();
       const signerId = accounts[0]?.accountId;
       if (!signerId) throw new Error("Connect a wallet first");
-      return wallet.signAndSendTransaction({ signerId, ...transaction });
+      return wallet.signAndSendTransaction(asSigner(signerId, transaction));
     },
   };
 }
