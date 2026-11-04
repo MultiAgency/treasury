@@ -1,16 +1,19 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCredential } from "../src/credential.ts";
 import { createPlatform, type WatchPlatform } from "../src/platform.ts";
 
 const tap = `tap_00000000-0000-4000-8000-000000000000.${"a".repeat(43)}`;
+const dirs: string[] = [];
+after(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
 
 /** `watch`'s platform over a fetch that records each request's method, path and body. */
 function setup() {
-  const file = join(mkdtempSync(join(tmpdir(), "watch-platform-")), "app-credential");
+  const dir = mkdtempSync(join(tmpdir(), "watch-platform-")), file = join(dir, "app-credential");
+  dirs.push(dir);
   writeFileSync(file, tap, { mode: 0o600 });
   const seen: string[] = [];
   const fetch: typeof globalThis.fetch = async (input, init) => {

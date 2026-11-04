@@ -4,7 +4,7 @@
 // stand-in built from the stack's own owner account and key.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createHttpServer, type Server } from "node:http";
@@ -198,13 +198,15 @@ test("the owner reads, approves and executes a proposal through the server, and 
   ], "the second execute was answered from the read: nothing sent, nothing to record");
 });
 
-test("watch proposes for the drifted agent under the owner's consent: the request stored, the proposal open, and the next tick held", async () => {
+test("watch proposes for the drifted agent under the owner's consent: the request stored, the proposal open, and the next tick held", async t => {
   const issued = await challenge();
   const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
   if (((await (await get(`/api/agents/${target.agent}/consent`, cookie)).json()) as { value: { consent: unknown } }).value.consent === null) await connect();
   // All of it in wNEAR: whatever the agent holds now, the book drifts from that.
   await setTargets(target, { [USDC]: 0, [WNEAR]: 10_000, [ETH]: 0 });
-  const requests = await createRequests(join(mkdtempSync(join(tmpdir(), "treasury-stack-watch-")), "requests.json"));
+  const dir = mkdtempSync(join(tmpdir(), "treasury-stack-watch-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const requests = await createRequests(join(dir, "requests.json"));
   const watch = createWatch({ platform: platform.watch, requests, publicOrigin: ORIGIN });
   const organization = owner.replaceAll(".", "--");
   const watched = { organization, agent: target.agent, driftPoints: 1, intervalS: 300, proposalHours: 24 };
