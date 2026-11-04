@@ -21,3 +21,17 @@ test("unusable band thresholds make no zone and hold, instead of trading on a br
     assert.match(p.reason, /invalid band configuration/);
   }
 });
+
+test("missing band thresholds hold with the reason, instead of throwing", () => {
+  const missing = [{ ...BAND_DEFAULTS, trim: undefined }, { ...BAND_DEFAULTS, dca: undefined }, { ...BAND_DEFAULTS, trim: [15, 25] },
+    { ...BAND_DEFAULTS, dca: "-15" }, { buyHalt: -45 }, null, undefined] as unknown as (typeof BAND_DEFAULTS)[];
+  for (const bands of missing) {
+    // `undefined` falls back to the defaults, as a default parameter does; everything else is reported.
+    if (bands === undefined) { assert.equal(intentForZone(reading(120), bands).action, "sell-volatile"); continue; }
+    assert.notDeepEqual(bandProblems(bands), [], JSON.stringify(bands));
+    assert.equal(classifyZone(120, 100, bands), null, JSON.stringify(bands));
+    const p = intentForZone(reading(120), bands);
+    assert.deepEqual([p.action, p.sizeUsd], ["hold", 0]);
+    assert.match(p.reason, /invalid band configuration: .*(missing|list of three)/);
+  }
+});

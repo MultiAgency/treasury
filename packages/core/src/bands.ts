@@ -41,6 +41,12 @@ export type Intent = {
 /** What is wrong with the thresholds, if anything: trims rise above zero, DCA lines fall below zero, and buy halt is the lowest. */
 export function bandProblems(b: Bands): string[] {
   const r = report();
+  // Read the shape before the values: a missing or short threshold list is reported, never a TypeError.
+  const three = (x: unknown): x is readonly [number, number, number] => Array.isArray(x) && x.length === 3;
+  if (typeof b !== "object" || b === null) { r.need(false, "band thresholds are missing"); return r.problems; }
+  r.need(three(b.trim), "trim thresholds must be a list of three");
+  r.need(three(b.dca), "DCA thresholds must be a list of three");
+  if (!three(b.trim) || !three(b.dca)) return r.problems;
   const t = b.trim, d = b.dca;
   r.need(t.every(isNum) && t[0] > 0 && t[1] > t[0] && t[2] > t[1], "trim thresholds must be positive and rising");
   r.need(d.every(isNum) && d[0] < 0 && d[1] < d[0] && d[2] < d[1], "DCA thresholds must be negative and falling");
