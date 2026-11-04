@@ -10,4 +10,5 @@ export * from "./levels.ts";
 export * from "./check.ts";
 export * from "./detectors.ts";
 export * from "./faults.ts";
+export * from "./replay.ts";
 export * from "./validate.ts";
