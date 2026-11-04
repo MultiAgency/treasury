@@ -116,7 +116,9 @@ export const REPLAY_DEFAULTS: ReplayConfig = {
 };
 
 export type StepOutcome = "traded" | "hold" | "frozen" | "rejected" | "needs-approval" | "fill-refused";
-export type Step = { at: number; outcome: StepOutcome; detail: string; zone?: Intent["zone"]; rule?: string };
+export type Step = { at: number; outcome: StepOutcome; detail: string; zone?: Intent["zone"]; rule?: string; frozenReason?: string };
+/** Whole-treasury value after a step, for drawdown. */
+export type EquityPoint = { at: number; valueUsd: number };
 
 export type ReplayResult = {
   steps: Step[];
@@ -124,6 +126,8 @@ export type ReplayResult = {
   /** Holdings after the last step (volatile valued at the last price). */
   portfolio: Portfolio;
   volatileQty: number;
+  /** One point per sample, in order. */
+  equity: EquityPoint[];
 };
 
 const DAY = 86_400_000, HOUR = 3_600_000;
@@ -134,11 +138,13 @@ const DAY = 86_400_000, HOUR = 3_600_000;
  * from `regimeAt` (default: always normal). Returns every step and the fills; nothing is stored between calls.
  */
 export function replay(series: readonly Sample[], start: Portfolio, config: ReplayConfig = REPLAY_DEFAULTS,
-  regimeAt: (at: number) => Regime = () => "normal"): ReplayResult {
+  regimeAt: (at: number) => Regime = () => "normal", seedHistory: readonly Sample[] = []): ReplayResult {
   const provider = new SimulatedProvider(config.seed, config.provider);
   const steps: Step[] = [];
   const trades: Fill[] = [];
-  const history: Sample[] = [];
+  // Seed samples sit before the series: they warm the EMA up but are not steps of the replay.
+  const history: Sample[] = [...seedHistory];
+  const equity: EquityPoint[] = [];
   const first = series[0];
   let qty = first && first.price > 0 ? start.volatileUsd / first.price : 0;
   let reserve = start.reserveUsd;
@@ -158,9 +164,12 @@ export function replay(series: readonly Sample[], start: Portfolio, config: Repl
     const intent = evaluateBands(reading, { portfolio, bounds: config.bounds, sizing: { dcaUnitsUsed }, whipsaw: state, regime: regimeAt(at) }, config.engine);
     const deviation = reading.frozen ? null : deviationPct(reading.twap15m, reading.ema30d);
 
-    const record = (outcome: StepOutcome, detail: string, rule?: string) => steps.push({ at, outcome, detail, zone: intent.zone, ...(rule ? { rule } : {}) });
-    if (reading.frozen) { record("frozen", `${reading.reason}: ${reading.detail}`); continue; }
-    if (intent.action === "hold") { state = nextState(state, intent, deviation, at, config.engine.whipsaw, config.engine.bands); record("hold", intent.reason); continue; }
+    const record = (outcome: StepOutcome, detail: string, rule?: string) => {
+      steps.push({ at, outcome, detail, zone: intent.zone, ...(rule ? { rule } : {}), ...(reading.frozen ? { frozenReason: reading.reason } : {}) });
+    };
+    const markEquity = () => equity.push({ at, valueUsd: qty * price + reserve + cash });
+    if (reading.frozen) { record("frozen", `${reading.reason}: ${reading.detail}`); markEquity(); continue; }
+    if (intent.action === "hold") { state = nextState(state, intent, deviation, at, config.engine.whipsaw, config.engine.bands); record("hold", intent.reason); markEquity(); continue; }
 
     const slippage = provider.quote(intent.id);
     const treasury = volatileUsd + reserve + cash;
@@ -177,19 +186,20 @@ export function replay(series: readonly Sample[], start: Portfolio, config: Repl
       level: config.level,
     };
     const verdict = checkPolicy(intent, ctx, config.policy);
-    if (verdict.ok === false) { record("rejected", verdict.detail, verdict.rule); continue; }
-    if (verdict.ok === "needs-approval") { record("needs-approval", verdict.reason); continue; }
+    if (verdict.ok === false) { record("rejected", verdict.detail, verdict.rule); markEquity(); continue; }
+    if (verdict.ok === "needs-approval") { record("needs-approval", verdict.reason); markEquity(); continue; }
 
     const result = provider.fill(intent, price);
-    if (!result.ok) { record("fill-refused", result.reason); continue; }
+    if (!result.ok) { record("fill-refused", result.reason); markEquity(); continue; }
     const fill = result.fill;
     trades.push(fill);
     if (fill.action === "buy-volatile") { reserve -= fill.sizeUsd; qty += fill.quantity; dcaUnitsUsed += intent.dcaUnits; }
     else { reserve += fill.quantity * fill.fillPrice; qty -= fill.quantity; }
     state = nextState(state, intent, deviation, at, config.engine.whipsaw, config.engine.bands);
     record("traded", `${fill.action} ${fill.sizeUsd.toFixed(2)} USD at ${fill.fillPrice.toFixed(4)}`);
+    markEquity();
   }
-  return { steps, trades, portfolio: { volatileUsd: qty * lastPrice, reserveUsd: reserve, cashUsd: cash }, volatileQty: qty };
+  return { steps, trades, portfolio: { volatileUsd: qty * lastPrice, reserveUsd: reserve, cashUsd: cash }, volatileQty: qty, equity };
 }
 
 /** What is wrong with the replay configuration, beyond what each engine checks for itself. */
