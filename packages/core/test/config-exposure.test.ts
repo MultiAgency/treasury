@@ -11,8 +11,8 @@ const ctx: ExposureContext = { treasuryValueUsd: 1_000_000, venueExposureUsd: 10
 
 test("the default exposure limits are valid", () => assert.deepEqual(exposureProblems({ ...EXPOSURE_CONFIG_DEFAULTS, monthlySpendUsd: 10_000 }), []));
 
-test("unusable exposure limits reject; a zero-month cash floor can't switch the floor off", () => {
-  for (const change of [{ maxVenueExposurePct: NaNv }, { maxVenueExposurePct: 0 }, { operatingCashMonths: 0 }, { operatingCashMonths: NaNv }, { operatingCashMonths: -6 }, { monthlySpendUsd: -1 }, { monthlySpendUsd: NaNv }]) {
+test("unusable exposure limits reject; a zero-month floor or a zero spend can't switch the floor off", () => {
+  for (const change of [{ maxVenueExposurePct: NaNv }, { maxVenueExposurePct: 0 }, { operatingCashMonths: 0 }, { operatingCashMonths: NaNv }, { operatingCashMonths: -6 }, { monthlySpendUsd: -1 }, { monthlySpendUsd: NaNv }, { monthlySpendUsd: 0 }]) {
     const r = checkExposure(order, ctx, { ...LIMITS, ...change });
     assert.equal(r.ok === false && r.rule, "INVALID_INPUT", JSON.stringify(change));
   }

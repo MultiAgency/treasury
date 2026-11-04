@@ -64,7 +64,7 @@ test("the limits can be changed, and the result is deterministic", () => {
 });
 
 test("an unset or unusable user spend rate rejects every buy: the floor can't be checked", () => {
-  for (const monthlySpendUsd of [null, -1, Number.NaN])
+  for (const monthlySpendUsd of [null, 0, -1, Number.NaN])
     assert.equal(rejected(checkExposure(order(1_000), ctx, { ...limits, monthlySpendUsd })).rule, "INVALID_INPUT");
   assert.equal(rejected(checkExposure(order(1_000), ctx)).rule, "INVALID_INPUT");
 });
@@ -79,4 +79,9 @@ test("cash is stablecoins; every other asset is a risk asset", () => {
   assert.deepEqual(splitHoldings(holdings, ["USDC", "USDT"]), { cashUsd: 60_000, riskAssetsUsd: 205_000 });
   assert.equal(splitHoldings([{ symbol: "USDC", usd: Number.NaN }], ["USDC"]), null);
   assert.equal(splitHoldings([{ symbol: "USDC", usd: -1 }], ["USDC"]), null);
+});
+
+test("a zero spend rate is treated like an unknown one: a buy with no cash at all is rejected, not let through", () => {
+  const r = checkExposure(order(1_000), { ...ctx, cashUsd: 0 }, { ...limits, monthlySpendUsd: 0 });
+  assert.equal(r.ok === false && r.rule, "INVALID_INPUT");
 });
