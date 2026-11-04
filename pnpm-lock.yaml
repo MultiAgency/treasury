@@ -169,8 +169,8 @@ importers:
   apps/server:
     dependencies:
       '@multiagency/sdk':
-        specifier: 0.4.1
-        version: 0.4.1(zod@4.6.7)
+        specifier: 0.5.0
+        version: 0.5.0(zod@4.6.7)
       near-kit:
         specifier: 0.20.2
         version: 0.20.2
@@ -209,8 +209,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@multiagency/sdk':
-        specifier: 0.4.1
-        version: 0.4.1(zod@4.6.7)
+        specifier: 0.5.0
+        version: 0.5.0(zod@4.6.7)
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -496,8 +496,8 @@ packages:
     resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
     engines: {node: '>=20'}
 
-  '@multiagency/sdk@0.4.1':
-    resolution: {integrity: sha512-Xb3/Kzv7aOcJu4+3WDflRRGN5R72eLs9DDGjGM+xW2kk3x1CSR4GVzNK7Q+j2CpquPUf1US0c5iAMVLwjPFLAQ==}
+  '@multiagency/sdk@0.5.0':
+    resolution: {integrity: sha512-vfCpI9ZhCIrKgPsvPhO4bzbiidHC6TuwvcENxwX2Vs5rMGQnK7q22ec33U80vkS50qvlKZL8cTSANRNkipCldg==}
     hasBin: true
     peerDependencies:
       zod: ^4.6.5
@@ -3063,7 +3063,7 @@ snapshots:
       '@modelcontextprotocol/core': 2.4.0
       zod: 4.6.7
 
-  '@multiagency/sdk@0.4.1(zod@4.6.7)':
+  '@multiagency/sdk@0.5.0(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47
