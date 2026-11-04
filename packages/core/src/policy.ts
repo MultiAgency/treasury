@@ -4,11 +4,12 @@
 // defaults, awaiting H6's rules-to-policy map and H9's calibration.
 
 import type { Intent } from "./bands.ts";
+import { MAX_ORDER_PCT_OF_TREASURY, withinOrderCap } from "./caps.ts";
 import { isNonNegative, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const POLICY_DEFAULTS = {
-  /** One order, as a percent of the treasury value. */
-  maxOrderPctOfTreasury: 2,
+  /** One order, as a percent of the treasury value. Shared with sizing (caps.ts), so a size it caps always passes here. */
+  maxOrderPctOfTreasury: MAX_ORDER_PCT_OF_TREASURY,
   /** Gross traded value in a rolling day, as a percent of the treasury value. */
   maxDailyTurnoverPct: 10,
   maxOrdersPerHour: 10,
@@ -74,10 +75,11 @@ export function checkLimits(order: Intent, ctx: PolicyContext, limits: PolicyLim
   if (!Number.isInteger(ctx.ordersLastHour) || ctx.ordersLastHour < 0) return bad("no usable order count");
   if (!finite(ctx.quotedSlippageBps) || ctx.quotedSlippageBps < 0) return bad("no fresh quote: slippage unknown");
 
-  // Compared without dividing: size × 100 against percent × value, so a value exactly at the limit passes.
+  // Order size uses the cap arithmetic sizing uses (caps.ts), so an order sized at the cap passes. The other limits are
+  // compared without dividing: amount × 100 against percent × value, so a value exactly at the limit passes.
   const value = ctx.treasuryValueUsd;
   const failures: [PolicyRule, string][] = [];
-  if (order.sizeUsd * 100 > limits.maxOrderPctOfTreasury * value)
+  if (!withinOrderCap(order.sizeUsd, value, limits.maxOrderPctOfTreasury))
     failures.push(["ORDER_SIZE", `order ${order.sizeUsd} USD is over ${limits.maxOrderPctOfTreasury}% of the treasury`]);
   if ((ctx.turnoverTodayUsd + order.sizeUsd) * 100 > limits.maxDailyTurnoverPct * value)
     failures.push(["DAILY_TURNOVER", `daily turnover would be over ${limits.maxDailyTurnoverPct}% of the treasury`]);

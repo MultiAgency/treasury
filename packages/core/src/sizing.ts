@@ -3,6 +3,7 @@
 // sleeve meaning (volatile / reserve / operating cash) is unconfirmed (H5/H6/H8).
 
 import type { BandZone, Intent } from "./bands.ts";
+import { MAX_ORDER_PCT_OF_TREASURY, orderCapUsd } from "./caps.ts";
 import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const SIZING_DEFAULTS = {
@@ -13,8 +14,11 @@ export const SIZING_DEFAULTS = {
   dcaUnitsPerZone: { "dca-1": 1, "dca-2": 2, "dca-3": 3 },
   /** Percent of the volatile holding a trim zone sells. */
   trimPctOfVolatile: { "trim-1": 5, "trim-2": 10, "trim-3": 20 },
-  /** One order never exceeds this percent of the whole treasury (the policy limit, applied early). */
-  maxOrderPctOfTreasury: 2,
+  /**
+   * One order never exceeds this percent of the whole treasury: the policy limit, applied early. Shared with the policy
+   * (caps.ts), as is the arithmetic, so an order capped here always passes the policy's ORDER_SIZE check.
+   */
+  maxOrderPctOfTreasury: MAX_ORDER_PCT_OF_TREASURY,
 } as const;
 
 export type SizingParams = {
@@ -33,14 +37,17 @@ export type WeightBounds = { volatileMinPct: number; volatileMaxPct: number };
 
 export type SizingState = { dcaUnitsUsed: number };
 
-/** What is wrong with the sizing parameters, if anything. */
+const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
+
+/** What is wrong with the sizing parameters, if anything. A missing per-zone table is a problem, not a crash. */
 export function sizingProblems(p: SizingParams): string[] {
   const r = report();
+  if (!isRecord(p)) { r.need(false, "sizing parameters are missing"); return r.problems; }
   r.need(isPct(p.dcaBudgetPctOfReserve), "dcaBudgetPctOfReserve must be above 0 and at most 100");
   r.need(isPositiveInt(p.dcaUnits), "dcaUnits must be a whole number of at least 1");
   r.need(isPct(p.maxOrderPctOfTreasury), "maxOrderPctOfTreasury must be above 0 and at most 100");
-  r.need(Object.values(p.dcaUnitsPerZone).every(v => v === undefined || (isNonNegative(v) && v <= p.dcaUnits)), "dcaUnitsPerZone values must be between 0 and dcaUnits");
-  r.need(Object.values(p.trimPctOfVolatile).every(v => v === undefined || (isNum(v) && v >= 0 && v <= 100)), "trimPctOfVolatile values must be between 0 and 100");
+  r.need(isRecord(p.dcaUnitsPerZone) && Object.values(p.dcaUnitsPerZone).every(v => v === undefined || (isNonNegative(v) && v <= p.dcaUnits)), "dcaUnitsPerZone must map zones to values between 0 and dcaUnits");
+  r.need(isRecord(p.trimPctOfVolatile) && Object.values(p.trimPctOfVolatile).every(v => v === undefined || (isNum(v) && v >= 0 && v <= 100)), "trimPctOfVolatile must map zones to values between 0 and 100");
   return r.problems;
 }
 
@@ -60,7 +67,7 @@ export function sizeIntent(p: Intent, portfolio: Portfolio, bounds: WeightBounds
   const total = v + r + c;
   if (![v, r, c].every(usable) || !(total > 0)) return hold(p, "portfolio values unusable");
   if (!(bounds.volatileMinPct >= 0 && bounds.volatileMaxPct <= 100 && bounds.volatileMinPct <= bounds.volatileMaxPct)) return hold(p, "weight bounds unusable");
-  const cap = (total * params.maxOrderPctOfTreasury) / 100;
+  const cap = orderCapUsd(total, params.maxOrderPctOfTreasury);
 
   if (p.action === "buy-volatile") {
     if (!(params.dcaUnits > 0) || !usable(state.dcaUnitsUsed)) return hold(p, "DCA budget unusable");

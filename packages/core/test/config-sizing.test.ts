@@ -20,3 +20,16 @@ test("unusable sizing parameters hold instead of sizing with a broken cap or bud
     assert.deepEqual([r.action, r.sizeUsd], ["hold", 0], JSON.stringify(change));
   }
 });
+
+test("a missing per-zone table holds with the reason, instead of throwing", () => {
+  for (const change of [{ dcaUnitsPerZone: undefined }, { trimPctOfVolatile: undefined }, { dcaUnitsPerZone: null }, { dcaUnitsPerZone: [1, 2, 3] }]) {
+    const params = { ...SIZING_DEFAULTS, ...change } as unknown as typeof SIZING_DEFAULTS;
+    assert.notDeepEqual(sizingProblems(params), [], JSON.stringify(change));
+    for (const p of [buy, sell]) {
+      const r = sizeIntent(p, portfolio, wide, { dcaUnitsUsed: 0 }, params);
+      assert.deepEqual([r.action, r.sizeUsd], ["hold", 0], JSON.stringify(change));
+      assert.match(r.reason, /invalid sizing configuration: .*must map zones/);
+    }
+  }
+  assert.notDeepEqual(sizingProblems(null as unknown as typeof SIZING_DEFAULTS), []);
+});
