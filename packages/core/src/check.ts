@@ -31,17 +31,32 @@ export function checkPolicy(order: Proposal, ctx: FullContext, config: PolicyCon
   return approval ?? { ok: true };
 }
 
-/** What an approval was given under. */
-export type Approval = { level: Level; mandateDigest: string; quoteExpiresAt: number };
+/** What an approval was given under, and the order it approved: its id and size. */
+export type Approval = { level: Level; mandateDigest: string; quoteExpiresAt: number; orderId: string; sizeUsd: number };
+
+/** What is wrong with an approval as given, if anything: a malformed one must never read as approved. */
+function approvalProblem(a: Approval): string | null {
+  if (!(Number.isInteger(a.level) && a.level >= 0 && a.level <= 4)) return `the approval's level is ${String(a.level)}, not L0–L4`;
+  if (typeof a.mandateDigest !== "string" || a.mandateDigest === "") return "the approval names no mandate";
+  if (!Number.isFinite(a.quoteExpiresAt)) return "the approval's quote expiry is not a time";
+  if (typeof a.orderId !== "string" || a.orderId === "") return "the approval names no order";
+  if (!(Number.isFinite(a.sizeUsd) && a.sizeUsd > 0)) return "the approval's size is not a positive amount";
+  return null;
+}
 
 /**
- * Re-checks an approved order just before it runs. The approval is void if the mandate changed, the level has risen
- * since, or the quote has expired; otherwise every rule is checked again with the current numbers, and needs-approval
- * counts as satisfied (the human already approved). Returns ok or the rejection.
+ * Re-checks an approved order just before it runs. A malformed approval is invalid input. The approval is void if it was
+ * for another order or a smaller size, the mandate changed, the level has risen since, or the quote has expired;
+ * otherwise every rule is checked again with the current numbers, and needs-approval counts as satisfied (the human
+ * already approved). Returns ok or the rejection.
  */
 export function recheckApproval(order: Proposal, ctx: FullContext, approval: Approval, currentMandateDigest: string, now: number,
   config: PolicyConfig = POLICY_CONFIG_DEFAULTS): PolicyResult {
   const stale = (detail: string): PolicyResult => ({ ok: false, rule: "STALE_APPROVAL", detail, failed: ["STALE_APPROVAL"] });
+  const problem = approvalProblem(approval);
+  if (problem) return { ok: false, rule: "INVALID_INPUT", detail: problem, failed: ["INVALID_INPUT"] };
+  if (approval.orderId !== order.id) return stale(`the approval was for order ${approval.orderId}, not ${order.id}`);
+  if (!(order.sizeUsd <= approval.sizeUsd)) return stale(`the order is ${order.sizeUsd} USD, more than the ${approval.sizeUsd} USD approved`);
   if (approval.mandateDigest !== currentMandateDigest) return stale("the mandate changed since the approval");
   if (ctx.level > approval.level) return stale(`the level rose from L${approval.level} to L${ctx.level} since the approval`);
   if (!Number.isFinite(now) || !(now <= approval.quoteExpiresAt)) return stale("the quote has expired");

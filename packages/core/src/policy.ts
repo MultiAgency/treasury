@@ -58,6 +58,19 @@ export function policyLimitProblems(l: PolicyLimits): string[] {
   return r.problems;
 }
 
+/** Whether an order of `sizeUsd` is within `pct` percent of `valueUsd`: compared without dividing, so exactly at it is. */
+export const withinOrderCap = (sizeUsd: number, valueUsd: number, pct: number) => sizeUsd * 100 <= pct * valueUsd;
+
+/**
+ * The largest order `withinOrderCap` accepts: `valueUsd × pct / 100`, stepped down past any rounding that puts it a
+ * hair over. Sizing uses this, so an order sized to the cap always passes the policy's check of it.
+ */
+export function orderCapUsd(valueUsd: number, pct: number): number {
+  let cap = (valueUsd * pct) / 100;
+  while (cap > 0 && !withinOrderCap(cap, valueUsd, pct)) cap -= Math.abs(cap) * Number.EPSILON;
+  return cap;
+}
+
 /**
  * Checks one order against the limits. A hold always passes. Missing, non-finite or impossible inputs reject as
  * `INVALID_INPUT` and nothing else is evaluated. A value exactly at a limit passes; only over it rejects.
@@ -77,7 +90,7 @@ export function checkLimits(order: Proposal, ctx: PolicyContext, limits: PolicyL
   // Compared without dividing: size × 100 against percent × value, so a value exactly at the limit passes.
   const value = ctx.treasuryValueUsd;
   const failures: [PolicyRule, string][] = [];
-  if (order.sizeUsd * 100 > limits.maxOrderPctOfTreasury * value)
+  if (!withinOrderCap(order.sizeUsd, value, limits.maxOrderPctOfTreasury))
     failures.push(["ORDER_SIZE", `order ${order.sizeUsd} USD is over ${limits.maxOrderPctOfTreasury}% of the treasury`]);
   if ((ctx.turnoverTodayUsd + order.sizeUsd) * 100 > limits.maxDailyTurnoverPct * value)
     failures.push(["DAILY_TURNOVER", `daily turnover would be over ${limits.maxDailyTurnoverPct}% of the treasury`]);

@@ -50,12 +50,15 @@ export type ExposureContext = {
 
 const finite = (n: number | null): n is number => n !== null && Number.isFinite(n);
 
-/** What is wrong with the limits, if anything. A zero-month floor would switch the floor off, so it is refused. */
+/**
+ * What is wrong with the limits, if anything. A zero-month floor, or a spend of zero, would switch the floor off, so
+ * both are refused. An unset spend is refused by the check itself, which can't run without it.
+ */
 export function exposureProblems(l: ExposureLimits): string[] {
   const r = report();
   r.need(isPct(l.maxVenueExposurePct), "maxVenueExposurePct must be above 0 and at most 100");
   r.need(isPositive(l.operatingCashMonths), "operatingCashMonths must be above zero");
-  r.need(l.monthlySpendUsd === null || isNonNegative(l.monthlySpendUsd), "monthlySpendUsd must be zero or more, or unset");
+  r.need(l.monthlySpendUsd === null || isPositive(l.monthlySpendUsd), "monthlySpendUsd must be above zero, or unset");
   return r.problems;
 }
 const reject = (failures: [PolicyRule, string][]): PolicyResult => {

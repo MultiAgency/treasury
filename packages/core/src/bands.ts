@@ -3,7 +3,7 @@
 // whipsaw.ts (A4.3) can still turn a proposal into a hold. Thresholds are the plan's defaults, awaiting H9.
 
 import type { OracleReading } from "./oracle.ts";
-import { isNum, report } from "./validate.ts";
+import { guarded, isNum, report } from "./validate.ts";
 
 export const BAND_DEFAULTS = {
   /** Percent above the reference where each trim starts. */
@@ -40,12 +40,14 @@ export type Proposal = {
  */
 /** What is wrong with the thresholds, if anything: trims rise above zero, DCA lines fall below zero, and buy halt is the lowest. */
 export function bandProblems(b: Bands): string[] {
+  return guarded(() => {
   const r = report();
   const t = b.trim, d = b.dca;
   r.need(t.every(isNum) && t[0] > 0 && t[1] > t[0] && t[2] > t[1], "trim thresholds must be positive and rising");
   r.need(d.every(isNum) && d[0] < 0 && d[1] < d[0] && d[2] < d[1], "DCA thresholds must be negative and falling");
   r.need(isNum(b.buyHalt) && b.buyHalt < 0 && (!isNum(d[2]) || b.buyHalt <= d[2]), "buy halt must be negative and at or below the last DCA threshold");
   return r.problems;
+  });
 }
 
 export function classifyZone(twap: number, ema: number, bands: Bands = BAND_DEFAULTS): BandZone | null {

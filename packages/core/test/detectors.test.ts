@@ -59,6 +59,28 @@ test("too little history, or none, is a conservative L1 and never silence", () =
   assert.deepEqual(names([{ at: NOW, price: 100 }]), ["history:1"]);
 });
 
+test("history whose newest sample is old is a conservative L1: the last hours can't be seen", () => {
+  // The review on #30: 5-minute samples from 3 days ago up to 12 hours ago, all at 100, gave no detection.
+  const stale = Array.from({ length: 60 * 12 + 1 }, (_, i) => ({ at: NOW - 12 * HOUR - (60 * 12 - i) * 5 * MIN, price: 100 }));
+  assert.deepEqual(names(stale), ["history:1"]);
+  const lastAt = (ageMs: number) => flat().map(s => ({ ...s, at: s.at - ageMs })).filter(s => s.at <= NOW);
+  assert.deepEqual(names(lastAt(HOUR)), [], "exactly the limit is still usable");
+  assert.deepEqual(names(lastAt(HOUR + 1)), ["history:1"]);
+});
+
+test("a crash counts from the day's high, not only from 24 hours ago", () => {
+  // 100 → 140 → 98 within a day: 30% down from the peak, though only 2% below where the day started.
+  const spike = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 140 : 98));
+  assert.deepEqual(names(spike), ["crash:3"]);
+  const shallower = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 140 : 98.01));
+  assert.deepEqual(names(shallower), [], "just under 30% from the peak");
+});
+
+test("a parabolic rise counts from the day's low, not only from 24 hours ago", () => {
+  // 100 → 70 → 98 within a day: 40% up from the low, though 2% below where the day started.
+  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 70 : 98))), ["parabolic:2"]);
+});
+
 test("unusable samples are ignored, and the result is deterministic", () => {
   const dirty = [...flat(), { at: NOW - 1, price: Number.NaN }, { at: NOW + 5, price: 1 }];
   assert.deepEqual(names(dirty), []);

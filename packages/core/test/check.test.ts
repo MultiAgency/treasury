@@ -43,7 +43,7 @@ test("missing inputs reject as invalid", () => {
   assert.equal(r.ok === false && r.rule, "INVALID_INPUT");
 });
 
-const approval = { level: 2 as const, mandateDigest: "sha256:aaa", quoteExpiresAt: 2_000 };
+const approval = { level: 2 as const, mandateDigest: "sha256:aaa", quoteExpiresAt: 2_000, orderId: "p", sizeUsd: 10_000 };
 
 test("an approval still good is accepted, even though the level calls for a human", () => {
   assert.deepEqual(recheckApproval(order(10_000), { ...ctx, level: 2 }, approval, "sha256:aaa", 1_000, config), { ok: true });
@@ -60,6 +60,21 @@ test("an approval is void if the mandate changed, the level rose, or the quote e
 test("an approval doesn't override a rule that now fails", () => {
   const r = recheckApproval(order(10_000), { ...ctx, level: 2, cashUsd: 1 }, approval, "sha256:aaa", 1_000, config);
   assert.equal(r.ok === false && r.rule, "CASH_FLOOR");
+});
+
+test("a malformed approval is refused as invalid input, never read as approved", () => {
+  // An undefined or NaN level made "the level rose" false, so an L2 order passed as approved.
+  const rule = (bad: Record<string, unknown>) => { const r = recheckApproval(order(10_000), { ...ctx, level: 2 }, { ...approval, ...bad } as never, "sha256:aaa", 1_000, config); return r.ok === false ? r.rule : String(r.ok); };
+  for (const bad of [{ level: undefined }, { level: Number.NaN }, { level: 1.5 }, { level: 5 }, { level: -1 }, { mandateDigest: "" },
+    { quoteExpiresAt: Number.NaN }, { orderId: "" }, { orderId: undefined }, { sizeUsd: Number.NaN }, { sizeUsd: 0 }, { sizeUsd: -1 }])
+    assert.equal(rule(bad), "INVALID_INPUT", JSON.stringify(bad));
+});
+
+test("an approval covers only its own order, at its size or smaller", () => {
+  const rule = (o: ReturnType<typeof order>) => { const r = recheckApproval(o, { ...ctx, level: 2 }, approval, "sha256:aaa", 1_000, config); return r.ok === false ? r.rule : String(r.ok); };
+  assert.equal(rule({ ...order(10_000), id: "another" }), "STALE_APPROVAL", "another order");
+  assert.equal(rule(order(10_001)), "STALE_APPROVAL", "a larger order");
+  assert.equal(rule(order(9_000)), "true", "a smaller one is within what was approved");
 });
 
 test("a lowered level keeps an approval valid", () => {

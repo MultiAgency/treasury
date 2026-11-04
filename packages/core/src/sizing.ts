@@ -3,7 +3,8 @@
 // sleeve meaning (volatile / reserve / operating cash) is unconfirmed (H5/H6/H8).
 
 import type { BandZone, Proposal } from "./bands.ts";
-import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
+import { orderCapUsd, POLICY_DEFAULTS } from "./policy.ts";
+import { guarded, isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const SIZING_DEFAULTS = {
   /** The DCA budget, as a percent of the reserve, split into `dcaUnits` equal units. */
@@ -13,8 +14,8 @@ export const SIZING_DEFAULTS = {
   dcaUnitsPerZone: { "dca-1": 1, "dca-2": 2, "dca-3": 3 },
   /** Percent of the volatile holding a trim zone sells. */
   trimPctOfVolatile: { "trim-1": 5, "trim-2": 10, "trim-3": 20 },
-  /** One order never exceeds this percent of the whole treasury (the policy limit, applied early). */
-  maxOrderPctOfTreasury: 2,
+  /** One order never exceeds this percent of the whole treasury: the policy's limit, applied early. */
+  maxOrderPctOfTreasury: POLICY_DEFAULTS.maxOrderPctOfTreasury,
 } as const;
 
 export type SizingParams = {
@@ -35,6 +36,7 @@ export type SizingState = { dcaUnitsUsed: number };
 
 /** What is wrong with the sizing parameters, if anything. */
 export function sizingProblems(p: SizingParams): string[] {
+  return guarded(() => {
   const r = report();
   r.need(isPct(p.dcaBudgetPctOfReserve), "dcaBudgetPctOfReserve must be above 0 and at most 100");
   r.need(isPositiveInt(p.dcaUnits), "dcaUnits must be a whole number of at least 1");
@@ -42,6 +44,7 @@ export function sizingProblems(p: SizingParams): string[] {
   r.need(Object.values(p.dcaUnitsPerZone).every(v => v === undefined || (isNonNegative(v) && v <= p.dcaUnits)), "dcaUnitsPerZone values must be between 0 and dcaUnits");
   r.need(Object.values(p.trimPctOfVolatile).every(v => v === undefined || (isNum(v) && v >= 0 && v <= 100)), "trimPctOfVolatile values must be between 0 and 100");
   return r.problems;
+  });
 }
 
 const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
@@ -60,7 +63,7 @@ export function sizeProposal(p: Proposal, portfolio: Portfolio, bounds: WeightBo
   const total = v + r + c;
   if (![v, r, c].every(usable) || !(total > 0)) return hold(p, "portfolio values unusable");
   if (!(bounds.volatileMinPct >= 0 && bounds.volatileMaxPct <= 100 && bounds.volatileMinPct <= bounds.volatileMaxPct)) return hold(p, "weight bounds unusable");
-  const cap = (total * params.maxOrderPctOfTreasury) / 100;
+  const cap = orderCapUsd(total, params.maxOrderPctOfTreasury);
 
   if (p.action === "buy-volatile") {
     if (!(params.dcaUnits > 0) || !usable(state.dcaUnitsUsed)) return hold(p, "DCA budget unusable");

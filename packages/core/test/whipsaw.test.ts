@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { gate, nextState, WHIPSAW_DEFAULTS, type WhipsawState } from "../src/whipsaw.ts";
-import type { BandZone, Proposal } from "../src/bands.ts";
+import { classifyZone, type BandZone, type Proposal } from "../src/bands.ts";
 
 const NOW = 1_800_000_000_000;
 const HOUR = 3_600_000;
@@ -55,11 +55,42 @@ test("a disarmed buy zone re-arms 2 points back inside its line, not before", ()
   assert.equal(nextState(state, hold, -13, NOW + HOUR).disarmed, undefined);
 });
 
+test("a partial or unreadable state holds: the cooldown and reversal lock can't be checked without both", () => {
+  for (const state of [{ lastAction: "sell-volatile" as const }, { lastActionAt: NOW - 48 * HOUR }, { lastActionAt: Number.NaN, lastAction: "sell-volatile" as const }]) {
+    const p = gate(buy(), state, "normal", NOW);
+    assert.equal(p.action, "hold", JSON.stringify(state));
+    assert.match(p.reason, /incomplete|unreadable/);
+  }
+});
+
+test("after a trade, the less extreme zones on its side are disarmed too; a more extreme one isn't", () => {
+  const state: WhipsawState = { lastActionAt: NOW - 48 * HOUR, lastAction: "sell-volatile", disarmed: "trim-2" };
+  assert.match(gate(sell("trim-1"), state, "normal", NOW).reason, /re-arm/);
+  assert.match(gate(sell("trim-2"), state, "normal", NOW).reason, /re-arm/);
+  assert.equal(gate(sell("trim-3"), state, "normal", NOW).action, "sell-volatile");
+  assert.equal(gate(buy("dca-1"), { ...state, lastAction: "buy-volatile" }, "normal", NOW).action, "buy-volatile", "the other side is unaffected");
+});
+
+test("a price alternating across a line between two zones trades once, not on every crossing", () => {
+  // The review on #30: a TWAP of 125.1 / 124.9 against an EMA of 100, every 2 hours, gave 8 sells in 16 hours.
+  let state: WhipsawState = none;
+  const trades: string[] = [];
+  for (let i = 0; i < 8; i++) {
+    const now = NOW + i * 2 * HOUR, twap = i % 2 === 0 ? 125.1 : 124.9, zone = classifyZone(twap, 100)!;
+    const proposed = gate(sell(zone), state, "normal", now);
+    if (proposed.action !== "hold") trades.push(zone);
+    state = nextState(state, proposed, (twap - 100) / 100 * 100, now);
+  }
+  assert.deepEqual(trades, ["trim-2"]);
+});
+
 test("a disarmed trim zone re-arms 2 points back below its line", () => {
   const hold: Proposal = { ...sell(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
   const state: WhipsawState = { lastActionAt: NOW, lastAction: "sell-volatile", disarmed: "trim-2" }; // line +25
   assert.equal(nextState(state, hold, 24, NOW).disarmed, "trim-2");
-  assert.equal(nextState(state, hold, 23, NOW).disarmed, undefined);
+  assert.equal(nextState(state, hold, 23, NOW).disarmed, "trim-1", "back below trim-2's line: trim-1 is still disarmed");
+  assert.equal(nextState(state, hold, 13, NOW).disarmed, undefined, "back below trim-1's line too");
+  assert.equal(nextState(nextState(state, hold, 23, NOW), hold, 13, NOW).disarmed, undefined, "one line at a time");
 });
 
 test("with no usable deviation a disarmed zone stays disarmed", () => {

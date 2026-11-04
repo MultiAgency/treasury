@@ -22,7 +22,10 @@ export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress"
 export type WhipsawState = {
   lastActionAt?: number;
   lastAction?: Exclude<ProposalAction, "hold">;
-  /** The zone just traded; it can't trade again until the deviation retreats past the hysteresis. */
+  /**
+   * The most extreme zone disarmed on its side: it and every less extreme zone there can't trade until the deviation
+   * retreats past their lines, one line at a time. A more extreme zone stays armed.
+   */
   disarmed?: BandZone;
 };
 
@@ -37,13 +40,27 @@ export function whipsawProblems(l: WhipsawLimits): string[] {
 
 const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
 
+/** Each side's trading zones, least extreme first. */
+const SIDES: readonly (readonly BandZone[])[] = [["trim-1", "trim-2", "trim-3"], ["dca-1", "dca-2", "dca-3"]];
+/** Whether `zone` is `disarmed` or a less extreme zone on its side. */
+function heldBy(zone: BandZone, disarmed: BandZone | undefined) {
+  if (disarmed === undefined) return false;
+  const side = SIDES.find(s => s.includes(zone));
+  return side !== undefined && side.includes(disarmed) && side.indexOf(zone) <= side.indexOf(disarmed);
+}
+/** The next less extreme zone on `zone`'s side, or undefined past the first. */
+const lessExtreme = (zone: BandZone) => { const side = SIDES.find(s => s.includes(zone)); return side?.[side.indexOf(zone) - 1]; };
+
 /** Lets a proposal through, or turns it into a hold with the reason. A hold passes unchanged. */
 export function gate(p: Proposal, state: WhipsawState, regime: Regime, now: number, limits: WhipsawLimits = WHIPSAW_DEFAULTS): Proposal {
   if (p.action === "hold") return p;
   const bad = whipsawProblems(limits);
   if (bad.length > 0) return hold(p, `invalid anti-whipsaw configuration: ${bad.join("; ")}`);
   if (regime !== "normal") return hold(p, `regime ${regime}: not trading`);
-  if (state.disarmed === p.zone) return hold(p, `${p.zone} already traded: waiting to re-arm`);
+  // The cooldown and the reversal lock need both: with only one, neither can be checked, so nothing trades.
+  if ((state.lastAction === undefined) !== (state.lastActionAt === undefined)) return hold(p, "the anti-whipsaw state is incomplete");
+  if (state.lastActionAt !== undefined && !Number.isFinite(state.lastActionAt)) return hold(p, "the last action's time is unreadable");
+  if (heldBy(p.zone, state.disarmed)) return hold(p, `${state.disarmed} already traded: ${p.zone} waits to re-arm`);
   if (state.lastActionAt !== undefined) {
     const since = now - state.lastActionAt;
     if (!(since >= 0)) return hold(p, "last action is dated in the future");
@@ -67,19 +84,24 @@ function line(zone: BandZone, bands: Bands): number | undefined {
 }
 
 /**
- * The state after a reading. An action records its time, direction and zone (and disarms the zone). A disarmed zone
- * re-arms once the deviation has retreated `hysteresisPct` inside its line; with no deviation it stays disarmed.
+ * The state after a reading. An action records its time, direction and zone (and disarms the zone, and with it the less
+ * extreme zones on its side). Once the deviation has retreated `hysteresisPct` inside the disarmed zone's line, the
+ * next less extreme zone is the one disarmed, and so on past the first; with no deviation nothing re-arms.
  */
 export function nextState(state: WhipsawState, proposal: Proposal, deviationPct: number | null, now: number,
   limits: WhipsawLimits = WHIPSAW_DEFAULTS, bands: Bands = BAND_DEFAULTS): WhipsawState {
   if (whipsawProblems(limits).length > 0 || bandProblems(bands).length > 0) return state;
   if (proposal.action !== "hold") return { lastActionAt: now, lastAction: proposal.action, disarmed: proposal.zone };
-  const zone = state.disarmed;
-  if (zone === undefined || deviationPct === null) return state;
-  const at = line(zone, bands);
-  if (at === undefined) return state;
-  const retreated = at > 0 ? deviationPct <= at - limits.hysteresisPct : deviationPct >= at + limits.hysteresisPct;
-  if (!retreated) return state;
+  if (state.disarmed === undefined || deviationPct === null) return state;
+  let zone: BandZone | undefined = state.disarmed;
+  while (zone !== undefined) {
+    const at = line(zone, bands);
+    if (at === undefined) return state;
+    const retreated = at > 0 ? deviationPct <= at - limits.hysteresisPct : deviationPct >= at + limits.hysteresisPct;
+    if (!retreated) break;
+    zone = lessExtreme(zone);
+  }
+  if (zone === state.disarmed) return state;
   const { disarmed: _cleared, ...rest } = state;
-  return rest;
+  return zone === undefined ? rest : { ...rest, disarmed: zone };
 }

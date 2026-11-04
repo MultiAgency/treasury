@@ -34,6 +34,8 @@ export function checkLevel(order: Proposal, level: Level, treasuryValueUsd: numb
   const badLimits = levelProblems(limits);
   if (badLimits.length > 0) return { ok: false, rule: "INVALID_INPUT", detail: `invalid limits: ${badLimits.join("; ")}`, failed: ["INVALID_INPUT"] };
   if (!isLevel(level)) return { ok: false, rule: "INVALID_INPUT", detail: "unknown escalation level", failed: ["INVALID_INPUT"] };
+  // A NaN size compares false with every cap, so it would pass one; refused here whatever the level.
+  if (!(Number.isFinite(order.sizeUsd) && order.sizeUsd > 0)) return { ok: false, rule: "INVALID_INPUT", detail: "order size must be above zero", failed: ["INVALID_INPUT"] };
   switch (level) {
     case 0:
       return { ok: true };
