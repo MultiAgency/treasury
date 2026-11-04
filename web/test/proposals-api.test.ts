@@ -13,7 +13,8 @@ test("each route is called same-origin, as the server expects: reads as GETs, wr
   server.answer("POST /api/session/challenge", ok({ message: "Sign in", recipient: "treasury.test", nonce: NONCE }));
   server.answer("POST /api/session", ok({ account: "owner.near" }));
   server.answer("DELETE /api/session", ok({}));
-  server.answer(`GET ${base}`, ok({ agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test" }));
+  server.answer(`GET ${base}`, ok({ agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test",
+    signer: "wallet", account: "owner.near", access: { canSign: true, canPropose: false, canVote: false, canExecute: true, canManage: true } }));
   server.answer(`GET ${base}/consent`, ok({ consent: null }));
   server.answer(`POST ${base}/consent/text`, ok({ message: "consent", nonce: NONCE, recipient: "platform.test" }));
   server.answer(`POST ${base}/consent`, ok({ consent: { id: "c1", scopes: ["read", "treasury"], expiresAt: 1 } }));
@@ -49,6 +50,21 @@ test("each route is called same-origin, as the server expects: reads as GETs, wr
   }
   assert.deepEqual(JSON.parse(server.sent.find(request => request.path.endsWith("/approve"))!.body), signed, "the signed body, as signed");
   assert.equal(server.sent.find(request => request.path.endsWith("/execute"))!.body, "{}");
+});
+
+test("for a DAO-owned agent, filing its consent and its vote are bodiless JSON POSTs to the same routes, answered with the request", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const transaction = { receiverId: "agentic.sputnik-dao.near", actions: [{ type: "FunctionCall", params: { methodName: "add_proposal", args: { proposal: {} }, gas: "1", deposit: "0" } }] };
+  const request = (verdict?: "approve" | "reject") => ({ id: "d".repeat(64), description: "* Signs: hash", votingUntil: 1, check: "https://platform.test/confirm/dao/d",
+    ...(verdict && { verdict }), offer: { state: "file", transaction } });
+  server.answer(`POST ${base}/consent/text`, ok({ request: request() }));
+  server.answer(`POST ${base}/proposals/${ID}/reject`, ok({ request: request("approve") }));
+  server.answer(`GET ${base}/proposals/${ID}`, ok({ proposal: proposal(), vote: request("approve") }));
+  assert.deepEqual(await agent.fileConsent(), { ok: true, value: { request: request() } });
+  assert.deepEqual(await agent.fileVote(ID, "reject"), { ok: true, value: { request: request("approve") } }, "the open vote, with its own verdict");
+  const read = await agent.proposal(ID);
+  assert.deepEqual(read.ok && read.value.vote, request("approve"), "a proposal's read carries the DAO's vote while it waits");
+  for (const sent of server.sent.filter(item => item.method === "POST")) assert.equal(sent.body, "{}", `${sent.path}: the browser sends nothing for a DAO`);
 });
 
 test("every failure the server answers is its kind and code; an answer the contract doesn't describe is lost", async () => {

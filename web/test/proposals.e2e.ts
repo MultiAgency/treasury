@@ -14,6 +14,8 @@ import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page } from "playwright";
 import { fileAudit } from "../../apps/server/src/audit.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
+import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
+import { standInDaos } from "../../apps/server/src/dao.ts";
 import { createServer } from "../../apps/server/src/http.ts";
 import { standInKeyLookup } from "../../apps/server/src/keys.ts";
 import { loadPage } from "../../apps/server/src/page.ts";
@@ -47,7 +49,7 @@ before(async () => {
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit, consentsPerDay: 100, keyLookup,
+    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(join(import.meta.dirname, "..", "dist-proposals")),
   });
 

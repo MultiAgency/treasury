@@ -9,11 +9,16 @@ import { appendLine, ensureAppendable } from "./files.ts";
 export type AuditEntry = {
   /** The signed-in NEAR account the action was relayed for. */
   who: string;
-  action: "consent" | "revoke" | "approve" | "reject" | "execute";
+  /**
+   * `dao-consent` and `dao-vote`: a DAO's consent, or its vote on a proposal, filed for the DAO to vote on (the text it
+   * will sign, by its hash). `dao-consent-stored` and `dao-vote-relayed`: a read found the DAO's vote passed and the
+   * consent stored or the vote relayed, recorded once, as a result, for the DAO (`who`).
+   */
+  action: "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-consent" | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed";
   agent: string;
   /** The consent or proposal the action concerns, once it's known. */
   subject?: string;
-  /** The SHA-256 of the text the owner signed, never the signature. */
+  /** The SHA-256 of the text the owner signed (or a DAO is asked to sign by its vote), never the signature. */
   signedTextSha256?: string;
 } & (
   | { stage: "attempt" }

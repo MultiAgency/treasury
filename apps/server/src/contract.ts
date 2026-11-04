@@ -18,9 +18,22 @@ export const signIn = z.strictObject({
   nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
 });
 export const session = z.strictObject({ account: z.string() });
-export const agent = z.strictObject({ agent: z.string(), owner: z.string(), agentId: z.string().nullable(), host: z.string() });
-/** The agent's identity as the owner check read it from the platform. */
-export type Identity = z.infer<typeof agent>;
+/**
+ * What the signed-in account may do with the agent, as the platform's `accessOf` reads it: a wallet owner may do
+ * everything and signs for itself; a DAO's member never signs, and the rest comes from its roles in the DAO's policy.
+ */
+export const access = z.strictObject({ canSign: z.boolean(), canPropose: z.boolean(), canVote: z.boolean(), canExecute: z.boolean(), canManage: z.boolean() });
+export type Access = z.infer<typeof access>;
+/** The agent's identity as the platform answers it: what a consent names. */
+export const identity = z.strictObject({ agent: z.string(), owner: z.string(), agentId: z.string().nullable(), host: z.string() });
+export type Identity = z.infer<typeof identity>;
+/**
+ * The agent as the owner check admitted the signed-in account to it: its identity, who signs as its owner (`wallet`,
+ * or `dao`: every signature is the DAO's vote), the account admitted (the owner, or one of the DAO's members) and its
+ * access. Presenting `access` never authorizes: each route checks it again.
+ */
+export const agent = identity.extend({ signer: z.enum(["wallet", "dao"]), account: z.string(), access });
+export type Admitted = z.infer<typeof agent>;
 /** The consent text for the owner's wallet: sign `message` with NEP-413 for `recipient` (the platform's host) with `nonce`. */
 export const consentText = z.strictObject({ message: z.string(), nonce: z.string(), recipient: z.string() });
 /**
@@ -28,8 +41,6 @@ export const consentText = z.strictObject({ message: z.string(), nonce: z.string
  * SDK's own submission schema, with the nonce held to the canonical base64 of 32 bytes that this server issued.
  */
 export const consentSubmission = appConsentSubmission.extend({ nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) });
-/** One proposal, as the platform shows it. The list is the SDK's own `proposalList`. */
-export const proposalRead = z.object({ proposal: proposalView });
 /**
  * The owner's signed verdict on a proposal: `proposalText(proposal, verdict)` of the proposal the page shows, signed
  * by the wallet for the platform's host. The SDK's schema, with the nonce held to the canonical base64 of 32 bytes.
@@ -48,8 +59,55 @@ export const executeResult = z.discriminatedUnion("result", [
 ]);
 /** What a disconnect answers: how many of the agent's live consents it revoked. */
 export const revoked = z.strictObject({ revoked: z.number().int().nonnegative() });
-/** The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch). */
-export const consent = z.strictObject({ consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable() });
+/**
+ * A transaction a DAO member's wallet signs and sends as is, built by the platform, never by this server or the page:
+ * `add_proposal`, and with a vote `act_proposal`.
+ */
+export const memberTransaction = z.strictObject({
+  receiverId: z.string(),
+  actions: z.array(z.strictObject({ type: z.literal("FunctionCall"),
+    params: z.looseObject({ methodName: z.string(), args: z.looseObject({}), gas: z.string(), deposit: z.string() }) })).min(1),
+});
+export type MemberTransaction = z.infer<typeof memberTransaction>;
+/** What the platform answers for a member to file: the proposal, and the same with a vote on it (null when it couldn't). */
+export const daoTransactions = z.strictObject({ proposal: memberTransaction, proposalAndVote: memberTransaction.nullable() });
+export type DaoTransactions = z.infer<typeof daoTransactions>;
+/**
+ * What a member is offered for a DAO request waiting for its vote (`dao-offer.ts`): `filed`, vote on proposal
+ * `proposal` in Trezu (`vote`); `approved`, wait for the server to complete it; `failed`, finalize it again in Trezu;
+ * `ended`, the DAO's answer; `file`, the transaction to file, or null for a member who may not file.
+ */
+export const daoOffer = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.enum(["filed", "approved", "failed"]), proposal: z.number(), vote: z.string() }),
+  z.strictObject({ state: z.literal("ended"), proposal: z.number(), vote: z.string(), outcome: z.enum(["Rejected", "Expired", "Moved"]) }),
+  z.strictObject({ state: z.literal("file"), transaction: memberTransaction.nullable() }),
+]);
+/**
+ * A DAO request waiting for its vote: what the DAO's proposal says, the platform's check page for the exact text and
+ * hash the DAO signs, the time its vote must pass by (ms), and the member's offer; null when the DAO couldn't be read.
+ */
+export const daoRequest = z.strictObject({ id: z.string(), description: z.string(), votingUntil: z.number(), check: z.string(),
+  verdict: z.enum(["approve", "reject"]).optional(), offer: daoOffer.nullable() });
+/**
+ * What filing a DAO request answers (its consent, or its vote on a proposal): the request, filed now or already open
+ * for the same subject. An open vote may carry the other verdict: a member who disagrees votes against it in Trezu.
+ */
+export const daoFiled = z.strictObject({ request: daoRequest });
+/**
+ * One proposal, as the platform shows it, and for a DAO-owned agent the DAO's vote on it while one waits (`vote`).
+ * The list is the SDK's own `proposalList`.
+ */
+export const proposalRead = z.object({ proposal: proposalView, vote: daoRequest.nullable().optional() });
+/**
+ * The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch).
+ * For a DAO-owned agent, also its consent request waiting for the vote (`request`), and, when one just ended without
+ * a consent, why (`ended`: its vote didn't pass in time, or a DAO stop ended it).
+ */
+export const consent = z.strictObject({
+  consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable(),
+  request: daoRequest.nullable().optional(),
+  ended: z.enum(["expired", "stopped"]).optional(),
+});
 
 /**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
@@ -57,7 +115,7 @@ export const consent = z.strictObject({ consent: z.strictObject({ id: z.string()
  * - `not_owner` (403): the session's account doesn't own this agent, or no such agent exists: the same answer for both,
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
- *   `too_large`, `rate_limited`, a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
+ *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
  *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later

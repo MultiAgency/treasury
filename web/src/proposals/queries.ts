@@ -29,11 +29,14 @@ export function agentReads(name: string) {
     name,
     agent,
     identity: queryOptions({ queryKey: [...key, "identity"], queryFn: async () => answered(await agent.identity()), retry: false }),
-    consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()).consent, retry: false }),
+    /** The live consent, and for a DAO its consent request while one waits for the vote, read again every half minute. */
+    consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()), retry: false,
+      refetchInterval: query => query.state.data?.request ? 30_000 : false }),
     proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false,
       refetchInterval: 30_000 }),
-    proposal: (id: string) => queryOptions({ queryKey: [...key, "proposals", id], queryFn: async () => answered(await agent.proposal(id)).proposal,
-      retry: false, refetchInterval: query => query.state.data && MOVING.has(query.state.data.state) ? 5_000 : false }),
+    /** One proposal, and for a DAO the DAO's vote on it while one waits: read again while either may change on its own. */
+    proposal: (id: string) => queryOptions({ queryKey: [...key, "proposals", id], queryFn: async () => answered(await agent.proposal(id)),
+      retry: false, refetchInterval: query => !query.state.data ? false : MOVING.has(query.state.data.proposal.state) ? 5_000 : query.state.data.vote ? 30_000 : false }),
   };
 }
 

@@ -4,6 +4,8 @@ import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
+import { createDaoRequests } from "../src/dao-requests.ts";
+import { standInDaos } from "../src/dao.ts";
 import { createServer } from "../src/http.ts";
 import { loadPage } from "../src/page.ts";
 import { createSessions } from "../src/sessions.ts";
@@ -30,7 +32,7 @@ before(async () => {
     platform: fakePlatform({ portfolio: "owner.near" }).platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 60_000, perMinute: 10, keyLookup: async () => "none" }),
     sessions: createSessions({ idleMs: 60_000, maxMs: 120_000 }), publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0,
-    ownerRequestsPerMinute: 10, audit: { append: async () => {} }, consentsPerDay: 1, keyLookup: async () => "none",
+    ownerRequestsPerMinute: 10, audit: { append: async () => {} }, consentsPerDay: 1, daoFilingsPerDay: 1_000, keyLookup: async () => "none", daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(dist),
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));

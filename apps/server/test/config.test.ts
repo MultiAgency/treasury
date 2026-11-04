@@ -9,6 +9,7 @@ const env = {
   TREASURY_CREDENTIAL_FILE: "/run/secrets/tap",
   TREASURY_PUBLIC_ORIGIN: "https://treasury.test",
   TREASURY_AUDIT_FILE: "/var/lib/treasury/audit.jsonl",
+  TREASURY_DAO_REQUESTS_FILE: "/var/lib/treasury/dao-requests.json",
 };
 
 test("the configuration is checked at startup, with defaults for lifetimes and limits", () => {
@@ -21,6 +22,9 @@ test("the configuration is checked at startup, with defaults for lifetimes and l
   assert.equal(settings.TREASURY_TRUSTED_PROXY_HOPS, 0, "no proxy is trusted unless configured");
   assert.equal(settings.OWNER_REQUESTS_PER_MINUTE, 60);
   assert.equal(settings.CONSENTS_PER_DAY, 5);
+  assert.equal(settings.DAO_FILINGS_PER_DAY, 20);
+  assert.equal(settings.DAO_READ_INTERVAL_MS, 60_000);
+  assert.equal(settings.DAO_READS_PER_PASS, 5);
   assert.equal(secrets.FASTNEAR_API_KEY, undefined);
 });
 

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "../shared/ui";
-import type { ConsentText } from "./proposals-api";
+import { DaoRequestView } from "./dao-request";
+import type { ConsentText, Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, SignedText, when } from "./ui";
 import { sign } from "./wallet";
@@ -12,9 +13,12 @@ type Review = { phase: "reading" } | { phase: "review"; text: ConsentText; notic
 
 /**
  * The agent's connection to this app: the owner's live consent, which every proposal call needs. Connecting has the
- * owner's wallet sign exactly the text the server built; disconnecting revokes every live consent for the agent.
+ * owner's wallet sign exactly the text the server built; disconnecting revokes every live consent for the agent. A
+ * DAO consents by its own vote instead: a member asks for it, files the DAO's proposal from their own wallet, and the
+ * DAO votes; it ends its consent by its own stop vote, never through this app.
  */
-export function Connection({ reads, owner }: { reads: Reads; owner: string }) {
+export function Connection({ reads, identity }: { reads: Reads; identity: Identity }) {
+  const { owner } = identity;
   const client = useQueryClient();
   const consent = useQuery(reads.consent);
   const [review, setReview] = useState<Review>();
@@ -52,7 +56,7 @@ export function Connection({ reads, owner }: { reads: Reads; owner: string }) {
     if (stored.ok) {
       setReview(undefined);
       setNotice("Connected. The agent's proposals now reach this page.");
-      client.setQueryData(reads.consent.queryKey, stored.value.consent);
+      client.setQueryData(reads.consent.queryKey, stored.value);
       void client.invalidateQueries({ queryKey: reads.proposals.queryKey });
       return;
     }
@@ -75,7 +79,43 @@ export function Connection({ reads, owner }: { reads: Reads; owner: string }) {
     void refresh();
   };
 
-  const live = consent.data;
+  /** Asks the DAO for its consent: the server files it for the DAO's vote, or answers the request already open. */
+  const askDao = async () => {
+    setError(undefined);
+    setReview({ phase: "reading" });
+    const filed = await reads.agent.fileConsent();
+    setReview(undefined);
+    if (filed.ok) return client.setQueryData(reads.consent.queryKey, { consent: null, request: filed.value.request });
+    setError(failureText(filed, "consent"));
+    void refresh();
+  };
+
+  const live = consent.data?.consent;
+  if (identity.signer === "dao") return <section id="connection" aria-labelledby="connection-title" className="flex flex-col gap-4">
+    <h2 id="connection-title" className="text-xl font-semibold">Connection</h2>
+    <Card>
+      {consent.isPending ? <Loading label="Reading the connection…" />
+        : consent.isError ? <QueryError error={consent.error} retry={() => consent.refetch()} />
+        : live ? <div className="flex flex-col gap-2">
+          <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {when(new Date(live.expiresAt).toISOString())}.</p>
+          <p className="text-sm">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
+        </div>
+        : consent.data.request ? <div className="flex flex-col gap-3">
+          <p role="status">Waiting for the vote of {owner} to connect this agent.</p>
+          <DaoRequestView request={consent.data.request} account={identity.account} onChanged={refresh} />
+          <Button variant="ghost" className="self-start" disabled={consent.isFetching} onClick={refresh}>{consent.isFetching ? "Checking…" : "Check again"}</Button>
+        </div>
+        : <div className="flex flex-col items-start gap-3">
+          {consent.data.ended && <p role="alert">{consent.data.ended === "expired" ? "The DAO's vote didn't pass in time, so the agent wasn't connected." : "A stop the DAO voted on ended the request."}</p>}
+          <p role="status">Not connected. {owner} consents by its own vote before the app can read or act on this agent's proposals.</p>
+          {identity.access.canPropose
+            ? <Button disabled={review !== undefined} onClick={askDao}>{review?.phase === "reading" ? "Asking…" : "Ask the DAO to connect it"}</Button>
+            : <p className="text-sm">A member who may file proposals asks the DAO.</p>}
+        </div>}
+      <ErrorBox error={error} />
+    </Card>
+  </section>;
+
   return <section id="connection" aria-labelledby="connection-title" className="flex flex-col gap-4">
     <h2 id="connection-title" className="text-xl font-semibold">Connection</h2>
     <Card>
