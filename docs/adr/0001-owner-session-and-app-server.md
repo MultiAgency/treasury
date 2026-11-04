@@ -1,6 +1,8 @@
 # 1. Owner pages on the owner session; agents and proposals through the app server
 
-**Status:** accepted, 2026-11-04 · **Platform:** `1a7fe98` (tag `sdk-v0.4.0`)
+**Status:** accepted, 2026-11-04; reopened 2026-11-04 · **Platform:** `1a7fe98` (tag `sdk-v0.4.0`)
+
+**Reopened:** two of the conditions under "What would reopen it" have happened. MultiAgency/platform#14 answered that the owner session gets no production host, so the owner pages move onto the app route. SDK 0.5.0 (`6ba0831`) brings DAO-owned agents to the app route only. Which owner-session procedures the app route gains is MultiAgency/platform#17. This record stands as written until a new one replaces it.
 
 ## Decision
 
