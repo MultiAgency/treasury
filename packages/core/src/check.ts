@@ -1,13 +1,13 @@
 // Policy engine, whole (A5): every rule for one order, and the re-check of an approval that may have gone stale.
 
 import type { Proposal } from "./bands.ts";
-import { checkExposure, EXPOSURE_DEFAULTS, type ExposureContext, type ExposureLimits } from "./exposure.ts";
+import { checkExposure, EXPOSURE_CONFIG_DEFAULTS, type ExposureContext, type ExposureLimits } from "./exposure.ts";
 import { checkLevel, LEVEL_DEFAULTS, type Level } from "./levels.ts";
 import { checkLimits, POLICY_DEFAULTS, RULE_ORDER, type PolicyContext, type PolicyLimits, type PolicyResult, type PolicyRule } from "./policy.ts";
 
 export type FullContext = PolicyContext & Omit<ExposureContext, "treasuryValueUsd"> & { level: Level };
 export type PolicyConfig = { limits: PolicyLimits; exposure: ExposureLimits; l1OrderCapFactor: number };
-export const POLICY_CONFIG_DEFAULTS: PolicyConfig = { limits: POLICY_DEFAULTS, exposure: EXPOSURE_DEFAULTS, l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor };
+export const POLICY_CONFIG_DEFAULTS: PolicyConfig = { limits: POLICY_DEFAULTS, exposure: EXPOSURE_CONFIG_DEFAULTS, l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor };
 
 /**
  * Runs every rule. Any rejection wins: the result names the first failing rule in `RULE_ORDER` and lists them all.
