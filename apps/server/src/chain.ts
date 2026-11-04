@@ -51,8 +51,19 @@ export function recordHash(record: Omit<ChainRecord, "hash">): string {
   return sha256Hex(canonicalJson({ seq: record.seq, at: record.at, prev: record.prev, entry: record.entry }));
 }
 
-/** Names that must never appear in an entry, and the shape of this deployment's credentials. An entry holds hashes, not secrets. */
-const SECRET_KEY = /signature|credential|token|secret|password|privatekey|private_key|cookie|authorization|mnemonic|seed/i;
+/**
+ * Field names that must never appear in an entry: credentials named exactly, compared without case, `_` or `-`, and any
+ * name ending in one (`ownerSignature`). Not `token` or `seed` alone: here a token is an asset (`tokenIn`, the SDK's
+ * `PROPOSAL_TOKENS`) and a seed is a PRNG's (`ReplayConfig.seed`). A wallet's seed is `mnemonic` or `seedPhrase`.
+ */
+const SECRET_NAMES = ["signature", "signatures", "credential", "credentials", "secret", "secrets", "password", "passphrase",
+  "privatekey", "secretkey", "cookie", "cookies", "authorization", "mnemonic", "seedphrase", "apikey", "accesstoken",
+  "sessiontoken", "refreshtoken", "bearertoken", "idtoken"];
+const isSecretKey = (key: string) => {
+  const name = key.toLowerCase().replace(/[_-]/g, "");
+  return SECRET_NAMES.some(secret => name === secret || name.endsWith(secret));
+};
+/** The shape of this deployment's credentials and of a full key. An entry holds hashes, not secrets. */
 const SECRET_VALUE = /\b(?:tap_|tmc_)[A-Za-z0-9_-]{8,}|ed25519:[1-9A-HJ-NP-Za-km-z]{60,}/;
 
 /** Throws if an entry could carry a credential, session or signature. Fail closed: the record is refused, not redacted. */
@@ -64,7 +75,7 @@ function assertNoSecrets(value: unknown, path = "entry", depth = 0): void {
     value.forEach((item, i) => assertNoSecrets(item, `${path}[${i}]`, depth + 1));
   } else if (value !== null && typeof value === "object") {
     for (const [key, item] of Object.entries(value)) {
-      if (SECRET_KEY.test(key)) throw new Error(`${path}.${key}: an entry has no field for a credential, session or signature`);
+      if (isSecretKey(key)) throw new Error(`${path}.${key}: an entry has no field for a credential, session or signature`);
       assertNoSecrets(item, `${path}.${key}`, depth + 1);
     }
   }
@@ -111,7 +122,7 @@ export type ChainedAudit<E extends object> = {
   /** Creates and checks the file (owner-only), verifies the whole chain and takes its head. Throws if the chain is broken. */
   check(): Promise<void>;
   append(entry: E): Promise<void>;
-  /** The last record's hash and sequence number, after `check` and every `append`. */
+  /** The last record's hash and sequence number, after `check` and every `append`. After a failed append it may lag the file until the next append reads it back. */
   head(): { hash: string; seq: number };
 };
 
@@ -120,17 +131,29 @@ export type ChainedAudit<E extends object> = {
  * Appends from one process are queued so each names the one before it. Call `check()` at startup: the server then
  * refuses to run on a broken log, as it does for an unwritable one. An existing plain-format log must be moved aside.
  */
-export function chainedFileAudit<E extends object = AuditEntry>(file: string, now: () => number = Date.now): ChainedAudit<E> {
+export function chainedFileAudit<E extends object = AuditEntry>(file: string, now: () => number = Date.now,
+  append: (path: string, line: string) => Promise<void> = appendLine): ChainedAudit<E> {
   let head: { hash: string; seq: number } | undefined;
+  // Set when a write failed: its line may be on disk even so (a flush that threw after writing), so the head is read back
+  // from the file before the next write instead of reusing a sequence number the log may already hold.
+  let unsure = false;
   let queue: Promise<unknown> = Promise.resolve();
+
+  const readHead = async () => {
+    const verified = verifyChain(await readFile(file, "utf8"));
+    if (!verified.ok) throw new Error(`the audit log is broken at line ${verified.line}: ${verified.reason}`);
+    head = { hash: verified.head, seq: verified.seq };
+  };
 
   const write = async (entry: E) => {
     if (head === undefined) throw new Error("the audit log wasn't checked: call check() before append()");
     assertNoSecrets(entry);
+    if (unsure) { await readHead(); unsure = false; }
     const body = { seq: head.seq + 1, at: new Date(now()).toISOString(), prev: head.hash, entry };
     const hash = recordHash(body);
     // The line is built from the canonical text of the entry, so reading it back hashes to the same value.
-    await appendLine(file, `{"seq":${body.seq},"at":${JSON.stringify(body.at)},"prev":"${body.prev}","hash":"${hash}","entry":${canonicalJson(entry)}}`);
+    const line = `{"seq":${body.seq},"at":${JSON.stringify(body.at)},"prev":"${body.prev}","hash":"${hash}","entry":${canonicalJson(entry)}}`;
+    try { await append(file, line); } catch (error) { unsure = true; throw error; }
     head = { hash, seq: body.seq };
   };
 
@@ -138,9 +161,8 @@ export function chainedFileAudit<E extends object = AuditEntry>(file: string, no
     file,
     async check() {
       await ensureAppendable(file);
-      const verified = verifyChain(await readFile(file, "utf8"));
-      if (!verified.ok) throw new Error(`the audit log is broken at line ${verified.line}: ${verified.reason}`);
-      head = { hash: verified.head, seq: verified.seq };
+      await readHead();
+      unsure = false;
     },
     append(entry: E) {
       const run = queue.then(() => write(entry));
