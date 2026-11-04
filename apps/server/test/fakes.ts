@@ -14,8 +14,10 @@ export const ORIGIN = `https://${HOST}`;
  * answers it as cached, and `recreated` gives an agent's earlier ID the same way. `unborn` names agents not created yet. Consents are kept as the platform keeps them, under the
  * Organization the signed text names; `consentAnswers` queues answers that `consents.submit` gives before storing.
  */
-export function fakePlatform(owners: Record<string, string>, { failing = {}, foreign = [], stale = {}, unborn = [], recreated = {} }: {
+export function fakePlatform(owners: Record<string, string>, { failing = {}, foreign = [], stale = {}, unborn = [], recreated = {}, daoOwned = [] }: {
   failing?: Record<string, IdentityAnswer>; foreign?: string[]; stale?: Record<string, string>; unborn?: string[]; recreated?: Record<string, string>;
+  /** Agents whose owner is a DAO: their identity answers `signer: "dao"`. */
+  daoOwned?: string[];
 } = {}) {
   const calls: string[] = [];
   const consents: ConsentRecord[] = [];
@@ -36,8 +38,24 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     (view.state === "proposed" || view.state === "approved") && Date.now() >= Date.parse(view.expiresAt) ? { ...view, state: "expired" } : view;
   const answer = (agent: string, owner: string | undefined): IdentityAnswer => failing[agent] ?? (owner
     ? { ok: true, value: { agent, owner, agentId: unborn.includes(agent) ? null : `id-${agent}`, created: !unborn.includes(agent), host: "platform.test",
-      deployment: foreign.includes(agent) ? "elsewhere" : "treasury" } }
+      deployment: foreign.includes(agent) ? "elsewhere" : "treasury", ...(daoOwned.includes(agent) && { signer: "dao" as const }) } }
     : { ok: false, kind: "refused", status: 404, error: "No such agent" });
+  /**
+   * DAO requests as the platform keeps them: filed by `dao.*.file`, `pending` until a test marks the DAO's vote passed
+   * (`daoPassed`), after which a `state` read stores the consent or relays the verdict, as the platform does. `daoAnswers`
+   * queues answers the next calls give instead; an Error is thrown.
+   */
+  const daoFiled: ({ id: string; kind: "consent"; message: string } | { id: string; kind: "vote"; input: { organization: string; agent: string; proposal: string; verdict: "approve" | "reject" } })[] = [];
+  const daoPassed = new Set<string>();
+  const daoAnswers: Partial<Record<"consentFile" | "consentState" | "voteFile" | "voteState", unknown[]>> = {};
+  const daoNext = (call: keyof typeof daoAnswers) => {
+    const queued = daoAnswers[call]?.shift();
+    if (queued instanceof Error) throw queued;
+    return queued as never;
+  };
+  const transaction = (method: string) => ({ receiverId: "dao.sputnik-dao.near", actions: [{ type: "FunctionCall" as const, params: { methodName: method, args: {}, gas: "1", deposit: "1" } }] });
+  const filedRequest = (id: string, fields: Record<string, unknown>) => ({ id, dao: "dao.sputnik-dao.near", votingUntil: Date.now() + 7 * 86_400_000,
+    hash: `hash-${id}`, description: `Treasury app request. Check: https://platform.test/confirm/dao/hash-${id}`, ...fields });
   const platform: Platform = {
     async identity(agent, { fresh = false } = {}) {
       if (!fresh && stale[agent]) return { answer: answer(agent, stale[agent]), cached: true };
@@ -70,6 +88,57 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         if (!found) return notFound;
         if (found.state === "approved") found.state = "executed";
         return { ok: true, value: shown(found) };
+      },
+    },
+    dao: {
+      consents: {
+        async file(message) {
+          calls.push("dao.consents.file");
+          const queued = daoNext("consentFile");
+          if (queued) return queued;
+          const text = parseConsentMessage(message)!;
+          const id = `consent-request-${daoFiled.length + 1}`;
+          daoFiled.push({ id, kind: "consent", message });
+          return { ok: true, value: { request: filedRequest(id, { organization: text.organization, agent: text.agent, agentId: text.agentId, scopes: text.scopes,
+            expiresAt: Date.parse(text.expiresAt) }) as never, transactions: { proposal: transaction("add_proposal"), proposalAndVote: transaction("add_proposal+act_proposal") } } };
+        },
+        async state(id) {
+          calls.push(`dao.consents.state ${id}`);
+          const queued = daoNext("consentState");
+          if (queued) return queued;
+          const filed = daoFiled.find(request => request.id === id);
+          if (!filed || filed.kind !== "consent") return { ok: false, kind: "refused", status: 404, error: "No such request" };
+          if (!daoPassed.has(id)) return { ok: true, value: { state: "pending", request: filedRequest(id, {}) as never } };
+          const existing = consents.find(consent => consent.id === `dao-${id}`);
+          if (existing) return { ok: true, value: { state: "signed", consent: existing } };
+          const { type: _type, version: _version, expiresAt, ...rest } = parseConsentMessage(filed.message)!;
+          const consent = { ...rest, id: `dao-${id}`, expiresAt: Date.parse(expiresAt), createdAt: 0, publicKey: "ed25519:dao", revoked: false, revokedAt: null, signer: "dao" as const };
+          consents.push(consent);
+          return { ok: true, value: { state: "signed", consent } };
+        },
+      },
+      votes: {
+        async file(input) {
+          calls.push(`dao.votes.file ${input.organization} ${input.agent} ${input.proposal} ${input.verdict}`);
+          const queued = daoNext("voteFile");
+          if (queued) return queued;
+          const id = `vote-request-${daoFiled.length + 1}`;
+          daoFiled.push({ id, kind: "vote", input });
+          return { ok: true, value: { request: filedRequest(id, { organization: input.organization, agent: input.agent, agentId: `id-${input.agent}`,
+            proposal: input.proposal, verdict: input.verdict }) as never, transactions: { proposal: transaction("add_proposal"), proposalAndVote: null } } };
+        },
+        async state(id) {
+          calls.push(`dao.votes.state ${id}`);
+          const queued = daoNext("voteState");
+          if (queued) return queued;
+          const filed = daoFiled.find(request => request.id === id);
+          if (!filed || filed.kind !== "vote") return { ok: false, kind: "refused", status: 404, error: "No such request" };
+          const request = filedRequest(id, { ...filed.input, agentId: `id-${filed.input.agent}` }) as never;
+          if (!daoPassed.has(id)) return { ok: true, value: { state: "pending", request } };
+          const found = find(filed.input.organization, filed.input.agent, filed.input.proposal);
+          if (found && found.state === "proposed") found.state = filed.input.verdict === "approve" ? "approved" : "rejected";
+          return { ok: true, value: { state: "relayed", request, proposalState: found?.state ?? "unknown" } };
+        },
       },
     },
     consents: {
@@ -106,7 +175,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers };
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoFiled, daoPassed, daoAnswers };
 }
 
 /** A wallet for `accountId` with a fresh key, which signs a challenge as a wallet would (NEP-413). */

@@ -6,6 +6,7 @@ import type { AuditEntry } from "./audit.ts";
 import { chainedFileAudit, movePlainLogAside } from "./chain.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
+import { cachedPolicyReader, chainPolicyReader, createDaoRequests } from "./dao.ts";
 import { createServer } from "./http.ts";
 import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
@@ -55,6 +56,10 @@ const handler = createServer({
   audit,
   consentsPerDay: settings.CONSENTS_PER_DAY,
   keyLookup,
+  // A DAO-owned agent's members are told apart by the DAO's policy on chain, read at most a minute ago.
+  daoPolicy: cachedPolicyReader(chainPolicyReader({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS })),
+  // Refuse to start with a DAO requests file named but unreadable.
+  daoRequests: await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE),
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
 });

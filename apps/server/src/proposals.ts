@@ -9,10 +9,20 @@ export type Verdict = "approve" | "reject";
  */
 export function checkVerdict(message: string, fresh: ProposalView, verdict: Verdict, now = Date.now()):
   { ok: true } | { ok: false; code: "not_open" | "expired" | "not_this_text" } {
+  const open = checkOpen(fresh, now);
+  if (!open.ok) return open;
+  if (message !== proposalText(fresh, verdict)) return { ok: false, code: "not_this_text" };
+  return { ok: true };
+}
+
+/**
+ * Whether a proposal, read anew, may still get a verdict: open and unexpired. A DAO's vote is filed only then, since a
+ * vote must pass before the proposal's `expiresAt`; the platform files it from the proposal's own text.
+ */
+export function checkOpen(fresh: ProposalView, now = Date.now()): { ok: true } | { ok: false; code: "not_open" | "expired" } {
   // The platform reports a waiting proposal `expired` once its time passes; either way, that's what the owner is told.
   if (fresh.state === "expired" || Date.parse(fresh.expiresAt) <= now) return { ok: false, code: "expired" };
   if (fresh.state !== "proposed") return { ok: false, code: "not_open" };
-  if (message !== proposalText(fresh, verdict)) return { ok: false, code: "not_this_text" };
   return { ok: true };
 }
 

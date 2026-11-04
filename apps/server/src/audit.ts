@@ -13,8 +13,18 @@ export type AuditEntry = {
   agent: string;
   /** The consent or proposal the action concerns, once it's known. */
   subject?: string;
-  /** The SHA-256 of the text the owner signed, never the signature. */
+  /** The SHA-256 of the text the owner signed, never the signature. For a DAO, of the text its vote signs. */
   signedTextSha256?: string;
+  /**
+   * For a DAO-owned agent (`signer: "dao"`), the action is the DAO's vote, relayed in two steps: `file`, the request this
+   * server filed for a member, and `relay`, a read of its state that found the vote final (the consent stored or the
+   * verdict relayed, or the vote ended). `who` is the member. `daoRequest` is the platform's request ID and `daoHash`
+   * the NEP-413 hash the DAO's key signs: both public, shown on the platform's check page.
+   */
+  signer?: "dao";
+  step?: "file" | "relay";
+  daoRequest?: string;
+  daoHash?: string;
 } & (
   | { stage: "attempt" }
   /** The platform's answer: `ok`, or the failure's kind, its HTTP status, and the code the browser was given. */

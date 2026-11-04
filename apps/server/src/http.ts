@@ -1,12 +1,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { proposalId, type ProposalView } from "@multiagency/sdk";
+import { mayCall, proposalId, proposalText, type ProposalView } from "@multiagency/sdk";
 import { verifyNep413Signature } from "near-kit";
 import type { z } from "zod";
 import { sha256, type Audit, type AuditEntry } from "./audit.ts";
-import { checkConsent, consentText, liveConsents, organizationOf } from "./consent.ts";
+import { checkConsent, consentMessageFor, consentText, liveConsents, organizationOf } from "./consent.ts";
+import { checkUrlOf, memberAccess, memoryDaoRequests, type DaoRequest, type DaoRequests, type PolicyReader } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
 import type { Page } from "./page.ts";
-import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
+import { checkOpen, checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
 import * as contract from "./contract.ts";
 import type { Identity } from "./contract.ts";
 import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer, ProposalListAnswer } from "./platform.ts";
@@ -41,9 +42,16 @@ export type Deps = {
   keyLookup: KeyLookup;
   /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
   page?: Page;
+  /**
+   * A DAO's policy, read from the chain at most a minute ago: how a DAO-owned agent's members are told apart. Without
+   * one, no DAO's member is admitted (every policy read is `unavailable`).
+   */
+  daoPolicy?: PolicyReader;
+  /** The DAO requests this server filed and follows until they're final; in memory unless given. */
+  daoRequests?: DaoRequests;
 };
 /** What a handler reads: the dependencies, and the limits the server keeps across requests. */
-type Context = Deps & { consentsToday: RateLimit };
+type Context = Deps & { consentsToday: RateLimit; daoPolicy: PolicyReader; daoRequests: DaoRequests };
 
 /**
  * Who may call a route: anyone, a signed-in session, or the signed-in owner of the route's `:agent`. `owner` may use an
@@ -56,7 +64,19 @@ export type Access = "public" | "session" | "owner" | "owner-fresh";
 /** A call as its handler sees it. `identity` is the agent's, as the owner check read it (see `Access`), on owner routes only. */
 type Call = { req: IncomingMessage; body: unknown; token: string | undefined; account: string | undefined; params: Record<string, string>; identity?: Identity };
 type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string };
-type Route = { method: "GET" | "POST" | "DELETE"; path: string; access: Access; handle(call: Call, context: Context): Promise<Reply> };
+/** What a DAO member may have this app do, by the DAO's roles (`contract.member`). */
+type Member = contract.Identity extends { member: infer M } ? NonNullable<M> : never;
+/**
+ * A route, and for a DAO-owned agent whether the signed-in member may call it (`member`). A route without `member` is
+ * for wallet owners only, and a DAO's member is refused it as `dao_owner`: fail closed, so a new route reaches members
+ * only once it says so. The platform admits this app under a DAO's consent, not the member: the gate is this server's.
+ */
+type Route = { method: "GET" | "POST" | "DELETE"; path: string; access: Access; member?: (member: Member) => boolean; handle(call: Call, context: Context): Promise<Reply> };
+/**
+ * A member gate by the SDK's own procedure map (`mayCall`), as the platform's owner session gates a DAO's members. A
+ * member never signs for the DAO, so `canSign` is false.
+ */
+const may = (path: string) => (member: Member) => mayCall({ canSign: false, ...member }, path);
 
 const ok = (value: unknown, status = 200): Reply => ({ status, body: { ok: true, value } });
 const fail = (status: number, body: contract.ServerFailure): Reply => ({ status, body });
@@ -141,7 +161,7 @@ function proposalFailure(answer: Exclude<ProposalAnswer | ProposalListAnswer, { 
   return unavailable();
 }
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
-async function relay(call: () => Promise<ProposalAnswer>, agent: string): Promise<ProposalAnswer> {
+async function relay<T>(call: () => Promise<T>, agent: string): Promise<T | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
 }
 /** Whether the platform's answer may have been lost: then the proposal is read once, never the call sent again. */
@@ -193,6 +213,102 @@ const verdictRoute = (verdict: Verdict): Route => ({
   },
 });
 
+/**
+ * A DAO request as the member who asked sees it: the platform's description and check link, and the transaction this
+ * member files, by whether their role may vote (`proposalAndVote` files and votes at once; otherwise the DAO refuses the
+ * whole transaction, so they only file `proposal`).
+ */
+function requestShown(request: DaoRequest, identity: Identity) {
+  const votes = identity.member!.canVote && request.transactions.proposalAndVote !== null;
+  const { id, hash, description, votingUntil } = request;
+  return { id, hash, description, votingUntil, checkUrl: checkUrlOf(identity.host, hash),
+    transaction: votes ? request.transactions.proposalAndVote : request.transactions.proposal, votes };
+}
+/** The platform's answers that end a DAO request: removed (404), ended by the DAO's stop (409), or not passed in time (410). */
+const DAO_ENDED: Record<number, "gone" | "ended" | "expired"> = { 404: "gone", 409: "ended", 410: "expired" };
+/** A filed DAO request as this server keeps it. */
+const keptOf = (kind: DaoRequest["kind"], organization: string, agent: string, filed: { request: { id: string; hash: string; description: string; votingUntil: number };
+  transactions: { proposal: unknown; proposalAndVote: unknown } }, vote?: { proposal: string; verdict: Verdict }): DaoRequest => ({
+  kind, organization, agent, proposal: vote?.proposal ?? null, verdict: vote?.verdict ?? null, id: filed.request.id, hash: filed.request.hash,
+  description: filed.request.description, votingUntil: filed.request.votingUntil,
+  transactions: { proposal: (filed.transactions.proposal ?? null) as DaoRequest["transactions"]["proposal"],
+    proposalAndVote: (filed.transactions.proposalAndVote ?? null) as DaoRequest["transactions"]["proposalAndVote"] },
+});
+/**
+ * A refused DAO filing as the browser gets it. Consent: 403, the DAO doesn't own the agent; 409, the agent changed.
+ * Vote: 403, no live DAO consent covers it; 409, the proposal isn't open. Either: 400, the platform didn't accept the
+ * request; 429, the deployment's daily DAO requests are spent. Anything else is unavailable, logged, never forwarded.
+ */
+function daoFileFailure(answer: { ok: false; kind: string; status?: number; httpStatus?: number; error?: string }, kind: DaoRequest["kind"], agent: string): Reply {
+  log("platform_dao_file_failed", { agent, request: kind, ...failure(answer) });
+  if (answer.kind === "forbidden") return kind === "consent" ? notOwner() : refused(409, "not_connected");
+  if (answer.kind !== "refused") return unavailable();
+  if (answer.status === 400) return refused(400, "dao_refused");
+  if (answer.status === 409) return refused(409, kind === "consent" ? "agent_changed" : "not_open");
+  if (answer.status === 429) return refused(429, "too_many_requests");
+  return unavailable();
+}
+/**
+ * Keeps a request the platform just filed, before the member is given its transaction, so its state can be followed.
+ * One that can't be kept is logged and answered `unavailable`: no member has filed it yet, so nothing waits on it.
+ */
+async function keep(request: DaoRequest, { daoRequests }: Context) {
+  try { if (await daoRequests.add(request)) return true; } catch (error) { log("dao_request_not_kept", { agent: request.agent, request: request.id, error: String(error) }); return false; }
+  log("dao_request_not_kept", { agent: request.agent, request: request.id, error: "too many open DAO requests" });
+  return false;
+}
+
+/**
+ * Reads a DAO consent request's state: reading it after the DAO's vote passed is what stores the consent, so nothing
+ * else needs to watch for the vote. `pending` keeps it. A final answer is recorded (`relay`), then the request is
+ * forgotten; once signed, the owner's older consents for the agent are revoked, as for a wallet's reconnect. An
+ * unanswered read keeps it, and reading again is safe; it's never filed again for that.
+ */
+async function followConsent(request: DaoRequest, who: string, identity: Identity, context: Context): Promise<Reply> {
+  const { platform, audit, daoRequests } = context, { agent } = identity;
+  const at = { who, action: "consent" as const, agent, signer: "dao" as const, step: "relay" as const, daoRequest: request.id, daoHash: request.hash, stage: "result" as const };
+  const answer = await relay(() => platform.dao.consents.state(request.id), agent);
+  if (!answer.ok) {
+    const ended = answer.kind === "refused" ? DAO_ENDED[answer.status] : undefined;
+    if (!ended) { log("platform_dao_state_failed", { agent, request: request.id, ...failure(answer) }); return unavailable(); }
+    await recordResult(audit, { ...at, answer: { ok: false, kind: answer.kind, status: (answer as { status: number }).status, code: ended } });
+    await daoRequests.drop(request);
+    return ok({ state: ended });
+  }
+  if (answer.value.state === "pending") return ok({ state: "pending", request: requestShown(request, identity) });
+  const { consent } = answer.value;
+  await recordResult(audit, { ...at, subject: consent.id, answer: { ok: true } });
+  await daoRequests.drop(request);
+  const listed = await platform.consents.list(organizationOf(identity.owner));
+  if (listed.ok) await revokeAll(liveConsents(listed.value.consents, identity).filter(other => other.id !== consent.id), who, agent, context);
+  else log("platform_consents_failed", { agent, ...failure(listed) });
+  return ok({ state: "signed", consent: shown(consent) });
+}
+
+/**
+ * Reads a DAO vote request's state: reading it after the vote passed is what relays the verdict to the proposal, once.
+ * As `followConsent`: `pending` keeps it; a final answer is recorded, then the request is forgotten.
+ */
+async function followVote(request: DaoRequest, who: string, identity: Identity, context: Context): Promise<Reply> {
+  const { platform, audit, daoRequests } = context, { agent } = identity;
+  const verdict = request.verdict!;
+  const at = { who, action: verdict, agent, subject: request.proposal!, signer: "dao" as const, step: "relay" as const, daoRequest: request.id, daoHash: request.hash, stage: "result" as const };
+  const answer = await relay(() => platform.dao.votes.state(request.id), agent);
+  if (!answer.ok) {
+    const ended = answer.kind === "refused" ? DAO_ENDED[answer.status] : undefined;
+    if (!ended) { log("platform_dao_state_failed", { agent, request: request.id, ...failure(answer) }); return unavailable(); }
+    await recordResult(audit, { ...at, answer: { ok: false, kind: answer.kind, status: (answer as { status: number }).status, code: ended } });
+    await daoRequests.drop(request);
+    return ok({ state: ended });
+  }
+  if (answer.value.state === "pending") return ok({ state: "pending", verdict, request: requestShown(request, identity) });
+  await recordResult(audit, { ...at, answer: { ok: true } });
+  await daoRequests.drop(request);
+  return ok({ state: "relayed", verdict, proposalState: answer.value.proposalState });
+}
+/** Whether a followed request's answer leaves it open (pending, or unanswered), so nothing new is filed. */
+const stillOpen = (reply: Reply) => !reply.body.ok || ["pending", "relayed", "signed"].includes((reply.body.value as { state: string }).state);
+
 /** An execute's answer, with the proposal as last read (null when that read went unanswered). */
 const executed = (result: "final" | "pending" | "not_executable", proposal: ProposalView | null) => ok({ result, proposal });
 
@@ -226,15 +342,15 @@ export const routes: Route[] = [
     },
   },
   {
-    method: "GET", path: "/api/agents/:agent", access: "owner",
+    method: "GET", path: "/api/agents/:agent", access: "owner", member: () => true,
     async handle({ identity }) {
-      const { agent, owner, agentId, host } = identity!;
-      return ok({ agent, owner, agentId, host });
+      const { agent, owner, agentId, host, signer, member } = identity!;
+      return ok({ agent, owner, agentId, host, signer, member });
     },
   },
   {
     // The agent's live consent for this deployment, read from the platform's list for the owner's Organization.
-    method: "GET", path: "/api/agents/:agent/consent", access: "owner",
+    method: "GET", path: "/api/agents/:agent/consent", access: "owner", member: () => true,
     async handle({ identity }, { platform }) {
       const listed = await platform.consents.list(organizationOf(identity!.owner));
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
@@ -301,7 +417,8 @@ export const routes: Route[] = [
      * the browser is never used, since the platform revokes any of the deployment's consents by ID. At most
      * `REVOKES_PER_REQUEST` a request; if any is left or fails, the answer is `unavailable` and trying again is safe.
      */
-    method: "POST", path: "/api/agents/:agent/consent/revoke", access: "owner-fresh",
+    // A DAO's member who may stop its autopilot (`mayCall`'s rule for `autopilot/stop`) may end this app's access too.
+    method: "POST", path: "/api/agents/:agent/consent/revoke", access: "owner-fresh", member: may("autopilot/stop"),
     async handle({ account, identity }, context) {
       const listed = await context.platform.consents.list(organizationOf(identity!.owner));
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
@@ -311,14 +428,14 @@ export const routes: Route[] = [
   },
   {
     // The agent's proposals, under the owner's own Organization: an owner reaches only proposals made under their consent.
-    method: "GET", path: "/api/agents/:agent/proposals", access: "owner",
+    method: "GET", path: "/api/agents/:agent/proposals", access: "owner", member: may("proposals/list"),
     async handle({ identity }, { platform }) {
       const listed = await platform.proposals.list(organizationOf(identity!.owner), identity!.agent);
       return listed.ok ? ok({ proposals: listed.value.proposals }) : proposalFailure(listed, identity!.agent);
     },
   },
   {
-    method: "GET", path: "/api/agents/:agent/proposals/:id", access: "owner",
+    method: "GET", path: "/api/agents/:agent/proposals/:id", access: "owner", member: may("proposals/get"),
     async handle({ identity, params }, { platform }) {
       const id = parse(proposalId, params.id);
       if (!id) return refused(400, "bad_request");
@@ -336,7 +453,7 @@ export const routes: Route[] = [
      * `pending` with no proposal. The platform claims a proposal once, so it never runs twice. Recorded before the
      * platform is asked and after.
      */
-    method: "POST", path: "/api/agents/:agent/proposals/:id/execute", access: "owner-fresh",
+    method: "POST", path: "/api/agents/:agent/proposals/:id/execute", access: "owner-fresh", member: may("proposals/execute"),
     async handle({ account, identity, params }, { platform, audit }) {
       const id = parse(proposalId, params.id);
       if (!id) return refused(400, "bad_request");
@@ -360,6 +477,104 @@ export const routes: Route[] = [
           : executed(notExecutable && now.value.state === "approved" ? "not_executable" : outcomeOf(now.value.state), now.value);
       }
       await recordResult(audit, { who: account!, action: "execute", agent, subject: id, stage: "result", answer: audited(ran, reply) });
+      return reply;
+    },
+  },
+  {
+    /** A DAO-owned agent's consent request, as last read: reading it is what stores the consent once the DAO's vote passed. */
+    method: "GET", path: "/api/agents/:agent/consent/dao", access: "owner-fresh", member: () => true,
+    async handle({ account, identity }, context) {
+      if (identity!.signer !== "dao") return refused(409, "not_dao");
+      const open = context.daoRequests.open("consent", organizationOf(identity!.owner), identity!.agent);
+      return open ? followConsent(open, account!, identity!, context) : ok({ state: "none" });
+    },
+  },
+  {
+    /**
+     * Files a DAO-owned agent's consent for the DAO's vote: the canonical consent text, built here from the agent's
+     * identity as the platform answers it now, never from the browser. The member then files the platform's transaction
+     * in their own wallet. An open request is followed, never filed again: filing again files a new request, and a second
+     * DAO proposal. A lost answer to the filing keeps nothing, so asking again files anew: no member has filed one yet.
+     * Recorded before the platform is asked and after.
+     */
+    method: "POST", path: "/api/agents/:agent/consent/dao", access: "owner-fresh", member: member => member.canPropose,
+    async handle({ account, identity }, context) {
+      const { platform, deployment, audit, consentsToday } = context;
+      const { agent, agentId } = identity!;
+      if (identity!.signer !== "dao") return refused(409, "not_dao");
+      if (agentId === null) return refused(409, "not_created");
+      const organization = organizationOf(identity!.owner);
+      const open = context.daoRequests.open("consent", organization, agent);
+      if (open) {
+        const followed = await followConsent(open, account!, identity!, context);
+        if (stillOpen(followed)) return followed;
+      }
+      const listed = await platform.consents.list(organization);
+      if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return unavailable(); }
+      if (liveConsents(listed.value.consents, identity!).length) return refused(409, "already_connected");
+      if (!consentsToday(account!)) return refused(429, "rate_limited");
+      const message = consentMessageFor({ identity: { ...identity!, agentId }, deployment });
+      const at = { who: account!, action: "consent" as const, agent, signer: "dao" as const, step: "file" as const, signedTextSha256: sha256(message) };
+      await audit.append({ ...at, stage: "attempt" });
+      const filed = await relay(() => platform.dao.consents.file(message), agent);
+      let reply: Reply;
+      if (!filed.ok) reply = daoFileFailure(filed, "consent", agent);
+      else {
+        const request = keptOf("consent", organization, agent, filed.value);
+        reply = await keep(request, context) ? ok({ state: "pending", request: requestShown(request, identity!) }) : unavailable();
+      }
+      await recordResult(audit, { ...at, ...(filed.ok && { daoRequest: filed.value.request.id, daoHash: filed.value.request.hash }), stage: "result",
+        answer: filed.ok ? (reply.body.ok ? { ok: true } : { ok: false, kind: "unavailable", code: "not_kept" }) : audited(filed, reply) });
+      return reply;
+    },
+  },
+  {
+    /** The DAO's vote on a proposal, as last read: reading it is what relays the verdict once the DAO's vote passed. */
+    method: "GET", path: "/api/agents/:agent/proposals/:id/vote", access: "owner-fresh", member: () => true,
+    async handle({ account, identity, params }, context) {
+      const id = parse(proposalId, params.id);
+      if (!id) return refused(400, "bad_request");
+      if (identity!.signer !== "dao") return refused(409, "not_dao");
+      const open = context.daoRequests.open("vote", organizationOf(identity!.owner), identity!.agent, id);
+      return open ? followVote(open, account!, identity!, context) : ok({ state: "none" });
+    },
+  },
+  {
+    /**
+     * Files the DAO's vote on a proposal, for a member to file in their wallet. The platform files it from the proposal's
+     * own text; this server never builds or relays an approval text for a DAO. The proposal is read anew first and must
+     * be open and unexpired. An open vote on it is followed, never filed again; one on the other verdict is refused
+     * (`vote_open`) while it's pending. Recorded before the platform is asked and after, with the SHA-256 of the text the
+     * DAO's vote signs.
+     */
+    method: "POST", path: "/api/agents/:agent/proposals/:id/vote", access: "owner-fresh", member: member => member.canPropose,
+    async handle({ account, body, identity, params }, context) {
+      const { platform, audit } = context;
+      const id = parse(proposalId, params.id), asked = parse(contract.voteSubmission, body);
+      if (!id || !asked) return refused(400, "bad_request");
+      if (identity!.signer !== "dao") return refused(409, "not_dao");
+      const organization = organizationOf(identity!.owner), { agent } = identity!, { verdict } = asked;
+      const open = context.daoRequests.open("vote", organization, agent, id);
+      if (open) {
+        const followed = await followVote(open, account!, identity!, context);
+        if (stillOpen(followed)) return followed.body.ok && open.verdict !== verdict && (followed.body.value as { state: string }).state === "pending"
+          ? refused(409, "vote_open") : followed;
+      }
+      const fresh = await relay(() => platform.proposals.get(organization, agent, id), agent);
+      if (!fresh.ok) return proposalFailure(fresh, agent);
+      const checked = checkOpen(fresh.value);
+      if (!checked.ok) return refused(409, checked.code);
+      const at = { who: account!, action: verdict, agent, subject: id, signer: "dao" as const, step: "file" as const, signedTextSha256: sha256(proposalText(fresh.value, verdict)) };
+      await audit.append({ ...at, stage: "attempt" });
+      const filed = await relay(() => platform.dao.votes.file({ organization, agent, proposal: id, verdict }), agent);
+      let reply: Reply;
+      if (!filed.ok) reply = daoFileFailure(filed, "vote", agent);
+      else {
+        const request = keptOf("vote", organization, agent, filed.value, { proposal: id, verdict });
+        reply = await keep(request, context) ? ok({ state: "pending", verdict, request: requestShown(request, identity!) }) : unavailable();
+      }
+      await recordResult(audit, { ...at, ...(filed.ok && { daoRequest: filed.value.request.id, daoHash: filed.value.request.hash }), stage: "result",
+        answer: filed.ok ? (reply.body.ok ? { ok: true } : { ok: false, kind: "unavailable", code: "not_kept" }) : audited(filed, reply) });
       return reply;
     },
   },
@@ -411,7 +626,7 @@ async function readBody(req: IncomingMessage): Promise<{ ok: true; body: unknown
  * so a reused answer that refuses the account names another owner: it's read once more anew, counted too, so a new
  * owner isn't locked out for a minute after a transfer.
  */
-async function admit(route: Route, call: Call, deps: Deps, admissions: RateLimit): Promise<Reply | Identity | undefined> {
+async function admit(route: Route, call: Call, deps: Context, admissions: RateLimit): Promise<Reply | Identity | undefined> {
   if (route.method !== "GET") {
     if (call.req.headers.origin !== deps.publicOrigin) return refused(403, "origin");
     // A body must be JSON; a DELETE without one (sign-out) needs no content type.
@@ -425,10 +640,15 @@ async function admit(route: Route, call: Call, deps: Deps, admissions: RateLimit
   if (!parse(contract.agentName, agent)) return refused(400, "bad_request");
   if (!admissions(call.account)) return refused(429, "rate_limited");
   const first = await deps.platform.identity(agent, { fresh: route.access === "owner-fresh" });
-  const decided = decide(first.answer, agent, call.account, deps, first.cached);
-  if (!first.cached || !("status" in decided) || decided.body.ok || decided.body.kind !== "not_owner") return decided;
-  if (!admissions(call.account)) return refused(429, "rate_limited");
-  return decide((await deps.platform.identity(agent, { fresh: true })).answer, agent, call.account, deps, false);
+  let decided = await decide(first.answer, agent, call.account, deps, first.cached);
+  if (first.cached && "status" in decided && !decided.body.ok && decided.body.kind === "not_owner") {
+    if (!admissions(call.account)) return refused(429, "rate_limited");
+    decided = await decide((await deps.platform.identity(agent, { fresh: true })).answer, agent, call.account, deps, false);
+  }
+  if ("status" in decided || decided.signer !== "dao") return decided;
+  // A DAO's member: only on routes that say so, and only as the member's roles allow.
+  if (!route.member) return refused(409, "dao_owner");
+  return route.member(decided.member!) ? decided : refused(403, "not_permitted");
 }
 
 /**
@@ -440,7 +660,7 @@ async function admit(route: Route, call: Call, deps: Deps, admissions: RateLimit
  * naming another deployment, since the platform only ever names the credential's own. Failures are logged when read,
  * never forwarded.
  */
-function decide(answer: IdentityAnswer, agent: string, account: string, deps: Deps, cached: boolean): Reply | Identity {
+async function decide(answer: IdentityAnswer, agent: string, account: string, deps: Context, cached: boolean): Promise<Reply | Identity> {
   if (!answer.ok) {
     if (!cached) log("platform_identity_failed", { agent, ...failure(answer) });
     return answer.kind === "refused" && answer.status === 404 ? notOwner() : unavailable();
@@ -449,15 +669,24 @@ function decide(answer: IdentityAnswer, agent: string, account: string, deps: De
     log("deployment_mismatch", { agent, expected: deps.deployment, got: answer.value.deployment });
     return unavailable();
   }
-  if (answer.value.owner !== account) return notOwner();
   const { owner, agentId, host } = answer.value;
-  return { agent: answer.value.agent, owner, agentId, host };
+  const identity = { agent: answer.value.agent, owner, agentId, host };
+  if (answer.value.signer !== "dao") return owner === account ? { ...identity, signer: "wallet", member: null } : notOwner();
+  // A DAO owns it: the DAO has no keys, so who may act is its members, by its roles on chain. A policy that can't be
+  // read admits no one: unavailable, never a guess.
+  const policy = await deps.daoPolicy(owner);
+  if (policy === "unavailable") { log("dao_policy_unavailable", { agent, dao: owner }); return unavailable(); }
+  const access = memberAccess(account, owner, policy);
+  if (!access) return notOwner();
+  const { canPropose, canVote, canExecute, canManage } = access;
+  return { ...identity, signer: "dao", member: { canPropose, canVote, canExecute, canManage } };
 }
 
 /** The server's request handler, built from its dependencies so tests can run it in-process with fakes. */
 export function createServer(deps: Deps) {
   const admissions = createRateLimit({ limit: deps.ownerRequestsPerMinute });
-  const context: Context = { ...deps, consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }) };
+  const context: Context = { ...deps, consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
+    daoPolicy: deps.daoPolicy ?? (async () => "unavailable"), daoRequests: deps.daoRequests ?? memoryDaoRequests() };
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = ({ status, body, cookie }: Reply) => {
       res.writeHead(status, {
@@ -485,7 +714,7 @@ export function createServer(deps: Deps) {
       if (!read.ok) return send(read.reply);
       const token = tokenOf(req);
       const call: Call = { req, body: read.body, token, account: deps.sessions.account(token), params: found.params };
-      const admitted = await admit(found.route, call, deps, admissions);
+      const admitted = await admit(found.route, call, context, admissions);
       if (admitted && "status" in admitted) return send(admitted);
       send(await found.route.handle({ ...call, ...(admitted && { identity: admitted }) }, context));
     } catch (error) {

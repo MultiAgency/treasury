@@ -7,6 +7,12 @@ import { proposalText, type ProposalView } from "@multiagency/sdk";
 import { settle, type Outcome } from "../shared/execution-outcome.ts";
 import { freshNonce, type AgentApi, type ExecuteResult, type Failure, type Result, type SignRequest, type Signed, type Verdict } from "./proposals-api.ts";
 
+/**
+ * Whether a failure means no live consent connects the agent any more (the platform's `forbidden`, which the server
+ * answers as `not_connected`): the page asks the owner to connect again and retries nothing.
+ */
+export const asksToReconnect = (failure: Failure | undefined) => failure?.kind === "refused" && failure.code === "not_connected";
+
 /** Whether the owner may still approve or reject: it's open and its time hasn't passed. */
 export const verdictOffered = (view: ProposalView, now = Date.now()) => view.state === "proposed" && Date.parse(view.expiresAt) > now;
 

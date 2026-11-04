@@ -21,6 +21,15 @@ const CONSENT: Record<string, string> = {
   // The same code for the owner routes' per-minute limit and the daily limit on new consents.
   rate_limited: "Too many requests from this account. Wait a minute and try again; if it has connected agents several times today, connecting again waits until tomorrow.",
 };
+/** Codes for a DAO-owned agent, wherever they come. */
+const DAO: Record<string, string> = {
+  dao_owner: "A DAO owns this agent: it approves and connects by its own vote, never a wallet signature.",
+  not_dao: "This agent's owner signs with a wallet, not by a DAO's vote.",
+  not_permitted: "Your roles in the DAO don't allow this.",
+  vote_open: "A vote on the other verdict is still open for this proposal. Wait for it to end first.",
+  dao_refused: "The platform didn't accept the request. Nothing was filed.",
+  too_many_requests: "The app has filed as many DAO requests as the platform allows today. Try again tomorrow.",
+};
 const PROPOSAL: Record<string, string> = {
   no_proposal: "There's no such proposal for this agent.",
   not_this_text: "The signed text no longer matches the proposal. Nothing was relayed. Review it again.",
@@ -48,7 +57,7 @@ export function failureText(failure: Failure, context: Context): string {
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
       const table = context === "sign-in" ? SIGN_IN : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : {};
-      return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
+      return table[failure.code] ?? DAO[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }
 }

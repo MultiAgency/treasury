@@ -1,12 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { ago } from "../shared/format";
 import { Card, Loading, Note, QueryError, short } from "../shared/ui";
-import type { agentReads } from "./queries";
+import { asksToReconnect } from "./proposal-flow";
+import { failureOf, type agentReads } from "./queries";
 import { Legs, StateBadge, when } from "./ui";
 
 /** The agent's proposals under the owner's own Organization, newest first, each with its terms and a link to review it. */
 export function ProposalList({ reads }: { reads: ReturnType<typeof agentReads> }) {
+  const client = useQueryClient();
   const proposals = useQuery(reads.proposals);
+  // The consent ended: the connection is read again, so it offers to connect. Nothing is retried.
+  useEffect(() => {
+    if (asksToReconnect(failureOf(proposals.error))) void client.invalidateQueries({ queryKey: reads.consent.queryKey });
+  }, [proposals.error, client, reads.consent.queryKey]);
   return <section aria-labelledby="proposals-title" className="flex flex-col gap-4">
     <h2 id="proposals-title" className="text-xl font-semibold">Proposals</h2>
     {proposals.isPending ? <Loading label="Reading proposals…" />

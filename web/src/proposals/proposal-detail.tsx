@@ -3,8 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { ago } from "../shared/format";
 import { Button, Card, Details, errorMessage, Loading, QueryError, StatusBadge } from "../shared/ui";
-import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, type Execution } from "./proposal-flow";
-import type { Failure, Verdict } from "./proposals-api";
+import { asksToReconnect, execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, type Execution } from "./proposal-flow";
+import { DaoVote } from "./dao";
+import type { Failure, Identity, Verdict } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";
@@ -23,7 +24,10 @@ const VERDICT_WORDS = { approve: { title: "Approve this proposal?", confirm: "Si
  * One proposal: its terms, its state and what its execution reported. Approve and Reject are offered while it's open;
  * Execute while a read says it's approved, never from an execute's own answer that its outcome is pending.
  */
-export function ProposalDetail({ reads, id, owner, host }: { reads: Reads; id: string; owner: string; host: string }) {
+export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: string; identity: Identity }) {
+  const { owner, host } = identity;
+  // A DAO approves and rejects by its own vote, never a wallet signature; a member executes only if their roles allow.
+  const dao = identity.signer === "dao";
   const client = useQueryClient();
   const options = reads.proposal(id);
   const proposal = useQuery(options);
@@ -45,11 +49,15 @@ export function ProposalDetail({ reads, id, owner, host }: { reads: Reads; id: s
     if (!read.isError) setHeld(false);
   };
   /** A failure's words, with the way forward its code names. */
-  const failureNotice = (failure: Failure): Notice => ({ tone: "alert", body: <>
+  const failureNotice = (failure: Failure): Notice => {
+    // The consent ended: the connection is read again, so it offers to connect.
+    if (asksToReconnect(failure)) void client.invalidateQueries({ queryKey: reads.consent.queryKey });
+    return { tone: "alert", body: <>
     {failureText(failure, "proposal")}{" "}
     {failure.kind === "refused" && failure.code === "policy_not_in_force" && <a className="underline" href={`https://${host}/a/${reads.name}/policy`}>Open the Policy page</a>}
     {failure.kind === "refused" && failure.code === "not_connected" && <a className="underline" href="#connection">Connect the agent</a>}
-  </> });
+  </> };
+  };
 
   const startVerdict = async (kind: Verdict) => {
     setNotice(undefined);
@@ -122,7 +130,7 @@ export function ProposalDetail({ reads, id, owner, host }: { reads: Reads; id: s
   </div>;
   const view = proposal.data;
   const open = verdictOffered(view);
-  const executable = executeOffered(view, held);
+  const executable = executeOffered(view, held) && (!dao || identity.member!.canExecute);
   return <div className="flex flex-col gap-8">
     <a href={`/agents/${reads.name}`} className="self-start text-sm underline">Back to proposals</a>
     {proposal.isError && <QueryError error={proposal.error} retry={recheck} />}
@@ -161,13 +169,14 @@ export function ProposalDetail({ reads, id, owner, host }: { reads: Reads; id: s
         {view.planId && <p className="break-all font-mono text-xs text-muted-foreground">Plan {view.planId}</p>}
         {notice && <div role={notice.tone} aria-atomic="true" className="text-sm">{notice.body}</div>}
         <div className="flex flex-wrap gap-3">
-          {open && <>
+          {open && !dao && <>
             <Button disabled={verdict !== undefined} onClick={() => startVerdict("approve")}>{verdict?.verdict === "approve" && verdict.phase === "reading" ? "Reading…" : "Approve"}</Button>
             <Button variant="outline" disabled={verdict !== undefined} onClick={() => startVerdict("reject")}>{verdict?.verdict === "reject" && verdict.phase === "reading" ? "Reading…" : "Reject"}</Button>
           </>}
           {executable && <Button disabled={executing} onClick={() => setConfirming(true)}>{executing ? "Executing…" : "Execute"}</Button>}
           <Button variant="ghost" disabled={proposal.isFetching} onClick={recheck}>{proposal.isFetching ? "Checking…" : "Check again"}</Button>
         </div>
+        {dao && <DaoVote reads={reads} id={id} identity={identity} open={open} onRelayed={recheck} />}
       </Card>
     </section>
 

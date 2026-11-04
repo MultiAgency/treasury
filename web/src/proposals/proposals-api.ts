@@ -66,6 +66,17 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
           call(contract.proposalRead, `${proposal(id)}/${verdict}`, { method: "POST", body: contract.verdictSubmission.parse(signed) }),
         /** Asks for an approved proposal's execution, once. Never called again for an answer that was lost. */
         execute: (id: string) => call(contract.executeResult, `${proposal(id)}/execute`, { method: "POST" }),
+        /**
+         * A DAO-owned agent's consent request, read by the server from the platform: reading it after the DAO's vote
+         * passed is what stores the consent, so it's safe and needed to read again.
+         */
+        daoConsent: () => call(contract.daoConsent, `${base}/consent/dao`),
+        /** Asks the server to file the DAO's consent for its vote; an open request is answered instead of a new one. */
+        fileDaoConsent: () => call(contract.daoConsent, `${base}/consent/dao`, { method: "POST" }),
+        /** The DAO's vote on a proposal, as the server follows it: reading it after the vote passed relays the verdict. */
+        vote: (id: string) => call(contract.daoVote, `${proposal(id)}/vote`),
+        /** Asks the server to file the DAO's vote on a proposal; an open vote is answered instead of a new one. */
+        fileVote: (id: string, verdict: Verdict) => call(contract.daoVote, `${proposal(id)}/vote`, { method: "POST", body: contract.voteSubmission.parse({ verdict }) }),
       };
     },
   };
@@ -75,6 +86,10 @@ export type ProposalsApi = ReturnType<typeof proposalsApi>;
 export type AgentApi = ReturnType<ProposalsApi["agent"]>;
 export type ExecuteResult = z.output<typeof contract.executeResult>;
 export type ConsentText = z.output<typeof contract.consentText>;
+export type Identity = z.output<typeof contract.agent>;
+export type DaoRequest = z.output<typeof contract.daoRequest>;
+export type DaoConsent = z.output<typeof contract.daoConsent>;
+export type DaoVote = z.output<typeof contract.daoVote>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

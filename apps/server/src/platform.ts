@@ -55,7 +55,19 @@ export type Platform = {
     submit(submission: Parameters<App["consents"]["submit"]>[0]): ReturnType<App["consents"]["submit"]>;
     revoke(id: string): ReturnType<App["consents"]["revoke"]>;
   };
+  /**
+   * A DAO owner's signatures, each the DAO's own vote: its consent filed from the canonical text, and its vote on one of
+   * this app's proposals. `file` answers the proposal a member files; `state` reads it until it's final, and reading it
+   * after the vote passed is what stores the consent or relays the vote. Filing again files a new request.
+   */
+  dao: {
+    consents: { file(message: string): ReturnType<App["daoConsents"]["file"]>; state(id: string): ReturnType<App["daoConsents"]["state"]> };
+    votes: { file(input: Parameters<App["daoVotes"]["file"]>[0]): ReturnType<App["daoVotes"]["file"]>; state(id: string): ReturnType<App["daoVotes"]["state"]> };
+  };
 };
+/** A DAO consent request's state, as the platform answers it. */
+export type DaoConsentStateAnswer = Awaited<ReturnType<App["daoConsents"]["state"]>>;
+export type DaoVoteStateAnswer = Awaited<ReturnType<App["daoVotes"]["state"]>>;
 
 
 /**
@@ -118,10 +130,15 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     submit: async submission => (await client()).consents.submit(submission),
     revoke: async id => (await client()).consents.revoke(id),
   };
+  const dao: Platform["dao"] = {
+    consents: { file: async message => (await client()).daoConsents.file(message), state: async id => (await client()).daoConsents.state(id) },
+    votes: { file: async input => (await client()).daoVotes.file(input), state: async id => (await client()).daoVotes.state(id) },
+  };
   return {
     identity,
     proposals,
     consents,
+    dao,
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),

@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission, proposalSignature, proposalView } from "@multiagency/sdk";
+import { AppSigner, appConsentSubmission, proposalSignature, proposalView } from "@multiagency/sdk";
 import { z } from "zod";
 
 export const agentName = z.string().regex(/^[a-z0-9-]{1,32}$/);
@@ -18,7 +18,19 @@ export const signIn = z.strictObject({
   nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/),
 });
 export const session = z.strictObject({ account: z.string() });
-export const agent = z.strictObject({ agent: z.string(), owner: z.string(), agentId: z.string().nullable(), host: z.string() });
+/**
+ * What a DAO member may have this app do for the DAO's agent, by the DAO's roles (the SDK's `accessOf`): file proposals
+ * for the DAO's vote (`canPropose`), file and vote in one transaction (`canVote`), ask for execution (`canExecute`), and
+ * change the DAO's policy (`canManage`). Never sign: a member never signs as the DAO.
+ */
+export const member = z.strictObject({ canPropose: z.boolean(), canVote: z.boolean(), canExecute: z.boolean(), canManage: z.boolean() });
+/**
+ * The agent's identity. `signer` says who signs as its owner: the owner's wallet, or a DAO by its vote (then `owner` is
+ * the DAO, and `member` is what the signed-in member may do; null for a wallet owner). Both default for an answer from
+ * before DAO-owned agents.
+ */
+export const agent = z.strictObject({ agent: z.string(), owner: z.string(), agentId: z.string().nullable(), host: z.string(),
+  signer: AppSigner.default("wallet"), member: member.nullable().default(null) });
 /** The agent's identity as the owner check read it from the platform. */
 export type Identity = z.infer<typeof agent>;
 /** The consent text for the owner's wallet: sign `message` with NEP-413 for `recipient` (the platform's host) with `nonce`. */
@@ -49,7 +61,49 @@ export const executeResult = z.discriminatedUnion("result", [
 /** What a disconnect answers: how many of the agent's live consents it revoked. */
 export const revoked = z.strictObject({ revoked: z.number().int().nonnegative() });
 /** The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch). */
-export const consent = z.strictObject({ consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable() });
+const consentShown = z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() });
+export const consent = z.strictObject({ consent: consentShown.nullable() });
+
+/** A transaction a DAO member's wallet signs, exactly as the platform answered it: never one this server builds. */
+export const daoTransaction = z.looseObject({
+  receiverId: z.string(),
+  actions: z.array(z.looseObject({ type: z.literal("FunctionCall"), params: z.record(z.string(), z.unknown()) })),
+});
+/**
+ * A DAO request waiting for its vote. `description` is what the DAO's proposal says, and `checkUrl` the platform's public
+ * page (`/confirm/dao/<hash>`) showing the exact text the DAO's key signs and its hash recomputed: show the member both.
+ * `transaction` is the one this member files: with `votes`, it files the proposal and votes for it in one transaction
+ * (a member whose role may vote); otherwise it only files it. Null when the platform answered neither for this member.
+ * It must pass before `votingUntil` (ms since the epoch).
+ */
+export const daoRequest = z.strictObject({
+  id: z.string(), hash: z.string(), description: z.string(), votingUntil: z.number(), checkUrl: z.string(),
+  transaction: daoTransaction.nullable(), votes: z.boolean(),
+});
+/**
+ * A DAO's consent, as the server follows it. `none`: no request open; `pending`: waiting for the DAO's vote, read again
+ * later (never file again for it); `signed`: the vote passed and the consent is stored; `expired`: the vote didn't pass
+ * in time (file again for a new vote); `ended`: the DAO stopped its agent, which ends requests filed before (file again);
+ * `gone`: the platform no longer has the request (file again).
+ */
+export const daoConsent = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("none") }),
+  z.strictObject({ state: z.literal("pending"), request: daoRequest }),
+  z.strictObject({ state: z.literal("signed"), consent: consentShown }),
+  z.strictObject({ state: z.enum(["expired", "ended", "gone"]) }),
+]);
+/** The DAO's vote on a proposal: a member asks the DAO to approve or reject it. */
+export const voteSubmission = z.strictObject({ verdict: z.enum(["approve", "reject"]) });
+/**
+ * The DAO's vote on a proposal, as the server follows it: as `daoConsent`, with `relayed` once the vote passed and the
+ * platform relayed it to the proposal, which now reads `proposalState`.
+ */
+export const daoVote = z.discriminatedUnion("state", [
+  z.strictObject({ state: z.literal("none") }),
+  z.strictObject({ state: z.literal("pending"), verdict: z.enum(["approve", "reject"]), request: daoRequest }),
+  z.strictObject({ state: z.literal("relayed"), verdict: z.enum(["approve", "reject"]), proposalState: z.string() }),
+  z.strictObject({ state: z.enum(["expired", "ended", "gone"]) }),
+]);
 
 /**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
@@ -59,7 +113,9 @@ export const consent = z.strictObject({ consent: z.strictObject({ id: z.string()
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
  *   `too_large`, `rate_limited`, a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`; for a DAO-owned
+ *   agent: `dao_owner` (a route for wallet owners: the DAO signs by vote), `not_dao`, `not_permitted` (the member's
+ *   roles don't allow it), `vote_open` (a vote on the other verdict is open), `dao_refused`, `too_many_requests`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */

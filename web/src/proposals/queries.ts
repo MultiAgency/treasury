@@ -32,6 +32,10 @@ export function agentReads(name: string) {
     consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()).consent, retry: false }),
     proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false,
       refetchInterval: 30_000 }),
+    /** A DAO-owned agent's consent request: read on demand, since each read may store a consent the DAO voted for. */
+    daoConsent: queryOptions({ queryKey: [...key, "dao-consent"], queryFn: async () => answered(await agent.daoConsent()), retry: false }),
+    /** The DAO's vote on a proposal, the same way. */
+    vote: (id: string) => queryOptions({ queryKey: [...key, "proposals", id, "vote"], queryFn: async () => answered(await agent.vote(id)), retry: false }),
     proposal: (id: string) => queryOptions({ queryKey: [...key, "proposals", id], queryFn: async () => answered(await agent.proposal(id)).proposal,
       retry: false, refetchInterval: query => query.state.data && MOVING.has(query.state.data.state) ? 5_000 : false }),
   };

@@ -44,6 +44,11 @@ const Settings = z.object({
   TREASURY_WATCH_FILE: z.string().min(1).optional(),
   /** Where `watch` stores each proposal request before sending it (`requests.ts`), owner-only; needed with `TREASURY_WATCH_FILE`. */
   TREASURY_REQUESTS_FILE: z.string().min(1).optional(),
+  /**
+   * Where the DAO requests this server follows are kept (`dao.ts`), owner-only, so a DAO's vote that takes days survives
+   * a restart; unset, they're kept in memory, and after a restart a member files again for a new vote.
+   */
+  TREASURY_DAO_REQUESTS_FILE: z.string().min(1).optional(),
   PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
   /** Overrides the chain RPC; otherwise FastNEAR's, as the platform's `src/chain.ts` does. */
   NEAR_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),

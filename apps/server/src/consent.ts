@@ -9,7 +9,9 @@ export const CONSENT_SCOPES = ["read", "treasury"] as const;
 export const CONSENT_DAYS = 90;
 const DAY = 86_400_000;
 
-type Expected = { identity: Identity; deployment: string; now?: number };
+/** What a consent names of the agent's identity: who signs it doesn't change the text. */
+type Named = Pick<Identity, "agent" | "owner" | "agentId" | "host">;
+type Expected = { identity: Named; deployment: string; now?: number };
 
 /**
  * The Organization a consent names: the owner's account with each `.` written as `--` (#20, decision 5). The platform
@@ -22,12 +24,20 @@ export const organizationOf = (account: string) => account.replaceAll(".", "--")
  * The consent text for the owner's wallet to sign, with a fresh 32-byte nonce, and the recipient to sign it for: the
  * platform's host, never this server's. It names the agent's current identity, so an agent created anew needs a new one.
  */
-export function consentText({ identity, deployment, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; now?: number }) {
-  const message = consentMessage({
+export function consentText({ identity, deployment, now = Date.now() }: { identity: Named & { agentId: string }; deployment: string; now?: number }) {
+  return { message: consentMessageFor({ identity, deployment, now }), nonce: randomBytes(32).toString("base64"), recipient: identity.host };
+}
+
+/**
+ * The canonical consent text naming the agent's current identity, its owner's Organization, `read` and `treasury`, for
+ * `CONSENT_DAYS`. A wallet owner signs it; a DAO owner's is filed for the DAO's vote as it is (`daoConsents.file`), with
+ * the same scopes: never `treasury-execute`, which only the DAO could vote in and this server never asks for.
+ */
+export function consentMessageFor({ identity, deployment, now = Date.now() }: { identity: Named & { agentId: string }; deployment: string; now?: number }) {
+  return consentMessage({
     host: identity.host, deployment, organization: organizationOf(identity.owner), owner: identity.owner, agent: identity.agent,
     agentId: identity.agentId, scopes: [...CONSENT_SCOPES], expiresAt: new Date(now + CONSENT_DAYS * DAY).toISOString(),
   });
-  return { message, nonce: randomBytes(32).toString("base64"), recipient: identity.host };
 }
 
 /**
@@ -51,7 +61,7 @@ export function checkConsent(message: string, { identity, deployment, now = Date
  * consent, which names no created agent, nor one for an earlier agent of the same name), covering `read` and
  * `treasury`, unrevoked and unexpired. Only these let the platform's calls through, so only these count as connected.
  */
-export function liveConsents(consents: readonly ConsentRecord[], identity: Identity, now = Date.now()) {
+export function liveConsents(consents: readonly ConsentRecord[], identity: Named, now = Date.now()) {
   return consents.filter(consent => consent.agent === identity.agent && consent.owner === identity.owner && consent.agentId === identity.agentId
     && CONSENT_SCOPES.every(scope => consent.scopes.includes(scope)) && !consent.revoked && consent.expiresAt > now)
     .sort((a, b) => b.expiresAt - a.expiresAt);

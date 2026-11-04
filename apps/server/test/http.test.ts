@@ -125,7 +125,7 @@ test("the owner reads their agent, with one ownership read", async () => {
   fake.calls.length = 0;
   const { status, body } = await json(await call("GET", "/api/agents/portfolio", { cookie }));
   assert.equal(status, 200);
-  assert.deepEqual(contract.agent.parse(body.value), { agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test" });
+  assert.deepEqual(contract.agent.parse(body.value), { agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test", signer: "wallet", member: null });
   assert.deepEqual(fake.calls, ["identity portfolio"]);
 });
 
@@ -764,4 +764,49 @@ test("execute: once per click; its answer is final, pending or not executable, a
   fake.proposals.push(mine({ state: "approved" }));
   fake.proposalAnswers.execute = [{ ok: false, kind: "forbidden", status: 403, error: "No live owner consent covers this Organization and agent" }];
   assert.deepEqual(await json(await execute()), { status: 409, body: { ok: false, kind: "refused", code: "not_connected" } });
+});
+
+test("a refused execute (a price below the signed floor) leaves the proposal approved: nothing was claimed, and it may be executed later", async t => {
+  t.mock.method(console, "error", () => {});
+  cleanProposals();
+  fake.proposals.push(mine({ state: "approved" }));
+  const cookie = await signIn(owner);
+  const execute = () => call("POST", `/api/agents/portfolio/proposals/${"a".repeat(32)}/execute`, { cookie, body: {} });
+  fake.proposalAnswers.execute = [{ ok: false, kind: "refused", status: 409, code: "not_executable", error: "A quote is below the signed floor (setPrice)" }];
+  const refusedRun = await json(await execute());
+  assert.deepEqual([refusedRun.status, refusedRun.body.value.result, refusedRun.body.value.proposal.state], [200, "not_executable", "approved"]);
+  assert.ok(!JSON.stringify(refusedRun.body).includes("floor"), "the platform's text stays on the server");
+  assert.deepEqual(audited.at(-1), { who: "owner.near", action: "execute", agent: "portfolio", subject: "a".repeat(32), stage: "result",
+    answer: { ok: false, kind: "refused", status: 409 } }, "recorded as refused");
+  const read = await json(await call("GET", `/api/agents/portfolio/proposals/${"a".repeat(32)}`, { cookie }));
+  assert.equal(read.body.value.proposal.state, "approved", "a later read still says approved");
+  assert.equal(relayed("execute"), 1);
+  const later = await json(await execute());
+  assert.deepEqual([later.body.value.result, later.body.value.proposal.state], ["final", "executed"], "asked again later, it runs");
+  assert.equal(relayed("execute"), 2, "one execute per click, never a retry by the server");
+});
+
+test("after the consent is revoked, the platform's forbidden asks the owner to reconnect: not_connected on every proposal route, nothing retried", async t => {
+  t.mock.method(console, "error", () => {});
+  clean(); cleanProposals();
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  assert.equal((await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })).status, 200);
+  fake.proposals.push(mine({ state: "approved" }));
+  assert.deepEqual((await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie }))).body, { ok: true, value: { revoked: 1 } });
+  // The platform now refuses every call under the ended consent, as its app route does.
+  const forbidden = { ok: false as const, kind: "forbidden" as const, status: 403 as const, error: "No live owner consent covers this Organization and agent" };
+  const { list, get } = fake.platform.proposals;
+  fake.platform.proposals.list = async (organization, agent) => { fake.calls.push(`proposals.list ${organization} ${agent}`); return forbidden; };
+  fake.platform.proposals.get = async (organization, agent, id) => { fake.calls.push(`proposals.get ${organization} ${agent} ${id}`); return forbidden; };
+  t.after(() => { Object.assign(fake.platform.proposals, { list, get }); });
+  const id = "a".repeat(32);
+  for (const [method, path, body] of [["GET", "/api/agents/portfolio/proposals", undefined], ["GET", `/api/agents/portfolio/proposals/${id}`, undefined],
+    ["POST", `/api/agents/portfolio/proposals/${id}/execute`, {}], ["POST", `/api/agents/portfolio/proposals/${id}/approve`, signedVerdict(mine(), "approve")]] as const) {
+    fake.calls.length = 0;
+    assert.deepEqual(await json(await call(method, path, { cookie, ...(body && { body }) })), { status: 409, body: { ok: false, kind: "refused", code: "not_connected" } }, path);
+    assert.equal(fake.calls.filter(line => line.startsWith("proposals.")).length, 1, `${path}: one call, never retried`);
+  }
+  assert.equal(relayed("execute"), 0, "nothing was sent to execute");
+  assert.deepEqual((await json(await call("GET", "/api/agents/portfolio/consent", { cookie }))).body.value, { consent: null }, "the page shows Connect");
 });

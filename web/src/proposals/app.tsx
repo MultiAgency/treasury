@@ -5,6 +5,8 @@ import { agentName } from "../../../apps/server/src/contract.ts";
 import { TreasuryBrand } from "../app/brand";
 import { Button, ErrorBox, errorMessage, input, Loading, QueryError } from "../shared/ui";
 import { Connection } from "./connection";
+import { DaoConnection } from "./dao";
+import { memberText } from "./dao-flow";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
 import { agentReads, api, failureOf } from "./queries";
@@ -66,13 +68,14 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
     {failure?.kind === "not_owner" && <SignedIn>{null}</SignedIn>}
     <QueryError error={identity.error} retry={() => identity.refetch()} />
   </>;
-  const { owner, host } = identity.data;
+  const { owner } = identity.data;
+  const dao = identity.data.signer === "dao";
   return <>
     {heading}
-    <SignedIn>Signed in as <span className="font-mono">{owner}</span></SignedIn>
-    <Connection reads={reads} owner={owner} />
+    <SignedIn>{dao ? memberText(identity.data) : <>Signed in as <span className="font-mono">{owner}</span></>}</SignedIn>
+    {dao ? <DaoConnection reads={reads} identity={identity.data} /> : <Connection reads={reads} owner={owner} />}
     {id === undefined ? <ProposalList reads={reads} />
-      : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} owner={owner} host={host} />
+      : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
       : <div className="flex flex-col items-start gap-4">
         <a href={`/agents/${name}`} className="text-sm underline">Back to proposals</a>
         <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
