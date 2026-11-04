@@ -55,6 +55,13 @@ export function awaitingOutcome<T extends { type: string; stage: string; signer:
     && (a.signer === "dao" || (a.type === "policy_update" && !(Date.parse(a.expiresAt) + CONFIRM_GRACE_MS <= now))))));
 }
 
+/**
+ * The action types an awaited `type` holds back: freeze and unfreeze each other, since the agent ends in whichever state
+ * lands last; any other type only itself. The platform holds back neither for a wallet owner, so this is the guard.
+ */
+export const heldTogether = <T extends string>(type: T): readonly (T | "agent_freeze" | "agent_unfreeze")[] =>
+  type === "agent_freeze" || type === "agent_unfreeze" ? ["agent_freeze", "agent_unfreeze"] : [type];
+
 /** What an earlier action of a type is called in the note that holds back another. */
 const EARLIER: Record<string, string> = {
   agent_freeze: "freeze", agent_unfreeze: "unfreeze", policy_update: "policy update", grant_issue: "grant", grant_revoke: "revocation",

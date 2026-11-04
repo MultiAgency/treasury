@@ -9,7 +9,7 @@ import { useCanCall, useViewer } from "../../app/viewer";
 import { connect, useWallet } from "../../app/wallet";
 import { Button, ErrorBox, Spinner, errorMessage } from "../../shared/ui";
 import { ownerSigner, runOwnerAction, type Signer, type Step } from "./owner-flow";
-import { awaitingOutcome, pendingNote } from "./owner-observation";
+import { awaitingOutcome, heldTogether, pendingNote } from "./owner-observation";
 import { wallets } from "./wallet";
 
 export { ownerSigner, type Signer } from "./owner-flow";
@@ -145,7 +145,7 @@ export function OwnerControls({ setup, frozen }: { setup: Setup; frozen: boolean
   const wallet = useWallet();
   const action = useOwnerAction(setup);
   const { viaDao, needsWallet, connectedNotOwner, permitted } = useSigner(setup);
-  const waiting = action.pending(["agent_freeze", "agent_unfreeze"]);
+  const waiting = action.pending(heldTogether("agent_freeze"));
   const [connectError, setConnectError] = useState<string>();
   const type = frozen ? "agent_unfreeze" : "agent_freeze";
   const verb = frozen ? "unfreeze" : "freeze";

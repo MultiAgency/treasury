@@ -1,6 +1,6 @@
 import { answered, failureMessage, PlatformError, type agent, type Intent, type OwnerAction, type OwnerActionRecord, type Setup, type Transaction } from "../../platform.ts";
 import { transactionOutcome } from "../../app/wallet-transaction.ts";
-import { awaitingOutcome, CONFIRM_GRACE_MS, observeOwnerAction, pendingNote } from "./owner-observation.ts";
+import { awaitingOutcome, CONFIRM_GRACE_MS, heldTogether, observeOwnerAction, pendingNote } from "./owner-observation.ts";
 
 export { CONFIRM_GRACE_MS } from "./owner-observation.ts";
 
@@ -57,11 +57,11 @@ export async function runOwnerAction({ api, wallets, setup, access, action, sign
   let unknown: string | undefined;
   let earlier: OwnerActionRecord | undefined;
 
-  /** The record of this same action (for a vote, on the same payment) whose outcome isn't known yet, read now. */
+  /** The record of this action, or one it's held with (`heldTogether`; for a vote, on the same payment), whose outcome isn't known yet, read now. */
   async function pending() {
     const records = await api.read("owner/actions", undefined);
     return awaitingOutcome(action.type === "approval_vote" ? records.filter(r => r.payment?.correlationId === action.correlationId) : records,
-      [action.type], now());
+      heldTogether(action.type), now());
   }
   /** Stops here, before anything more is prepared or signed, while such a record exists. */
   function holdFor(record: OwnerActionRecord): never {
