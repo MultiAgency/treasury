@@ -2,6 +2,7 @@ import type { ProposalView } from "@multiagency/sdk";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { amountOf, usd } from "../shared/format";
 import { Badge, Button, reviewDialog, type Tone } from "../shared/ui";
+import { legText } from "./terms";
 import { STATE_WORDS } from "./words";
 
 /**
@@ -57,13 +58,13 @@ export const amountText = (raw: string, asset: string) => amountOf(raw, asset, N
 /** A quoted cost in basis points as a percentage; negative when the quote is worth more than what it spends. */
 export const costText = (bps: number) => `${bps / 100}%`;
 
-/** A proposal's swaps: each leg with its signed floor, and the quote it was proposed under. */
+/** A proposal's swaps: each leg exactly as signed, with its floor, and the quote it was proposed under (rounded: it isn't signed). */
 export function Legs({ view }: { view: ProposalView }) {
   return <ol aria-label="Swaps" className="flex flex-col gap-3">
     {view.legs.map((leg, i) => {
       const quote = view.quoted[i];
       return <li key={i} className="flex flex-col gap-1">
-        <span className="font-medium">Swap {amountText(leg.amount, leg.from)} for at least {amountText(leg.minAmountOut, leg.to)}</span>
+        <span className="font-medium">{legText(leg)}</span>
         {quote && <span className="text-sm text-muted-foreground">
           Quoted {amountText(quote.amountOut, leg.to)} · cost {costText(quote.costBps)} · {usd(quote.usdIn)} in
         </span>}

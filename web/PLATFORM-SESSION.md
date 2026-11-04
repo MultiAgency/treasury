@@ -203,7 +203,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Disconnect this agent?, Cancel, Disconnect | dialog, buttons | Connection |
 | Proposals | region and heading (level 2); list | `/agents/<agent>` |
 | Review proposal `<id, shortened>` | link | each proposal in the list |
-| Swaps | list (each leg: "Swap `<amount>` for at least `<floor>`", and its quote) | list and proposal |
+| Swaps | list (each leg: "Swap `<amount>` for at least `<floor>`", exactly as the signed text names them, and its quote, rounded) | list and proposal |
 | Back to proposals | link | proposal, and an address whose ID isn't a proposal's ("This address doesn't name a proposal: …", alert) |
 | Terms, State | region and heading (level 2) | proposal |
 | Proposal reference | disclosure summary (ID, sha256, policy and strategy digests) | proposal |
@@ -221,6 +221,7 @@ How it departs from the brief, or decides what the brief leaves open:
 - **`not_executable` carries no code or reason** from the server (`executeResult` is the result and the proposal only), so the page says the platform's causes ("a price below a signed floor, a provider warning, a short balance, no live treasury grant, or the policy not in force"), with the proposal's `reason` when it has one. Execute stays offered.
 - **Execute after `pending`, lost or `unavailable`** is decided by a read after it: offered again only if that read says `approved`. If the read fails, Execute stays off until "Check again" answers. After a reload or in another tab, the platform's state decides alone: `executing` and `unknown` offer nothing, and an `approved` read offers Execute, which the platform claims at most once.
 - **`policy_not_in_force`** links to the owner UI's Policy page on the platform's host (`https://<host>/a/<agent>/policy`, `host` from `GET /api/agents/:agent`). Where the owner UI is served in production is platform#14.
+- **Swaps read exactly as signed** (the user's decision, 2026-11-04): the amount and floor of each leg are never rounded (`exactAmountOf` in `shared/format.ts`), so a floor of 0.499996 wNEAR never reads "at least 0.5". `test/proposal-terms.test.ts` checks each leg against the SDK's `proposalText`. Only the quote, which isn't signed, is rounded (`amountOf`).
 - **The consent dialog** shows the platform's consent text exactly, and beside it everything the `treasury` scope grants, which that text can't narrow, and what this server actually calls.
 - **Its own build output.** One `rsbuild` config with two environments: the owner UI builds to `dist/` as before (with `contract.json`), and the page to `dist-proposals/`, the only folder the app server serves. `test/proposals-isolation.test.ts` checks that `src/platform.ts` and the owner session's `app/` modules are unreachable from the page's entry at runtime.
 - **`accessDenied` and `ReadFailure` moved** from `shared/ui.tsx` to `shared/read-failure.tsx`, so `shared/ui.tsx` no longer imports `platform.ts` and the page can share it. No name changes.
