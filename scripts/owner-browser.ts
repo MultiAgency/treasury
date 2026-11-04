@@ -28,9 +28,10 @@ const state = JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as
   dashboard: string; payee: string; ownerAccount: string; treasury: { agent: string } | null;
 };
 if (!state.treasury) throw new Error("This stack has no Treasury agent: start it with --treasury");
-// The stack's certificate is its own, so this check doesn't verify it: it only asks whether the stack answers.
+// The stack signs its own certificate: trust only that one (as `stackFetch` in scripts/stack.ts does), not any.
+const ca = readFileSync(join(directory, "environment", "localhost.crt"));
 const running = await new Promise<boolean>(resolve => {
-  get(`${state.dashboard}/gw/me`, { rejectUnauthorized: false }, res => { res.resume(); resolve(true); }).on("error", () => resolve(false));
+  get(`${state.dashboard}/gw/me`, { ca }, res => { res.resume(); resolve(true); }).on("error", () => resolve(false));
 });
 if (!running) throw new Error(`The stack at ${state.dashboard} isn't running (${directory})`);
 
