@@ -18,6 +18,7 @@ function environment(credentialMode = 0o600, audit?: string) {
     PATH: process.env.PATH, PORT: "0",
     TREASURY_PLATFORM_ORIGIN: "https://platform.test", TREASURY_DEPLOYMENT: "treasury", TREASURY_CREDENTIAL_FILE: credential,
     TREASURY_PUBLIC_ORIGIN: "https://treasury.test", TREASURY_AUDIT_FILE: audit ?? join(dir, "audit.jsonl"),
+    TREASURY_DAO_REQUESTS_FILE: join(dir, "dao-requests.json"),
   };
 }
 

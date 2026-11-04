@@ -57,6 +57,11 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         consent: () => call(contract.consent, `${base}/consent`),
         /** The consent text for the owner's wallet, built by the server from the agent as the platform answers it now. */
         consentText: () => call(contract.consentText, `${base}/consent/text`, { method: "POST" }),
+        /**
+         * For a DAO-owned agent: files its consent for the DAO's vote, or answers the request already open. The server
+         * builds the text, and the platform the proposal a member files.
+         */
+        fileConsent: () => call(contract.daoFiled, `${base}/consent/text`, { method: "POST" }),
         connect: (submission: z.input<typeof contract.consentSubmission>) =>
           call(contract.consent, `${base}/consent`, { method: "POST", body: contract.consentSubmission.parse(submission) }),
         disconnect: () => call(contract.revoked, `${base}/consent/revoke`, { method: "POST" }),
@@ -64,6 +69,11 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         proposal: (id: string) => call(contract.proposalRead, proposal(id)),
         verdict: (id: string, verdict: Verdict, signed: z.input<typeof contract.verdictSubmission>) =>
           call(contract.proposalRead, `${proposal(id)}/${verdict}`, { method: "POST", body: contract.verdictSubmission.parse(signed) }),
+        /**
+         * For a DAO-owned agent: files the DAO's vote on the proposal, from the platform's own text of it, or answers the
+         * vote already open on it, which may carry the other verdict.
+         */
+        fileVote: (id: string, verdict: Verdict) => call(contract.daoFiled, `${proposal(id)}/${verdict}`, { method: "POST" }),
         /** Asks for an approved proposal's execution, once. Never called again for an answer that was lost. */
         execute: (id: string) => call(contract.executeResult, `${proposal(id)}/execute`, { method: "POST" }),
       };
@@ -75,6 +85,10 @@ export type ProposalsApi = ReturnType<typeof proposalsApi>;
 export type AgentApi = ReturnType<ProposalsApi["agent"]>;
 export type ExecuteResult = z.output<typeof contract.executeResult>;
 export type ConsentText = z.output<typeof contract.consentText>;
+export type Identity = z.output<typeof contract.agent>;
+export type Connection = z.output<typeof contract.consent>;
+export type DaoRequest = z.output<typeof contract.daoRequest>;
+export type ProposalRead = z.output<typeof contract.proposalRead>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

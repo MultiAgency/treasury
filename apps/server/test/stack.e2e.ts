@@ -14,6 +14,8 @@ import { ETH, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type S
 import { fileAudit } from "../src/audit.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
+import { createDaoRequests } from "../src/dao-requests.ts";
+import { standInDaos } from "../src/dao.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createPlatform } from "../src/platform.ts";
 import { createRequests } from "../src/requests.ts";
@@ -46,8 +48,9 @@ before(async () => {
     ownerRequestsPerMinute: 1_000,
     trustedProxyHops: 0,
     audit,
-    consentsPerDay: 1_000,
+    consentsPerDay: 1_000, daoFilingsPerDay: 1_000,
     keyLookup,
+    daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

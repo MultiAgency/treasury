@@ -212,6 +212,13 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Approve this proposal? or Reject this proposal?, Text to sign, Cancel, Sign and approve or Sign and reject | dialog, the signed text (labelled), buttons | proposal |
 | Execute this proposal?, Cancel, Execute now | dialog, buttons | proposal |
 | You approved this proposal., You rejected this proposal., Executed. Every swap succeeded. | status | proposal, State |
+| Signed in as `<member>`, a member of `<dao>`, which owns this agent | text | signed in, a DAO-owned agent |
+| Ask the DAO to connect it; Connected by the vote of `<dao>`: … or Waiting for the vote of `<dao>` to connect this agent. | button; status | Connection, a DAO-owned agent |
+| stop this agent | link (the platform's DAO stop page), in place of Disconnect | Connection, a DAO-owned agent |
+| Ask the DAO to approve, Ask the DAO to reject | button, in place of Approve and Reject | proposal, a DAO-owned agent |
+| `<dao>` votes to approve (reject) this proposal. | status | proposal, while the DAO's vote waits |
+| What the DAO votes on | list (the DAO proposal's description, line by line) | a waiting DAO request |
+| File the DAO proposal or File and vote; Vote on it in Trezu; Check the exact text and hash the DAO signs | button; links | a waiting DAO request |
 
 How it departs from the brief, or decides what the brief leaves open:
 - **The agent comes from the address** (`/agents/<agent>`): the server has no route listing an owner's agents. `/` asks for the agent's name.
@@ -222,6 +229,7 @@ How it departs from the brief, or decides what the brief leaves open:
 - **Execute after `pending`, lost or `unavailable`** is decided by a read after it: offered again only if that read says `approved`. If the read fails, Execute stays off until "Check again" answers. After a reload or in another tab, the platform's state decides alone: `executing` and `unknown` offer nothing, and an `approved` read offers Execute, which the platform claims at most once.
 - **`policy_not_in_force`** links to the owner UI's Policy page on the platform's host (`https://<host>/a/<agent>/policy`, `host` from `GET /api/agents/:agent`). The owner session has no production host (platform#14), so this link changes when the owner UI moves to the app route.
 - **Swaps read exactly as signed** (the user's decision, 2026-11-04): the amount and floor of each leg are never rounded (`exactAmountOf` in `shared/format.ts`), so a floor of 0.499996 wNEAR never reads "at least 0.5". `test/proposal-terms.test.ts` checks each leg against the SDK's `proposalText`. Only the quote, which isn't signed, is rounded (`amountOf`).
+- **A DAO-owned agent** (#100): a member signs in as themselves, and every signature is the DAO's vote. The page shows the request the server filed, what the DAO's proposal says (its description as text, never HTML) and the platform's check page, then what the member can do by what the DAO holds: file the platform's transaction from their own wallet (with their vote when they may vote and its proposal number still fits), vote in Trezu on the proposal already filed, or wait for the server to complete it. The member's wallet sends the platform's transaction as is, through the same `walletSession.send` and `transactionOutcome` the owner UI uses. Execute is offered only to an account whose roles allow it (`access.canExecute`).
 - **The consent dialog** shows the platform's consent text exactly, and beside it everything the `treasury` scope grants, which that text can't narrow, and what this server actually calls.
 - **Its own build output.** One `rsbuild` config with two environments: the owner UI builds to `dist/` as before (with `contract.json`), and the page to `dist-proposals/`, the only folder the app server serves. `test/proposals-isolation.test.ts` checks that `src/platform.ts` and the owner session's `app/` modules are unreachable from the page's entry at runtime.
 - **`accessDenied` and `ReadFailure` moved** from `shared/ui.tsx` to `shared/read-failure.tsx`, so `shared/ui.tsx` no longer imports `platform.ts` and the page can share it. No name changes.

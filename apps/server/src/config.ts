@@ -31,6 +31,11 @@ const Settings = z.object({
   TREASURY_CREDENTIAL_FILE: z.string().min(1),
   /** Where relayed owner actions (consents, revocations) are recorded: an append-only file of JSON lines, owner-only. */
   TREASURY_AUDIT_FILE: z.string().min(1),
+  /**
+   * Where the DAO requests this server files are kept until they end (`dao-requests.ts`), owner-only: the platform
+   * answers a request's transactions only once. Created on first use, so a deployment without DAOs only names it.
+   */
+  TREASURY_DAO_REQUESTS_FILE: z.string().min(1),
   /** This server's own origin: the sign-in recipient and the only `Origin` accepted on writes. */
   TREASURY_PUBLIC_ORIGIN: publicOrigin,
   /**
@@ -55,6 +60,21 @@ const Settings = z.object({
   OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
   /** New consents per signed-in account a day: the platform caps a deployment's unexpired consents, revoked ones included. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
+  /**
+   * DAO requests (consents and votes) a signed-in member may file a day: the platform allows a deployment 256 a day,
+   * shared by every DAO and member.
+   */
+  DAO_FILINGS_PER_DAY: z.coerce.number().int().positive().default(20),
+  /**
+   * How often the open DAO requests are read, so a vote that passed while nobody has the page open is completed in
+   * time: each open request is one call a pass against the credential's 1,200 an hour.
+   */
+  DAO_READ_INTERVAL_MS: duration(60_000),
+  /**
+   * The most open DAO requests one pass reads, the least recently read first: at one pass a minute, 5 is at most 300
+   * of the credential's 1,200 calls an hour, which every owner's page shares.
+   */
+  DAO_READS_PER_PASS: z.coerce.number().int().positive().default(5),
   PLATFORM_TIMEOUT_MS: duration(15_000),
   CHAIN_TIMEOUT_MS: duration(10_000),
 });

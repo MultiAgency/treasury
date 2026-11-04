@@ -19,15 +19,22 @@ type Expected = { identity: Identity; deployment: string; now?: number };
 export const organizationOf = (account: string) => account.replaceAll(".", "--");
 
 /**
- * The consent text for the owner's wallet to sign, with a fresh 32-byte nonce, and the recipient to sign it for: the
- * platform's host, never this server's. It names the agent's current identity, so an agent created anew needs a new one.
+ * The consent this server asks for, as its canonical text: the owner's Organization, the agent's current identity
+ * (so an agent created anew needs a new one), `CONSENT_SCOPES`, for `CONSENT_DAYS`. A wallet owner signs it; a DAO
+ * votes on it.
  */
-export function consentText({ identity, deployment, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; now?: number }) {
-  const message = consentMessage({
+export const consentFor = ({ identity, deployment, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; now?: number }) =>
+  consentMessage({
     host: identity.host, deployment, organization: organizationOf(identity.owner), owner: identity.owner, agent: identity.agent,
     agentId: identity.agentId, scopes: [...CONSENT_SCOPES], expiresAt: new Date(now + CONSENT_DAYS * DAY).toISOString(),
   });
-  return { message, nonce: randomBytes(32).toString("base64"), recipient: identity.host };
+
+/**
+ * The consent text for the owner's wallet to sign, with a fresh 32-byte nonce, and the recipient to sign it for: the
+ * platform's host, never this server's.
+ */
+export function consentText(expected: { identity: Identity & { agentId: string }; deployment: string; now?: number }) {
+  return { message: consentFor(expected), nonce: randomBytes(32).toString("base64"), recipient: expected.identity.host };
 }
 
 /**

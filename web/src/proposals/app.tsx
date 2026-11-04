@@ -50,7 +50,10 @@ function ChooseAgent() {
   </>;
 }
 
-/** An agent's page, once the signed-in account is its owner: who's signed in, the connection, then its proposals. */
+/**
+ * An agent's page, once the signed-in account is its owner or a member of the DAO that owns it: who's signed in, the
+ * connection, then its proposals.
+ */
 function Agent({ name, id }: { name: string; id: string | undefined }) {
   const reads = useMemo(() => agentReads(name), [name]);
   const identity = useQuery(reads.identity);
@@ -66,13 +69,13 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
     {failure?.kind === "not_owner" && <SignedIn>{null}</SignedIn>}
     <QueryError error={identity.error} retry={() => identity.refetch()} />
   </>;
-  const { owner, host } = identity.data;
+  const { account, owner, signer } = identity.data;
   return <>
     {heading}
-    <SignedIn>Signed in as <span className="font-mono">{owner}</span></SignedIn>
-    <Connection reads={reads} owner={owner} />
+    <SignedIn>Signed in as <span className="font-mono">{account}</span>{signer === "dao" && <>, a member of <span className="font-mono">{owner}</span>, which owns this agent</>}</SignedIn>
+    <Connection reads={reads} identity={identity.data} />
     {id === undefined ? <ProposalList reads={reads} />
-      : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} owner={owner} host={host} />
+      : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
       : <div className="flex flex-col items-start gap-4">
         <a href={`/agents/${name}`} className="text-sm underline">Back to proposals</a>
         <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
@@ -100,7 +103,7 @@ function SignIn() {
   };
   return <section aria-labelledby="sign-in" className="flex max-w-md flex-col items-start gap-4">
     <h2 id="sign-in" className="text-xl font-semibold">Sign in</h2>
-    <p className="text-sm text-muted-foreground">Sign in with the wallet of the account that owns this agent. Your wallet signs a message addressed to this server; it moves nothing.</p>
+    <p className="text-sm text-muted-foreground">Sign in with the wallet of the account that owns this agent, or for an agent a DAO owns, your own account as one of its members. Your wallet signs a message addressed to this server; it moves nothing.</p>
     <ErrorBox error={error} />
     <Button disabled={busy} onClick={signIn}>{busy ? "Signing in…" : "Sign in with wallet"}</Button>
   </section>;

@@ -5,6 +5,10 @@ import { fileAudit } from "./audit.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
+import { createDaoReader, runDaoReader } from "./dao-reader.ts";
+import { createDaoRequests } from "./dao-requests.ts";
+import { createSettle } from "./dao-settle.ts";
+import { chainDaos } from "./dao.ts";
 import { chainKeyLookup, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
@@ -26,14 +30,20 @@ setInterval(sessions.sweep, 60_000).unref();
 
 const rpcUrl = rpcUrlFor(settings.NEAR_RPC_URL, secrets.FASTNEAR_API_KEY);
 const keyLookup = chainKeyLookup({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
+const daos = chainDaos({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
 // Refuse to start with watch named but its agents or its stored requests unreadable, or past the read budget.
 const watched = settings.TREASURY_WATCH_FILE ? {
   agents: await loadWatchConfig(settings.TREASURY_WATCH_FILE),
   requests: await createRequests(settings.TREASURY_REQUESTS_FILE!),
 } : undefined;
 
+// Refuse to start with the DAO requests unreadable.
+const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE);
+
 // One platform client for the routes and watch, so they share the identity cache and the credential's reads.
 const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS });
+// One settle for the routes and the reader, so reads of the same DAO request at once share one.
+const settle = createSettle({ platform, daoRequests, audit });
 const handler = createServer({
   platform,
   signIn: createSignIn({
@@ -49,7 +59,11 @@ const handler = createServer({
   ownerRequestsPerMinute: settings.OWNER_REQUESTS_PER_MINUTE,
   audit,
   consentsPerDay: settings.CONSENTS_PER_DAY,
+  daoFilingsPerDay: settings.DAO_FILINGS_PER_DAY,
   keyLookup,
+  daos,
+  daoRequests,
+  settle,
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
 });
@@ -60,21 +74,31 @@ const server = createHttpServer(handler).listen(settings.PORT, () => {
 });
 
 // watch proposes for its agents beside the routes, through its own narrow view of the platform.
-const stopWatch = new AbortController();
+const shutdown = new AbortController();
 const watching = watched
   ? runWatch({
     watch: createWatch({ platform: platform.watch, requests: watched.requests, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN }),
     agents: watched.agents,
     log: event => console.log(JSON.stringify({ event: "watch", ...event })),
     sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),
-    signal: stopWatch.signal,
+    signal: shutdown.signal,
   })
   : Promise.resolve();
 
-// On shutdown, take no new requests and start no tick, and let the requests and ticks in flight finish.
+// The DAO requests still open are read on their own interval, watch or not: a vote that passed is completed only when
+// it's read, and only until what the DAO signed expires.
+const reading = runDaoReader({
+  read: createDaoReader({ daoRequests, settle }, { limit: settings.DAO_READS_PER_PASS }).pass,
+  everyMs: settings.DAO_READ_INTERVAL_MS,
+  log: event => console.log(JSON.stringify({ event: "dao_read", ...event })),
+  sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),
+  signal: shutdown.signal,
+});
+
+// On shutdown, take no new requests and start no tick or read, and let those in flight finish.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    stopWatch.abort();
-    server.close(() => { void watching.then(() => process.exit(0)); });
+    shutdown.abort();
+    server.close(() => { void Promise.all([watching, reading]).then(() => process.exit(0)); });
   });
 }
