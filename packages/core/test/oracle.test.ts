@@ -118,3 +118,19 @@ test("a reading is deterministic", () => {
   const h = hourly(31, 100);
   assert.deepEqual(readOracle("wNEAR", three(), h, NOW), readOracle("wNEAR", three(), h, NOW));
 });
+
+test("exactly the limit passes at prices near 1, where floating point is inexact", () => {
+  const r = checkQuotes("wNEAR", three(0.98, 1, 1), NOW);
+  assert.equal(r.frozen, false);
+  assert.equal(checkQuotes("wNEAR", three(0.979, 1, 1), NOW).frozen, true);
+});
+
+test("a source with two different prices at the same instant is dropped, whatever the input order", () => {
+  const q = (source: string, price: number): PriceQuote => ({ source, asset: "wNEAR", price, observedAt: NOW });
+  const a = checkQuotes("wNEAR", [q("a", 100), q("a", 200), q("b", 101), q("c", 99)], NOW);
+  const b = checkQuotes("wNEAR", [q("a", 200), q("a", 100), q("b", 101), q("c", 99)], NOW);
+  assert.deepEqual(a, b);
+  assert.equal(a.frozen && a.reason, "insufficient-sources");
+  // the same price twice is not ambiguous
+  assert.equal(checkQuotes("wNEAR", [q("a", 100), q("a", 100), q("b", 101), q("c", 99)], NOW).frozen, false);
+});

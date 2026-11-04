@@ -20,6 +20,9 @@ export const ORACLE_DEFAULTS = {
   maxFutureSkewMs: 5_000,
 } as const;
 
+/** Relative slack on the disagreement limit, for floating-point error only. */
+const DISAGREEMENT_TOLERANCE = 1e-12;
+
 export type OracleLimits = { minSources: number; maxDisagreementPct: number; maxStalenessMs: number; maxFutureSkewMs: number };
 
 export type PriceQuote = {
@@ -59,7 +62,8 @@ export function median(values: readonly number[]): number {
  * - A quote counts only if it is for this asset, has a finite price above zero, and isn't dated more than
  *   `maxFutureSkewMs` ahead of `now` (a little clock skew is tolerated; the skew value is to be calibrated against the
  *   real sources, H5).
- * - If a source appears twice, only its newest quote counts. Source names are compared ignoring case and surrounding
+ * - If a source appears twice, only its newest quote counts; if its newest two differ in price at the same instant, the
+ *   source is ambiguous and doesn't count at all. Source names are compared ignoring case and surrounding
  *   spaces, so "Binance" and "binance " are one source.
  * - A quote older than `maxStalenessMs` is stale and doesn't count.
  * - Fewer than `minSources` counted quotes freezes the reading (`stale` when stale quotes caused the shortfall,
@@ -70,14 +74,17 @@ export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: n
   const unusable = oracleLimitProblems(limits);
   if (unusable.length > 0) return { frozen: true, reason: "invalid-config", detail: unusable.join("; "), quotes: [] };
   if (!Number.isFinite(now)) return { frozen: true, reason: "invalid-config", detail: "the clock is not a number", quotes: [] };
-  const newest = new Map<string, PriceQuote>();
+  // Per source: its newest quote, and whether two different prices share that newest instant (then the source is
+  // ambiguous and dropped, which fails closed; a tie-break would make the answer depend on input order).
+  const newest = new Map<string, { quote: PriceQuote; ambiguous: boolean }>();
   for (const q of quotes) {
     if (q.asset !== asset || !Number.isFinite(q.price) || q.price <= 0 || !Number.isFinite(q.observedAt) || q.observedAt > now + limits.maxFutureSkewMs) continue;
     const key = q.source.trim().toLowerCase();
     const seen = newest.get(key);
-    if (!seen || q.observedAt > seen.observedAt) newest.set(key, q);
+    if (!seen || q.observedAt > seen.quote.observedAt) newest.set(key, { quote: q, ambiguous: false });
+    else if (q.observedAt === seen.quote.observedAt && q.price !== seen.quote.price) seen.ambiguous = true;
   }
-  const valid = [...newest.values()];
+  const valid = [...newest.values()].filter(e => !e.ambiguous).map(e => e.quote);
   const fresh = valid.filter(q => now - q.observedAt <= limits.maxStalenessMs);
 
   const needed = limits.minSources;
@@ -93,8 +100,10 @@ export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: n
   const mid = median(fresh.map(q => q.price));
   const prices = fresh.map(q => q.price);
   const spread = Math.max(...prices) - Math.min(...prices);
-  // Compared without dividing, so a spread of exactly the limit passes: (max − min) × 100 over median × limit.
-  if (spread * 100 > limits.maxDisagreementPct * mid) {
+  // Compared without dividing, so a spread of exactly the limit passes: (max − min) × 100 over median × limit. Floating
+  // point makes "exactly" inexact (0.02 × 100 is 2.0000000000000018), so the limit gets a tiny relative tolerance:
+  // 0.98 / 1 / 1 passes a 2% limit just as 98 / 100 / 100 does.
+  if (spread * 100 > limits.maxDisagreementPct * mid * (1 + DISAGREEMENT_TOLERANCE)) {
     return { frozen: true, reason: "disagreement", detail: `sources differ by ${((spread / mid) * 100).toFixed(2)}% (limit ${limits.maxDisagreementPct}%)`, quotes: fresh };
   }
   return { frozen: false, median: mid, quotes: fresh };
