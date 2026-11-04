@@ -9,10 +9,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
-import { request } from "node:https";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
-import { signOwner, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
+import { signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import { fileAudit } from "../src/audit.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
@@ -21,18 +20,6 @@ import { createPlatform } from "../src/platform.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
 import { HOST, ORIGIN, wallet } from "./fakes.ts";
-
-/** A fetch that trusts only the running stack's own certificate. */
-const stackFetch = (ca: Buffer): typeof fetch => async (input, init) => new Promise((resolve, reject) => {
-  const url = new URL(input instanceof Request ? input.url : String(input));
-  const req = request(url, { method: init?.method ?? "GET", headers: Object.fromEntries(new Headers(init?.headers)), ca, signal: init?.signal ?? undefined }, res => {
-    const chunks: Buffer[] = [];
-    res.on("data", chunk => chunks.push(chunk));
-    res.on("end", () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode, headers: res.headers as Record<string, string> })));
-  });
-  req.on("error", reject);
-  req.end(init?.body as string | undefined);
-});
 
 const intruder = wallet("intruder.near");
 const clock = { now: Date.now() };

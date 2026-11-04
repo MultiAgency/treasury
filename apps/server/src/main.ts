@@ -5,6 +5,7 @@ import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
 import { chainKeyLookup, rpcUrlFor } from "./keys.ts";
+import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
@@ -37,6 +38,8 @@ const handler = createServer({
   audit,
   consentsPerDay: settings.CONSENTS_PER_DAY,
   keyLookup,
+  // Refuse to start without the page's files when a build is named.
+  ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
 });
 
 const server = createHttpServer(handler).listen(settings.PORT, () => {

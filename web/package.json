@@ -8,7 +8,7 @@
     "build": "rsbuild build",
     "typecheck": "tsc",
     "test": "node --test test/*.test.ts",
-    "test:stack": "rsbuild build && node --test test/stack.e2e.ts"
+    "test:stack": "rsbuild build && node --test test/stack.e2e.ts test/proposals.e2e.ts"
   },
   "dependencies": {
     "@fastnear/near-connect": "0.14.1",

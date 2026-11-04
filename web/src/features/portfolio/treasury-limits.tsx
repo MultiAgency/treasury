@@ -5,7 +5,8 @@ import { useAgent, useAgentReads } from "../../app/frame";
 import { PERIOD } from "../../shared/budget";
 import { amountOf, symbolOf, usd } from "../../shared/format";
 import { useNameOf } from "../../shared/names";
-import { accessDenied, Button, Loading, ReadFailure, Section } from "../../shared/ui";
+import { Button, Loading, Section } from "../../shared/ui";
+import { accessDenied, ReadFailure } from "../../shared/read-failure";
 import { Row } from "../activity/activity";
 
 /** The policy's per-asset cap windows, each as the provider names it. */

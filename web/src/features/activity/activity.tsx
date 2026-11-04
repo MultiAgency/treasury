@@ -11,7 +11,8 @@ import { useAttempt } from "../../shared/action-hooks";
 import { ago, amountOf, describeRequest, swaps } from "../../shared/format";
 import { useNameOf } from "../../shared/names";
 import { blockedBy } from "../../shared/send-block";
-import { accessDenied, Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, Loading, QueryError, ReadFailure, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, Loading, QueryError, Section, Spinner, StatusBadge, statusTone } from "../../shared/ui";
+import { accessDenied, ReadFailure } from "../../shared/read-failure";
 import { refusalText } from "../../shared/words";
 
 /** A status read describes existing work; it never establishes that a replacement is safe. */
