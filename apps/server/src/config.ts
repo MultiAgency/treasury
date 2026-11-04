@@ -55,6 +55,17 @@ const Settings = z.object({
   OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
   /** New consents per signed-in account a day: the platform caps a deployment's unexpired consents, revoked ones included. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
+  /**
+   * The NEAR account that anchors the audit log's head hash (A7.3, #55), with `TREASURY_ANCHOR_KEY_FILE`; unset, the log
+   * isn't anchored. It anchors to itself, so it needs no contract.
+   */
+  TREASURY_ANCHOR_ACCOUNT: z.string().regex(/^(?=.{2,64}$)([a-z\d]+[-_])*[a-z\d]+(\.([a-z\d]+[-_])*[a-z\d]+)*$/).optional(),
+  /** A 0600 file holding the anchor account's function-call key, limited to that account and `treasury_audit_anchor`. */
+  TREASURY_ANCHOR_KEY_FILE: z.string().min(1).optional(),
+  /** How often the head is anchored, in seconds: hourly by default. */
+  TREASURY_ANCHOR_INTERVAL_S: z.coerce.number().int().min(60).default(3600),
+  /** The NEAR network the anchor is sent on. */
+  NEAR_NETWORK: z.enum(["mainnet", "testnet"]).default("mainnet"),
   PLATFORM_TIMEOUT_MS: duration(15_000),
   CHAIN_TIMEOUT_MS: duration(10_000),
 });
@@ -80,6 +91,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map(issue => `${issue.path.join(".")}: ${issue.message}`);
   if (problems.length || !settings.success || !secrets.success) throw new Error(`Invalid configuration:\n${problems.join("\n")}`);
   if (settings.data.SESSION_IDLE_MS > settings.data.SESSION_MAX_MS) throw new Error("Invalid configuration:\nSESSION_IDLE_MS: longer than SESSION_MAX_MS");
+  if (!settings.data.TREASURY_ANCHOR_ACCOUNT !== !settings.data.TREASURY_ANCHOR_KEY_FILE) throw new Error("Invalid configuration:\nTREASURY_ANCHOR_ACCOUNT and TREASURY_ANCHOR_KEY_FILE: set both or neither");
   if (settings.data.TREASURY_WATCH_FILE && !settings.data.TREASURY_REQUESTS_FILE) throw new Error("Invalid configuration:\nTREASURY_REQUESTS_FILE: required with TREASURY_WATCH_FILE");
   return { settings: settings.data, secrets: secrets.data };
 }

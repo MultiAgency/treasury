@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, recordHash, verifyChain } from "../src/chain.ts";
+import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, movePlainLogAside, recordHash, verifyChain } from "../src/chain.ts";
 import { fileAudit, type Audit } from "../src/audit.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
@@ -234,4 +234,33 @@ test("the chained store can stand in for fileAudit where the server takes an Aud
   const audit: Audit = store; // the same interface the server writes through
   await audit.append({ who: "owner.near", action: "revoke", agent: "portfolio", subject: "c1", stage: "result", answer: { ok: true } });
   assert.equal(lines(file).length, 1);
+});
+
+test("switching to the chained store moves an old plain log aside, keeping it, and leaves a chained log in place (#90)", async () => {
+  const file = fresh();
+  const plain = fileAudit(file, () => T0);
+  await plain.check();
+  await plain.append(entry(1));
+  const before = readFileSync(file, "utf8");
+  const aside = await movePlainLogAside(file, () => T0);
+  assert.ok(aside?.startsWith(`${file}.plain-2026-11-03T12-00-00`));
+  assert.equal(readFileSync(aside!, "utf8"), before, "the old log is kept as it was");
+  assert.equal(existsSync(file), false);
+  const chained = open(file, () => T0);
+  await chained.check();
+  await chained.append(entry(2));
+  assert.equal(await movePlainLogAside(file), undefined, "a chained log stays");
+  assert.equal(await movePlainLogAside(join(tempDir("chain-"), "none.jsonl")), undefined, "no log, nothing to move");
+});
+
+test("a chained log that was edited isn't moved aside: the server refuses it instead (#90)", async () => {
+  const file = fresh();
+  const audit = open(file, () => T0);
+  await audit.check();
+  await audit.append(entry(1));
+  await audit.append(entry(2));
+  const [first, second] = lines(file);
+  writeFileSync(file, `${first}\n${second!.replace("c2", "cX")}\n`, { mode: 0o600 });
+  assert.equal(await movePlainLogAside(file), undefined);
+  await assert.rejects(open(file).check(), /broken at line 2/);
 });

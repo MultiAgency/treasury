@@ -62,3 +62,13 @@ test("watch runs only when its agents' file is named, and then needs a file for 
   const on = loadConfig({ ...env, TREASURY_WATCH_FILE: "/etc/treasury/watch.json", TREASURY_REQUESTS_FILE: "/var/lib/treasury/requests.json" }).settings;
   assert.equal(on.TREASURY_REQUESTS_FILE, "/var/lib/treasury/requests.json");
 });
+
+test("the audit anchor needs its account and its key file together, and anchors hourly by default (#55)", () => {
+  assert.equal(loadConfig(env).settings.TREASURY_ANCHOR_INTERVAL_S, 3600);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "anchor.near" }), /set both or neither/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_KEY_FILE: "/k" }), /set both or neither/);
+  const both = loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "anchor.near", TREASURY_ANCHOR_KEY_FILE: "/k" }).settings;
+  assert.equal(both.TREASURY_ANCHOR_ACCOUNT, "anchor.near");
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "Not An Account", TREASURY_ANCHOR_KEY_FILE: "/k" }), /TREASURY_ANCHOR_ACCOUNT/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_INTERVAL_S: "5" }), /TREASURY_ANCHOR_INTERVAL_S/);
+});

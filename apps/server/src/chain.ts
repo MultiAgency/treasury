@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rename, stat } from "node:fs/promises";
 import type { AuditEntry } from "./audit.ts";
 import { appendLine, ensureAppendable } from "./files.ts";
 
@@ -174,4 +174,20 @@ export function chainedFileAudit<E extends object = AuditEntry>(file: string, no
       return { ...head };
     },
   };
+}
+
+/**
+ * Moves a log in the old plain format (`fileAudit`'s) aside before the chained store takes the file, as the switch to
+ * this store requires (#90): it is renamed beside itself with the time in its name, never deleted. Only a log whose
+ * first record isn't a chained record is moved; a chained log that is broken stays put, so `check()` refuses it.
+ * Answers the new name, or `undefined` when nothing was moved.
+ */
+export async function movePlainLogAside(file: string, now: () => number = Date.now): Promise<string | undefined> {
+  const size = await stat(file).then(s => s.size, () => 0);
+  if (size === 0) return undefined;
+  const verified = verifyChain(await readFile(file, "utf8"));
+  if (verified.ok || verified.line !== 1 || verified.reason !== "not a chained record") return undefined;
+  const aside = `${file}.plain-${new Date(now()).toISOString().replace(/[:.]/g, "-")}`;
+  await rename(file, aside);
+  return aside;
 }

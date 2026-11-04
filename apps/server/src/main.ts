@@ -1,11 +1,13 @@
 import { createServer as createHttpServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
-import { fileAudit } from "./audit.ts";
+import { anchorOnce, nearAnchorChain, readAnchorKey, type AnchorEntry } from "./anchor.ts";
+import type { AuditEntry } from "./audit.ts";
+import { chainedFileAudit, movePlainLogAside } from "./chain.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
-import { chainKeyLookup, rpcUrlFor } from "./keys.ts";
+import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
 import { createRequests } from "./requests.ts";
@@ -17,8 +19,11 @@ import { createWatch, runWatch } from "./watch.ts";
 const { settings, secrets } = loadConfig();
 const credential = createCredential(settings.TREASURY_CREDENTIAL_FILE);
 await credential.get(); // Refuse to start without a readable 0600 credential.
-const audit = fileAudit(settings.TREASURY_AUDIT_FILE);
-await audit.check(); // Refuse to start without an audit trail it can append to.
+// The audit trail is a hash chain (A7, #53). A log in the old plain format is moved aside first (#90), never chained over.
+const asidePlain = await movePlainLogAside(settings.TREASURY_AUDIT_FILE);
+if (asidePlain) console.log(JSON.stringify({ event: "audit_plain_log_moved", to: asidePlain }));
+const audit = chainedFileAudit<AuditEntry | AnchorEntry>(settings.TREASURY_AUDIT_FILE);
+await audit.check(); // Refuse to start without an audit trail it can append to, or with one whose chain is broken.
 
 const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS });
 // Ended sessions are also swept every minute, so abandoned ones don't accumulate between sign-ins.
@@ -70,6 +75,19 @@ const watching = watched
     signal: stopWatch.signal,
   })
   : Promise.resolve();
+
+// The audit log's head goes on NEAR every interval (A7.3, #55), when an anchor account is configured. A failed anchor
+// is logged and tried again next interval; it never stops the server.
+if (settings.TREASURY_ANCHOR_ACCOUNT && settings.TREASURY_ANCHOR_KEY_FILE) {
+  const chain = nearAnchorChain({
+    account: settings.TREASURY_ANCHOR_ACCOUNT, key: await readAnchorKey(settings.TREASURY_ANCHOR_KEY_FILE),
+    networkId: settings.NEAR_NETWORK, rpcUrl, headers: rpcHeaders(rpcUrl, secrets.FASTNEAR_API_KEY),
+  });
+  const anchor = () => anchorOnce({ audit, file: settings.TREASURY_AUDIT_FILE, chain })
+    .then(result => console.log(JSON.stringify({ event: "anchor", ...result })))
+    .catch(error => console.log(JSON.stringify({ event: "anchor_failed", error: String(error) })));
+  setInterval(anchor, settings.TREASURY_ANCHOR_INTERVAL_S * 1000).unref();
+}
 
 // On shutdown, take no new requests and start no tick, and let the requests and ticks in flight finish.
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
