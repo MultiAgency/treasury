@@ -8,17 +8,23 @@ on:
 permissions:
   contents: read
 
+# Actions are pinned by commit, with the release they are in a comment.
 jobs:
   checks:
-    name: Typecheck, unit tests and build
+    # Node 24 is the floor (package.json engines, and what the platform deploys on); 26 is the current LTS.
+    name: Typecheck, unit tests and build (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # pnpm's version comes from package.json's packageManager.
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Every workspace package
@@ -31,16 +37,17 @@ jobs:
     env:
       TREASURY_PLATFORM: ${{ github.workspace }}/platform
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: MultiAgency/platform
           # The commit @multiagency/sdk 0.4.0 was published from (tag sdk-v0.4.0); startStack checks it.
           ref: 1a7fe9818e2a83c548e1ba8d587f10acac37716a
           path: platform
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
+          # Only 24: the stack runs the platform, which deploys on node:24.22.0-slim (its Dockerfiles).
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
