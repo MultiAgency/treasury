@@ -1,10 +1,10 @@
 # Contributing
 
-This repository holds the Treasury app: the owner UI (`web/`), the app server (`apps/server/`) and the strategy engines (`packages/core/`). It moves money, so the rules below are about not losing track of it.
+This repository holds the Treasury app: the owner UI (`web/`), the app server (`apps/server/`) and, as they land from the stack that starts at #30, the strategy engines (`packages/core/`). It moves money, so the rules below are about not losing track of it.
 
 ## How changes land
 
-- **One branch, one PR to `main`.** Each PR needs one approving review from someone other than its author, and green CI ("Typecheck, unit tests and build" on Node 24 and 26, and "Stack tests"). It's squash-merged.
+- **One branch, one PR to `main`.** Each PR needs one approving review from someone other than its author, and green CI on its head commit ("Typecheck, unit tests and build" on Node 24 and 26, and "Stack tests (simulated platform)"). It's squash-merged.
 - **Stacked PRs land one at a time.** Once the PR below merges, retarget the next one to `main`, and review and merge it there. Don't merge PRs into each other's branches.
 - **A PR description has three parts:**
   - **Summary:** what changed and why.
@@ -21,7 +21,7 @@ This repository holds the Treasury app: the owner UI (`web/`), the app server (`
 
 ## Money-path rules
 
-- **After an unknown outcome, nothing is sent again.** Block on the platform's records, not on component state, so a reload or another tab keeps the block. Recover by reading the platform's state.
+- **After an unknown outcome, nothing is sent again.** Block on the platform's records, not on component state, so a reload or another tab keeps the block. Recover by reading the platform's state. Where the platform keeps no record to block on, as for a funding transfer (`web/PLATFORM-SESSION.md`), block for as long as the page is loaded, say why, and record the gap there.
 - **Show exactly what is signed,** and read it again right before the wallet signs. If it changed, show the new version and ask again.
 - **Decide outcomes by `kind` and code,** never by message text. `web/src/shared/execution-outcome.ts` decides executions from what they report.
 - **Emergency controls (Freeze, Turn off) are never hidden or disabled** by unrelated work.

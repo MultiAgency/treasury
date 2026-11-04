@@ -245,7 +245,7 @@ Driving the page on the stack (`test/proposals.e2e.ts`, its own stack started wi
 - A page that connection creates (`context.newPage()`) doesn't share the owner's session, and `context.pages()[0]` isn't reliably the owner's page. Find the owner's page by its URL (`/a/payout/`).
 - A tab opened from the owner's page (`window.open`) shares the session cookie but not the stack's test wallet. Wallet steps run in the owner's page itself.
 
-What the stack (platform 1a7fe98) can't show for `/policy`, so `web/test/stack.e2e.ts` stops short:
+What the stack (platform 0a1f80e) can't show for `/policy`, so `web/test/stack.e2e.ts` stops short:
 - **Revoking a grant.** The simulated provider (`test/e2e/provider.mjs`) has no `grant_revoke`: `owner/prepare` answers 500, an unknown outcome to the SDK. The test reviews the revoke in its dialog, prepares it once, and checks the unknown outcome is shown and the grants are unchanged. A signed revoke needs a `grant_revoke` branch in the simulator.
 - **Issuing a grant.** `portfolio` accepts only the strategy-bound grant (`label: "treasury"` with the saved strategy's digest), which the Strategy page signs (#7 PR 2). The test issues it through the `authorizeStrategy` control and checks `/policy` lists it under its label as the current grant.
 - **A NEP-366 policy edit.** `onChainPolicyEdits` is off for `portfolio` (`test/e2e/environment.mjs` starts its provider without it), so every policy edit there is NEP-413. The test drafts, reviews, signs and applies one; the NEP-366 path and the confirm page are covered by `test/owner.test.ts` only.
