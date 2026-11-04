@@ -59,9 +59,9 @@ export function median(values: readonly number[]): number {
 
 /**
  * Checks one asset's quotes at `now`.
- * - A quote counts only if it is for this asset, has a finite price above zero, and isn't dated more than
- *   `maxFutureSkewMs` ahead of `now` (a little clock skew is tolerated; the skew value is to be calibrated against the
- *   real sources, H5).
+ * - A quote counts only if it is an object with a non-blank string `source`, is for this asset, has a finite price above
+ *   zero, and isn't dated more than `maxFutureSkewMs` ahead of `now` (a little clock skew is tolerated; the skew value is
+ *   to be calibrated against the real sources, H5).
  * - If a source appears twice, only its newest quote counts; if its newest two differ in price at the same instant, the
  *   source is ambiguous and doesn't count at all. Source names are compared ignoring case and surrounding
  *   spaces, so "Binance" and "binance " are one source.
@@ -77,7 +77,10 @@ export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: n
   // Per source: its newest quote, and whether two different prices share that newest instant (then the source is
   // ambiguous and dropped, which fails closed; a tie-break would make the answer depend on input order).
   const newest = new Map<string, { quote: PriceQuote; ambiguous: boolean }>();
-  for (const q of quotes) {
+  // A malformed list or quote (not an object, no source name) doesn't count, rather than throwing: too few counted
+  // quotes then freezes the reading as usual.
+  for (const q of Array.isArray(quotes) ? quotes : []) {
+    if (typeof q !== "object" || q === null || typeof q.source !== "string" || q.source.trim() === "") continue;
     if (q.asset !== asset || !Number.isFinite(q.price) || q.price <= 0 || !Number.isFinite(q.observedAt) || q.observedAt > now + limits.maxFutureSkewMs) continue;
     const key = q.source.trim().toLowerCase();
     const seen = newest.get(key);

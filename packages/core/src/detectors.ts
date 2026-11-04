@@ -12,16 +12,16 @@ export const DETECTOR_DEFAULTS = {
   dayMs: 86_400_000,
   /** Move over the last hour that raises L1 and L2. */
   fastMovePct: { l1: 10, l2: 20 },
-  /** A fall from the day's high to now at or beyond this is a crash (L3). */
+  /** A fall from a high to a later low within the day, at or beyond this, is a crash (L3), even if the price recovered. */
   crashPct: 30,
-  /** A rise from the day's low to now at or beyond this is parabolic (L2). */
+  /** A rise from a low to a later high within the day, at or beyond this, is parabolic (L2), even if it fell back. */
   parabolicPct: 40,
   /** Many direction reversals with almost no net move over the last day is chop (L1). */
   chop: { minReversals: 6, maxNetMovePct: 2 },
   /** Less history than this can't be judged. */
   minHistoryMs: 86_400_000,
   /** A newest sample older than this leaves the last stretch unseen, so it can't be judged either (awaiting H9/H11). */
-  maxSampleAgeMs: 3_600_000,
+  maxSampleAgeMs: 15 * 60_000,
 } as const;
 
 export type DetectorConfig = {
@@ -66,7 +66,9 @@ export function highestLevel(detections: readonly Detection[]): Level {
 
 /**
  * Market-move detections at `now`. Moves are compared without dividing (change × 100 against percent × starting price),
- * so a move exactly at a threshold counts.
+ * so a move exactly at a threshold counts. Crash and parabolic look at the whole day, not only where it ends: a crash is
+ * a fall from a high to a later low within the day, a parabolic move a rise from a low to a later high, so 100 → 140 → 98
+ * is a crash (30% off the high) and stays one after the price recovers.
  */
 export function detectMarketMoves(samples: readonly Sample[], now: number, cfg: DetectorConfig = DETECTOR_DEFAULTS): Detection[] {
   const unusable = detectorProblems(cfg);
@@ -88,11 +90,17 @@ export function detectMarketMoves(samples: readonly Sample[], now: number, cfg: 
   else if (moved(then1h, cfg.fastMovePct.l1, true)) found.push({ detector: "fast-rise", level: 1, reason: `up ${cfg.fastMovePct.l1}% or more in an hour` });
   if (moved(then1h, cfg.fastMovePct.l2, false)) found.push({ detector: "fast-drop", level: 2, reason: `down ${cfg.fastMovePct.l2}% or more in an hour` });
   else if (moved(then1h, cfg.fastMovePct.l1, false)) found.push({ detector: "fast-drop", level: 1, reason: `down ${cfg.fastMovePct.l1}% or more in an hour` });
-  // The day's high and low, so a rise and fall inside the day isn't missed by comparing only its two ends.
+  // The day's prices in order: the one in effect at its start (if any), then each sample within it. Each is compared with
+  // the high and low seen before it, so only a fall after a high, or a rise after a low, counts, wherever the day ends.
   const dayPrices = [...(then24h === null ? [] : [then24h]), ...clean.filter(s => s.at > now - cfg.dayMs).map(s => s.price)];
-  const high = dayPrices.length ? Math.max(...dayPrices) : null, low = dayPrices.length ? Math.min(...dayPrices) : null;
-  if (moved(high, cfg.crashPct, false)) found.push({ detector: "crash", level: 3, reason: `down ${cfg.crashPct}% or more from the day's high` });
-  if (moved(low, cfg.parabolicPct, true)) found.push({ detector: "parabolic", level: 2, reason: `up ${cfg.parabolicPct}% or more from the day's low` });
+  let high = -Infinity, low = Infinity, crash = false, parabolic = false;
+  for (const p of dayPrices) {
+    high = Math.max(high, p); low = Math.min(low, p);
+    crash ||= (high - p) * 100 >= cfg.crashPct * high;
+    parabolic ||= (p - low) * 100 >= cfg.parabolicPct * low;
+  }
+  if (crash) found.push({ detector: "crash", level: 3, reason: `down ${cfg.crashPct}% or more from a high within a day` });
+  if (parabolic) found.push({ detector: "parabolic", level: 2, reason: `up ${cfg.parabolicPct}% or more from a low within a day` });
 
   if (then24h !== null) {
     const day = clean.filter(s => s.at > now - cfg.dayMs);

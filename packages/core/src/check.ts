@@ -2,7 +2,7 @@
 
 import type { Intent } from "./bands.ts";
 import { checkExposure, EXPOSURE_CONFIG_DEFAULTS, type ExposureContext, type ExposureLimits } from "./exposure.ts";
-import { checkLevel, LEVEL_DEFAULTS, type Level } from "./levels.ts";
+import { checkLevel, isLevel, LEVEL_DEFAULTS, type Level } from "./levels.ts";
 import { checkLimits, POLICY_DEFAULTS, RULE_ORDER, type PolicyContext, type PolicyLimits, type PolicyResult, type PolicyRule } from "./policy.ts";
 
 export type FullContext = PolicyContext & Omit<ExposureContext, "treasuryValueUsd"> & { level: Level };
@@ -31,8 +31,11 @@ export function checkPolicy(order: Intent, ctx: FullContext, config: PolicyConfi
   return approval ?? { ok: true };
 }
 
-/** What an approval was given under, and the order it approved: its id and size. */
-export type Approval = { level: Level; mandateDigest: string; quoteExpiresAt: number; orderId: string; sizeUsd: number };
+/**
+ * What an approval was given under, and the order it approved: its id, direction and exact size. A human approved that
+ * order, so the approval can't be spent on another order, the other direction, or a different size.
+ */
+export type Approval = { level: Level; mandateDigest: string; quoteExpiresAt: number; orderId: string; action: Exclude<Intent["action"], "hold">; sizeUsd: number };
 
 /** What is wrong with an approval as given, if anything: a malformed one must never read as approved. */
 function approvalProblem(a: Approval): string | null {
@@ -40,13 +43,14 @@ function approvalProblem(a: Approval): string | null {
   if (typeof a.mandateDigest !== "string" || a.mandateDigest === "") return "the approval names no mandate";
   if (!Number.isFinite(a.quoteExpiresAt)) return "the approval's quote expiry is not a time";
   if (typeof a.orderId !== "string" || a.orderId === "") return "the approval names no order";
+  if (a.action !== "buy-volatile" && a.action !== "sell-volatile") return "the approval names no buy or sell";
   if (!(Number.isFinite(a.sizeUsd) && a.sizeUsd > 0)) return "the approval's size is not a positive amount";
   return null;
 }
 
 /**
- * Re-checks an approved order just before it runs. A malformed approval is invalid input. The approval is void if it was
- * for another order or a smaller size, the mandate changed, the level has risen since, or the quote has expired;
+ * Re-checks an approved order just before it runs. A malformed approval, or an unknown current level, is invalid input.
+ * The approval is void if it was for another order, the other direction or another size, the mandate changed, the level has risen since, or the quote has expired;
  * otherwise every rule is checked again with the current numbers, and needs-approval counts as satisfied (the human
  * already approved). Returns ok or the rejection.
  */
@@ -56,8 +60,11 @@ export function recheckApproval(order: Intent, ctx: FullContext, approval: Appro
   const problem = approvalProblem(approval);
   if (problem) return { ok: false, rule: "INVALID_INPUT", detail: problem, failed: ["INVALID_INPUT"] };
   if (approval.orderId !== order.id) return stale(`the approval was for order ${approval.orderId}, not ${order.id}`);
-  if (!(order.sizeUsd <= approval.sizeUsd)) return stale(`the order is ${order.sizeUsd} USD, more than the ${approval.sizeUsd} USD approved`);
+  if (approval.action !== order.action) return stale(`the approval was for a ${approval.action}, not a ${order.action}`);
+  if (order.sizeUsd !== approval.sizeUsd) return stale(`the order is ${order.sizeUsd} USD, not the ${approval.sizeUsd} USD approved`);
   if (approval.mandateDigest !== currentMandateDigest) return stale("the mandate changed since the approval");
+  // An unknown level makes "the level rose" read false, so it is refused before that comparison.
+  if (!isLevel(ctx.level)) return { ok: false, rule: "INVALID_INPUT", detail: "the current level is unknown", failed: ["INVALID_INPUT"] };
   if (ctx.level > approval.level) return stale(`the level rose from L${approval.level} to L${ctx.level} since the approval`);
   if (!Number.isFinite(now) || !(now <= approval.quoteExpiresAt)) return stale("the quote has expired");
   const current = checkPolicy(order, ctx, config);

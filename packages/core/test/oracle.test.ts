@@ -149,3 +149,18 @@ test("a source with two different prices at the same instant is dropped, whateve
   // the same price twice is not ambiguous
   assert.equal(checkQuotes("wNEAR", [q("a", 100), q("a", 100), q("b", 101), q("c", 99)], NOW).frozen, false);
 });
+
+test("a malformed quote doesn't count instead of throwing, so too few good quotes freeze the reading", () => {
+  const good = (source: string): PriceQuote => ({ source, asset: "wNEAR", price: 100, observedAt: NOW });
+  const malformed = [null, undefined, 42, "a", { ...good("x"), source: 7 }, { ...good("x"), source: undefined }, { ...good("x"), source: null },
+    { ...good("x"), source: { name: "x" } }, { ...good("x"), source: "  " }] as unknown as PriceQuote[];
+  for (const bad of malformed) {
+    const r = checkQuotes("wNEAR", [good("a"), good("b"), bad], NOW);
+    assert.equal(r.frozen && r.reason, "insufficient-sources", JSON.stringify(bad) ?? String(bad));
+  }
+  // A malformed quote beside three good ones is ignored; the good ones still make a reading.
+  assert.equal(checkQuotes("wNEAR", [good("a"), good("b"), good("c"), ...malformed], NOW).frozen, false);
+  // A quote list that isn't a list freezes too.
+  assert.equal(checkQuotes("wNEAR", null as unknown as PriceQuote[], NOW).frozen, true);
+  assert.equal(readOracle("wNEAR", [good("a"), good("b"), malformed[4]!], [], NOW).frozen, true);
+});

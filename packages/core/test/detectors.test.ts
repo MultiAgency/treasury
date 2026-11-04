@@ -64,21 +64,31 @@ test("history whose newest sample is old is a conservative L1: the last hours ca
   const stale = Array.from({ length: 60 * 12 + 1 }, (_, i) => ({ at: NOW - 12 * HOUR - (60 * 12 - i) * 5 * MIN, price: 100 }));
   assert.deepEqual(names(stale), ["history:1"]);
   const lastAt = (ageMs: number) => flat().map(s => ({ ...s, at: s.at - ageMs })).filter(s => s.at <= NOW);
-  assert.deepEqual(names(lastAt(HOUR)), [], "exactly the limit is still usable");
-  assert.deepEqual(names(lastAt(HOUR + 1)), ["history:1"]);
+  assert.deepEqual(names(lastAt(15 * MIN)), [], "exactly the limit (15 minutes) is still usable");
+  assert.deepEqual(names(lastAt(15 * MIN + 1)), ["history:1"]);
+  assert.deepEqual(names(lastAt(HOUR)), ["history:1"], "an hour-old newest price is too old");
 });
 
-test("a crash counts from the day's high, not only from 24 hours ago", () => {
-  // 100 → 140 → 98 within a day: 30% down from the peak, though only 2% below where the day started.
-  const spike = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 140 : 98));
+test("a crash counts from a high within the day, not only from 24 hours ago", () => {
+  // 100 → 130 → 91 within a day: 30% down from the peak, though only 9% below where the day started.
+  const spike = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 130 : 91));
   assert.deepEqual(names(spike), ["crash:3"]);
-  const shallower = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 140 : 98.01));
+  const shallower = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 130 : 91.01));
   assert.deepEqual(names(shallower), [], "just under 30% from the peak");
 });
 
-test("a parabolic rise counts from the day's low, not only from 24 hours ago", () => {
-  // 100 → 70 → 98 within a day: 40% up from the low, though 2% below where the day started.
-  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 70 : 98))), ["parabolic:2"]);
+test("a crash within the day still counts after the price recovers", () => {
+  // 100 → 130 → 91 → 100: the 30% fall happened, though the day ends where it began.
+  const recovered = series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 130 : ago > 2 * 60 ? 91 : 100));
+  assert.deepEqual(names(recovered), ["crash:3"]);
+});
+
+test("a parabolic rise counts from a low within the day, and still counts after it falls back", () => {
+  // 100 → 75 → 105 within a day: 40% up from the low, though 5% above where the day started.
+  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 75 : 105))), ["parabolic:2"]);
+  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 100 : ago > 6 * 60 ? 75 : ago > 2 * 60 ? 105 : 100))), ["parabolic:2"]);
+  // A fall after the rise, not before it, is what a crash needs: 75 → 105 is a rise, never a crash.
+  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 75 : 105))).includes("crash:3"), false);
 });
 
 test("unusable samples are ignored, and the result is deterministic", () => {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { gate, nextState, WHIPSAW_DEFAULTS, type WhipsawState } from "../src/whipsaw.ts";
+import { gate, nextState, stateProblems, WHIPSAW_DEFAULTS, type WhipsawState } from "../src/whipsaw.ts";
 import { classifyZone, type BandZone, type Intent } from "../src/bands.ts";
 
 const NOW = 1_800_000_000_000;
@@ -55,12 +55,24 @@ test("a disarmed buy zone re-arms 2 points back inside its line, not before", ()
   assert.equal(nextState(state, hold, -13, NOW + HOUR).disarmed, undefined);
 });
 
-test("a partial or unreadable state holds: the cooldown and reversal lock can't be checked without both", () => {
-  for (const state of [{ lastAction: "sell-volatile" as const }, { lastActionAt: NOW - 48 * HOUR }, { lastActionAt: Number.NaN, lastAction: "sell-volatile" as const }]) {
-    const p = gate(buy(), state, "normal", NOW);
-    assert.equal(p.action, "hold", JSON.stringify(state));
-    assert.match(p.reason, /incomplete|unreadable/);
+test("a partial, unreadable or inconsistent state holds instead of skipping the cooldown and reversal lock", () => {
+  const bad: unknown[] = [
+    { lastAction: "sell-volatile" },
+    { lastActionAt: NOW - 48 * HOUR },
+    { lastActionAt: Number.NaN, lastAction: "sell-volatile" },
+    { lastActionAt: NOW - 48 * HOUR, lastAction: "hold" },
+    { disarmed: "dca-1" },
+    { lastActionAt: NOW - 48 * HOUR, lastAction: "sell-volatile", disarmed: "dca-1" },
+    { lastActionAt: NOW - 48 * HOUR, lastAction: "buy-volatile", disarmed: "buy-halt" },
+  ];
+  for (const state of bad) {
+    const p = gate(buy("dca-2"), state as WhipsawState, "normal", NOW);
+    assert.deepEqual([p.action, p.sizeUsd], ["hold", 0], JSON.stringify(state));
+    assert.match(p.reason, /unusable anti-whipsaw state/);
+    assert.ok(stateProblems(state as WhipsawState).length > 0, JSON.stringify(state));
   }
+  assert.deepEqual(stateProblems(none), []);
+  assert.deepEqual(stateProblems(nextState(none, sell("trim-2"), 26, NOW)), []);
 });
 
 test("after a trade, the less extreme zones on its side are disarmed too; a more extreme one isn't", () => {
@@ -68,7 +80,7 @@ test("after a trade, the less extreme zones on its side are disarmed too; a more
   assert.match(gate(sell("trim-1"), state, "normal", NOW).reason, /re-arm/);
   assert.match(gate(sell("trim-2"), state, "normal", NOW).reason, /re-arm/);
   assert.equal(gate(sell("trim-3"), state, "normal", NOW).action, "sell-volatile");
-  assert.equal(gate(buy("dca-1"), { ...state, lastAction: "buy-volatile" }, "normal", NOW).action, "buy-volatile", "the other side is unaffected");
+  assert.equal(gate(buy("dca-1"), state, "normal", NOW).action, "buy-volatile", "the other side is unaffected");
 });
 
 test("a price alternating across a line between two zones trades once, not on every crossing", () => {
