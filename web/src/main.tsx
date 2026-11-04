@@ -1,7 +1,7 @@
 import { hashKey, QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { gatewayRead, isTreasury, scopeOfKey, type Gateway } from "./platform";
+import { gatewayRead, isTreasury, scopeOfKey, treasurySetup, type Gateway } from "./platform";
 import { deniedAt, onAccessDenial, recheckAccess, settleDenials, useAccessState } from "./app/access";
 import { AuthenticatedApp } from "./app/authenticated-app";
 import { SignedOutHome } from "./app/home";
@@ -86,7 +86,8 @@ function GatewayPage() {
     </div>}
     {gateway.viewer
       ? <AuthenticatedApp gateway={visible} />
-      : <SignedOutHome selfService={gateway.selfServiceTreasury} />}
+      // Creation is offered only where this build can reserve a Treasury: the platform's self-service setup.
+      : <SignedOutHome selfService={treasurySetup(gateway) === "shared"} />}
   </>;
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { agent, answered, failureKind, failureMessage, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, RUN_STALE_MS, runInProgress, scope, scopeOfKey, type Denial } from "../src/platform.ts";
+import { agent, answered, failureKind, failureMessage, gateway, isTreasury, treasuryReservation, treasurySetup, type Gateway, onDenial, PlatformError, READS, reads, retryLost, RUN_STALE_MS, runInProgress, scope, scopeOfKey, type Denial } from "../src/platform.ts";
 import { pageTitle } from "../src/app/pages.ts";
 
 /** Each request the app sent, and the answers the fake host gives, in order. */
@@ -143,6 +143,49 @@ test("self-service Treasury: a gateway that names no setup areas sets up every a
   assert.equal((await me({ setupAreas: [] })).selfServiceTreasury, false);
   // A standalone gateway's own flag is kept when neither is sent.
   assert.equal((await me({ selfServiceTreasury: true })).selfServiceTreasury, true);
+});
+
+test("reserving a Treasury: the platform's self-service setup takes /gw/agents with the owner and area", () => {
+  const viewer = { account: "owner.near", access: {} };
+  const found = (extra: Partial<Gateway>) => ({ agents: [], invoices: null, viewer, ...extra }) as Gateway;
+  const shared = found({ selfService: true, setupAreas: ["treasury"], selfServiceTreasury: true });
+  assert.equal(treasurySetup(shared), "shared");
+  assert.deepEqual(treasuryReservation(shared, { kind: "wallet" }),
+    { ok: true, request: { path: "/gw/agents", body: { owner: "owner.near", kind: "wallet", area: "treasury" } } });
+  assert.deepEqual(treasuryReservation(shared, { kind: "dao", dao: " team.sputnik-dao.near " }),
+    { ok: true, request: { path: "/gw/agents", body: { owner: "team.sputnik-dao.near", kind: "dao", area: "treasury" } } });
+  // A standalone host's /gw/treasuries is outside every platform capability: not called, and said so.
+  const standalone = found({ selfServiceTreasury: true });
+  assert.equal(treasurySetup(standalone), "standalone");
+  assert.equal(treasuryReservation(standalone, { kind: "wallet" }).ok, false);
+  // Nothing is offered where the host doesn't set Treasuries up, signed out, or for an owner the gateway would refuse.
+  const payablesOnly = found({ selfService: true, setupAreas: ["payables"], selfServiceTreasury: false });
+  assert.equal(treasurySetup(payablesOnly), "none");
+  assert.equal(treasuryReservation(payablesOnly, { kind: "wallet" }).ok, false);
+  assert.equal(treasuryReservation({ ...shared, viewer: null }, { kind: "wallet" }).ok, false);
+  assert.equal(treasuryReservation(shared, { kind: "dao", dao: "Not A DAO!" }).ok, false);
+  assert.equal(treasuryReservation(shared, { kind: "dao", dao: "" }).ok, false);
+});
+
+test("a reservation is posted once and answers the workspace's name; a refusal or a malformed answer throws", async () => {
+  const request = { path: "/gw/agents", body: { owner: "owner.near", kind: "wallet", area: "treasury" } } as const;
+  answers.push(json({ name: "own-0123456789abcdef01234567" }));
+  assert.equal(await gateway.reserve(request), "own-0123456789abcdef01234567");
+  assert.deepEqual(sent, [{ url: "/gw/agents", method: "POST", body: JSON.stringify(request.body) }]);
+
+  const denials: Denial[] = [];
+  const stop = onDenial(denial => denials.push(denial));
+  answers.push(json({ error: "This area is not available on this host" }, 403));
+  await assert.rejects(gateway.reserve(request), (error: unknown) => failureKind(error) === "forbidden");
+  stop();
+  assert.deepEqual(denials, [{ agent: null, scope: "procedure", message: "This area is not available on this host" }]);
+  answers.push(json({ error: "Choose a valid owner, owner type and area" }, 400));
+  await assert.rejects(gateway.reserve(request), /Choose a valid owner/);
+  answers.push(json({ name: "../elsewhere" }));
+  await assert.rejects(gateway.reserve(request), /without a valid workspace/);
+  answers.push(lost);
+  await assert.rejects(gateway.reserve(request), TypeError);
+  assert.equal(sent.length, 5, "each reservation was sent exactly once");
 });
 
 test("an agent is a Treasury agent by its declared area, and by name only when none is declared", () => {

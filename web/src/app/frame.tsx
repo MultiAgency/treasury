@@ -5,6 +5,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { RecoveryActivity } from "../features/activity/activity";
 import { StopSchedule } from "../features/owner/task-recovery";
 import { RunTimeline } from "../features/portfolio/timeline-run";
+import { Onboarding } from "../features/setup/onboarding";
+import { SetupNextStep } from "../features/setup/setup-progress";
 import { reads, type Overview, type Setup } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
 import { TreasuryBrand } from "./brand";
@@ -133,7 +135,7 @@ function AgentFrame() {
   if (!setup.data.agentId)
     return <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-12 px-4 py-10 sm:px-8">
       <header className="flex min-w-0 flex-wrap items-center justify-between gap-4"><TreasuryBrand /><WalletButton /></header>
-      <p role="status">This Treasury agent hasn't been created yet.</p>
+      <Onboarding setup={setup.data} />
     </main>;
 
   return <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
@@ -148,6 +150,8 @@ function AgentFrame() {
       <WalletButton />
     </header>
     {title !== PAGES["/"] && <Button asChild variant="outline" className="self-start"><Link to="/">Back to overview</Link></Button>}
+    {/* The setup's next step, while the grant is missing or just arrived: reads only, every action stays on its page. */}
+    <SetupNextStep setup={setup.data} overview={overview.error ? undefined : overview.data} />
     {error && <>
       <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
       <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />

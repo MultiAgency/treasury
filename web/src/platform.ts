@@ -87,6 +87,58 @@ async function gw<T>(path: `/gw/${string}`, init?: RequestInit): Promise<T> {
   throw new Error(message);
 }
 
+// Treasury setup: reserving a workspace ----------------------------------------------------------------------------
+
+/**
+ * STAND-IN, not from the SDK. `@multiagency/sdk` 0.5.0 lists `/gw/agents` under `gateway-session-v1` but exports no
+ * schema for its request or answer. These are the narrowest shapes this page sends and reads, written from the
+ * platform's `src/gateway/hosted-agents.ts` (`setupRequest`) and `docs/shared-frontend-integration.md` at 6ba0831 (the
+ * commit SDK 0.5.0 was published from). Replace them with the SDK's once it exports them.
+ */
+const reservationRequest = z.strictObject({
+  owner: z.string().min(2).max(64).regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/),
+  kind: z.enum(["wallet", "dao"]),
+  area: z.literal("treasury"),
+});
+/** STAND-IN (see above): the reserved workspace's agent name. */
+const reservationAnswer = z.object({ name: z.string().regex(/^[a-z0-9-]{1,32}$/) });
+
+/** Who will own the new Treasury: the signed-in account's own wallet, or an existing DAO it can propose to. */
+export type TreasuryOwner = { kind: "wallet" } | { kind: "dao"; dao: string };
+export type Reservation = { path: "/gw/agents"; body: z.output<typeof reservationRequest> };
+
+/**
+ * How this host sets Treasuries up: `shared`, the platform's self-service setup (`/gw/agents`, `gateway-session-v1`);
+ * `standalone`, a Treasury host that sends only its own `selfServiceTreasury` flag, whose `/gw/treasuries` no platform
+ * capability covers, so this build doesn't call it; or `none`. Discovery only says what the host offers: the gateway decides.
+ */
+export function treasurySetup(found: Gateway): "shared" | "standalone" | "none" {
+  if (!found.selfServiceTreasury) return "none";
+  return found.selfService !== undefined || found.setupAreas !== undefined ? "shared" : "standalone";
+}
+
+/** What reserving a Treasury workspace sends on this host, or why it can't. */
+export function treasuryReservation(found: Gateway, owner: TreasuryOwner): { ok: true; request: Reservation } | { ok: false; reason: string } {
+  if (!found.viewer) return { ok: false, reason: "Sign in first." };
+  const setup = treasurySetup(found);
+  if (setup === "none") return { ok: false, reason: "Treasury setup isn’t available on this host." };
+  if (setup === "standalone") return { ok: false, reason: "This host offers only a standalone Treasury setup, which this app doesn’t support. Treasury setup isn’t available here." };
+  const parsed = reservationRequest.safeParse({ owner: owner.kind === "wallet" ? found.viewer.account : owner.dao.trim(), kind: owner.kind, area: "treasury" });
+  if (!parsed.success) return { ok: false, reason: owner.kind === "dao" ? "Enter the DAO’s NEAR account, such as example.sputnik-dao.near." : "This account can’t own a Treasury here." };
+  return { ok: true, request: { path: "/gw/agents", body: parsed.data } };
+}
+
+/**
+ * Reserves the workspace, sent once. It signs nothing, creates no agent and moves no funds: creating the agent is a
+ * separate owner action inside the workspace. A refusal throws the gateway's words; an answer that isn't a workspace
+ * name throws too, so nothing is opened on a guess.
+ */
+async function reserveWorkspace(request: Reservation): Promise<string> {
+  const answer = reservationAnswer.safeParse(await gw<unknown>(request.path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request.body) }));
+  if (!answer.success) throw new Error("The gateway answered without a valid workspace. Nothing was opened; check Your treasuries before continuing again.");
+  return answer.data.name;
+}
+
 export const gateway = {
   /** Who is signed in on this host and the agents they may see. A missing or malformed answer throws: never a guess. */
   async me(): Promise<Gateway> {
@@ -116,6 +168,8 @@ export const gateway = {
     const response = await fetch("/gw/logout", { method: "POST" });
     if (!response.ok) throw new Error(`Sign-out didn't complete (the gateway answered ${response.status}). You're still signed in; try again.`);
   },
+  /** Reserves a Treasury workspace (`treasuryReservation`), sent once; answers its agent name. */
+  reserve: reserveWorkspace,
 };
 
 /** Whether an agent is a Treasury agent: its declared area, or by name for gateways that declare none (the platform's `areaOf`). */

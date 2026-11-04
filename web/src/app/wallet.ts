@@ -3,6 +3,9 @@ import { useSyncExternalStore } from "react";
 import type { Challenge, SignedChallenge, Transaction } from "../platform";
 import { asSigner } from "./wallet-transaction";
 
+/** A plain NEAR transfer, such as the deposit that creates a DAO's derived owner account. */
+export type NearTransfer = { receiverId: string; actions: [{ type: "Transfer"; params: { deposit: string } }] };
+
 type WalletState = { status: "idle" | "connecting" | "connected"; accountId?: string; publicKey?: string };
 
 /**
@@ -64,7 +67,7 @@ export function walletSession(createConnector: () => NearConnector, walletId?: s
       update({ status: "idle" });
     },
     /** Sends `transaction` as the connected account. Through Trezu that files it as a DAO proposal. */
-    async send(transaction: Transaction) {
+    async send(transaction: Transaction | NearTransfer) {
       const { wallet, accounts } = await connector().getConnectedWallet();
       const signerId = accounts[0]?.accountId;
       if (!signerId) throw new Error("Connect a wallet first");
