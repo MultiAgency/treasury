@@ -20,6 +20,8 @@ jobs:
         node: [24, 26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       # pnpm's version comes from package.json's packageManager.
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -31,18 +33,22 @@ jobs:
         run: pnpm check && pnpm build
 
   stack:
-    name: Stack tests (platform 1a7fe98, simulated)
+    # Unversioned, so branch protection needn't change at each platform pin.
+    name: Stack tests (simulated platform)
     needs: checks
     runs-on: ubuntu-latest
     env:
       TREASURY_PLATFORM: ${{ github.workspace }}/platform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           repository: MultiAgency/platform
-          # The commit @multiagency/sdk 0.4.0 was published from (tag sdk-v0.4.0); startStack checks it.
-          ref: 1a7fe9818e2a83c548e1ba8d587f10acac37716a
+          # The commit @multiagency/sdk 0.4.1 was published from (tag sdk-v0.4.1); startStack checks it.
+          ref: 0a1f80e067bab1f9bc75ca1ba93f3695a72f2c95
           path: platform
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
