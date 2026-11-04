@@ -5,7 +5,7 @@
 
 import type { Proposal } from "./bands.ts";
 import type { PolicyResult, PolicyRule } from "./policy.ts";
-import { isNonNegative, isPct, isPositive, report } from "./validate.ts";
+import { isNonNegative, isNum, isPct, isPositive, report } from "./validate.ts";
 
 export const EXPOSURE_DEFAULTS = {
   /** One venue may hold at most this percent of the treasury. */
@@ -48,7 +48,6 @@ export type ExposureContext = {
   spendsCashUsd: number;
 };
 
-const finite = (n: number | null): n is number => n !== null && Number.isFinite(n);
 
 /**
  * What is wrong with the limits, if anything. A zero-month floor, or a spend of zero, would switch the floor off, so
@@ -76,12 +75,12 @@ export function checkExposure(order: Proposal, ctx: ExposureContext, limits: Exp
   const invalid = (detail: string) => reject([["INVALID_INPUT", detail]]);
   const badLimits = exposureProblems(limits);
   if (badLimits.length > 0) return invalid(`invalid limits: ${badLimits.join("; ")}`);
-  if (!finite(order.sizeUsd) || order.sizeUsd <= 0) return invalid("order size must be above zero");
-  if (!finite(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return invalid("no usable treasury value");
-  if (!finite(ctx.venueExposureUsd) || ctx.venueExposureUsd < 0) return invalid("no usable venue exposure");
-  if (!finite(ctx.cashUsd) || ctx.cashUsd < 0) return invalid("no usable cash balance");
-  if (!finite(limits.monthlySpendUsd)) return invalid("spend rate not set: the user must define it before the cash floor can be checked");
-  if (!finite(ctx.spendsCashUsd) || ctx.spendsCashUsd < 0) return invalid("no usable cash use");
+  if (!isNum(order.sizeUsd) || order.sizeUsd <= 0) return invalid("order size must be above zero");
+  if (!isNum(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return invalid("no usable treasury value");
+  if (!isNum(ctx.venueExposureUsd) || ctx.venueExposureUsd < 0) return invalid("no usable venue exposure");
+  if (!isNum(ctx.cashUsd) || ctx.cashUsd < 0) return invalid("no usable cash balance");
+  if (!isNum(limits.monthlySpendUsd)) return invalid("spend rate not set: the user must define it before the cash floor can be checked");
+  if (!isNum(ctx.spendsCashUsd) || ctx.spendsCashUsd < 0) return invalid("no usable cash use");
 
   const failures: [PolicyRule, string][] = [];
   if (order.action === "buy-volatile" && (ctx.venueExposureUsd + order.sizeUsd) * 100 > limits.maxVenueExposurePct * ctx.treasuryValueUsd)

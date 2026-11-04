@@ -20,3 +20,10 @@ test("unusable sizing parameters hold instead of sizing with a broken cap or bud
     assert.deepEqual([r.action, r.sizeUsd], ["hold", 0], JSON.stringify(change));
   }
 });
+
+test("a portfolio value that is NaN, infinite or negative holds, instead of sizing against it", () => {
+  for (const change of [{ volatileUsd: NaNv }, { reserveUsd: INF }, { cashUsd: -1 }, { volatileUsd: INF }]) for (const p of [buy, sell]) {
+    const r = sizeProposal(p, { ...portfolio, ...change }, wide, { dcaUnitsUsed: 0 });
+    assert.deepEqual([r.action, r.sizeUsd], ["hold", 0], JSON.stringify(change));
+  }
+});

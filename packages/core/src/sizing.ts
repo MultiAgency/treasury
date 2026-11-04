@@ -48,7 +48,6 @@ export function sizingProblems(p: SizingParams): string[] {
 }
 
 const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
-const usable = (n: number) => Number.isFinite(n) && n >= 0;
 
 /**
  * Sizes a proposal, or holds with the reason. A hold stays a hold. Anything unusable (a negative or non-finite
@@ -61,12 +60,12 @@ export function sizeProposal(p: Proposal, portfolio: Portfolio, bounds: WeightBo
   if (badParams.length > 0) return hold(p, `invalid sizing configuration: ${badParams.join("; ")}`);
   const { volatileUsd: v, reserveUsd: r, cashUsd: c } = portfolio;
   const total = v + r + c;
-  if (![v, r, c].every(usable) || !(total > 0)) return hold(p, "portfolio values unusable");
+  if (![v, r, c].every(isNonNegative) || !(total > 0)) return hold(p, "portfolio values unusable");
   if (!(bounds.volatileMinPct >= 0 && bounds.volatileMaxPct <= 100 && bounds.volatileMinPct <= bounds.volatileMaxPct)) return hold(p, "weight bounds unusable");
   const cap = orderCapUsd(total, params.maxOrderPctOfTreasury);
 
   if (p.action === "buy-volatile") {
-    if (!(params.dcaUnits > 0) || !usable(state.dcaUnitsUsed)) return hold(p, "DCA budget unusable");
+    if (!(params.dcaUnits > 0) || !isNonNegative(state.dcaUnitsUsed)) return hold(p, "DCA budget unusable");
     const remaining = params.dcaUnits - state.dcaUnitsUsed;
     if (remaining <= 0) return hold(p, "DCA budget used up");
     const unitUsd = (r * params.dcaBudgetPctOfReserve) / 100 / params.dcaUnits;

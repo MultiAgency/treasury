@@ -4,7 +4,7 @@
 // defaults, awaiting H6's rules-to-policy map and H9's calibration.
 
 import type { Proposal } from "./bands.ts";
-import { isNonNegative, isPct, isPositiveInt, report } from "./validate.ts";
+import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const POLICY_DEFAULTS = {
   /** One order, as a percent of the treasury value. */
@@ -46,7 +46,6 @@ export type PolicyResult =
   /** Used by level gating (A5.3). */
   | { ok: "needs-approval"; reason: string };
 
-const finite = (n: number | null): n is number => n !== null && Number.isFinite(n);
 
 /** What is wrong with the limits, if anything. */
 export function policyLimitProblems(l: PolicyLimits): string[] {
@@ -81,11 +80,11 @@ export function checkLimits(order: Proposal, ctx: PolicyContext, limits: PolicyL
   const badLimits = policyLimitProblems(limits);
   if (badLimits.length > 0) return bad(`invalid limits: ${badLimits.join("; ")}`);
 
-  if (!finite(order.sizeUsd) || order.sizeUsd <= 0) return bad("order size must be above zero");
-  if (!finite(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return bad("no usable treasury value");
-  if (!finite(ctx.turnoverTodayUsd) || ctx.turnoverTodayUsd < 0) return bad("no usable turnover so far");
+  if (!isNum(order.sizeUsd) || order.sizeUsd <= 0) return bad("order size must be above zero");
+  if (!isNum(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return bad("no usable treasury value");
+  if (!isNum(ctx.turnoverTodayUsd) || ctx.turnoverTodayUsd < 0) return bad("no usable turnover so far");
   if (!Number.isInteger(ctx.ordersLastHour) || ctx.ordersLastHour < 0) return bad("no usable order count");
-  if (!finite(ctx.quotedSlippageBps) || ctx.quotedSlippageBps < 0) return bad("no fresh quote: slippage unknown");
+  if (!isNum(ctx.quotedSlippageBps) || ctx.quotedSlippageBps < 0) return bad("no fresh quote: slippage unknown");
 
   // Compared without dividing: size × 100 against percent × value, so a value exactly at the limit passes.
   const value = ctx.treasuryValueUsd;
