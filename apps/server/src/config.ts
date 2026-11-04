@@ -38,6 +38,8 @@ const Settings = z.object({
    * challenge rate limit is keyed on. 0, the default, trusts none: the connection's own address is used.
    */
   TREASURY_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
+  /** The proposals page's build (`web/dist-proposals`), which this server serves; unset, it answers only its API. */
+  TREASURY_PAGE_DIR: z.string().min(1).optional(),
   PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
   /** Overrides the chain RPC; otherwise FastNEAR's, as the platform's `src/chain.ts` does. */
   NEAR_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),

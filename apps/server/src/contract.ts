@@ -46,6 +46,8 @@ export const executeResult = z.discriminatedUnion("result", [
   z.object({ result: z.literal("pending"), proposal: proposalView.nullable() }),
   z.object({ result: z.literal("not_executable"), proposal: proposalView }),
 ]);
+/** What a disconnect answers: how many of the agent's live consents it revoked. */
+export const revoked = z.strictObject({ revoked: z.number().int().nonnegative() });
 /** The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch). */
 export const consent = z.strictObject({ consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable() });
 
@@ -61,9 +63,11 @@ export const consent = z.strictObject({ consent: z.strictObject({ id: z.string()
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */
-export type ServerFailure =
-  | { ok: false; kind: "not_signed_in" }
-  | { ok: false; kind: "not_owner" }
-  | { ok: false; kind: "refused"; code: string }
-  | { ok: false; kind: "unavailable" };
+export const serverFailure = z.discriminatedUnion("kind", [
+  z.strictObject({ ok: z.literal(false), kind: z.literal("not_signed_in") }),
+  z.strictObject({ ok: z.literal(false), kind: z.literal("not_owner") }),
+  z.strictObject({ ok: z.literal(false), kind: z.literal("refused"), code: z.string() }),
+  z.strictObject({ ok: z.literal(false), kind: z.literal("unavailable") }),
+]);
+export type ServerFailure = z.infer<typeof serverFailure>;
 export type Answer<T> = { ok: true; value: T } | ServerFailure;

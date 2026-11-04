@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAgentReads } from "../../app/frame";
-import { accessDenied, CopyButton, Details, Loading, ReadFailure, Section } from "../../shared/ui";
+import { CopyButton, Details, Loading, Section } from "../../shared/ui";
+import { accessDenied, ReadFailure } from "../../shared/read-failure";
 
 /** Read-only evidence stays separate from owner controls and readiness observations. */
 export function PolicyEvidence({ digest }: { digest: string | null }) {

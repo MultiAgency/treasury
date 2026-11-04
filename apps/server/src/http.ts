@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { sha256, type Audit, type AuditEntry } from "./audit.ts";
 import { checkConsent, consentText, liveConsents, organizationOf } from "./consent.ts";
 import type { KeyLookup } from "./keys.ts";
+import type { Page } from "./page.ts";
 import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
 import * as contract from "./contract.ts";
 import type { Identity } from "./contract.ts";
@@ -38,6 +39,8 @@ export type Deps = {
   consentsPerDay: number;
   /** Whether a key is a full-access key of an account, as the chain answers: an owner's verdict must be signed with one. */
   keyLookup: KeyLookup;
+  /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
+  page?: Page;
 };
 /** What a handler reads: the dependencies, and the limits the server keeps across requests. */
 type Context = Deps & { consentsToday: RateLimit };
@@ -465,6 +468,12 @@ export function createServer(deps: Deps) {
     };
     try {
       const { pathname } = new URL(req.url ?? "/", "http://server");
+      const file = req.method === "GET" || req.method === "HEAD" ? deps.page?.(pathname) : undefined;
+      if (file) {
+        res.writeHead(200, { ...file.headers, "content-length": file.body.length });
+        res.end(req.method === "HEAD" ? undefined : file.body);
+        return;
+      }
       let found: { route: Route; params: Record<string, string> } | undefined;
       for (const route of routes) {
         const params = match(route, req.method ?? "", pathname);

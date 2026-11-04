@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { amountOf, describeRequest, exactPayment, symbolOf } from "../src/shared/format.ts";
+import { amountOf, describeRequest, exactAmountOf, exactPayment, symbolOf } from "../src/shared/format.ts";
 
 const usdc = { asset: ASSETS.USDC, symbol: "USDC", decimals: 6 } as Parameters<typeof amountOf>[2][number];
 
@@ -35,4 +35,10 @@ test("a payment's exact terms: the platform's assets in their units, unrounded; 
   assert.equal(exactPayment({ ...to, asset: ASSETS.wNEAR, amount: "1000000000000000000000001" }, []), "1.000000000000000000000001 wNEAR to payee.near");
   assert.equal(exactPayment({ ...to, asset: "nep141:other.near", amount: "5" }, []), "5 raw units of nep141:other.near to payee.near");
   assert.equal(exactPayment({ ...to, asset: ASSETS.USDC, amount: "1.5" }, []), "Payment terms unavailable");
+});
+
+test("an exact amount is never rounded, and an asset without known decimals stays in raw units", () => {
+  assert.equal(exactAmountOf("499996000000000000000000", "nep141:wrap.near", []), "0.499996 wNEAR");
+  assert.equal(exactAmountOf("2999999999", "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", []), "2999.999999 USDC");
+  assert.equal(exactAmountOf("7", "nep141:other.near", []), "7 raw units · nep141:other.near");
 });

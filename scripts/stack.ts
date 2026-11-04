@@ -2,6 +2,7 @@
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { request } from "node:https";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -62,6 +63,18 @@ export async function startStack({ args = ["--no-browser"], platform = process.e
     { cwd: join(directory, "environment", "gateway"), encoding: "utf8", env: { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS } });
   return { target: stack(directory), state, stop, appCredential };
 }
+
+/** A fetch that trusts only the running stack's own certificate (`Stack.ca`): what a server on the app route calls it with. */
+export const stackFetch = (ca: Buffer): typeof fetch => async (input, init) => new Promise((resolve, reject) => {
+  const url = new URL(input instanceof Request ? input.url : String(input));
+  const req = request(url, { method: init?.method ?? "GET", headers: Object.fromEntries(new Headers(init?.headers)), ca, signal: init?.signal ?? undefined }, res => {
+    const chunks: Buffer[] = [];
+    res.on("data", chunk => chunks.push(chunk));
+    res.on("end", () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode, headers: res.headers as Record<string, string> })));
+  });
+  req.on("error", reject);
+  req.end(init?.body as string | undefined);
+});
 
 let sequence = 0;
 /** One control file, written whole, and its answer. The answer is reduced to `{ ok }` on disk once read. */

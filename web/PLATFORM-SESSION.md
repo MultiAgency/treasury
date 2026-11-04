@@ -184,6 +184,50 @@ Activity's "Back to Activity" (`ActivityReturn`) and "Review invoices in Payment
 
 An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not found` (A: `Treasury · Overview`) and offers "Back to overview".
 
+## The proposals page (#20)
+
+A second build (`src/proposals/`, built to `dist-proposals/`), served only by the app server (`apps/server`, `TREASURY_PAGE_DIR`) from its own origin: there is no page in A to compare with, so every name is new. It calls only the server's `/api/` routes (`src/proposals/proposals-api.ts`), never `src/platform.ts`, and the platform's specs don't query it.
+
+| Name | Role | Where |
+| --- | --- | --- |
+| Treasury proposals | page title; heading (level 1) on `/` and `/agents/<agent>` | |
+| Proposal | heading (level 1) on `/agents/<agent>/proposals/<id>` | |
+| Skip to main content | link | every page |
+| Agent name, Open proposals | textbox, button | `/` |
+| Sign in, Sign in with wallet | heading (level 2), button | signed out |
+| Signed in as `<owner>`, Sign out | text, button | signed in |
+| Connection | region, heading (level 2) | an agent's pages |
+| Connected: `<scopes>`, until `<date>`. or Not connected. … | status | Connection |
+| Connect, Disconnect | button | Connection |
+| Connect this agent to the Treasury app?, Text to sign, Cancel, Sign and connect | dialog, the signed text (labelled), buttons | Connection |
+| Disconnect this agent?, Cancel, Disconnect | dialog, buttons | Connection |
+| Proposals | region and heading (level 2); list | `/agents/<agent>` |
+| Review proposal `<id, shortened>` | link | each proposal in the list |
+| Swaps | list (each leg: "Swap `<amount>` for at least `<floor>`", exactly as the signed text names them, and its quote, rounded) | list and proposal |
+| Back to proposals | link | proposal, and an address whose ID isn't a proposal's ("This address doesn't name a proposal: …", alert) |
+| Terms, State | region and heading (level 2) | proposal |
+| Proposal reference | disclosure summary (ID, sha256, policy and strategy digests) | proposal |
+| Operations | list | proposal, once it reports any |
+| Approve, Reject, Execute, Check again | button | proposal, State |
+| Approve this proposal? or Reject this proposal?, Text to sign, Cancel, Sign and approve or Sign and reject | dialog, the signed text (labelled), buttons | proposal |
+| Execute this proposal?, Cancel, Execute now | dialog, buttons | proposal |
+| You approved this proposal., You rejected this proposal., Executed. Every swap succeeded. | status | proposal, State |
+
+How it departs from the brief, or decides what the brief leaves open:
+- **The agent comes from the address** (`/agents/<agent>`): the server has no route listing an owner's agents. `/` asks for the agent's name.
+- **Signed in or not** is read from `GET /api/agents/:agent`: the server has no session route. `not_signed_in` there shows Sign in; another read answering `not_signed_in` later reads the identity again, so the page returns to Sign in.
+- **The wallet's account is checked before relaying.** A consent or verdict signed by another account than the agent's owner is not sent: "Your wallet signed as `<account>`, but this agent's owner is `<owner>`. Nothing was sent." The server would refuse it anyway (`not_owner`, `signature_invalid`).
+- **A verdict whose answer was lost** (or `unavailable`) reads the proposal: if it now reads approved (rejected), it says "You approved this proposal." (rejected), as the server's own recovery decides it; otherwise the read is shown and nothing is signed again without a new review.
+- **`not_executable` carries no code or reason** from the server (`executeResult` is the result and the proposal only), so the page says the platform's causes ("a price below a signed floor, a provider warning, a short balance, no live treasury grant, or the policy not in force"), with the proposal's `reason` when it has one. Execute stays offered.
+- **Execute after `pending`, lost or `unavailable`** is decided by a read after it: offered again only if that read says `approved`. If the read fails, Execute stays off until "Check again" answers. After a reload or in another tab, the platform's state decides alone: `executing` and `unknown` offer nothing, and an `approved` read offers Execute, which the platform claims at most once.
+- **`policy_not_in_force`** links to the owner UI's Policy page on the platform's host (`https://<host>/a/<agent>/policy`, `host` from `GET /api/agents/:agent`). Where the owner UI is served in production is platform#14.
+- **Swaps read exactly as signed** (the user's decision, 2026-11-04): the amount and floor of each leg are never rounded (`exactAmountOf` in `shared/format.ts`), so a floor of 0.499996 wNEAR never reads "at least 0.5". `test/proposal-terms.test.ts` checks each leg against the SDK's `proposalText`. Only the quote, which isn't signed, is rounded (`amountOf`).
+- **The consent dialog** shows the platform's consent text exactly, and beside it everything the `treasury` scope grants, which that text can't narrow, and what this server actually calls.
+- **Its own build output.** One `rsbuild` config with two environments: the owner UI builds to `dist/` as before (with `contract.json`), and the page to `dist-proposals/`, the only folder the app server serves. `test/proposals-isolation.test.ts` checks that `src/platform.ts` and the owner session's `app/` modules are unreachable from the page's entry at runtime.
+- **`accessDenied` and `ReadFailure` moved** from `shared/ui.tsx` to `shared/read-failure.tsx`, so `shared/ui.tsx` no longer imports `platform.ts` and the page can share it. No name changes.
+
+Driving the page on the stack (`test/proposals.e2e.ts`, its own stack started with `--app`): the app server runs in-process with the stack's `tap_` credential and serves `dist-proposals/`; Playwright's own browser installs near-connect's injected "Local test wallet" as the platform's `test/e2e/wallet.mjs` does, signing through the `signOwner` control. The server's key check is a stand-in for the stack's owner key, as in `apps/server`'s stack test. The proposals are made through the app route directly, as the app's proposer will (#20 PR 4).
+
 ## Deviations from the brief
 
 - **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe's WCAG A and AA rules on every page it opens (any violation fails it) and checks the keyboard paths.

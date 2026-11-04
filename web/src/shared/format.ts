@@ -23,6 +23,12 @@ export function amountOf(raw: string, asset: string, book: Holding[]) {
   return h ? amount(raw, h) : `${raw} raw units · ${asset}`;
 }
 
+/** A raw amount of `asset` exactly, never rounded: what a signed text names. An asset without known decimals stays in raw units. */
+export function exactAmountOf(raw: string, asset: string, book: Holding[]) {
+  const h = assetInfo(asset, book);
+  return h ? `${fromUnits(raw, h.decimals)} ${h.symbol}` : `${raw} raw units · ${asset}`;
+}
+
 /** An asset's symbol and decimals: the book's, else the platform's for its own assets; undefined for any other. */
 function assetInfo(asset: string, book: Holding[]): Pick<Holding, "decimals" | "symbol"> | undefined {
   return book.find((b) => b.asset === asset) ?? (Object.hasOwn(PROPOSAL_TOKENS, asset) ? PROPOSAL_TOKENS[asset] : undefined);

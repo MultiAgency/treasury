@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { failureKind } from "../platform";
 import { assetColor } from "./format";
 
 export { Button };
@@ -87,22 +86,6 @@ export function QueryError({ error, retry }: { error: { message: string }; retry
     <AlertDescription>{error.message}</AlertDescription>
     <Button variant="outline" size="sm" onClick={retry}>Check again</Button>
   </Alert>;
-}
-
-/** A rejected permission check must not expose previously cached private records. */
-export const accessDenied = (error: unknown) => failureKind(error) === "forbidden" || failureKind(error) === "session";
-
-/** Cached records remain evidence of an earlier read, never confirmation of current state. */
-export function ReadFailure({ label, error, retry, retained, updatedAt }: {
-  label: string; error: { message: string }; retry: () => void; retained: boolean; updatedAt?: number;
-}) {
-  retained = retained && !accessDenied(error);
-  return <div className="flex flex-col gap-2 text-sm">
-    <p className="text-warning-muted-foreground">{label} could not be {retained ? "refreshed" : "loaded"}. {retained
-      ? `Showing last loaded records${updatedAt ? ` from ${new Date(updatedAt).toLocaleString()}` : ""}; current state is not confirmed.`
-      : "No current records are available from this check; this does not mean there are none."}</p>
-    <QueryError error={error} retry={retry} />
-  </div>;
 }
 
 export function StatusBadge({ status, failureCode, children }: { status: string; failureCode?: string | null; children?: ReactNode }) {

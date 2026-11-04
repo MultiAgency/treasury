@@ -3,7 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { type OwnerActionRecord as Record } from "../../platform";
 import { useAgentReads } from "../../app/frame";
-import { accessDenied, Button, Card, CopyButton, Details, Loading, ReadFailure, Section } from "../../shared/ui";
+import { Button, Card, CopyButton, Details, Loading, Section } from "../../shared/ui";
+import { accessDenied, ReadFailure } from "../../shared/read-failure";
 
 /** One recorded owner action: where it stands, and its reference to follow it by. */
 export function OwnerActionRecord({ action: a }: { action: Record }) {

@@ -28,6 +28,7 @@ SDK and platform feedback goes to [MultiAgency/platform](https://github.com/Mult
 - **Connecting an agent:** the server builds the consent text from the agent's identity as the platform answers it now (`read` and `treasury` for 90 days, under the owner's Organization: their account with each `.` written as `--`), and the owner's wallet signs it for the platform's host. An agent already connected isn't offered another signature. The server relays only that exact consent, submits the same signed body once more if the answer is lost, revokes the owner's older consents for the agent once a new one is stored, and limits each account to `CONSENTS_PER_DAY` new consents (the platform caps a deployment's unexpired consents, revoked ones included). A consent counts as the agent's only for its current ID, with `read` and `treasury`, unrevoked and unexpired. Disconnecting revokes those, at most five a request, found in the platform's own list, never by an ID from the browser.
 - **Proposals:** the owner lists and reads their agent's proposals, under their own Organization only. Approving or rejecting relays the owner's wallet signature over the SDK's `proposalText` of the proposal the page shows; the server reads it anew first and refuses, with nothing relayed, unless it's unexpired, still open and exactly that text, signed with a full-access key of the owner for the platform's host. Execute is sent only for an approved proposal, once per request, and never again after a lost answer: the proposal is read and answers `final`, `pending` (offer no Execute; read it again later) or `not_executable` (nothing was sent; it may be tried later). The platform claims a proposal once, so it never runs twice.
 - **Audit trail:** every relayed consent, revocation, approval, rejection and execute is recorded in `TREASURY_AUDIT_FILE`, a JSON line before the platform is asked and one with its answer: who, what, the SHA-256 of the signed text, the platform's status and the code the browser got, never a signature. The server won't start if it can't append to the file or if others can read it.
+- **The proposals page:** with `TREASURY_PAGE_DIR` set to the page's build (`web/dist-proposals`), the server serves the owner's proposals page from its own origin. It reads the build's regular files into memory at startup (no dotfiles or links) and serves them by exact path, for GET and HEAD: every other path outside `/api/` and `static/` is the page, which is never cached, may not be framed and sends no referrer. The page calls only this server's `/api/` routes.
 - **Configuration** is checked at startup (`src/config.ts`); secrets print as `[secret]`, and a variable set to nothing counts as unset. This server's origin must be https except on localhost, since the session cookie is `Secure`. The credential file must be 0600; it's checked on every call and read again when it changes, so rotating it needs no restart. The rate limits use the connection's address unless `TREASURY_TRUSTED_PROXY_HOPS` says how many reverse proxies to trust for `X-Forwarded-For`.
 
 ```sh
@@ -37,7 +38,7 @@ pnpm --filter @treasury/server test:stack    # against a fresh stack started wit
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check against near-kit's local NEAR node; not run in CI
 ```
 
-To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN` and `TREASURY_AUDIT_FILE` (and optionally `FASTNEAR_API_KEY`, `NEAR_RPC_URL`, `TREASURY_TRUSTED_PROXY_HOPS`, `OWNER_REQUESTS_PER_MINUTE` or `CONSENTS_PER_DAY`), then `pnpm --filter @treasury/server start`.
+To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN` and `TREASURY_AUDIT_FILE` (and optionally `TREASURY_PAGE_DIR`, `FASTNEAR_API_KEY`, `NEAR_RPC_URL`, `TREASURY_TRUSTED_PROXY_HOPS`, `OWNER_REQUESTS_PER_MINUTE` or `CONSENTS_PER_DAY`), then `pnpm --filter @treasury/server start`.
 
 ## The owner UI
 
@@ -46,13 +47,14 @@ To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CRED
 - **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.
 - **Features port one at a time** from MultiAgency/treasury-prototype's `web/src`, each in its own issue. So far: the session and access (sign-in and out, account switches, access denials, the agent frame). The other pages show where their feature will land.
 - **`contract.json`** names the platform capabilities the build uses (`gateway-session-v1` and `agent-observe-v1` so far). The release server refuses a build whose capabilities its host doesn't offer. `web/test/contract.test.ts` checks it both ways: every call the app makes is covered, and every capability it requires is used.
+- **The proposals page** (#20) is a second build in the same config (`src/proposals/`, built to `dist-proposals/`), served by the app server, not the platform: the owner signs in to that server with their wallet, connects the agent with a consent, then approves or rejects each proposal by signing its exact text and executes approved ones. `src/proposals/proposals-api.ts` is its only module that calls a server, parsing every answer with `apps/server/src/contract.ts`; it never imports `src/platform.ts`.
 - **Accessible names** the platform's E2E specs query, and every change to them, are listed in [`web/PLATFORM-SESSION.md`](web/PLATFORM-SESSION.md), along with this app's deviations from the brief.
 
 ```sh
-pnpm --filter @treasury/web build       # web/dist, with contract.json
+pnpm --filter @treasury/web build       # web/dist (the owner UI, with contract.json) and web/dist-proposals (the proposals page)
 pnpm --filter @treasury/web typecheck
 pnpm --filter @treasury/web test        # platform.ts with a mocked fetch
-pnpm --filter @treasury/web test:stack  # builds, then drives the build on a fresh stack served with --frontend
+pnpm --filter @treasury/web test:stack  # builds, then drives the owner UI on a stack served with --frontend, and the proposals page through the app server on its own stack
 ```
 
 The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
