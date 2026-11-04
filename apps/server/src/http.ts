@@ -1,10 +1,14 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { proposalId, type ProposalView } from "@multiagency/sdk";
+import { verifyNep413Signature } from "near-kit";
 import type { z } from "zod";
 import { sha256, type Audit, type AuditEntry } from "./audit.ts";
 import { checkConsent, consentText, liveConsents, organizationOf } from "./consent.ts";
+import type { KeyLookup } from "./keys.ts";
+import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
 import * as contract from "./contract.ts";
 import type { Identity } from "./contract.ts";
-import type { ConsentRecord, IdentityAnswer, Platform } from "./platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer, ProposalListAnswer } from "./platform.ts";
 import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import type { Sessions } from "./sessions.ts";
 import type { SignIn } from "./signin.ts";
@@ -32,6 +36,8 @@ export type Deps = {
    * included, across every owner, so one account reconnecting in a loop could otherwise fill it for all.
    */
   consentsPerDay: number;
+  /** Whether a key is a full-access key of an account, as the chain answers: an owner's verdict must be signed with one. */
+  keyLookup: KeyLookup;
 };
 /** What a handler reads: the dependencies, and the limits the server keeps across requests. */
 type Context = Deps & { consentsToday: RateLimit };
@@ -115,6 +121,77 @@ async function revokeAll(consents: readonly ConsentRecord[], who: string, agent:
   }
   return { revoked, complete };
 }
+
+/** The platform's refusal codes for a proposal call that the page may act on, with the status the browser gets. */
+const PROPOSAL_CODES: Record<string, number> = { signature_invalid: 400, invalidated: 409, withdrawn: 409, not_open: 409, expired: 409,
+  not_approved: 409, policy_not_in_force: 409 };
+/**
+ * A failed proposal call as the browser gets it: no such proposal, the platform's own code where the page can act on
+ * it, `not_connected` when no live consent covers the agent (the platform's 403), and `unavailable` for anything else,
+ * logged. The platform's text is never forwarded.
+ */
+function proposalFailure(answer: Exclude<ProposalAnswer | ProposalListAnswer, { ok: true }>, agent: string): Reply {
+  if (answer.kind === "refused" && answer.status === 404) return refused(404, "no_proposal");
+  if (answer.kind === "refused" && answer.code && PROPOSAL_CODES[answer.code]) return refused(PROPOSAL_CODES[answer.code]!, answer.code);
+  if (answer.kind === "forbidden") return refused(409, "not_connected");
+  log("platform_proposal_failed", { agent, ...failure(answer as { kind: string }), ..."code" in answer && answer.code !== undefined && { code: answer.code } });
+  return unavailable();
+}
+/** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
+async function relay(call: () => Promise<ProposalAnswer>, agent: string): Promise<ProposalAnswer> {
+  try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
+}
+/** Whether the platform's answer may have been lost: then the proposal is read once, never the call sent again. */
+const lost = (answer: ProposalAnswer) => !answer.ok && !(answer.kind === "refused" && answer.status !== undefined) && answer.kind !== "forbidden" && answer.kind !== "session";
+
+/**
+ * Whether the owner signed `message` for the platform's host with `nonce`, with a full-access key of their own account:
+ * checked here, so a bad signature is a stable `signature_invalid` (the gateway's own answer to it reaches the SDK as a
+ * lost one) and costs no relay.
+ */
+async function ownersSignature(signed: { message: string; nonce: string; publicKey: string; signature: string }, identity: Identity, keyLookup: KeyLookup) {
+  const valid = await verifyNep413Signature({ accountId: identity.owner, publicKey: signed.publicKey, signature: signed.signature },
+    { message: signed.message, recipient: identity.host, nonce: new Uint8Array(Buffer.from(signed.nonce, "base64")) }, { nonceValidation: "none" });
+  if (!valid) return "invalid" as const;
+  const key = await keyLookup(identity.owner, signed.publicKey);
+  return key === "unavailable" ? "unavailable" as const : key === "full" ? "owners" as const : "invalid" as const;
+}
+
+/**
+ * Relays the owner's signed verdict on a proposal: read anew and checked to be open, unexpired and exactly the text
+ * signed (`checkVerdict`), signed with the owner's own full-access key for the platform's host, and recorded before the
+ * platform is asked and after. A lost answer, a thrown call or `already_approved` is settled by one read: the verdict
+ * was recorded if the proposal now reads approved (or rejected). The same signed body may be sent again otherwise.
+ */
+const verdictRoute = (verdict: Verdict): Route => ({
+  method: "POST", path: `/api/agents/:agent/proposals/:id/${verdict}`, access: "owner-fresh",
+  async handle({ body, account, identity, params }, { platform, audit, keyLookup }) {
+    const id = parse(proposalId, params.id), signed = parse(contract.verdictSubmission, body);
+    if (!id || !signed) return refused(400, "bad_request");
+    const organization = organizationOf(identity!.owner), { agent } = identity!;
+    const fresh = await relay(() => platform.proposals.get(organization, agent, id), agent);
+    if (!fresh.ok) return proposalFailure(fresh, agent);
+    const checked = checkVerdict(signed.message, fresh.value, verdict);
+    if (!checked.ok) return refused(409, checked.code);
+    const signature = await ownersSignature(signed, identity!, keyLookup);
+    if (signature === "unavailable") return unavailable();
+    if (signature === "invalid") return refused(400, "signature_invalid");
+    const signedTextSha256 = sha256(signed.message);
+    await audit.append({ who: account!, action: verdict, agent, subject: id, signedTextSha256, stage: "attempt" });
+    const answer = await relay(() => platform.proposals[verdict](organization, agent, { id, signed }), agent);
+    let reply: Reply;
+    if (answer.ok) reply = ok({ proposal: answer.value });
+    else if (lost(answer) || (answer.kind === "refused" && answer.code === "already_approved")) {
+      const now = await relay(() => platform.proposals.get(organization, agent, id), agent);
+      reply = now.ok && now.value.state === (verdict === "approve" ? "approved" : "rejected") ? ok({ proposal: now.value }) : unavailable();
+    } else reply = proposalFailure(answer, agent);
+    await recordResult(audit, { who: account!, action: verdict, agent, subject: id, signedTextSha256, stage: "result", answer: audited(answer, reply) });
+    return reply;
+  },
+});
+
+/** An execute's answer, with the proposal as last read (null when that read went unanswered). */
+const executed = (result: "final" | "pending" | "not_executable", proposal: ProposalView | null) => ok({ result, proposal });
 
 /** Every route the server answers. Tests walk this table, so a new route is covered by the access tests as it's added. */
 export const routes: Route[] = [
@@ -227,6 +304,60 @@ export const routes: Route[] = [
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
       const { revoked, complete } = await revokeAll(liveConsents(listed.value.consents, identity!), account!, identity!.agent, context);
       return complete ? ok({ revoked }) : unavailable();
+    },
+  },
+  {
+    // The agent's proposals, under the owner's own Organization: an owner reaches only proposals made under their consent.
+    method: "GET", path: "/api/agents/:agent/proposals", access: "owner",
+    async handle({ identity }, { platform }) {
+      const listed = await platform.proposals.list(organizationOf(identity!.owner), identity!.agent);
+      return listed.ok ? ok({ proposals: listed.value.proposals }) : proposalFailure(listed, identity!.agent);
+    },
+  },
+  {
+    method: "GET", path: "/api/agents/:agent/proposals/:id", access: "owner",
+    async handle({ identity, params }, { platform }) {
+      const id = parse(proposalId, params.id);
+      if (!id) return refused(400, "bad_request");
+      const read = await platform.proposals.get(organizationOf(identity!.owner), identity!.agent, id);
+      return read.ok ? ok({ proposal: read.value }) : proposalFailure(read, identity!.agent);
+    },
+  },
+  verdictRoute("approve"),
+  verdictRoute("reject"),
+  {
+    /**
+     * Asks for an approved proposal's execution, once per request. Any other state is answered from the fresh read,
+     * with nothing sent: each execute re-quotes and spends the platform's quota. After a lost answer or a thrown call,
+     * the proposal is read once and never asked to execute again; if that read goes unanswered too, the answer is
+     * `pending` with no proposal. The platform claims a proposal once, so it never runs twice. Recorded before the
+     * platform is asked and after.
+     */
+    method: "POST", path: "/api/agents/:agent/proposals/:id/execute", access: "owner-fresh",
+    async handle({ account, identity, params }, { platform, audit }) {
+      const id = parse(proposalId, params.id);
+      if (!id) return refused(400, "bad_request");
+      const organization = organizationOf(identity!.owner), { agent } = identity!;
+      const fresh = await relay(() => platform.proposals.get(organization, agent, id), agent);
+      if (!fresh.ok) return proposalFailure(fresh, agent);
+      if (fresh.value.state === "proposed") return refused(409, "not_approved");
+      if (fresh.value.state !== "approved") return executed(outcomeOf(fresh.value.state), fresh.value);
+      await audit.append({ who: account!, action: "execute", agent, subject: id, stage: "attempt" });
+      const ran = await relay(() => platform.proposals.execute(organization, agent, id), agent);
+      let reply: Reply;
+      if (ran.ok) reply = executed(outcomeOf(ran.value.state), ran.value);
+      else if (ran.kind === "forbidden") reply = refused(409, "not_connected");
+      else if (ran.kind === "refused" && ran.code === "not_approved") reply = refused(409, "not_approved");
+      else {
+        // Refused before any claim, or the answer was lost: read the proposal, never ask for its execution again.
+        const notExecutable = ran.kind === "refused" && ran.code === "not_executable";
+        if (!notExecutable) log("platform_execute_unanswered", { agent, proposal: id, ...failure(ran as { kind: string }) });
+        const now = await relay(() => platform.proposals.get(organization, agent, id), agent);
+        reply = !now.ok ? executed("pending", null)
+          : executed(notExecutable && now.value.state === "approved" ? "not_executable" : outcomeOf(now.value.state), now.value);
+      }
+      await recordResult(audit, { who: account!, action: "execute", agent, subject: id, stage: "result", answer: audited(ran, reply) });
+      return reply;
     },
   },
 ];

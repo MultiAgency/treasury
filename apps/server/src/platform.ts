@@ -1,8 +1,14 @@
-import { appClient, type AppBase } from "@multiagency/sdk";
+import { appClient, type AppBase, type ProposalView } from "@multiagency/sdk";
 import type { Credential } from "./credential.ts";
 
 type App = ReturnType<typeof appClient>;
 export type IdentityAnswer = Awaited<ReturnType<App["identity"]>>;
+type Call = ReturnType<App["agent"]>["call"];
+/** A failure of a call to an agent's procedures, as the SDK reports it. */
+type CallFailure = Extract<Awaited<ReturnType<Call>>, { ok: false }>;
+export type ProposalAnswer = { ok: true; value: ProposalView } | CallFailure;
+export type ProposalListAnswer = { ok: true; value: { proposals: ProposalView[] } } | CallFailure;
+type Signed = { message: string; nonce: string; publicKey: string; signature: string };
 /** A consent as the platform lists and stores it. */
 export type ConsentRecord = Extract<Awaited<ReturnType<App["consents"]["list"]>>, { ok: true }>["value"]["consents"][number];
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
@@ -16,6 +22,17 @@ export type Platform = {
    * set up a moment later must be reachable at once, and the per-account request limit bounds repeated lookups.
    */
   identity(agent: string, options?: { fresh?: boolean }): Promise<IdentityRead>;
+  /**
+   * An agent's Treasury proposals under an Organization's consent: read, the owner's signed verdict relayed, and
+   * execution asked for once. Only these procedures; the server can't reach any other of the agent's.
+   */
+  proposals: {
+    list(organization: string, agent: string): Promise<ProposalListAnswer>;
+    get(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
+    approve(organization: string, agent: string, input: { id: string; signed: Signed }): Promise<ProposalAnswer>;
+    reject(organization: string, agent: string, input: { id: string; signed: Signed }): Promise<ProposalAnswer>;
+    execute(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
+  };
   /** This deployment's consents: an Organization's, the owner's signed consent stored, or one revoked. */
   consents: {
     list(organization: string): ReturnType<App["consents"]["list"]>;
@@ -73,6 +90,13 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
         if (reuse && reuse.until > now()) return { answer: reuse.answer, cached: true };
       }
       return { answer: await ((!fresh && reading.get(agent)) || read(agent)), cached: false };
+    },
+    proposals: {
+      list: async (organization, agent) => (await client()).agent(organization, agent).call("proposals/list") as Promise<ProposalListAnswer>,
+      get: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/get", { id }) as Promise<ProposalAnswer>,
+      approve: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/approve", input) as Promise<ProposalAnswer>,
+      reject: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/reject", input) as Promise<ProposalAnswer>,
+      execute: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/execute", { id }) as Promise<ProposalAnswer>,
     },
     consents: {
       list: async organization => (await client()).consents.list(organization),

@@ -2,18 +2,20 @@ import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { parseConsentMessage } from "@multiagency/sdk";
+import { randomBytes } from "node:crypto";
+import { parseConsentMessage, proposalList, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AuditEntry } from "../src/audit.ts";
+import type { ProposalAnswer } from "../src/platform.ts";
 import * as contract from "../src/contract.ts";
 import type { IncomingMessage } from "node:http";
 import { clientAddress, COOKIE, createServer, routes } from "../src/http.ts";
-import { standInKeyLookup } from "../src/keys.ts";
+import { standInKeyLookup, type KeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
-import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
+import { fakePlatform, HOST, ORIGIN, proposal, wallet } from "./fakes.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
-const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near", transferred: "owner.near", unborn: "owner.near", recreated: "owner.near" }, {
+const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.near", transferred: "owner.near", unborn: "owner.near", recreated: "owner.near", theirs: "intruder.near" }, {
   unborn: ["unborn"],
   recreated: { recreated: "id-before" },
   stale: { transferred: "previous.near" },
@@ -30,6 +32,8 @@ const fake = fakePlatform({ portfolio: "owner.near", "elsewhere-agent": "owner.n
 });
 const clock = { now: Date.now() };
 const audited: AuditEntry[] = [];
+/** The chain's answer about the owners' keys, replaceable per test. */
+const keys: { lookup: KeyLookup } = { lookup: async () => "full" };
 /** Makes the audit trail fail at one stage, as a full disk would. */
 const auditFails: { stage?: AuditEntry["stage"] } = {};
 let server: Server, base: string;
@@ -46,6 +50,7 @@ before(async () => {
     ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { if (entry.stage === auditFails.stage) throw new Error("disk full"); audited.push(entry); } },
     consentsPerDay: 1_000,
+    keyLookup: async (account, key) => keys.lookup(account, key),
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -185,7 +190,7 @@ test("sign-in attempts are limited per client, by the address the trusted proxy 
     platform: fake.platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 2, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000, keyLookup: async () => "full",
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -205,7 +210,7 @@ async function limitedServer(t: { after(fn: () => void): void }, platform: Retur
     platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "intruder.near": [intruder.publicKey], "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute, audit: { append: async () => {} }, consentsPerDay: 1_000,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute, audit: { append: async () => {} }, consentsPerDay: 1_000, keyLookup: async () => "full",
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -443,7 +448,7 @@ test("new consents are limited per account a day, since even revoked ones count 
     platform: counted.platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1,
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1, keyLookup: async () => "full",
   }));
   await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
   t.after(() => limited.close());
@@ -534,4 +539,213 @@ test("the consent routes answer unavailable when the platform's consent list doe
     for (const [method, path] of [["GET", "/api/agents/portfolio/consent"], ["POST", "/api/agents/portfolio/consent/revoke"], ["POST", "/api/agents/portfolio/consent/text"]] as const)
       assert.deepEqual(await json(await call(method, path, { cookie, ...(method === "POST" && { body: {} }) })), { status: 503, body: { ok: false, kind: "unavailable" } }, path);
   } finally { fake.platform.consents.list = list; }
+});
+
+/** The owner's wallet signs the proposal's own text for a verdict, for the platform's host, as the page will. */
+function signedVerdict(view: ProposalView, verdict: "approve" | "reject", text = proposalText(view, verdict), signer = owner) {
+  const nonce = randomBytes(32).toString("base64");
+  const signed = signer.sign({ message: text, recipient: "platform.test", nonce });
+  return { message: text, nonce, publicKey: signed.publicKey, signature: signed.signature };
+}
+/** Starts a proposals test from nothing: no proposals, no queued answers, no calls, no records, the chain answering. */
+function cleanProposals() {
+  fake.proposals.length = 0; fake.calls.length = 0; audited.length = 0; delete auditFails.stage;
+  for (const action of ["approve", "reject", "execute", "get"] as const) delete fake.proposalAnswers[action];
+  keys.lookup = standInKeyLookup({ "owner.near": [owner.publicKey], "intruder.near": [intruder.publicKey] });
+}
+const mine = (change: Partial<ProposalView> = {}) => ({ ...proposal(change), agent: "portfolio" });
+const relayed = (action: string) => fake.calls.filter(line => line.startsWith(`proposals.${action} `)).length;
+
+test("an owner lists and reads only their own agent's proposals, under their own Organization; another owner can't reach them", async () => {
+  cleanProposals();
+  fake.proposals.push(mine(), { ...proposal({ id: "b".repeat(32), organization: "intruder--near" }), agent: "theirs" });
+  const cookie = await signIn(owner), theirs = await signIn(intruder);
+  const listed = await json(await call("GET", "/api/agents/portfolio/proposals", { cookie }));
+  assert.equal(listed.status, 200);
+  assert.deepEqual(proposalList.parse(listed.body.value).proposals.map(item => item.id), ["a".repeat(32)]);
+  const read = await json(await call("GET", `/api/agents/portfolio/proposals/${"a".repeat(32)}`, { cookie }));
+  assert.equal(contract.proposalRead.parse(read.body.value).proposal.state, "proposed");
+  assert.ok(fake.calls.every(line => !line.startsWith("proposals.") || line.includes(" owner--near portfolio")), "always the owner's own Organization");
+  for (const path of ["/api/agents/portfolio/proposals", `/api/agents/portfolio/proposals/${"a".repeat(32)}`])
+    assert.deepEqual(await json(await call("GET", path, { cookie: theirs })), { status: 403, body: { ok: false, kind: "not_owner" } }, path);
+  const own = await json(await call("GET", "/api/agents/theirs/proposals", { cookie: theirs }));
+  assert.deepEqual(own.body.value.proposals.map((item: ProposalView) => item.id), ["b".repeat(32)]);
+  assert.ok(fake.calls.includes("proposals.list intruder--near theirs"));
+  const theirsRead = await json(await call("GET", `/api/agents/theirs/proposals/${"b".repeat(32)}`, { cookie: theirs }));
+  assert.equal(theirsRead.body.value.proposal.id, "b".repeat(32), "read under their own Organization");
+  assert.deepEqual(await json(await call("GET", `/api/agents/portfolio/proposals/${"c".repeat(32)}`, { cookie })), { status: 404, body: { ok: false, kind: "refused", code: "no_proposal" } });
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/proposals/not-an-id", { cookie })), { status: 400, body: { ok: false, kind: "refused", code: "bad_request" } });
+});
+
+test("approving relays the owner's signature over the proposal's exact text, checked against a fresh read, recorded before and after", async () => {
+  cleanProposals();
+  const view = mine();
+  fake.proposals.push(view);
+  const cookie = await signIn(owner);
+  const body = signedVerdict(view, "approve");
+  const { status, body: answer } = await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body }));
+  assert.equal(status, 200);
+  assert.equal(contract.proposalRead.parse(answer.value).proposal.state, "approved");
+  assert.deepEqual(fake.calls.filter(line => line.startsWith("proposals.")), [`proposals.get owner--near portfolio ${view.id}`, `proposals.approve owner--near portfolio ${view.id}`]);
+  assert.equal(fake.calls[0], "identity portfolio (fresh)");
+  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.subject]), [["approve", "attempt", view.id], ["approve", "result", view.id]]);
+  assert.match(audited[0]!.signedTextSha256!, /^[0-9a-f]{64}$/);
+  assert.ok(!JSON.stringify(audited).includes(body.signature), "no signature in the record");
+});
+
+test("rejecting relays the owner's signature over the reject text the same way", async () => {
+  cleanProposals();
+  const view = mine();
+  fake.proposals.push(view);
+  const cookie = await signIn(owner);
+  const { status, body } = await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/reject`, { cookie, body: signedVerdict(view, "reject") }));
+  assert.equal(status, 200);
+  assert.equal(body.value.proposal.state, "rejected");
+  assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["reject", "attempt"], ["reject", "result"]]);
+});
+
+test("a verdict on other terms, on a proposal no longer open, after it expired, or not signed by the owner's key is refused before relaying", async () => {
+  const cookie = await signIn(owner);
+  const view = mine(), past = new Date(Date.now() - 1).toISOString();
+  const cases: [Partial<ProposalView>, () => object, number, string][] = [
+    [{}, () => signedVerdict(view, "approve", proposalText({ ...view, legs: [{ ...view.legs[0]!, minAmountOut: "1" }] }, "approve")), 409, "not_this_text"],
+    [{}, () => signedVerdict(view, "approve", proposalText(view, "reject")), 409, "not_this_text"],
+    [{ state: "approved" }, () => signedVerdict(view, "approve"), 409, "not_open"],
+    [{ expiresAt: past }, () => signedVerdict(view, "approve", proposalText({ ...view, expiresAt: past }, "approve")), 409, "expired"],
+    [{}, () => signedVerdict(view, "approve", undefined, intruder), 400, "signature_invalid"],
+    [{}, () => ({ ...signedVerdict(view, "approve"), signature: signedVerdict(view, "reject").signature }), 400, "signature_invalid"],
+  ];
+  for (const [change, body, status, code] of cases) {
+    cleanProposals();
+    fake.proposals.push({ ...view, ...change });
+    assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body: body() })),
+      { status, body: { ok: false, kind: "refused", code } }, code);
+    assert.equal(relayed("approve"), 0, "nothing relayed");
+    assert.deepEqual(audited, [], "nothing relayed, so nothing recorded");
+  }
+  cleanProposals();
+  fake.proposals.push({ ...view });
+  keys.lookup = async () => "unavailable";
+  assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body: signedVerdict(view, "approve") })),
+    { status: 503, body: { ok: false, kind: "unavailable" } }, "the chain didn't answer about the key");
+  assert.equal(relayed("approve"), 0);
+  cleanProposals();
+  fake.proposals.push({ ...view });
+  assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body: { ...signedVerdict(view, "approve"), nonce: "short" } })),
+    { status: 400, body: { ok: false, kind: "refused", code: "bad_request" } });
+});
+
+test("the platform's refusals of a verdict reach the browser as their code; anything else is unavailable, with no platform text", async () => {
+  const cookie = await signIn(owner);
+  const answers: [Awaited<ReturnType<typeof fake.platform.proposals.approve>>, number, unknown][] = [
+    [{ ok: false, kind: "refused", status: 400, code: "signature_invalid", error: "The signature doesn't verify" }, 400, { ok: false, kind: "refused", code: "signature_invalid" }],
+    [{ ok: false, kind: "refused", status: 409, code: "invalidated", error: "The policy changed" }, 409, { ok: false, kind: "refused", code: "invalidated" }],
+    [{ ok: false, kind: "refused", status: 409, code: "withdrawn", error: "Its consent ended" }, 409, { ok: false, kind: "refused", code: "withdrawn" }],
+    [{ ok: false, kind: "refused", status: 409, code: "policy_not_in_force", error: "The policy is not in force" }, 409, { ok: false, kind: "refused", code: "policy_not_in_force" }],
+    [{ ok: false, kind: "forbidden", status: 403, error: "No live owner consent covers this Organization and agent" }, 409, { ok: false, kind: "refused", code: "not_connected" }],
+    [{ ok: false, kind: "refused", status: 429, error: "Request limit reached" }, 503, { ok: false, kind: "unavailable" }],
+  ];
+  for (const [queued, status, body] of answers) {
+    cleanProposals();
+    const view = mine();
+    fake.proposals.push(view);
+    fake.proposalAnswers.approve = [queued];
+    assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body: signedVerdict(view, "approve") })), { status, body });
+    assert.equal(audited.filter(entry => entry.stage === "result").length, 1, "the result is recorded whatever it was");
+    assert.equal(relayed("approve"), 1, "relayed once");
+  }
+});
+
+test("after a lost verdict, a thrown call or already_approved, the proposal is read once and its state answers whether the verdict was recorded", async t => {
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const cases: [ProposalAnswer | Error, ProposalView["state"], number, string][] = [
+    [{ ok: false, kind: "unknown", procedure: "proposals/approve", identity: {} } as never, "approved", 200, "approved"],
+    [{ ok: false, kind: "unavailable" }, "approved", 200, "approved"],
+    [new Error("socket hang up"), "approved", 200, "approved"],
+    [{ ok: false, kind: "refused", status: 409, code: "already_approved", error: "The owner already approved this proposal." }, "approved", 200, "approved"],
+    [{ ok: false, kind: "unknown", procedure: "proposals/approve", identity: {} } as never, "proposed", 503, "unavailable"],
+  ];
+  for (const [queued, then, status, outcome] of cases) {
+    cleanProposals();
+    const view = mine();
+    fake.proposals.push(view);
+    fake.proposalAnswers.approve = [queued];
+    const body = signedVerdict(view, "approve");
+    const { agent: _agent, ...asShown } = view;
+    fake.proposalAnswers.get = [{ ok: true, value: { ...asShown } }];
+    view.state = then;
+    const answer = await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/approve`, { cookie, body }));
+    assert.equal(answer.status, status, String(queued));
+    assert.equal(answer.status === 200 ? answer.body.value.proposal.state : answer.body.kind, outcome);
+    assert.equal(relayed("approve"), 1, "never relayed twice");
+    assert.equal(relayed("get"), 2, "the check's read, then one read after the lost answer");
+    assert.deepEqual(audited.map(entry => entry.stage), ["attempt", "result"], "a result is recorded even when the call threw");
+  }
+  cleanProposals();
+  const view = mine();
+  fake.proposals.push(view);
+  fake.proposalAnswers.reject = [{ ok: false, kind: "unavailable" }];
+  const body = signedVerdict(view, "reject");
+  const { agent: _agent, ...asShown } = view;
+  fake.proposalAnswers.get = [{ ok: true, value: { ...asShown } }];
+  view.state = "approved";
+  assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/reject`, { cookie, body })),
+    { status: 503, body: { ok: false, kind: "unavailable" } }, "a lost rejection isn't recorded by the proposal reading approved");
+});
+
+test("execute is sent only for an approved proposal; any other state is answered from the fresh read without asking the platform", async () => {
+  const cookie = await signIn(owner);
+  const execute = () => call("POST", `/api/agents/portfolio/proposals/${"a".repeat(32)}/execute`, { cookie, body: {} });
+  cleanProposals();
+  fake.proposals.push(mine());
+  assert.deepEqual(await json(await execute()), { status: 409, body: { ok: false, kind: "refused", code: "not_approved" } });
+  for (const [state, result] of [["executing", "pending"], ["unknown", "pending"], ["executed", "final"], ["stopped", "final"], ["rejected", "final"], ["expired", "final"]] as const) {
+    cleanProposals();
+    fake.proposals.push(mine({ state }));
+    const { status, body } = await json(await execute());
+    assert.equal(status, 200, state);
+    assert.deepEqual([body.value.result, body.value.proposal.state], [result, state], state);
+    assert.equal(relayed("execute"), 0, `${state}: no execute sent, no quota spent`);
+    assert.deepEqual(audited, [], "nothing relayed, so nothing recorded");
+  }
+});
+
+test("execute: once per click; its answer is final, pending or not executable, and a lost answer is read, never resent", async t => {
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const execute = () => call("POST", `/api/agents/portfolio/proposals/${"a".repeat(32)}/execute`, { cookie, body: {} });
+  const unknown = { ok: false, kind: "unknown", procedure: "proposals/execute", identity: {} } as never;
+  const cases: [(ProposalAnswer | Error)[], (ProposalAnswer | Error)[], string, ProposalView["state"] | null][] = [
+    [[], [], "final", "executed"],
+    [[{ ok: true, value: proposal({ state: "executing" }) }], [], "pending", "executing"],
+    [[{ ok: true, value: proposal({ state: "unknown" }) }], [], "pending", "unknown"],
+    [[{ ok: true, value: proposal({ state: "stopped" }) }], [], "final", "stopped"],
+    [[{ ok: false, kind: "refused", status: 409, code: "not_executable", error: "Price below a signed floor" }], [], "not_executable", "approved"],
+    [[{ ok: false, kind: "refused", status: 409, code: "not_executable", error: "claimed meanwhile" }], [{ ok: true, value: proposal({ state: "executed" }) }], "final", "executed"],
+    [[{ ok: false, kind: "unavailable" }], [], "pending", "approved"],
+    [[unknown], [{ ok: true, value: proposal({ state: "executed" }) }], "final", "executed"],
+    [[new Error("socket hang up")], [], "pending", "approved"],
+    [[unknown], [{ ok: false, kind: "unavailable" }], "pending", null],
+    [[unknown], [new Error("socket hang up")], "pending", null],
+  ];
+  for (const [executeAnswers, laterReads, result, state] of cases) {
+    cleanProposals();
+    fake.proposals.push(mine({ state: "approved" }));
+    fake.proposalAnswers.execute = [...executeAnswers];
+    fake.proposalAnswers.get = [{ ok: true, value: proposal({ state: "approved" }) }, ...laterReads];
+    const { status, body } = await json(await execute());
+    const label = `${JSON.stringify(executeAnswers[0] ?? "ok")} then ${JSON.stringify(laterReads[0] ?? "read")}`;
+    assert.equal(status, 200, label);
+    const parsed = contract.executeResult.parse(body.value);
+    assert.deepEqual([parsed.result, parsed.proposal?.state ?? null], [result, state], label);
+    assert.equal(relayed("execute"), 1, "one execute, never resent after a lost answer");
+    assert.equal(fake.calls[0], "identity portfolio (fresh)", "a write reads the identity anew");
+    assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["execute", "attempt"], ["execute", "result"]], "a result even when the call threw");
+    assert.ok(!JSON.stringify(body).includes("floor"), "no platform text reaches the browser");
+  }
+  cleanProposals();
+  fake.proposals.push(mine({ state: "approved" }));
+  fake.proposalAnswers.execute = [{ ok: false, kind: "forbidden", status: 403, error: "No live owner consent covers this Organization and agent" }];
+  assert.deepEqual(await json(await execute()), { status: 409, body: { ok: false, kind: "refused", code: "not_connected" } });
 });

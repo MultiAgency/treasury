@@ -8,9 +8,11 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer as createHttpServer, type Server } from "node:http";
+import { randomBytes } from "node:crypto";
 import { request } from "node:https";
+import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
-import { signOwner, startStack, type Stack } from "../../../scripts/stack.ts";
+import { signOwner, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import { fileAudit } from "../src/audit.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
@@ -43,10 +45,10 @@ before(async () => {
   const state = stack.state();
   owner = state.ownerAccount;
   assert.ok(state.app, "the stack was started with --app");
+  const keyLookup = standInKeyLookup({ [owner]: [state.testPublicKey], [intruder.accountId]: [intruder.publicKey] });
   server = createHttpServer(createServer({
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 100,
-      keyLookup: standInKeyLookup({ [owner]: [state.testPublicKey], [intruder.accountId]: [intruder.publicKey] }) }),
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
     publicOrigin: ORIGIN,
     deployment: state.app.deployment,
@@ -54,6 +56,7 @@ before(async () => {
     trustedProxyHops: 0,
     audit,
     consentsPerDay: 1_000,
+    keyLookup,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -155,4 +158,51 @@ test("a rotated credential is used at once, without a restart, and the consent c
   stack.appCredential("revoke", before[0]!);
   assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent } },
     "read under the new credential, the old one revoked: consents are bound to the deployment, not the credential");
+});
+
+test("the owner reads, approves and executes a proposal through the server, and rejects another; each is recorded", async () => {
+  // Connected under the owner's Organization, unless an earlier test left the agent connected.
+  const issued = await challenge();
+  const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const agent = `/api/agents/${target.agent}`;
+  if (((await (await get(`${agent}/consent`, cookie)).json()) as { value: { consent: unknown } }).value.consent === null) await connect();
+  // Proposals are made by the app's proposer (PR 4); here the test makes them through the platform directly, as the server would.
+  const host = new URL(stack.state().dashboard).host;
+  const platform = appClient({ base: stack.state().dashboard as `https://${string}`, credential: readFileSync(stack.state().app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const calls = platform.agent(owner.replaceAll(".", "--"), target.agent);
+  const propose = async (requestId: string) => {
+    const made = await calls.call("proposals/create", { requestId, legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString() });
+    assert.ok(made.ok, JSON.stringify(made));
+    return made.value as ProposalView;
+  };
+  const verdict = async (view: ProposalView, kind: "approve" | "reject") => {
+    const message = proposalText(view, kind), nonce = randomBytes(32).toString("base64");
+    const signed = await signOwner(target, { message, recipient: host, nonce });
+    const answer = await post(`${agent}/proposals/${view.id}/${kind}`, { message, nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie);
+    return { status: answer.status, body: await answer.json() as { ok: boolean; value: { proposal: ProposalView } } };
+  };
+
+  const first = await propose(`stack-${Date.now()}-1`);
+  const listed = await (await get(`${agent}/proposals`, cookie)).json() as { value: { proposals: ProposalView[] } };
+  assert.ok(listed.value.proposals.some(item => item.id === first.id), "listed under the owner's Organization");
+  assert.equal(((await (await get(`${agent}/proposals/${first.id}`, cookie)).json()) as { value: { proposal: ProposalView } }).value.proposal.state, "proposed");
+  assert.deepEqual(await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json(), { ok: false, kind: "refused", code: "not_approved" });
+  const approved = await verdict(first, "approve");
+  assert.equal(approved.status, 200, JSON.stringify(approved.body));
+  assert.equal(approved.body.value.proposal.state, "approved");
+  const ran = await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json() as { value: { result: string; proposal: ProposalView } };
+  assert.deepEqual([ran.value.result, ran.value.proposal.state], ["final", "executed"], JSON.stringify(ran));
+  assert.ok(ran.value.proposal.operations.some(operation => operation.status === "SUCCESS"), "the swap ran");
+  const again = await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json() as { value: { result: string; proposal: ProposalView } };
+  assert.deepEqual([again.value.result, again.value.proposal.state], ["final", "executed"], "asked again, it answers the state from a read and sends nothing");
+
+  const second = await propose(`stack-${Date.now()}-2`);
+  const rejected = await verdict(second, "reject");
+  assert.equal(rejected.body.value.proposal.state, "rejected");
+
+  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(line => line.subject === first.id || line.subject === second.id);
+  assert.deepEqual(lines.map(line => [line.action, line.stage, line.answer?.ok]), [
+    ["approve", "attempt", undefined], ["approve", "result", true], ["execute", "attempt", undefined], ["execute", "result", true],
+    ["reject", "attempt", undefined], ["reject", "result", true],
+  ], "the second execute was answered from the read: nothing sent, nothing to record");
 });

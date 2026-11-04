@@ -9,9 +9,9 @@ import { appendLine, ensureAppendable } from "./files.ts";
 export type AuditEntry = {
   /** The signed-in NEAR account the action was relayed for. */
   who: string;
-  action: "consent" | "revoke";
+  action: "consent" | "revoke" | "approve" | "reject" | "execute";
   agent: string;
-  /** The consent the action concerns, once it's known. */
+  /** The consent or proposal the action concerns, once it's known. */
   subject?: string;
   /** The SHA-256 of the text the owner signed, never the signature. */
   signedTextSha256?: string;

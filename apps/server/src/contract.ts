@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission } from "@multiagency/sdk";
+import { appConsentSubmission, proposalSignature, proposalView } from "@multiagency/sdk";
 import { z } from "zod";
 
 export const agentName = z.string().regex(/^[a-z0-9-]{1,32}$/);
@@ -28,6 +28,24 @@ export const consentText = z.strictObject({ message: z.string(), nonce: z.string
  * SDK's own submission schema, with the nonce held to the canonical base64 of 32 bytes that this server issued.
  */
 export const consentSubmission = appConsentSubmission.extend({ nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) });
+/** One proposal, as the platform shows it. The list is the SDK's own `proposalList`. */
+export const proposalRead = z.object({ proposal: proposalView });
+/**
+ * The owner's signed verdict on a proposal: `proposalText(proposal, verdict)` of the proposal the page shows, signed
+ * by the wallet for the platform's host. The SDK's schema, with the nonce held to the canonical base64 of 32 bytes.
+ */
+export const verdictSubmission = proposalSignature.extend({ nonce: z.string().regex(/^[A-Za-z0-9+/]{43}=$/) });
+/**
+ * What an execute answers, with the proposal as last read. `final`: the proposal ended; `stopped` may still have run a
+ * swap, so show its operations. `pending`: it may still run, or the answer was lost: offer no Execute, read it again
+ * later; the proposal is null when even that read went unanswered. `not_executable`: refused before anything was
+ * claimed, nothing sent, still approved; it may be tried again later.
+ */
+export const executeResult = z.discriminatedUnion("result", [
+  z.object({ result: z.literal("final"), proposal: proposalView }),
+  z.object({ result: z.literal("pending"), proposal: proposalView.nullable() }),
+  z.object({ result: z.literal("not_executable"), proposal: proposalView }),
+]);
 /** The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch). */
 export const consent = z.strictObject({ consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable() });
 
@@ -38,7 +56,8 @@ export const consent = z.strictObject({ consent: z.strictObject({ id: z.string()
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
  *   `too_large`, `rate_limited`, a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
- *   `consent_refused`);
+ *   `consent_refused`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */
