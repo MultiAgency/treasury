@@ -106,7 +106,8 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
           <Button variant="ghost" className="self-start" disabled={consent.isFetching} onClick={refresh}>{consent.isFetching ? "Checking…" : "Check again"}</Button>
         </div>
         : <div className="flex flex-col items-start gap-3">
-          {consent.data.ended && <p role="alert">{consent.data.ended === "expired" ? "The DAO's vote didn't pass in time, so the agent wasn't connected." : "A stop the DAO voted on ended the request."}</p>}
+          {consent.data.ended && <p role="alert">{consent.data.ended === "expired" ? "The DAO's vote didn't pass in time, so the agent wasn't connected."
+            : consent.data.ended === "rejected" ? "The DAO didn't approve its proposal, so the agent wasn't connected." : "A stop the DAO voted on ended the request."}</p>}
           <p role="status">Not connected. {owner} consents by its own vote before the app can read or act on this agent's proposals.</p>
           {identity.access.canPropose
             ? <Button disabled={review !== undefined} onClick={askDao}>{review?.phase === "reading" ? "Asking…" : "Ask the DAO to connect it"}</Button>

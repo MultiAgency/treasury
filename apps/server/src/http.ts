@@ -206,12 +206,17 @@ const executed = (result: "final" | "pending" | "not_executable", proposal: Prop
 /**
  * An open DAO request as the page shows it: what the DAO's proposal says, the platform's check page for the exact text
  * and hash the DAO signs, a vote's verdict, and what this member is offered by what the DAO holds now; the offer is
- * null when the DAO couldn't be read.
+ * null when the DAO couldn't be read. Null when the DAO's proposal for it ended (rejected, expired or moved): the
+ * platform keeps such a request pending until its vote window closes, so it's closed here, and a member may ask again.
  */
-async function daoView(stored: StoredDaoRequest, identity: Admitted, { daos }: Context) {
+async function daoView(stored: StoredDaoRequest, identity: Admitted, { daos, daoRequests }: Context) {
   const [policy, read] = await Promise.all([daos.policy(stored.filed.dao), daos.proposals(stored.filed.dao, stored.filed.next)]);
   if (policy === "unavailable" || read === "unavailable") log("dao_unreadable", { agent: identity.agent, dao: stored.filed.dao });
   const offer = policy === "unavailable" || read === "unavailable" ? null : offerFor(stored.filed, read, policy, identity.access, Date.now());
+  if (offer?.state === "ended") {
+    await daoRequests.close(stored.id, offer.outcome === "Expired" ? "expired" : "rejected");
+    return null;
+  }
   return { id: stored.id, description: stored.description, votingUntil: stored.votingUntil, check: `https://${identity.host}/confirm/dao/${stored.id}`,
     ...(stored.kind === "vote" && { verdict: stored.verdict }), offer };
 }
@@ -233,7 +238,10 @@ async function fileDao(subject: DaoSubject, account: string, identity: Admitted 
   context.filing.set(key, pending);
   // Callers share the filing, never its view: what each is offered comes from their own roles.
   const outcome = await pending;
-  return "status" in outcome ? outcome : ok({ request: await daoView(outcome, identity, context) });
+  if ("status" in outcome) return outcome;
+  // The open request's DAO proposal ended, so it's closed now: this click files a new one. A new request can't end so.
+  const view = await daoView(outcome, identity, context);
+  return view ? ok({ request: view }) : fileDao(subject, account, identity, context);
 }
 
 /** A filing's outcome, shared by the clicks that wait on it: the request, open or stored now, or the refusal. */
@@ -244,15 +252,16 @@ async function filing(subject: DaoSubject, account: string, identity: Admitted &
   const organization = organizationOf(identity.owner), { agent } = identity;
   const open = subject.kind === "consent" ? daoRequests.consent(organization, agent) : daoRequests.vote(organization, agent, subject.proposal);
   if (open) return open;
-  if (!daoFilingsToday(account)) return refused(429, "rate_limited");
   // A request the platform filed is followed only once it's stored, so one that couldn't be kept isn't filed at all.
   if (!daoRequests.hasRoom()) { log("dao_requests_full", { agent }); return unavailable(); }
   const next = await daos.next(identity.owner);
   if (next === "unavailable") { log("dao_unreadable", { agent, dao: identity.owner }); return unavailable(); }
+  // Counted only once the platform will be asked: a filing that stopped before then spends none of the member's day.
+  if (!daoFilingsToday(account)) return refused(429, "rate_limited");
   const action = subject.kind === "consent" ? "dao-consent" as const : "dao-vote" as const;
   const message = subject.kind === "consent" ? consentFor({ identity, deployment }) : undefined;
   // A consent's text is this server's, by its hash; a vote's is the platform's own text of the proposal it names.
-  const recorded = message ? { signedTextSha256: sha256(message) } : { subject: (subject as { proposal: string }).proposal };
+  const recorded = subject.kind === "consent" ? { signedTextSha256: sha256(message!) } : { subject: subject.proposal, verdict: subject.verdict };
   await audit.append({ who: account, action, agent, ...recorded, stage: "attempt" });
   const filed = subject.kind === "consent" ? await platform.daoConsents.file(message!)
     : await platform.daoVotes.file({ organization, agent, proposal: subject.proposal, verdict: subject.verdict });
@@ -282,7 +291,7 @@ async function filing(subject: DaoSubject, account: string, identity: Admitted &
       : status === 409 ? refused(409, subject.kind === "consent" ? "agent_changed" : "not_open")
       : status === 403 ? (subject.kind === "consent" ? notOwner() : refused(409, "not_connected")) : unavailable();
   }
-  await recordResult(audit, { who: account, action, agent, ...recorded, stage: "result", ...(filed.ok && { subject: filed.value.request.id }),
+  await recordResult(audit, { who: account, action, agent, ...recorded, stage: "result", ...(filed.ok && { request: filed.value.request.id }),
     answer: audited(filed, "status" in outcome ? outcome : ok({})) });
   return outcome;
 }
@@ -304,7 +313,8 @@ async function daoConnection(identity: Admitted, live: ConsentRecord | undefined
   const settled = await context.settle(open);
   if (settled.result === "stored") return ok({ consent: shown(settled.consent), request: null });
   if (settled.result === "ended") return closed();
-  return ok({ consent: live ? shown(live) : null, request: await daoView(open, identity, context) });
+  const view = await daoView(open, identity, context);
+  return view ? ok({ consent: live ? shown(live) : null, request: view }) : closed();
 }
 
 /** Every route the server answers. Tests walk this table, so a new route is covered by the access tests as it's added. */

@@ -884,8 +884,9 @@ test("a member who may file connects a DAO's agent: the consent filed once for t
   assert.deepEqual([text.owner, text.organization, text.agent, text.scopes], [DAO, "agentic--sputnik-dao--near", "dao-treasury", ["read", "treasury"]]);
   assert.deepEqual(fake.calls.filter(made => made.startsWith("dao")), ["daoConsents.file"]);
   assert.equal(daoRequests.consent("agentic--sputnik-dao--near", "dao-treasury")?.id, filed.id, "stored before it's shown");
-  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.who, entry.subject]),
-    [["dao-consent", "attempt", "council.near", undefined], ["dao-consent", "result", "council.near", filed.id]]);
+  // The request is named by its own field, the hash the DAO's vote signs: a consent has no subject until it's stored.
+  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.who, entry.subject, entry.request]),
+    [["dao-consent", "attempt", "council.near", undefined, undefined], ["dao-consent", "result", "council.near", undefined, filed.id]]);
   assert.equal(audited[0]!.signedTextSha256, createHash("sha256").update(filed.message).digest("hex"));
 });
 
@@ -938,6 +939,7 @@ test("after the vote, reading the connection stores the consent: the request clo
   // What the DAO's vote did is recorded for the DAO, whichever member's read found it.
   assert.deepEqual(audited.map(entry => [entry.who, entry.action, entry.stage, entry.subject]),
     [[DAO, "dao-consent-stored", "result", connection.consent.id], [DAO, "revoke", "attempt", older.id], [DAO, "revoke", "result", older.id]]);
+  assert.equal(audited[0]!.request, fake.daoRequests[0]!.id, "the stored consent names the request its vote passed");
 });
 
 test("a request whose vote didn't pass in time, or that a DAO stop ended, is closed and says why; a new one may be filed", async t => {
@@ -951,6 +953,48 @@ test("a request whose vote didn't pass in time, or that a DAO stop ended, is clo
     assert.equal(daoRequests.consent("agentic--sputnik-dao--near", "dao-treasury"), undefined);
   }
   assert.equal(fake.daoRequests.length, 2, "each was filed anew");
+});
+
+test("a request whose DAO proposal was rejected or expired is closed and says why, so a member may ask again (#100)", async t => {
+  await freshDao(t);
+  const cookie = await signIn(council);
+  for (const [status, ended] of [["Rejected", "rejected"], ["Expired", "expired"]] as const) {
+    await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} });
+    // The platform keeps the request pending until its vote window closes, though the DAO already answered no.
+    fileOnChain(fake.daoRequests.at(-1)!.id, status);
+    const { body } = await json(await call("GET", "/api/agents/dao-treasury/consent", { cookie }));
+    assert.deepEqual(body.value, { consent: null, request: null, ended }, status);
+    assert.equal(daoRequests.consent("agentic--sputnik-dao--near", "dao-treasury"), undefined, status);
+  }
+  assert.equal(fake.daoRequests.length, 2, "each was filed anew");
+});
+
+test("asking again while the DAO's proposal for the open request has ended files a new request", async t => {
+  await freshDao(t);
+  const cookie = await signIn(council);
+  await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} });
+  const first = fake.daoRequests[0]!.id;
+  fileOnChain(first, "Rejected");
+  const { status, body } = await json(await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} }));
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.equal(fake.daoRequests.length, 2);
+  assert.notEqual(body.value.request.id, first);
+  assert.equal(body.value.request.offer.state, "file");
+});
+
+test("a vote whose DAO proposal was rejected is closed, and a member may ask for the verdict again", async t => {
+  await freshDao(t);
+  const id = "1".repeat(32);
+  daoProposal(id);
+  const cookie = await signIn(council);
+  await call("POST", `/api/agents/dao-treasury/proposals/${id}/approve`, { cookie, body: {} });
+  fileOnChain(fake.daoVotes[0]!.id, "Rejected");
+  const { body } = await json(await call("GET", `/api/agents/dao-treasury/proposals/${id}`, { cookie }));
+  assert.equal(body.value.vote, null);
+  assert.equal(daoRequests.vote(DAO_ORG, "dao-treasury", id), undefined, "closed");
+  const again = await json(await call("POST", `/api/agents/dao-treasury/proposals/${id}/approve`, { cookie, body: {} }));
+  assert.equal(again.status, 200, JSON.stringify(again.body));
+  assert.equal(fake.daoVotes.length, 2, "filed anew");
 });
 
 test("a DAO whose next proposal number can't be read files nothing; one whose proposals can't be read shows the request without an offer", async t => {
@@ -1015,8 +1059,9 @@ test("a member who may file asks for the DAO's verdict on a proposal: its vote f
   assert.deepEqual(request.offer, { state: "file", transaction: daoTransaction(DAO, filed.id, 0) });
   assert.deepEqual(fake.calls.filter(made => made.startsWith("dao")), [`daoVotes.file ${"1".repeat(32)} approve`]);
   assert.equal(daoRequests.vote(DAO_ORG, "dao-treasury", "1".repeat(32))?.id, filed.id, "stored before it's shown");
-  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.who, entry.subject]),
-    [["dao-vote", "attempt", "council.near", "1".repeat(32)], ["dao-vote", "result", "council.near", filed.id]]);
+  // Both records name the proposal and the verdict asked for; the result adds the request, so the two are linked.
+  assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.who, entry.subject, entry.verdict, entry.request]),
+    [["dao-vote", "attempt", "council.near", "1".repeat(32), "approve", undefined], ["dao-vote", "result", "council.near", "1".repeat(32), "approve", filed.id]]);
 });
 
 test("one vote per proposal: another member's opposite verdict is answered with the open vote, and nothing is filed", async t => {
@@ -1042,7 +1087,8 @@ test("after the DAO's vote passes, reading the proposal relays it: the proposal 
   assert.equal(contract.proposalRead.parse(body.value).proposal.state, "approved");
   assert.equal(body.value.vote, null);
   assert.equal(daoRequests.vote(DAO_ORG, "dao-treasury", "1".repeat(32)), undefined, "closed");
-  assert.deepEqual(audited.map(entry => [entry.who, entry.action, entry.stage, entry.subject]), [[DAO, "dao-vote-relayed", "result", "1".repeat(32)]]);
+  assert.deepEqual(audited.map(entry => [entry.who, entry.action, entry.stage, entry.subject, entry.verdict, entry.request]),
+    [[DAO, "dao-vote-relayed", "result", "1".repeat(32), "approve", fake.daoVotes[0]!.id]]);
 });
 
 test("a vote past its deadline is closed; one the platform can't relay for now (409) stays open and is read again", async t => {
@@ -1097,6 +1143,31 @@ test("DAO filings are limited per member a day, consents and votes together, sin
   assert.equal((await post("/api/agents/dao-treasury/consent/text")).status, 200);
   assert.deepEqual(await post(`/api/agents/dao-treasury/proposals/${"1".repeat(32)}/approve`), { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" } });
   assert.equal(counted.calls.filter(line => line.startsWith("daoVotes.file")).length, 0, "the vote wasn't filed");
+});
+
+test("a filing that never reaches the platform doesn't spend the member's allowance for the day", async t => {
+  t.mock.method(console, "error", () => {});
+  const counted = fakePlatform({ "dao-treasury": DAO }, { daos: ["dao-treasury"] });
+  const chain: Record<string, DaoProposal[]> = {};
+  const limited = createHttpServer(createServer({
+    platform: counted.platform,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "council.near": [council.publicKey] }) }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
+    daoFilingsPerDay: 1, keyLookup: async () => "full", daos: standInDaos({ [DAO]: DAO_POLICY }, chain),
+    daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+  }));
+  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
+  t.after(() => limited.close());
+  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
+  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(council.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const post = async (path: string) => json(await fetch(`${at}${path}`, { method: "POST", headers: { ...write, cookie }, body: "{}" }));
+  // The DAO's next proposal number can't be read, so nothing is filed.
+  assert.equal((await post("/api/agents/dao-treasury/consent/text")).status, 503);
+  chain[DAO] = [];
+  assert.equal((await post("/api/agents/dao-treasury/consent/text")).status, 200, "the day's one filing is still there");
+  assert.equal(counted.calls.filter(line => line.startsWith("daoConsents.file")).length, 1);
 });
 
 test("a consent request whose state can't be read now stays open: shown again, and never filed again", async t => {

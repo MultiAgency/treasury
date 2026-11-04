@@ -75,11 +75,10 @@ export type DaoTransactions = z.infer<typeof daoTransactions>;
 /**
  * What a member is offered for a DAO request waiting for its vote (`dao-offer.ts`): `filed`, vote on proposal
  * `proposal` in Trezu (`vote`); `approved`, wait for the server to complete it; `failed`, finalize it again in Trezu;
- * `ended`, the DAO's answer; `file`, the transaction to file, or null for a member who may not file.
+ * `file`, the transaction to file, or null for a member who may not file. A request whose proposal ended isn't shown.
  */
 export const daoOffer = z.discriminatedUnion("state", [
   z.strictObject({ state: z.enum(["filed", "approved", "failed"]), proposal: z.number(), vote: z.string() }),
-  z.strictObject({ state: z.literal("ended"), proposal: z.number(), vote: z.string(), outcome: z.enum(["Rejected", "Expired", "Moved"]) }),
   z.strictObject({ state: z.literal("file"), transaction: memberTransaction.nullable() }),
 ]);
 /**
@@ -101,12 +100,12 @@ export const proposalRead = z.object({ proposal: proposalView, vote: daoRequest.
 /**
  * The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch).
  * For a DAO-owned agent, also its consent request waiting for the vote (`request`), and, when one just ended without
- * a consent, why (`ended`: its vote didn't pass in time, or a DAO stop ended it).
+ * a consent, why (`ended`: its vote didn't pass in time, a DAO stop ended it, or the DAO voted it down).
  */
 export const consent = z.strictObject({
   consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable(),
   request: daoRequest.nullable().optional(),
-  ended: z.enum(["expired", "stopped"]).optional(),
+  ended: z.enum(["expired", "stopped", "rejected"]).optional(),
 });
 
 /**

@@ -14,6 +14,8 @@ const common = {
   votingUntil: z.number(),
   filed: z.strictObject({ dao: z.string(), next: z.number().int().nonnegative(), transactions: daoTransactions }),
 };
+/** Why a consent request ended without a consent: its vote didn't pass in time, a DAO stop ended it, or the DAO voted it down. */
+export type DaoEnding = "expired" | "stopped" | "rejected";
 /** A DAO's consent to this app, or its vote on one of this app's Treasury proposals. */
 const storedDaoRequest = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("consent"), ...common }),
@@ -37,7 +39,7 @@ export async function createDaoRequests(path: string, { max = 256 } = {}) {
    * (a page's or the background reader's), the page can say why. Kept in memory only: a restart forgets the reason,
    * never a request.
    */
-  const endings = new Map<string, "expired" | "stopped">();
+  const endings = new Map<string, DaoEnding>();
   const agentKey = (organization: string, agent: string) => `${organization} ${agent}`;
   /** Whether `b` would duplicate the open `a`: the same agent's consent, or a vote on the same proposal. */
   const sameSubject = (a: StoredDaoRequest, b: StoredDaoRequest) => a.kind === b.kind && a.organization === b.organization && a.agent === b.agent
@@ -60,7 +62,7 @@ export async function createDaoRequests(path: string, { max = 256 } = {}) {
       return added;
     },
     /** Forgets a request that has ended: completed, refused, or past its vote; a consent request's `why`, if it ended without one, is kept. */
-    async close(id: string, why?: "expired" | "stopped") {
+    async close(id: string, why?: DaoEnding) {
       const closing = records().find(record => record.id === id);
       await commit(current => current.filter(record => record.id !== id));
       if (closing?.kind === "consent" && why) endings.set(agentKey(closing.organization, closing.agent), why);

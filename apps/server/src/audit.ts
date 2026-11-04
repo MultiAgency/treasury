@@ -18,6 +18,10 @@ export type AuditEntry = {
   agent: string;
   /** The consent or proposal the action concerns, once it's known. */
   subject?: string;
+  /** A DAO request's platform ID, once filed: the hash the DAO's vote signs, which links its records. */
+  request?: string;
+  /** The verdict a DAO is asked to vote for, on `dao-vote` and `dao-vote-relayed`. */
+  verdict?: "approve" | "reject";
   /** The SHA-256 of the text the owner signed (or a DAO is asked to sign by its vote), never the signature. */
   signedTextSha256?: string;
 } & (

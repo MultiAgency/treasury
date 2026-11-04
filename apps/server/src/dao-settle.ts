@@ -1,6 +1,6 @@
 import type { Audit } from "./audit.ts";
 import { liveConsents } from "./consent.ts";
-import type { DaoRequests, StoredDaoRequest } from "./dao-requests.ts";
+import type { DaoRequests, StoredDaoRequest, StoredDaoVote } from "./dao-requests.ts";
 import { failure, log } from "./log.ts";
 import type { ConsentRecord, Platform } from "./platform.ts";
 import { recordResult, revokeAll } from "./revoke.ts";
@@ -53,11 +53,12 @@ async function settleOnce(open: StoredDaoRequest, { platform, daoRequests, audit
     if (read.value.state === "pending") return { result: "pending" };
     await daoRequests.close(open.id);
     if (read.value.state === "relayed") {
-      await recordResult(audit, { who: dao, action: "dao-vote-relayed", agent, subject: (open as { proposal: string }).proposal, stage: "result", answer: { ok: true } });
+      const { proposal, verdict } = open as StoredDaoVote;
+      await recordResult(audit, { who: dao, action: "dao-vote-relayed", agent, subject: proposal, verdict, request: open.id, stage: "result", answer: { ok: true } });
       return { result: "relayed", proposalState: read.value.proposalState };
     }
     const { consent } = read.value as { consent: ConsentRecord };
-    await recordResult(audit, { who: dao, action: "dao-consent-stored", agent, subject: consent.id, stage: "result", answer: { ok: true } });
+    await recordResult(audit, { who: dao, action: "dao-consent-stored", agent, subject: consent.id, request: open.id, stage: "result", answer: { ok: true } });
     const listed = await platform.consents.list(open.organization);
     if (listed.ok) await revokeAll(liveConsents(listed.value.consents, consent).filter(older => older.id !== consent.id), dao, agent, { platform, audit });
     else log("platform_consents_failed", { agent, ...failure(listed) });

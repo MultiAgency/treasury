@@ -47,6 +47,7 @@ export function DaoRequestView({ request, account, onChanged }: { request: DaoRe
       {lines(request.description).map((line, i) => <li key={i}>{line}</li>)}
     </ul>
     <p>The vote must pass by {when(new Date(request.votingUntil).toISOString())}. <a className="underline" href={request.check}>Check the exact text and hash the DAO signs</a>.</p>
+    <p>The DAO's proposal and every vote on it are public and permanent: they stay on chain for anyone to read.</p>
     {offer === null ? <p role="status">The DAO couldn't be read just now, so what's filed isn't known. Check again shortly.</p>
       : offer.state === "file" ? (offer.transaction
         ? held ? <p role="status">Waiting for the DAO's proposal to show here. Check again shortly; nothing is offered for filing meanwhile, so it isn't filed twice.</p>
@@ -57,8 +58,7 @@ export function DaoRequestView({ request, account, onChanged }: { request: DaoRe
         : <p role="status">No DAO proposal is filed for this yet, and your roles in the DAO can't file one: a member who may file proposals does.</p>)
       : offer.state === "filed" ? <p role="status">Filed as the DAO's proposal #{offer.proposal}. <a className="underline" href={offer.vote}>Vote on it in Trezu</a>.</p>
       : offer.state === "approved" ? <p role="status">The DAO approved proposal #{offer.proposal}. This server completes it on its next read.</p>
-      : offer.state === "failed" ? <p role="alert">The DAO's proposal #{offer.proposal} failed when it ran. A member who may finalize proposals can run it again: <a className="underline" href={offer.vote}>open it in Trezu</a>.</p>
-      : offer.state === "ended" && <p role="alert">The DAO {offer.outcome === "Rejected" ? "rejected" : offer.outcome === "Expired" ? "let expire" : "moved"} proposal #{offer.proposal}, so this can't complete. <a className="underline" href={offer.vote}>See it in Trezu</a>.</p>}
+      : <p role="alert">The DAO's proposal #{offer.proposal} failed when it ran. A member who may finalize proposals can run it again: <a className="underline" href={offer.vote}>open it in Trezu</a>.</p>}
     {notice && <p role={notice.tone} className="text-sm">{notice.text}</p>}
   </div>;
 }
