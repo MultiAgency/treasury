@@ -4,7 +4,7 @@ This repository holds the Treasury app: the owner UI (`web/`), the app server (`
 
 ## How changes land
 
-- **One branch, one PR to `main`.** Each PR needs one approving review from someone other than its author, and green CI ("Typecheck, unit tests and build" and "Stack tests"). It's squash-merged.
+- **One branch, one PR to `main`.** Each PR needs one approving review from someone other than its author, and green CI ("Typecheck, unit tests and build" on Node 24 and 26, and "Stack tests"). It's squash-merged.
 - **Stacked PRs land one at a time.** Once the PR below merges, retarget the next one to `main`, and review and merge it there. Don't merge PRs into each other's branches.
 - **A PR description has three parts:**
   - **Summary:** what changed and why.
