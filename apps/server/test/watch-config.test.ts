@@ -1,15 +1,14 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import { loadWatchConfig, readsPerHour } from "../src/watch-config.ts";
 import { WATCH } from "../src/watch.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-const dirs: string[] = [];
-after(() => Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true }))));
 async function file(content: unknown, mode = 0o600) {
-  const dir = await mkdtemp(join(tmpdir(), "treasury-watch-config-")); dirs.push(dir);
+  const dir = tempDir("treasury-watch-config-");
   const path = join(dir, "watch.json");
   await writeFile(path, typeof content === "string" ? content : JSON.stringify(content), { mode });
   await chmod(path, mode);

@@ -1,16 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import type { OwnerFailure, OwnerOutput, ProposalView } from "@multiagency/sdk";
 import type { ConsentRecord, ProposalAnswer, WatchPlatform } from "../src/platform.ts";
 import { createRequests } from "../src/requests.ts";
 import { createWatch, drift, runWatch, WATCH, type WatchedAgent, type WatchEvent } from "../src/watch.ts";
 import { proposal } from "./fakes.ts";
-
-const dirs: string[] = [];
-after(() => Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true }))));
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const ORG = "owner--near", AGENT = "portfolio", USDC = "nep141:usdc", WNEAR = "nep141:wrap.near";
 const WATCHED: WatchedAgent = { organization: ORG, agent: AGENT, driftPoints: 5, intervalS: 300, proposalHours: 24 };
@@ -33,7 +29,7 @@ const refused = (code: string) => ({ ok: false, kind: "refused", status: 409, co
 
 /** The platform as `watch` sees it, for one agent: answers set per test, and every call recorded. */
 async function world({ max }: { max?: number } = {}) {
-  const dir = await mkdtemp(join(tmpdir(), "treasury-watch-")); dirs.push(dir);
+  const dir = tempDir("treasury-watch-");
   const requests = await createRequests(join(dir, "requests.json"), max === undefined ? {} : { max });
   const clock = { now: T0 };
   const calls: string[] = [];
@@ -91,6 +87,16 @@ test("the drift rule: the largest gap in points of the total, and the first leg 
   unpriced.book[1]!.usd = null;
   assert.deepEqual(drift(unpriced, 5), { skipped: "unpriced", assets: [WNEAR] });
   assert.deepEqual(drift(overview(0, { book: [] } as never), 5), { skipped: "empty" });
+});
+
+test("the first leg is the smaller of the largest surplus and the largest deficit: on an uneven book they differ", () => {
+  // $70 USDC, $20 wNEAR and $10 ETH against 50/25/25: gaps +20, -5 and -15, so the first leg moves min(20, 15) = $15.
+  const ETH = "nep141:eth.omft.near";
+  const row = (asset: string, usd: number) => ({ asset, symbol: asset, decimals: 6, public: 0n, confidential: 0n, price: 1, priceUpdatedAt: null, priceExpiresAt: null, usd });
+  const uneven = (minLegUsd: number) => overview(70, { book: [row(USDC, 70), row(WNEAR, 20), row(ETH, 10)], target: { [USDC]: 0.5, [WNEAR]: 0.25, [ETH]: 0.25 },
+    rebalance: { minLegUsd, maxCostBps: 50 } } as never);
+  assert.deepEqual(drift(uneven(1), 5), { points: 20, firstLegUsd: 15 });
+  assert.deepEqual(drift(uneven(16), 5), { skipped: "first leg below minLegUsd", firstLegUsd: 15, minLegUsd: 16 }, "not the $20 surplus");
 });
 
 test("past the threshold: the request is stored, then created with the strategy's legs, and its proposal recorded", async () => {

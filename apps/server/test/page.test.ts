@@ -1,20 +1,20 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/http.ts";
 import { loadPage } from "../src/page.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
 import { fakePlatform, HOST, ORIGIN } from "./fakes.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const PAGE = "<!doctype html><title>Treasury proposals</title>";
 /** The proposals page's build as `web/` makes it, with what must never be served beside it. */
-const dist = mkdtempSync(join(tmpdir(), "treasury-page-"));
-const outside = mkdtempSync(join(tmpdir(), "treasury-outside-"));
+const dist = tempDir("treasury-page-");
+const outside = tempDir("treasury-outside-");
 writeFileSync(join(dist, "index.html"), PAGE);
 writeFileSync(join(dist, ".env"), "SECRET=1");
 writeFileSync(join(outside, "secret.js"), "secret");
@@ -83,5 +83,5 @@ test("/api is matched first and unchanged beside the page", async () => {
 });
 
 test("a build without its page refuses to load, so the server doesn't start", async () => {
-  await assert.rejects(loadPage(mkdtempSync(join(tmpdir(), "treasury-empty-"))), /has no index.html/);
+  await assert.rejects(loadPage(tempDir("treasury-empty-")), /has no index.html/);
 });

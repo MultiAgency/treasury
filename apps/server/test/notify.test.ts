@@ -1,17 +1,15 @@
-import { after, test } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { notifier, NOTIFY_TIMEOUT_MS } from "../src/notify.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 /** A notifier that records its stdin, arguments (after the record's path) and environment, as JSON in that path. */
 const RECORD = `const chunks = []; process.stdin.on("data", c => chunks.push(c)).on("end", () => require("node:fs").writeFileSync(process.argv[1],
   JSON.stringify({ stdin: Buffer.concat(chunks).toString(), args: process.argv.slice(2), env: process.env })));`;
 const node = (code: string, ...args: string[]): [string, ...string[]] => [process.execPath, "-e", code, ...args];
-const dirs: string[] = [];
-after(() => { for (const dir of dirs) rmSync(dir, { recursive: true, force: true }); });
-const scratch = () => { const dir = mkdtempSync(join(tmpdir(), "treasury-notify-")); dirs.push(dir); return dir; };
+const scratch = () => tempDir("treasury-notify-");
 
 test("the proposal on stdin; no secret and no TREASURY_ setting in the notifier's environment", async () => {
   const secret = "fastnear_never_handed_on", saved = { key: process.env.FASTNEAR_API_KEY, file: process.env.TREASURY_CREDENTIAL_FILE };

@@ -604,6 +604,22 @@ test("rejecting relays the owner's signature over the reject text the same way",
   assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["reject", "attempt"], ["reject", "result"]]);
 });
 
+test("an audit trail that can't record the attempt stops an approve, reject or execute before the platform sees it", async t => {
+  t.mock.method(console, "error", () => {});
+  t.after(() => { delete auditFails.stage; });
+  const cookie = await signIn(owner);
+  for (const [action, state] of [["approve", "proposed"], ["reject", "proposed"], ["execute", "approved"]] as const) {
+    cleanProposals();
+    const view = mine({ state });
+    fake.proposals.push(view);
+    const body = action === "execute" ? {} : signedVerdict(view, action);
+    auditFails.stage = "attempt";
+    assert.deepEqual(await json(await call("POST", `/api/agents/portfolio/proposals/${view.id}/${action}`, { cookie, body })),
+      { status: 503, body: { ok: false, kind: "unavailable" } }, action);
+    assert.equal(relayed(action), 0, `${action}: nothing unrecorded reached the platform`);
+  }
+});
+
 test("a verdict on other terms, on a proposal no longer open, after it expired, or not signed by the owner's key is refused before relaying", async () => {
   const cookie = await signIn(owner);
   const view = mine(), past = new Date(Date.now() - 1).toISOString();

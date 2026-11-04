@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { appendFileSync, chmodSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, recordHash, verifyChain } from "../src/chain.ts";
 import { fileAudit, type Audit } from "../src/audit.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const open = (file: string, now?: () => number) => chainedFileAudit<Record<string, unknown>>(file, now);
-const fresh = () => join(mkdtempSync(join(tmpdir(), "chain-")), "nested", "audit.jsonl");
+const fresh = () => join(tempDir("chain-"), "nested", "audit.jsonl");
 const T0 = Date.parse("2026-11-03T12:00:00Z");
 const entry = (n: number) => ({ who: "owner.near", action: "consent" as const, agent: "portfolio", subject: `c${n}`, stage: "attempt" as const });
 const lines = (file: string) => readFileSync(file, "utf8").split("\n").filter(Boolean);

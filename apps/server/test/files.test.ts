@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import { writeAtomic } from "../src/files.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-const dirs: string[] = [];
-after(() => Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true }))));
-const scratch = async () => { const dir = await mkdtemp(join(tmpdir(), "treasury-files-")); dirs.push(dir); return dir; };
+const scratch = async () => tempDir("treasury-files-");
 
 test("an atomic write replaces the file whole, owner-only, and leaves no temporary file", async () => {
   const dir = await scratch(), file = join(dir, "requests.json");

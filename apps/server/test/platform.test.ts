@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createCredential } from "../src/credential.ts";
 import { createPlatform } from "../src/platform.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const tap = (fill: string) => `tap_00000000-0000-4000-8000-000000000000.${fill.repeat(43)}`;
 const identity = { agent: "portfolio", owner: "owner.near", agentId: "id-1", created: true, host: "platform.test", deployment: "treasury" };
@@ -20,7 +20,7 @@ function recording(answer: (signal: AbortSignal | undefined) => Promise<Response
 }
 
 const setup = (answer: Parameters<typeof recording>[0], timeoutMs = 1_000) => {
-  const file = join(mkdtempSync(join(tmpdir(), "platform-")), "app-credential");
+  const file = join(tempDir("platform-"), "app-credential");
   writeFileSync(file, tap("a"), { mode: 0o600 });
   const { fetch, seen } = recording(answer);
   const clock = { now: 0 };
