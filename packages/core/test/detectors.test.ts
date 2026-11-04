@@ -16,17 +16,19 @@ test("a flat market raises nothing", () => {
   assert.equal(highestLevel(detectMarketMoves(flat(), NOW)), 0);
 });
 
-test("fast rise: exactly +10% in an hour is L1, +20% is L2, just under is nothing", () => {
+test("fast rise: exactly +10% in an hour is L1, +20% is L2, just under each is the level below", () => {
   const rise = (to: number) => series(ago => (ago < 60 ? to : 100));
   assert.deepEqual(names(rise(109.99)), []);
   assert.deepEqual(names(rise(110)), ["fast-rise:1"]);
+  assert.deepEqual(names(rise(119.99)), ["fast-rise:1"]);
   assert.deepEqual(names(rise(120)), ["fast-rise:2"]);
 });
 
-test("fast drop: exactly −10% in an hour is L1, −20% is L2, just over is nothing", () => {
+test("fast drop: exactly −10% in an hour is L1, −20% is L2, just short of each is the level below", () => {
   const drop = (to: number) => series(ago => (ago < 60 ? to : 100));
   assert.deepEqual(names(drop(90.01)), []);
   assert.deepEqual(names(drop(90)), ["fast-drop:1"]);
+  assert.deepEqual(names(drop(80.01)), ["fast-drop:1"]);
   assert.deepEqual(names(drop(80)), ["fast-drop:2"]);
 });
 
@@ -43,6 +45,41 @@ test("parabolic: a rise of exactly 40% over a day is L2", () => {
   assert.deepEqual(names(slow(140)), ["parabolic:2"]);
 });
 
+test("crash: a fall of 30% from the day's high is L3 even when the day's net move is small", () => {
+  // 100, then up to a high 20h ago, then down 10h ago: the net move over the day is small, the fall from the high is not.
+  const peak = (high: number, to: number) => series(ago => (ago >= 20 * 60 ? 100 : ago >= 10 * 60 ? high : to));
+  assert.deepEqual(names(peak(130, 91.01)), []);
+  assert.deepEqual(names(peak(130, 91)), ["crash:3"]);
+  // The review's case: 100 → 140 → 98 is both a 40% rise from the low and a 30% fall from the high.
+  assert.deepEqual(names(peak(140, 98)), ["crash:3", "parabolic:2"]);
+});
+
+test("parabolic: a rise of 40% from the day's low is L2 even when the day's net move is small", () => {
+  const trough = (low: number, to: number) => series(ago => (ago >= 20 * 60 ? 100 : ago >= 10 * 60 ? low : to));
+  assert.deepEqual(names(trough(75, 104.99)), []);
+  assert.deepEqual(names(trough(75, 105)), ["parabolic:2"]);
+});
+
+test("a fall before the day's high isn't a crash, and a rise before its low isn't parabolic", () => {
+  // Down 25% then up 40% from 100: a rise from the low, not a crash from the later high.
+  assert.deepEqual(names(series(ago => (ago >= 20 * 60 ? 100 : ago >= 10 * 60 ? 75 : 105))), ["parabolic:2"]);
+});
+
+/**
+ * One day of moves after 100: `levels[k]` holds for the k-th two-hour block, the last level to the end of the day. Each
+ * change of direction between levels is a reversal.
+ */
+const day = (levels: number[]) => series(ago => (ago >= 24 * 60 ? 100 : levels[Math.min(Math.floor((24 * 60 - 1 - ago) / 120), levels.length - 1)]!));
+
+test("sideways chop at its boundary: exactly 6 reversals and a 2% net move is L1", () => {
+  assert.deepEqual(names(day([101, 99, 101, 99, 101, 99, 102])), ["sideways-chop:1"]);
+});
+
+test("sideways chop just under its boundary: 5 reversals, or a net move just over 2%, is nothing", () => {
+  assert.deepEqual(names(day([99, 101, 99, 101, 99, 102])), []);
+  assert.deepEqual(names(day([101, 99, 101, 99, 101, 99, 102.01])), []);
+});
+
 test("sideways chop: many reversals with no net move is L1; a steady drift is not", () => {
   assert.deepEqual(names(series(ago => ((ago / 5) % 2 === 0 ? 100 : 101))), ["sideways-chop:1"]);
   assert.deepEqual(names(series(ago => 100 + (26 * 60 - ago) / (26 * 60))), []);
@@ -57,6 +94,22 @@ test("too little history, or none, is a conservative L1 and never silence", () =
   assert.deepEqual(names(flat().slice(-60)), ["history:1"]);
   assert.deepEqual(names([]), ["history:1"]);
   assert.deepEqual(names([{ at: NOW, price: 100 }]), ["history:1"]);
+});
+
+test("stale history is a conservative L1 and never silence, however far back it reaches", () => {
+  // The review's case: five-minute samples from 3 days ago up to 12 hours ago, all at 100.
+  const old = Array.from({ length: 60 * 12 + 1 }, (_, i) => ({ at: NOW - 72 * HOUR + i * 5 * MIN, price: 100 }));
+  const found = detectMarketMoves(old, NOW);
+  assert.deepEqual(found.map(d => `${d.detector}:${d.level}`), ["history:1"]);
+  assert.match(found[0]!.reason, /720 min old/);
+});
+
+test("the newest sample may be exactly 15 minutes old; a moment older is stale", () => {
+  const shifted = (byMs: number) => flat().map(s => ({ at: s.at - byMs, price: s.price }));
+  assert.deepEqual(names(shifted(15 * MIN)), []);
+  assert.deepEqual(names(shifted(15 * MIN + 1)), ["history:1"]);
+  const cfg = { ...DETECTOR_DEFAULTS, maxSampleAgeMs: HOUR };
+  assert.deepEqual(detectMarketMoves(shifted(30 * MIN), NOW, cfg), []);
 });
 
 test("unusable samples are ignored, and the result is deterministic", () => {
