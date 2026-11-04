@@ -128,15 +128,17 @@ test("held while operations are unresolved, while autopilot is on, or while the 
 test("a live proposal holds the agent: it's read alone, and none of the three reads is spent", async () => {
   const w = await world();
   const { proposed } = await w.tick();
-  for (const state of ["proposed", "approved"] as const) {
+  // `executing` and `unknown` hold too: claimed before its first swap is journaled, a proposal can read `executing`
+  // while `unresolved` is still empty, and `unknown` is read later, never proposed over.
+  for (const state of ["proposed", "approved", "executing", "unknown"] as const) {
     w.stored.forEach(view => { view.state = state; });
     assert.deepEqual(await w.tick(), { organization: ORG, agent: AGENT, skipped: "live proposal", proposalId: proposed, state });
     assert.deepEqual(w.calls, ["proposals/get"]);
   }
 });
 
-test("a proposal that left proposed and approved is forgotten, and the agent may propose again in the same tick", async () => {
-  for (const state of ["executing", "executed", "stopped", "unknown", "rejected", "withdrawn", "expired", "invalidated"] as const) {
+test("a proposal that reached a final state is forgotten, and the agent may propose again in the same tick", async () => {
+  for (const state of ["executed", "stopped", "rejected", "withdrawn", "expired", "invalidated"] as const) {
     const w = await world();
     const first = await w.tick();
     w.stored.forEach(view => { view.state = state; });
@@ -174,10 +176,12 @@ test("a resend of a request too close to its expiry is dropped, not sent: the pl
   assert.ok(event.proposed);
 });
 
-test("not_proposable: nothing was stored, so the request is dropped, and the agent backs off before quoting again", async () => {
+test("not_proposable or nothing_to_propose: nothing was stored, so the request is dropped, and the agent backs off before quoting again", async () => {
+  // nothing_to_propose: the strategy picks no leg worth its cost, which drift() can't see (`service.ts:110`).
+  for (const code of ["not_proposable", "nothing_to_propose"]) {
   const w = await world();
-  w.answers.create.push(refused("not_proposable"));
-  assert.deepEqual(await w.tick(), { organization: ORG, agent: AGENT, skipped: "not proposable", error: "not_proposable", backoffTicks: WATCH.backoffTicks });
+  w.answers.create.push(refused(code));
+  assert.deepEqual(await w.tick(), { organization: ORG, agent: AGENT, skipped: "not proposable", error: code, backoffTicks: WATCH.backoffTicks });
   assert.deepEqual(w.requests.of(ORG, AGENT), []);
   for (let i = 1; i < WATCH.backoffTicks; i++) {
     w.clock.now += 300_000;
@@ -185,6 +189,35 @@ test("not_proposable: nothing was stored, so the request is dropped, and the age
   }
   w.clock.now += 300_000;
   assert.ok((await w.tick()).proposed);
+  }
+});
+
+test("rate-limited or a provider failure on a create: the request is kept, the agent backs off, then it's sent again unchanged", async () => {
+  for (const answer of [failure("unknown", { httpStatus: 429 }), failure("provider")]) {
+    const w = await world();
+    w.answers.create.push(answer as ProposalAnswer);
+    const first = await w.tick();
+    assert.equal(first.backoffTicks, WATCH.backoffTicks, JSON.stringify(first));
+    assert.deepEqual(w.requests.of(ORG, AGENT).map(record => record.proposalId), [null], answer.kind);
+    for (let i = 1; i < WATCH.backoffTicks; i++) {
+      w.clock.now += 300_000;
+      assert.equal((await w.tick()).skipped, "backoff", answer.kind);
+      assert.deepEqual(w.calls, [], "nothing sent during the backoff");
+    }
+    w.clock.now += 300_000;
+    assert.ok((await w.tick()).proposed, answer.kind);
+    assert.deepEqual(w.sent[1], w.sent[0], "the same request");
+  }
+});
+
+test("a rate-limited read backs the agent off", async () => {
+  const w = await world();
+  w.answers.overview = failure("unavailable", { httpStatus: 429 }) as never;
+  assert.equal((await w.tick()).backoffTicks, WATCH.backoffTicks);
+  w.answers.overview = { ok: true, value: overview(80) };
+  w.clock.now += 300_000;
+  assert.equal((await w.tick()).skipped, "backoff");
+  assert.deepEqual(w.calls, [], "nothing read during the backoff");
 });
 
 test("too_many_proposals: dropped, and held for the backoff", async () => {
@@ -225,13 +258,21 @@ test("forbidden without a live consent: the agent stops, reads why, and resumes 
   assert.ok((await w.tick()).proposed, "resumed");
 });
 
-test("forbidden with a live consent is a bug: the agent stops until the server restarts, and never retries", async () => {
+test("forbidden with a live consent holds the agent for the backoff, then it reads again: a platform stopping answers so too", async () => {
+  // "Access ended before forwarding" (`app-routes.ts:182-186`) comes while the platform stops, the consent still live.
   const w = await world();
   w.answers.overview = failure("forbidden") as never;
-  assert.equal((await w.tick()).stopped, "forbidden with a live consent");
+  const event = await w.tick();
+  assert.equal(event.held, "forbidden with a live consent", JSON.stringify(event));
+  assert.equal(event.backoffTicks, WATCH.backoffTicks);
+  for (let i = 1; i < WATCH.backoffTicks; i++) {
+    w.clock.now += 300_000;
+    assert.equal((await w.tick()).skipped, "backoff");
+    assert.deepEqual(w.calls, [], "the refused call isn't retried during the backoff");
+  }
+  w.answers.overview = { ok: true, value: overview(80) };
   w.clock.now += 300_000;
-  await w.tick();
-  assert.deepEqual(w.calls, []);
+  assert.ok((await w.tick()).proposed, "read again after the backoff");
 });
 
 test("forbidden when the consents can't be read: the agent waits for a live consent, and isn't stopped for good", async () => {
@@ -245,12 +286,18 @@ test("forbidden when the consents can't be read: the agent waits for a live cons
   assert.ok((await w.tick()).proposed, "resumed once the consents read answers");
 });
 
-test("withdrawn on a create: the consent it was made under has ended, so the agent stops until the owner connects again", async () => {
+test("withdrawn on a resend: made under a consent since replaced, so it's dropped and the agent proposes again, not stopped", async () => {
+  // The platform answers withdrawn only through a live consent (`app-routes.ts:141-143`): the owner connected again
+  // after a lost answer, and the proposal made under the old consent was withdrawn (`service.ts:52-58`).
   const w = await world();
-  w.answers.create.push(refused("withdrawn"));
-  w.answers.consents = [];
-  assert.equal((await w.tick()).stopped, "not connected");
+  w.answers.create.push(failure("unavailable") as ProposalAnswer, refused("withdrawn"));
+  await w.tick();
+  w.clock.now += 300_000;
+  const event = await w.tick();
+  assert.equal(event.skipped, "withdrawn", JSON.stringify(event));
   assert.deepEqual(w.requests.of(ORG, AGENT), []);
+  w.clock.now += 300_000;
+  assert.ok((await w.tick()).proposed, "not stopped: it proposes again under the live consent");
 });
 
 test("a read that fails otherwise is reported, and nothing is proposed this tick", async () => {

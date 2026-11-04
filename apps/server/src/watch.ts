@@ -72,17 +72,25 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
     return agents.get(key)!;
   };
 
+  /** No calls for `backoffTicks` intervals: after a refused quote, a rate limit, a provider failure, or a live consent's refusal. */
+  const backoff = (watched: WatchedAgent) => { stateOf(watched).backoffUntil = now() + WATCH.backoffTicks * watched.intervalS * 1000; };
+
   /** Whether the owner's consent for this app is live: what a `forbidden` answer on the app route turns on (#20). */
   const connected = async ({ organization, agent }: WatchedAgent) => {
     const [{ answer: identity }, listed] = await Promise.all([platform.identity(agent, { fresh: true }), platform.consents(organization)]);
     return identity.ok && listed.ok && liveConsents(listed.value.consents, identity.value, now()).length > 0;
   };
-  /** Stops the agent after a `forbidden`: until the owner connects again, or, with a live consent, until a restart. */
+  /**
+   * After a `forbidden`: with the owner's consent ended, the agent stops until they connect again. With it live, the
+   * agent is held for the backoff and then reads again: the platform also answers so while it stops (`app-routes.ts`,
+   * "Access ended before forwarding"), so a live consent's refusal is reported but doesn't strand the agent.
+   */
   const stop = async (watched: WatchedAgent, event: (detail: Record<string, unknown>) => WatchEvent) => {
     const state = stateOf(watched);
     if (await connected(watched)) {
-      state.stopped = { reason: "forbidden with a live consent", resumable: false };
-      return event({ stopped: state.stopped.reason, note: "the platform refused a call this app's consent covers: a bug to report, never retried" });
+      backoff(watched);
+      return event({ held: "forbidden with a live consent", backoffTicks: WATCH.backoffTicks,
+        note: "the platform refused a call this app's consent covers: reported, and read again after the backoff" });
     }
     state.stopped = { reason: "not connected", resumable: true };
     return event({ stopped: state.stopped.reason, note: "the owner's consent for this app has ended: they connect again on the proposals page" });
@@ -102,15 +110,17 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
         page: `${publicOrigin}/agents/${agent}/proposals/${id}` });
       return { ...proposed, notified };
     }
-    const backoff = () => { state.backoffUntil = now() + WATCH.backoffTicks * watched.intervalS * 1000; };
     if (answer.kind === "refused") {
       // A refusal stores nothing, so the request can go.
       await requests.drop(request);
       switch (answer.code) {
-        case "not_proposable": backoff(); return event({ skipped: "not proposable", error: answer.error, backoffTicks: WATCH.backoffTicks });
-        case "too_many_proposals": backoff(); return event({ held: "too many proposals", backoffTicks: WATCH.backoffTicks });
-        // Made under a consent that has since ended.
-        case "withdrawn": return stop(watched, event);
+        // Nothing worth proposing at these quotes, which drift() can't see: quote again later.
+        case "not_proposable":
+        case "nothing_to_propose": backoff(watched); return event({ skipped: "not proposable", error: answer.error, backoffTicks: WATCH.backoffTicks });
+        case "too_many_proposals": backoff(watched); return event({ held: "too many proposals", backoffTicks: WATCH.backoffTicks });
+        // A resend whose proposal was made under a consent since replaced: the platform answers this only through a
+        // live consent (`app-routes.ts`), so the owner is connected, and the agent may propose again.
+        case "withdrawn": return event({ skipped: "withdrawn", note: "made under a consent since replaced: proposed again next tick" });
       }
       state.stopped = { reason: `refused: ${answer.code ?? answer.error}`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
@@ -121,6 +131,11 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
       await requests.drop(request);
       state.stopped = { reason: `refused by the gateway (${answer.httpStatus})`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
+    }
+    // Rate-limited (a plain 429), or the provider couldn't quote: kept, and sent again unchanged after the backoff.
+    if ((answer.kind === "unknown" && answer.httpStatus === 429) || answer.kind === "provider") {
+      backoff(watched);
+      return event({ failed: "proposals/create", kind: answer.kind, requestId: request.requestId, backoffTicks: WATCH.backoffTicks, note: "sent again, unchanged, after the backoff" });
     }
     return event({ failed: "proposals/create", kind: answer.kind, requestId: request.requestId, note: "sent again, unchanged, next tick" });
   };
@@ -136,6 +151,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
         if (!await connected(watched)) return event({ skipped: "not connected" });
         state.stopped = undefined;
       }
+      if (now() < state.backoffUntil) return event({ skipped: "backoff", until: new Date(state.backoffUntil).toISOString() });
 
       for (const request of requests.of(organization, agent)) {
         if (request.proposalId === null) {
@@ -151,8 +167,10 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
           return event({ failed: "proposals/get", kind: read.kind, proposalId: request.proposalId });
         }
         const { state: proposalState } = read.value;
-        if (proposalState === "proposed" || proposalState === "approved") return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
-        // Claimed or closed: no longer ours to hold for. An execution still in doubt holds the agent through `unresolved`.
+        // Open, or claimed and not final: `executing` can read while `unresolved` is still empty (claimed before its first
+        // swap is journaled), and `unknown` is read later, never proposed over.
+        if (["proposed", "approved", "executing", "unknown"].includes(proposalState)) return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
+        // Final: no longer ours to hold for.
         await requests.drop(request);
       }
 
@@ -161,13 +179,14 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
       if (!overview.ok || !unresolved.ok || !autopilot.ok) {
         const failed = Object.entries({ overview, unresolved, "autopilot/get": autopilot }).flatMap(([name, result]) => result.ok ? [] : [{ name, kind: result.kind }]);
         if (failed.some(({ kind }) => kind === "forbidden")) return stop(watched, event);
-        return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind) });
+        const limited = [overview, unresolved, autopilot].some(result => !result.ok && "httpStatus" in result && result.httpStatus === 429);
+        if (limited) backoff(watched);
+        return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
       }
       if (unresolved.value.length) return event({ held: "unresolved", operations: unresolved.value.length });
       // Two proposers on one agent would race; turning autopilot off is the owner's call.
       if (autopilot.value.on) return event({ held: "autopilot" });
       if (overview.value.notInForce) return event({ held: "policy not in force", notInForce: overview.value.notInForce });
-      if (now() < state.backoffUntil) return event({ skipped: "backoff", until: new Date(state.backoffUntil).toISOString() });
       const trigger = drift(overview.value, watched.driftPoints);
       if ("skipped" in trigger) return event(trigger);
 

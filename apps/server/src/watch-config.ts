@@ -7,7 +7,7 @@ import { WATCH, type WatchedAgent } from "./watch.ts";
 export const APP_HOURLY_LIMIT = 1_200;
 /** What `watch` may spend of it: the rest is left for owners using the proposals page. */
 export const WATCH_HOURLY_BUDGET = APP_HOURLY_LIMIT / 2;
-/** Reads a tick makes when no proposal of the agent's own is live: overview, unresolved and autopilot. */
+/** Reads a tick makes when no proposal of the agent's own is open: overview, unresolved and autopilot. */
 const READS_PER_TICK = 3;
 
 const agentSettings = z.strictObject({
@@ -22,7 +22,10 @@ const agentSettings = z.strictObject({
 });
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
 
-/** Calls an hour the agents' ticks make at most, apart from their rare creates. */
+/**
+ * Calls an hour the agents' ticks make in steady state: 3 a tick, or 1 while a proposal of the agent's own is open. A
+ * tick that proposes, or that reads why it was refused, makes up to 5; neither repeats every tick.
+ */
 export const readsPerHour = (agents: readonly Pick<WatchedAgent, "intervalS">[]) =>
   Math.ceil(agents.reduce((sum, { intervalS }) => sum + READS_PER_TICK * 3_600 / intervalS, 0));
 
