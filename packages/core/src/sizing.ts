@@ -2,7 +2,7 @@
 // bounds. Pure. The policy engine (A5) still has the final say. Every number is a named default awaiting H6/H9, and the
 // sleeve meaning (volatile / reserve / operating cash) is unconfirmed (H5/H6/H8).
 
-import type { BandZone, Proposal } from "./bands.ts";
+import type { BandZone, Intent } from "./bands.ts";
 import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const SIZING_DEFAULTS = {
@@ -44,15 +44,15 @@ export function sizingProblems(p: SizingParams): string[] {
   return r.problems;
 }
 
-const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
+const hold = (p: Intent, reason: string): Intent => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
 const usable = (n: number) => Number.isFinite(n) && n >= 0;
 
 /**
- * Sizes a proposal, or holds with the reason. A hold stays a hold. Anything unusable (a negative or non-finite
+ * Sizes an intent, or holds with the reason. A hold stays a hold. Anything unusable (a negative or non-finite
  * holding, no treasury value, bad bounds, a DCA budget that is used up) holds.
  */
-export function sizeProposal(p: Proposal, portfolio: Portfolio, bounds: WeightBounds, state: SizingState,
-  params: SizingParams = SIZING_DEFAULTS): Proposal {
+export function sizeIntent(p: Intent, portfolio: Portfolio, bounds: WeightBounds, state: SizingState,
+  params: SizingParams = SIZING_DEFAULTS): Intent {
   if (p.action === "hold") return p;
   const badParams = sizingProblems(params);
   if (badParams.length > 0) return hold(p, `invalid sizing configuration: ${badParams.join("; ")}`);

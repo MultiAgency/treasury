@@ -1,6 +1,6 @@
 // Policy engine, whole (A5): every rule for one order, and the re-check of an approval that may have gone stale.
 
-import type { Proposal } from "./bands.ts";
+import type { Intent } from "./bands.ts";
 import { checkExposure, EXPOSURE_CONFIG_DEFAULTS, type ExposureContext, type ExposureLimits } from "./exposure.ts";
 import { checkLevel, LEVEL_DEFAULTS, type Level } from "./levels.ts";
 import { checkLimits, POLICY_DEFAULTS, RULE_ORDER, type PolicyContext, type PolicyLimits, type PolicyResult, type PolicyRule } from "./policy.ts";
@@ -13,7 +13,7 @@ export const POLICY_CONFIG_DEFAULTS: PolicyConfig = { limits: POLICY_DEFAULTS, e
  * Runs every rule. Any rejection wins: the result names the first failing rule in `RULE_ORDER` and lists them all.
  * Otherwise, if the level calls for a human, needs-approval; otherwise ok. A hold always passes.
  */
-export function checkPolicy(order: Proposal, ctx: FullContext, config: PolicyConfig = POLICY_CONFIG_DEFAULTS): PolicyResult {
+export function checkPolicy(order: Intent, ctx: FullContext, config: PolicyConfig = POLICY_CONFIG_DEFAULTS): PolicyResult {
   if (order.action === "hold") return { ok: true };
   const results = [
     checkLimits(order, ctx, config.limits),
@@ -39,7 +39,7 @@ export type Approval = { level: Level; mandateDigest: string; quoteExpiresAt: nu
  * since, or the quote has expired; otherwise every rule is checked again with the current numbers, and needs-approval
  * counts as satisfied (the human already approved). Returns ok or the rejection.
  */
-export function recheckApproval(order: Proposal, ctx: FullContext, approval: Approval, currentMandateDigest: string, now: number,
+export function recheckApproval(order: Intent, ctx: FullContext, approval: Approval, currentMandateDigest: string, now: number,
   config: PolicyConfig = POLICY_CONFIG_DEFAULTS): PolicyResult {
   const stale = (detail: string): PolicyResult => ({ ok: false, rule: "STALE_APPROVAL", detail, failed: ["STALE_APPROVAL"] });
   if (approval.mandateDigest !== currentMandateDigest) return stale("the mandate changed since the approval");

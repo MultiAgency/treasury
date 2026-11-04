@@ -49,6 +49,6 @@ test("a recent action holds the next one", () => {
   assert.equal(evaluateBands(reading(80), { ...input, whipsaw: recent }).action, "hold");
 });
 
-test("the same inputs always give the same proposal", () => {
+test("the same inputs always give the same intent", () => {
   assert.deepEqual(evaluateBands(reading(80), input), evaluateBands(reading(80), input));
 });

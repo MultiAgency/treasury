@@ -2,13 +2,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
 const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
- import type { Proposal } from "../src/bands.ts";
+ import type { Intent } from "../src/bands.ts";
 import { checkPolicy, POLICY_CONFIG_DEFAULTS, type FullContext } from "../src/check.ts";
 import { EXPOSURE_CONFIG_DEFAULTS } from "../src/exposure.ts";
 import { checkLevel, LEVEL_DEFAULTS, levelProblems } from "../src/levels.ts";
 import { POLICY_DEFAULTS } from "../src/policy.ts";
 
-const order: Proposal = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 10_000, dcaUnits: 1, reason: "", at: 1 };
+const order: Intent = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 10_000, dcaUnits: 1, reason: "", at: 1 };
 const ctx: FullContext = { treasuryValueUsd: 1_000_000, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 10,
   venueExposureUsd: 100_000, cashUsd: 100_000, spendsCashUsd: 0, level: 0 };
 const invalid = (r: ReturnType<typeof checkPolicy>) => r.ok === false && r.rule === "INVALID_INPUT";

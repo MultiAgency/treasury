@@ -1,6 +1,6 @@
 // Band zones (A4.1): where the TWAP sits relative to the EMA reference decides trim, hold, DCA or buy halt.
-// Pure. This step only classifies and proposes a direction; sizes are 0 until sizing.ts (A4.2) sets them, and
-// whipsaw.ts (A4.3) can still turn a proposal into a hold. Thresholds are the plan's defaults, awaiting H9.
+// Pure. This step only classifies and names a direction; sizes are 0 until sizing.ts (A4.2) sets them, and
+// whipsaw.ts (A4.3) can still turn an intent into a hold. Thresholds are the plan's defaults, awaiting H9.
 
 import type { OracleReading } from "./oracle.ts";
 import { isNum, report } from "./validate.ts";
@@ -17,15 +17,15 @@ export const BAND_DEFAULTS = {
 export type Bands = { trim: readonly [number, number, number]; dca: readonly [number, number, number]; buyHalt: number };
 
 export type BandZone = "trim-3" | "trim-2" | "trim-1" | "hold" | "dca-1" | "dca-2" | "dca-3" | "buy-halt";
-export type ProposalAction = "hold" | "sell-volatile" | "buy-volatile";
+export type IntentAction = "hold" | "sell-volatile" | "buy-volatile";
 
-export type Proposal = {
+export type Intent = {
   id: string;
   zone: BandZone;
-  action: ProposalAction;
+  action: IntentAction;
   /** Size in USD; 0 for a hold. */
   sizeUsd: number;
-  /** DCA units this proposal spends (fractional when a cap trims the size); 0 otherwise. */
+  /** DCA units this intent spends (fractional when a cap trims the size); 0 otherwise. */
   dcaUnits: number;
   reason: string;
   at: number;
@@ -68,17 +68,17 @@ export function deviationPct(twap: number, ema: number): number | null {
   return ((twap - ema) / ema) * 100;
 }
 
-const ACTION: Record<BandZone, ProposalAction> = {
+const ACTION: Record<BandZone, IntentAction> = {
   "trim-3": "sell-volatile", "trim-2": "sell-volatile", "trim-1": "sell-volatile",
   hold: "hold", "buy-halt": "hold",
   "dca-1": "buy-volatile", "dca-2": "buy-volatile", "dca-3": "buy-volatile",
 };
 
-const hold = (reading: OracleReading, zone: BandZone, reason: string): Proposal =>
+const hold = (reading: OracleReading, zone: BandZone, reason: string): Intent =>
   ({ id: `p-${reading.at}`, zone, action: "hold", sizeUsd: 0, dcaUnits: 0, reason, at: reading.at });
 
-/** The zone's direction as a proposal with no size yet. A frozen reading or an unusable price always holds. */
-export function proposeZone(reading: OracleReading, bands: Bands = BAND_DEFAULTS): Proposal {
+/** The zone's direction as an intent with no size yet. A frozen reading or an unusable price always holds. */
+export function intentForZone(reading: OracleReading, bands: Bands = BAND_DEFAULTS): Intent {
   if (reading.frozen) return hold(reading, "hold", `oracle frozen: ${reading.reason}`);
   const badBands = bandProblems(bands);
   if (badBands.length > 0) return hold(reading, "hold", `invalid band configuration: ${badBands.join("; ")}`);
