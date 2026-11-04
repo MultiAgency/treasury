@@ -33,8 +33,10 @@ function ChooseAgent() {
   const [error, setError] = useState<string>();
   const open = (event: FormEvent) => {
     event.preventDefault();
-    if (!agentName.safeParse(name).success) return setError("An agent's name is lowercase letters, digits and hyphens, at most 32.");
-    location.assign(`/agents/${name}`);
+    const checked = agentName.safeParse(name);
+    if (!checked.success) return setError("An agent's name is lowercase letters, digits and hyphens, at most 32.");
+    // Only the checked name, and encoded: never what was typed, so nothing typed can become another address.
+    location.assign(`/agents/${encodeURIComponent(checked.data)}`);
   };
   return <>
     <h1 className="text-2xl font-semibold">Treasury proposals</h1>
