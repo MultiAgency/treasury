@@ -150,6 +150,16 @@ export type StrategyStatus = OwnerOutput<"strategy/get">;
 /** The account linked to fund the agent: a DAO through Trezu, or a NEAR account. */
 export type Treasury = NonNullable<OwnerOutput<"treasury/get">>;
 export type SweepEvent = OwnerOutput<"sweep">;
+export type RebalanceEvent = OwnerOutput<"rebalance">;
+export type PlanEvent = OwnerOutput<"executePlan">;
+export type StewardEvent = OwnerOutput<"steward/propose">;
+/** The autopilot's recorded runs (ticks), oldest first, and the lines it couldn't read. */
+export type Runs = OwnerOutput<"autopilot/evidence">;
+export type Run = Runs["ticks"][number];
+/** One run's recording, validated by the SDK: what the scheduler observed, never an instruction. */
+export type Recording = OwnerOutput<"autopilot/log">;
+export type InboxEntry = OwnerOutput<"inbox/list">[number];
+export type HeldPayout = OwnerOutput<"held">[number];
 /** A one-time deposit address for the agent. */
 export type Deposit = OwnerOutput<"deposit">;
 /** What a signed-in account may do on an agent, and whether that permits a procedure: for display only, the gateway decides. */
@@ -225,6 +235,12 @@ export const gatewayRead = queryOptions({ queryKey: ["gateway"], queryFn: () => 
 /** Retries a read only when its answer was lost; a denial or a refusal would answer the same again. */
 export const retryLost = (failures: number, error: Error) => failures < 3 && failureKind(error) === "unavailable";
 
+/** A run without a recorded end after this long was interrupted, or its outcome is unknown (the platform's `src/evidence.ts`). */
+export const RUN_STALE_MS = 10 * 60_000;
+/** Whether a recorded run is still in progress: no recorded end, and started less than `RUN_STALE_MS` ago. */
+export const runInProgress = (run: Pick<Run, "at" | "end"> | undefined, now = Date.now()) =>
+  Boolean(run && run.end === null && now - Date.parse(run.at) < RUN_STALE_MS);
+
 /** Cached reads of one agent for one viewer. Only reads: actions and streams never go through a query. */
 export function reads(name: string, viewer: string | null) {
   const api = agent(name), key = scope(name, viewer);
@@ -251,5 +267,14 @@ export function reads(name: string, viewer: string | null) {
     policyHistory: queryOptions({ queryKey: [key, "policyHistory"], queryFn: ({ signal }) => api.read("policyHistory", undefined, { signal }), retry: false }),
     autopilot: queryOptions({ queryKey: [key, "autopilot/get"], queryFn: ({ signal }) => api.read("autopilot/get", undefined, { signal }), retry: retryLost,
       refetchInterval: 30_000 }),
+    /** What the autopilot raised for the owner, until dismissed. */
+    inbox: queryOptions({ queryKey: [key, "inbox/list"], queryFn: ({ signal }) => api.read("inbox/list", undefined, { signal }), retry: retryLost,
+      refetchInterval: 30_000 }),
+    /** The autopilot's recorded runs. A run without a recorded end is read again every few seconds while it is recent. */
+    runs: queryOptions({ queryKey: [key, "autopilot/evidence"], queryFn: ({ signal }) => api.read("autopilot/evidence", {}, { signal }), retry: retryLost,
+      refetchInterval: query => runInProgress(query.state.data?.ticks.at(-1)) ? 3_000 : 15_000 }),
+    /** One run's recording. Its caller decides when it is followed; it is never cached past its view. */
+    recording: (tickId: string) => queryOptions({ queryKey: [key, "autopilot/log", tickId],
+      queryFn: ({ signal }) => api.read("autopilot/log", { tickId }, { signal }), retry: false, gcTime: 0 }),
   };
 }

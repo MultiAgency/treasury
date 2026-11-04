@@ -10,6 +10,7 @@
     "owner-intents-v1",
     "treasury-observe-v1",
     "treasury-strategy-v1",
+    "treasury-plans-v1",
     "treasury-recovery-v1"
   ],
   "entries": {

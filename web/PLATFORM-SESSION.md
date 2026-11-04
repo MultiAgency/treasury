@@ -98,6 +98,54 @@ Kept, with the same role, name and meaning:
 | Confidential in Trezu | checkbox | | #11 |
 | Unlink this treasury, and its dialog's Unlink treasury | button | | #11 |
 | Continue to rebalance preview | link (to the Overview's `#rebalance`) | | #11 |
+| Quoted rebalance | region, on the Overview (`#rebalance`), holding Rebalance | | #7 PR 3 |
+| Rebalance | heading (level 3), its description "Swap toward `<n>% <symbol>` / …" | account-switch (`/30% wNEAR \/ 70% USDC/`) | #7 PR 3 |
+| Preview, Execute (`Executing` while it runs) | button | treasury-migration | #7 PR 3 |
+| Previewed swaps | list; each leg's "Estimated received … · Minimum received …" and "Estimated cost … · Maximum cost …" | treasury-migration (`/Minimum received/`) | #7 PR 3 |
+| Execute the previewed rebalance on mainnet?, its Cancel and Execute swaps | dialog, buttons | treasury-migration | #7 PR 3 |
+| Saved plan summary, Swaps in this saved plan | region and heading (level 4), in that dialog: each saved swap's amount, estimated and minimum received, exactly | treasury-migration (`/Minimum received/`) | #7 PR 3 |
+| Follow this swap, Review operation outcomes before another preview, Review strategy authorization | link | | #7 PR 3 |
+| New sends are blocked by `<n>` unresolved operation(s). Preview is still available. | text, in Rebalance while Execute is disabled for it | treasury-migration | #7 PR 3 |
+| Every swap in this plan reported success. … | status (new in B: A showed only each leg's status) | | #7 PR 3 |
+| Confirmed plan outcome | region (`#outcome-plan`), shown while the address names a plan (`?plan=<id>`) | | #7 PR 3 |
+| Follow the outcome | heading (level 2) | treasury-migration | #7 PR 3 |
+| Refresh observations, Stop following this plan | button | treasury-migration (`Stop following this plan`) | #7 PR 3 |
+| Following the exact plan named in this page’s address. …, Following the exact plan you confirmed. … | text | treasury-migration | #7 PR 3 |
+| Budget observations for the confirmed plan | table, with row headers Daily, Weekly, Monthly | | #7 PR 3 |
+| Operations last read: `<time>`. A read time shows when records were checked, not that an operation settled. | text | treasury-migration (`/^Operations last read: /`, and the sentence) | #7 PR 3 |
+| This plan’s operations | heading (Activity's, for one plan) | | #7 PR 3 |
+| Confirmed plan reference | disclosure summary | | #7 PR 3 |
+| Review all operations and recovery | link | | #7 PR 3 |
+| Preview a manual rebalance on the overview | link (Strategy, to `/#rebalance`) | | #7 PR 3 |
+| Needs attention | heading (level 2), on the Overview | | #7 attention |
+| Items that need attention | list, each item a link with its action (Check status, Review, Authorize, Renew, Review payment, Open) | | #7 attention |
+| Dismiss | button, beside each autopilot inbox item (`inbox/dismiss`) | | #7 attention |
+| No items need attention in the records checked. | text | | #7 attention |
+| Runs | heading (level 1) | | #7 PR 4 |
+| Schedule, Turn off | heading, button, on Runs while the schedule is on or unconfirmed (#6's) | | #7 PR 4 |
+| Follow this run | heading (level 2) | | #7 PR 4 |
+| Run to view | combobox ("Latest run", then each run newest first) | | #7 PR 4 |
+| Run timeline | region and heading (level 3) | | #7 PR 4 |
+| Refresh outcomes or Retry run updates, Pause updates or Resume updates | button | | #7 PR 4 |
+| Recorded stages and submissions | list | | #7 PR 4 |
+| Later operation outcomes | heading (level 4) | | #7 PR 4 |
+| Inspect `<swap n, shield n or operation>` in Activity, Inspect submitted `<method>`, Check operation outcomes in Activity, Create a fresh rebalance preview | link | | #7 PR 4 |
+| Run details | disclosure summary | | #7 PR 4 |
+| Download recording | button | | #7 PR 4 |
+| Start a new run | heading (level 3) | | #7 PR 4 |
+| Run now, and its review dialog ("Run one autopilot tick on mainnet?") with Cancel and Run now | button, dialog | | #7 PR 4 |
+| Steward | heading (level 1), on `/steward` (no link leads there) | | #7 PR 4 |
+| Steward (experimental) | heading (level 3) | | #7 PR 4 |
+| Instructions (optional) | textbox | | #7 PR 4 |
+| Propose, Execute plan, and the review dialog ("Execute this plan on mainnet?") with Cancel and Execute plan | button, dialog | | #7 PR 4 |
+| Proposed plan, Steps in this plan | list (the second in that dialog) | | #7 PR 4 |
+| Run it with your treasury | heading (level 1), on `/demo` | treasury-migration | #9 |
+| Guided Treasury run | region | | #9 |
+| Owner reviews | navigation: Review strategy and grant, Review policy and owner signing, Follow owner signatures and proposals | | #9 |
+| Check this agent, Preview and execute a rebalance, Check the outcome | heading (level 3), the steps `#check`, `#preview` and `#outcome`; `#preview` holds Rebalance's one Preview | treasury-migration (`Preview and execute a rebalance`), guided-run (`/demo#preview`, one `Preview`) | #9 |
+| Check observations | button | | #9 |
+| Agent details and prerequisite checks, Observed balances | disclosure summary | | #9 |
+| Open the guided walkthrough | link, on the Overview | | #9 |
 
 The Activity page's text comes from the prototype's A8 (`send-block`) change, which exists only uncommitted in `dao/treasury`'s working tree, not at `d999861`: `BlockedSummary` and `blockedBy` (`src/shared/send-block.ts`), and its wording of a replacement as an "operation", not a "payment". `/does not establish that nothing was sent/` stays in `Activity`'s per-plan view, which the portfolio's plan outcome uses (#7); the treasury-migration spec asserts it absent after a refusal before sending.
 
@@ -110,13 +158,11 @@ Changed or not present yet:
 | Where | A | B | Until |
 | --- | --- | --- | --- |
 | Signed-out home | Proof flows ("What Treasury does", "What has been demonstrated", "Known limitations"), the "What works today" and "View requirements" disclosures, and the "NEAR Intents resources" region | Brand, the headline ("Your treasury. Your limits."), the "Get started" region and Connect wallet only. The rest was showcase (`public/`), which the brief leaves behind | Permanent |
-| Setup unavailable | The retained-records task (operation status, run timeline) below the alert | The alert and "Retry setup"; on `/automations` the "Schedule" section with "Turn off", and on `/activity` the retained records (unresolved operations, owner actions and operation history), as in A; elsewhere a "Review existing operation records" link to `/activity`. Records already loaded stay shown when a later setup read fails | #9 (run): the run timeline on `/follow/run` |
+| Setup unavailable | The retained-records task (operation status, run timeline) below the alert | The alert and "Retry setup"; on `/automations` the "Schedule" section with "Turn off"; on `/follow/run` that section and the run timeline (recorded runs stay readable; Run now says "Setup unavailable. Recorded runs remain readable; new runs are unavailable."); on `/activity` the retained records (unresolved operations, owner actions and operation history), as in A; elsewhere a "Review existing operation records" link to `/activity`. Records already loaded stay shown when a later setup read fails | Permanent |
 | An agent not yet created | Onboarding | Status text: "This Treasury agent hasn't been created yet." | #12 (creation) |
 | A self-service host's root | Treasury creation | A "Your treasuries" heading with a link per treasury agent | #12 (creation) |
-| Every page under `/a/<agent>/` but the Overview, Strategy, Balances & funding, Activity and Policy & grants | The page | Text: "`<page>` moves here from the Treasury prototype, one feature at a time." So no spec query on those pages passes until its feature lands | Each feature's issue: #7, #9, #12 |
-| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A. Strategy's own "Turn off" is there; `/follow/run` is a placeholder | #7 PR 4 (runs) |
+| The frame on a failed read, on `/automations` and `/follow/run` | Those pages' own "Turn off" | Not offered once the page is shown: the frame leaves those two pages to their own control, as in A. Strategy's own "Turn off" is there; Runs shows the "Schedule" section with "Turn off" while the schedule's latest read doesn't confirm it off | Permanent |
 | Strategy's heading levels | The page's "Strategy" (`h2`, a section), "Targets and schedule" (`h3`), its sections and the review's heading (`h4`), and the editor's "Edit strategy" (`h3`) | "Strategy" is the page's `h1`; "Targets and schedule" `h2`, its sections `h3`, and the review's heading and "Edit strategy" `h4`. Names unchanged | Permanent |
-| Strategy's "Preview a manual rebalance on the overview" link | Shown | Not shown: the overview has no rebalance yet | #7 PR 3 |
 | The frame on a failed read, on the Overview | The frame's "Schedule" section ("Turn off") beside the Overview's "Turn off schedule" | Once the Overview is shown, only its "Turn off schedule"; before the overview first loads, the frame's "Turn off" | Permanent |
 | Signed limits' caps | "Per-asset monthly caps": the monthly window only, an asset outside the book in raw units | "Per-asset caps": every window the policy signs (Per transaction, Hourly, Daily, Monthly), each "`<window>`: `<amount>`", where an asset the book doesn't list is in the platform's units if it's one of the platform's assets (wNEAR, USDC, ETH) and otherwise "`<raw>` raw units · `<asset>`"; the description says "Per-asset caps" for "Monthly asset caps". A hid the per-transaction cap the provider enforces first | Permanent |
 | An amount of an asset the book doesn't list (Activity's requests, Signed limits' caps) | USDC in its units; any other asset as "`<raw>` `<asset>`" without `nep141:`, which reads as whole tokens | The platform's assets (wNEAR, USDC, ETH) in their units, from the SDK's `PROPOSAL_TOKENS`; any other asset as "`<raw>` raw units · `<asset>`". A swap's destination is named the same way (A: the book's symbol, else the raw id), so "1.5 wNEAR → ETH" on an empty book | Permanent |
@@ -124,8 +170,6 @@ Changed or not present yet:
 | `/policy`'s "Evidence and limitations" aside (`TaskEvidence`) | Shown above Allowed actions | Not shown: it comes from `features/evidence` (showcase), which the brief leaves behind | Permanent |
 | `/policy`'s "Issue a new grant" and "Propose a new grant" | Rendered for an agent that isn't a Treasury agent; a Treasury agent gets the "Review strategy authorization" link | Not present: every agent in this build is a Treasury agent, whose grant is bound to the saved strategy and signed on the Strategy page (#7 PR 2). `portfolio` refuses a `grant_issue` without the strategy's digest | Permanent |
 | An owner action's "Follow the payment outcome" | A link to `/follow/payment?payment=<id>` | A link to `/activity`: this app has no page for one payment | Permanent |
-| The Overview's rebalance: the "Quoted rebalance" region (Preview, Execute, the policy's no-swaps note) and the followed plan's outcome ("Follow the outcome") | Shown | Not shown | #7 PR 3 |
-| Balances & funding's "Continue to rebalance preview" | Opens the Overview at its "Quoted rebalance" (`#rebalance`) | Opens the Overview at the top: it has no `#rebalance` yet | #7 PR 3 |
 | A held payout's "Review payment `<id>`" (Balances & funding) | A link to `/follow/payment?payment=<id>` | A link to `/activity`, as for an owner action's payment | Permanent |
 | The Overview's "Known limitations" section and its "Requirements and evidence" disclosure | Shown | Not shown: both come from `features/evidence` (showcase), which the brief leaves behind | Permanent |
 | The frame on a new agent | The setup's next step (`SetupNextStep`) | Not shown | #12 (creation) |
@@ -151,7 +195,7 @@ Strategy (#7 PR 2):
 - An invalid field inside the collapsed "Swap limits" disclosure opens it before focus moves there.
 - After an `owner/submit` whose outcome is unknown, its status note shows on the page and authorizing isn't offered again until a status read settles it, as with #6's freeze.
 - Unresolved operations keep Turn on disabled through the strategy's readiness ("`<n>` unresolved operation(s) block new sends."), as in A; `autopilot/enable` refuses them with its readiness reasons, not a typed `unresolved` refusal. Failures show their messages. The send block (`useSendBlock`) and `OutcomeError` land with their first use: Rebalance (#7 PR 3) and the sweep (#11).
-- account-switch's `/30% wNEAR \/ 70% USDC/` reads the quote region's Rebalance description ("Swap toward …", A's `automations.tsx`), not the strategy summary, which reads "`<n>`% `<symbol>`" joined by " · ". It passes once Rebalance lands (#7 PR 3).
+- account-switch's `/30% wNEAR \/ 70% USDC/` reads the quote region's Rebalance description ("Swap toward …", A's `automations.tsx`), not the strategy summary, which reads "`<n>`% `<symbol>`" joined by " · ". Rebalance landed in #7 PR 3.
 
 Added in #6:
 - After an `owner/submit` whose outcome is unknown, a status note under the freeze control: "The outcome is unknown: this owner/submit request may have taken effect. Check the recorded operations before any other action; nothing is sent again automatically." The control stays disabled while the action is followed by its `correlationId`. In A, only "Checking the owner action’s outcome…" showed.
@@ -181,6 +225,22 @@ Added in #11:
 - Shield's dialog lists the previewed public balances exactly ("Public balances to shield"), and says the agent reads its balances again when it runs, so anything that arrived since the preview is shielded too. A new Preview while it is open makes the review no longer current. A's dialog said it moved "the listed" balances, shown rounded.
 
 Activity's "Back to Activity" (`ActivityReturn`) and "Review invoices in Payments" don't render in a Treasury-only build in A either, and aren't ported.
+
+Rebalance and the plan outcome (#7 PR 3):
+- Rebalance is on the Overview, in the "Quoted rebalance" region (`#rebalance`), as in A's Treasury build; Strategy links to it. Balances & funding's "Continue to rebalance preview" now lands there.
+- `executePlan` is decided from the legs it reports by `shared/execution-outcome.ts`'s `settle`, as the sweep is (#11). The executor's `rejected` before any leg says "Nothing was sent: `<problems>`"; after a leg was sent it is partial ("At least one send went out, and not every one succeeded. …"); a leg sent and not settled, a stream lost after any event, or a throw, is unknown. A showed A's `NotExecuted` box ("Execution stopped. Earlier actions may have completed. …") for any `rejected`, which also read as if something had moved when nothing was sent; B shows the outcome's message only.
+- After an execution whose outcome is unknown or partly sent, Execute isn't offered again from the page, even after a new Preview (A offered it again): "Execute isn’t offered again from this page: this plan’s outcome isn’t proven. …". While `unresolved` lists any operation, Execute is disabled with "New sends are blocked by `<n>` unresolved operation(s). Preview is still available." (`useSendBlock`), on any page and after a reload. Preview stays available.
+- The review dialog lists the saved plan's own actions, the ones `executePlan` runs, with each amount, the estimated and the minimum received exactly, unrounded (`exactAmountOf`). A listed the preview's legs and quotes, rounded. The card itself still shows the preview's quotes rounded, as in A.
+- A preview's lost answer says "The preview was interrupted, so a plan may have been saved. Nothing was sent. …" (`failureMessage`), not that it may have taken effect.
+- The followed plan is kept in the address (`?plan=<id>`, a UUID only; anything else in the address is dropped): the Overview and `/demo` show "Follow the outcome" for it after a reload, reading its retained records and sending nothing, as in A.
+
+Runs and the steward (#7 PR 4), on the owner session as the rest of the owner UI is (the user's decision; platform#14 is still open):
+- Run now is `autopilot/tick`, sent once. It carries no identity, so after an unknown outcome Run now isn't offered again from the page ("The last Run now’s outcome is unknown: it may have started a run. …"). It is also held back while a recorded run has no end and started under ten minutes ago, and while `unresolved` lists any operation ("New sends are blocked by `<n>` unresolved operation(s). Follow their outcomes before a new run."). A held it back only for a run in progress.
+- A's "Inspect recording" (`RecordingView`, from `features/evidence`, showcase) isn't ported; "Download recording" is. The recording is validated by the SDK (`autopilot/log`'s `RecordingSchema`) and refused if it names another agent or run.
+- The Runs page shows the schedule's "Turn off" itself (see the frame row above).
+- The steward's tool results are shown as the steward wrote them. A coloured each by matching its text (`REFUSED`, `ERROR`, `PROPOSED`, …); B decides nothing from message text. Its description no longer names a model. Execute plan follows Rebalance's rules: decided by `settle`, not offered again after an unknown or partial outcome, and disabled while operations are unresolved; its dialog lists the plan's steps exactly.
+
+The guided walkthrough (#9): `/demo` is A's `TreasuryRun` with `run-checks.tsx` for a Treasury agent only (no payees check, no payout grant purposes). The Overview links to it ("Open the guided walkthrough"); A reached it from the area menu's Help. "Check observations" reads this agent's reads again, not every cached read. It adds no platform call of its own.
 
 An address under `/a/<agent>/` that isn't a page is titled `Treasury · Page not found` (A: `Treasury · Overview`) and offers "Back to overview".
 
@@ -232,7 +292,7 @@ Driving the page on the stack (`test/proposals.e2e.ts`, its own stack started wi
 
 - **No component tests.** Instead (the user's decision, 2026-10-31): `node:test` for `src/platform.ts` with a mocked `fetch`, and Playwright on a fresh platform stack (766b3f3 or later) per feature, serving this build with `--frontend`. The stack test also runs axe's WCAG A and AA rules on every page it opens (any violation fails it) and checks the keyboard paths.
 - **`contract.json` is checked both ways** (`test/contract.test.ts`): every procedure and gateway route the app calls is covered by a required capability, and every required capability is used, per the SDK's `ownerCapabilities`.
-- **`features/workspace` is left behind.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Nor does `attention.ts`: it renders only through `DaoHome` and portfolio's `overview.tsx`, and `overview.tsx` only through `legacy/surface.ts` (the `@legacy` alias is `absent.ts` unless `PUBLIC_TREASURY_ONLY` is `"false"`). A's Treasury build serves `TreasuryDesk` at `/`, so B's Overview ports that, without the "Needs attention" list; `overview.tsx` and `attention.ts` stay behind. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
+- **`features/workspace` is left behind, except `attention.ts`.** In A's Treasury-only build, `DaoHome` (proposals, cross-agent activity, history) never renders: a signed-in visitor at `/` is sent to `/a/<treasury>/`. Nor does `attention.ts`: it renders only through `DaoHome` and portfolio's `overview.tsx`, and `overview.tsx` only through `legacy/surface.ts` (the `@legacy` alias is `absent.ts` unless `PUBLIC_TREASURY_ONLY` is `"false"`). A's Treasury build serves `TreasuryDesk` at `/`, so B's Overview ports that. #7 then adds `attention.ts` to it (the user's decision): B's Overview shows "Needs attention" under the schedule's status, from `held`, `unresolved` and `inbox/list`, with "Dismiss" (`inbox/dismiss`) on the autopilot's inbox items. It is A's `attentionOf` for a Treasury agent only: no agreements, a held payout links to `/activity` (no `/follow/payment` page here), and a missing or expiring grant links to Strategy, where the Treasury's grant is signed. Inbox messages are shown as the autopilot wrote them (A rewrote two of them with `plainMessage`, by their text). A's `overview.tsx` items computed beside it (the empty book, public balances, drift, unmanaged assets) aren't ported: the Overview's own sections show those. Step 1 is the session and access instead: sign-in and out, account-switch revalidation, access denials, the Treasury-only redirect, and the agent frame.
 - **Treasury creation** (`create-treasury`, `onboarding`, `setup-progress`) is its own issue.
 - **`features/funding/topup.tsx` is left behind** (the user's decision, 2026-11-03). It is the payout agent's "Top up from the treasury", through `pay`, and only payables' `overview.tsx` mounts it, so it never renders in A's Treasury-only build. The deposit address #11 lists beside it is `treasury.tsx`'s "Receive funds", which is ported.
 - **`@orpc/tanstack-query` is dropped.** A's data layer wrapped an oRPC proxy client in `@orpc/tanstack-query` (beta.44), a second oRPC beside the SDK's bundled beta.47. `src/platform.ts` builds TanStack Query options for reads itself; actions and streams never go through a query.

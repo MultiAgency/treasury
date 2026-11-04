@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { agent, answered, failureKind, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, scope, scopeOfKey, type Denial } from "../src/platform.ts";
+import { agent, answered, failureKind, failureMessage, gateway, isTreasury, onDenial, PlatformError, READS, reads, retryLost, RUN_STALE_MS, runInProgress, scope, scopeOfKey, type Denial } from "../src/platform.ts";
 import { pageTitle } from "../src/app/pages.ts";
 
 /** Each request the app sent, and the answers the fake host gives, in order. */
@@ -270,4 +270,91 @@ test("an address that isn't a page is named as such, not as the overview", () =>
   assert.equal(pageTitle("/"), "Overview");
   assert.equal(pageTitle("/automations/"), "Strategy");
   assert.equal(pageTitle("/typo"), "Page not found");
+  // Reached by address only, and still named.
+  assert.equal(pageTitle("/steward"), "Steward");
+});
+
+test("the inbox is inbox/list, keyed with the agent's other reads per viewer, and retried only when its answer was lost", async () => {
+  const { inbox } = reads("portfolio", "owner.near");
+  assert.deepEqual(inbox.queryKey, [scope("portfolio", "owner.near"), "inbox/list"]);
+  assert.notDeepEqual(inbox.queryKey, reads("portfolio", "member.near").inbox.queryKey);
+  assert.equal(inbox.retry, retryLost);
+  const entries = [{ id: "i1", at: "2026-11-03T00:00:00.000Z", level: "warn", text: "Drift above threshold" }];
+  answers.push(json({ json: entries }));
+  assert.deepEqual(await inbox.queryFn!({ signal: new AbortController().signal } as never), entries);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/inbox/list"]);
+});
+
+test("dismissing an inbox entry is an action: sent once with its id, and a lost answer is unknown", async () => {
+  answers.push(lost);
+  const dismissed = await agent("portfolio").act("inbox/dismiss", { id: "i1" });
+  assert.equal(dismissed.ok ? "ok" : dismissed.kind, "unknown");
+  assert.deepEqual(sent.map(s => [s.url, JSON.parse(s.body)]), [["/a/portfolio/rpc/inbox/dismiss", { json: { id: "i1" } }]]);
+});
+
+const tick = (at: string, end: unknown = null) => ({ id: `t-${at}`, at, trigger: "operator", agentId: "a1", strategy: "sha256:s", grant: null,
+  schedule: { on: false, everyMin: 60, maxUsd: 0, lastRun: null }, build: { deployment: null, source: "x", lockfile: null, packageJson: null },
+  policy: { revision: 1, digest: null, status: "APPLIED" }, end });
+
+test("recorded runs are autopilot/evidence, read every few seconds only while the latest run is in progress", async () => {
+  const { runs } = reads("portfolio", "owner.near");
+  assert.deepEqual(runs.queryKey, [scope("portfolio", "owner.near"), "autopilot/evidence"]);
+  assert.equal(runs.retry, retryLost);
+  const interval = runs.refetchInterval as (query: unknown) => number | false;
+  const now = Date.now();
+  assert.equal(interval({ state: { data: { ticks: [tick(new Date(now - 60_000).toISOString())], corrupt: [] } } }), 3_000);
+  assert.equal(interval({ state: { data: { ticks: [tick(new Date(now - RUN_STALE_MS - 1).toISOString())], corrupt: [] } } }), 15_000, "a stale run is no longer followed closely");
+  assert.equal(interval({ state: { data: undefined } }), 15_000);
+  const evidence = { ticks: [tick("2026-11-03T00:00:00.000Z")], corrupt: [] };
+  answers.push(json({ json: evidence }));
+  assert.deepEqual(await runs.queryFn!({ signal: new AbortController().signal } as never), evidence);
+  assert.deepEqual(sent.map(s => [s.url, JSON.parse(s.body)]), [["/a/portfolio/rpc/autopilot/evidence", { json: {} }]]);
+});
+
+test("a run is in progress only without a recorded end, and only until it is stale", () => {
+  const now = Date.parse("2026-11-03T00:20:00.000Z");
+  assert.equal(runInProgress(undefined, now), false);
+  assert.equal(runInProgress({ at: "2026-11-03T00:15:00.000Z", end: null }, now), true);
+  assert.equal(runInProgress({ at: "2026-11-03T00:05:00.000Z", end: null }, now), false, "no end after ten minutes: interrupted or unknown");
+  assert.equal(runInProgress({ at: "2026-11-03T00:15:00.000Z", end: {} as never }, now), false);
+});
+
+test("one run's recording is autopilot/log by its tick id, never retried and never kept past its view", async () => {
+  const recording = reads("portfolio", "owner.near").recording("t1");
+  assert.deepEqual(recording.queryKey, [scope("portfolio", "owner.near"), "autopilot/log", "t1"]);
+  assert.equal(recording.retry, false);
+  assert.equal(recording.gcTime, 0);
+  answers.push(lost);
+  await assert.rejects(async () => recording.queryFn!({ signal: new AbortController().signal } as never), (e: unknown) => failureKind(e) === "unavailable");
+  assert.deepEqual(sent.map(s => [s.url, JSON.parse(s.body)]), [["/a/portfolio/rpc/autopilot/log", { json: { tickId: "t1" } }]]);
+});
+
+test("Run now is autopilot/tick, an action: a lost answer is unknown and it is sent once", async () => {
+  answers.push(lost);
+  const ran = await agent("portfolio").act("autopilot/tick", undefined);
+  assert.equal(ran.ok ? "ok" : ran.kind, "unknown");
+  assert.match(ran.ok ? "" : failureMessage(ran), /^The outcome is unknown: this autopilot\/tick request may have taken effect\./);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/autopilot/tick"]);
+});
+
+test("a rebalance preview hands over its plan, quotes and saved plan; a lost one says nothing was sent", async () => {
+  const seen: unknown[] = [];
+  const strategy = { targetBps: {}, minLegUsd: 2, maxCostBps: 250, autopilot: { everyMin: 60, maxUsd: 0 } };
+  answers.push(events({ type: "plan", total: 0, book: [], legs: [], budget: null, strategy }));
+  assert.equal(await agent("portfolio").stream("rebalance", undefined, event => { seen.push(event); }), undefined);
+  assert.deepEqual(seen.map(event => (event as { type: string }).type), ["plan"]);
+  assert.deepEqual(sent.map(s => s.url), ["/a/portfolio/rpc/rebalance"]);
+  // A preview saves a plan and moves nothing: its interruption says so, for the steward's proposal too.
+  for (const procedure of ["rebalance", "steward/propose"] as const)
+    assert.match(failureMessage({ ok: false, kind: "unknown", procedure, identity: {} }), /^The preview was interrupted, so a plan may have been saved\. Nothing was sent\./);
+});
+
+test("an executePlan stream lost after its first leg is unknown with the plan's id, and nothing is sent again", async () => {
+  const planId = "0b8f6d2e-6a8e-4c43-9d0e-0f2b9a1c7e55";
+  const leg = { type: "action", index: 0, action: { type: "shield", asset: "nep141:wrap.near", amount: "1" }, status: "SUCCESS", correlationId: "c1" };
+  answers.push(events(leg));
+  const ended = await agent("portfolio").stream("executePlan", { planId }, () => { throw new Error("render failed"); });
+  assert.deepEqual(ended, { ok: false, kind: "unknown", procedure: "executePlan", identity: { planId } });
+  assert.match(failureMessage(ended!), /^The outcome is unknown: this executePlan request may have taken effect\./);
+  assert.deepEqual(sent.map(s => [s.url, JSON.parse(s.body)]), [["/a/portfolio/rpc/executePlan", { json: { planId } }]]);
 });

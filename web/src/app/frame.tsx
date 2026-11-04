@@ -4,6 +4,7 @@ import { ArrowClockwise } from "@phosphor-icons/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RecoveryActivity } from "../features/activity/activity";
 import { StopSchedule } from "../features/owner/task-recovery";
+import { RunTimeline } from "../features/portfolio/timeline-run";
 import { reads, type Overview, type Setup } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
 import { TreasuryBrand } from "./brand";
@@ -28,6 +29,8 @@ export function useSetup() {
   if (!setup) throw new Error("Agent setup unavailable");
   return setup;
 }
+/** The setup when it has loaded, for a view that also shows while setup is unavailable (the Runs page's timeline). */
+export const useOptionalSetup = () => useContext(SetupContext);
 /** The overview when it has loaded, for a page that works without it. */
 export const useOverview = () => useContext(AgentContext)?.data;
 
@@ -115,7 +118,9 @@ function AgentFrame() {
         </Button>
       </div>
       {page === "/automations" ? <StopSchedule />
-        : retained ? <RecoveryActivity /> : <Link to="/activity" className="underline">Review existing operation records</Link>}
+        // The recorded runs are the agent's own records: reviewable while setup is unavailable, with the schedule's stop.
+        : page === "/follow/run" ? <><StopSchedule /><RunTimeline /></>
+          : retained ? <RecoveryActivity /> : <Link to="/activity" className="underline">Review existing operation records</Link>}
     </main>;
   if (!setup.data)
     return retained
