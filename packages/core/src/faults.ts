@@ -1,0 +1,115 @@
+// Edge-case detectors, data and system faults (A6.2): source disagreement, thin liquidity, venue outage, stablecoin
+// depeg, cash floor breach and agent malfunction. Pure: everything is passed in. Each detection names an escalation
+// level and the highest decides; `regimeFrom` maps any detection to a non-trading regime for A4.3. Every number is a
+// named default awaiting H6/H9/H11 (the plan lists the cases but gives no thresholds). Fail closed: an observation that
+// is missing or unusable is itself a detection, never silence.
+
+import type { Detection as MarketDetection } from "./detectors.ts";
+import { highestLevel } from "./detectors.ts";
+import type { Level } from "./levels.ts";
+import type { FrozenReason } from "./oracle.ts";
+import type { Regime } from "./whipsaw.ts";
+import { isNonNegative, isPositive, report } from "./validate.ts";
+
+export const FAULT_DEFAULTS = {
+  /** Quoted slippage for a reference order at or above this is thin liquidity (L1); at or above `thinL2Bps`, L2. */
+  thinLiquidityBps: { l1: 100, l2: 300 },
+  /** A stablecoin this far from $1 is a depeg: L2 at `l2`, L3 at `l3`, in percent. */
+  depegPct: { l2: 1, l3: 3 },
+  /** Holdings that disagree with the venue by more than this percent are a reconciliation mismatch (L3). */
+  reconciliationMismatchPct: 0.1,
+} as const;
+
+export type FaultConfig = {
+  thinLiquidityBps: { l1: number; l2: number };
+  depegPct: { l2: number; l3: number };
+  reconciliationMismatchPct: number;
+};
+
+/** What the detectors look at. `null` means "could not be observed", which counts as a fault. */
+export type FaultObservations = {
+  /** The frozen reason of the latest oracle reading, or null when it was not frozen. */
+  oracleFrozen: FrozenReason | "warming-up" | null;
+  /** Quoted slippage in basis points for a reference order, or null when there is no fresh quote. */
+  quotedSlippageBps: number | null;
+  /** Whether the venue answered its last health check; null when unknown. */
+  venueUp: boolean | null;
+  /** USD price of each stablecoin held; a missing or unusable price is a fault. */
+  stablecoinPrices: Readonly<Record<string, number | null>>;
+  /** Operating cash and its floor, both in USD (see `checkExposure`). */
+  cashUsd: number | null;
+  cashFloorUsd: number | null;
+  /** Operations whose outcome is unknown (submitted, no result). */
+  unknownOutcomes: number | null;
+  /** USD the agent expects to hold against what the venue reports. */
+  expectedUsd: number | null;
+  reportedUsd: number | null;
+};
+
+export type FaultName =
+  | "faults-config" | "source-disagreement" | "source-unavailable" | "thin-liquidity" | "venue-outage"
+  | "stablecoin-depeg" | "cash-floor-breach" | "agent-malfunction";
+export type FaultDetection = { detector: FaultName; level: Level; reason: string };
+
+/** What is wrong with the thresholds, if anything. */
+export function faultProblems(c: FaultConfig): string[] {
+  const r = report();
+  r.need(isPositive(c.thinLiquidityBps.l1) && isPositive(c.thinLiquidityBps.l2) && c.thinLiquidityBps.l2 >= c.thinLiquidityBps.l1, "thin-liquidity thresholds must be above zero and rising");
+  r.need(isPositive(c.depegPct.l2) && isPositive(c.depegPct.l3) && c.depegPct.l3 >= c.depegPct.l2, "depeg thresholds must be above zero and rising");
+  r.need(isNonNegative(c.reconciliationMismatchPct), "reconciliationMismatchPct must be zero or more");
+  return r.problems;
+}
+
+const num = (n: number | null | undefined): n is number => typeof n === "number" && Number.isFinite(n);
+
+/** Detections of data and system faults. An empty list is normal. Trigger values exactly at a threshold count. */
+export function detectFaults(obs: FaultObservations, cfg: FaultConfig = FAULT_DEFAULTS): FaultDetection[] {
+  const bad = faultProblems(cfg);
+  if (bad.length > 0) return [{ detector: "faults-config", level: 1, reason: `invalid fault configuration: ${bad.join("; ")}` }];
+  const found: FaultDetection[] = [];
+  const add = (detector: FaultName, level: Level, reason: string) => { found.push({ detector, level, reason }); };
+
+  if (obs.oracleFrozen === "disagreement") add("source-disagreement", 2, "price sources disagree: the oracle is frozen");
+  else if (obs.oracleFrozen !== null) add("source-unavailable", 1, `the oracle is frozen (${obs.oracleFrozen})`);
+
+  if (!num(obs.quotedSlippageBps) || obs.quotedSlippageBps < 0) add("thin-liquidity", 1, "no usable quote: liquidity unknown");
+  else if (obs.quotedSlippageBps >= cfg.thinLiquidityBps.l2) add("thin-liquidity", 2, `slippage ${obs.quotedSlippageBps} bps is ${cfg.thinLiquidityBps.l2} or more`);
+  else if (obs.quotedSlippageBps >= cfg.thinLiquidityBps.l1) add("thin-liquidity", 1, `slippage ${obs.quotedSlippageBps} bps is ${cfg.thinLiquidityBps.l1} or more`);
+
+  if (obs.venueUp !== true) add("venue-outage", 2, obs.venueUp === false ? "the venue is down" : "venue status unknown");
+
+  for (const [coin, price] of Object.entries(obs.stablecoinPrices)) {
+    if (!num(price) || price <= 0) { add("stablecoin-depeg", 2, `${coin}: no usable price`); continue; }
+    const off = Math.abs(price - 1) * 100; // percent away from $1, compared as off >= pct (price is 1 ± a fraction)
+    if (off >= cfg.depegPct.l3 * (1 - 1e-12)) add("stablecoin-depeg", 3, `${coin} is ${off.toFixed(2)}% from $1`);
+    else if (off >= cfg.depegPct.l2 * (1 - 1e-12)) add("stablecoin-depeg", 2, `${coin} is ${off.toFixed(2)}% from $1`);
+  }
+
+  if (!num(obs.cashUsd) || !num(obs.cashFloorUsd) || obs.cashUsd < 0 || obs.cashFloorUsd < 0) add("cash-floor-breach", 2, "cash or its floor is unknown");
+  else if (obs.cashUsd < obs.cashFloorUsd) add("cash-floor-breach", 2, `cash ${obs.cashUsd} is under the floor ${obs.cashFloorUsd}`);
+
+  if (!num(obs.unknownOutcomes) || obs.unknownOutcomes < 0) add("agent-malfunction", 3, "unknown-outcome count unavailable");
+  else if (obs.unknownOutcomes > 0) add("agent-malfunction", 3, `${obs.unknownOutcomes} operation(s) with an unknown outcome`);
+  if (!num(obs.expectedUsd) || !num(obs.reportedUsd) || obs.expectedUsd <= 0 || obs.reportedUsd < 0) add("agent-malfunction", 3, "holdings can't be reconciled");
+  else if (Math.abs(obs.expectedUsd - obs.reportedUsd) * 100 > cfg.reconciliationMismatchPct * obs.expectedUsd)
+    add("agent-malfunction", 3, `holdings differ from the venue by more than ${cfg.reconciliationMismatchPct}%`);
+  return found;
+}
+
+/** The highest level among fault detections (0 when there are none). */
+export const highestFaultLevel = (found: readonly FaultDetection[]): Level => highestLevel(found as unknown as MarketDetection[]);
+
+/**
+ * The regime for A4.3 from any mix of market-move and fault detections: `normal` only when there are none; every
+ * detection holds trading. Source problems give `source-stress`, thin liquidity `thin-liquidity`, market moves
+ * `fast-move`, and every other fault `system-fault`.
+ */
+export function regimeFrom(found: readonly { detector: string }[]): Regime {
+  if (found.length === 0) return "normal";
+  const names = new Set(found.map(d => d.detector));
+  if (names.has("faults-config") || names.has("config")) return "system-fault";
+  for (const n of ["source-disagreement", "source-unavailable", "history"]) if (names.has(n)) return "source-stress";
+  if (names.has("thin-liquidity")) return "thin-liquidity";
+  for (const n of ["fast-rise", "fast-drop", "crash", "parabolic", "sideways-chop"]) if (names.has(n)) return "fast-move";
+  return "system-fault";
+}

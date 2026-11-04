@@ -9,4 +9,5 @@ export * from "./exposure.ts";
 export * from "./levels.ts";
 export * from "./check.ts";
 export * from "./detectors.ts";
+export * from "./faults.ts";
 export * from "./validate.ts";

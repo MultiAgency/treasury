@@ -17,7 +17,7 @@ export const WHIPSAW_DEFAULTS = {
 export type WhipsawLimits = { cooldownMs: number; reversalLockMs: number; hysteresisPct: number };
 
 /** `normal` is the only regime the engine trades in; any other holds. */
-export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress";
+export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress" | "system-fault";
 
 export type WhipsawState = {
   lastActionAt?: number;
