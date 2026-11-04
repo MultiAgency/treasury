@@ -43,6 +43,13 @@ function instant(stamp: string): number {
  * comments are skipped, and so is a first row that is the `timestamp,price` header (any case); any other first row is
  * data. Rows may come in any order; two rows at one instant with different prices fail the load (ambiguous).
  */
+/**
+ * A price as the file may write it: digits, digits with a decimal part, or a decimal part alone, then an optional
+ * exponent. Each part matches one way only, so a long malformed value is refused in linear time (the earlier
+ * `[0-9]*\.?[0-9]+` backtracked quadratically: CodeQL, polynomial regex on uncontrolled data).
+ */
+const PRICE = /^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:e[+-]?[0-9]+)?$/i;
+
 export function parseHistory(text: string, limits: HistoryLimits = HISTORY_DEFAULTS): HistoryLoad {
   const r = report();
   r.need(isPositive(limits.minSpanMs) && isPositive(limits.maxGapMs), "history limits must be above zero");
@@ -57,7 +64,7 @@ export function parseHistory(text: string, limits: HistoryLimits = HISTORY_DEFAU
     const [stamp, value, ...extra] = line.split(",").map(x => x.trim());
     if (isFirst && extra.length === 0 && stamp?.toLowerCase() === "timestamp" && value?.toLowerCase() === "price") return; // header
     const at = instant(stamp ?? "");
-    const price = value !== undefined && /^[0-9]*\.?[0-9]+(e[+-]?\d+)?$/i.test(value) ? Number(value) : Number.NaN;
+    const price = value !== undefined && PRICE.test(value) ? Number(value) : Number.NaN;
     if (extra.length > 0 || !Number.isFinite(at) || !Number.isFinite(price) || price <= 0) { r.need(false, `line ${i + 1}: unusable row "${line.slice(0, 60)}"`); return; }
     const seen = byTime.get(at);
     if (seen !== undefined && seen !== price) r.need(false, `line ${i + 1}: two different prices at ${at}`);

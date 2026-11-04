@@ -178,3 +178,18 @@ test("max drawdown: peak to trough, zero when it never falls, unusable points ig
   assert.equal(maxDrawdownPct([]), 0);
   assert.equal(maxDrawdownPct([{ valueUsd: 100 }, { valueUsd: Number.NaN }, { valueUsd: 50 }]), 50);
 });
+
+test("a price is digits, with an optional decimal part and exponent; anything else is unusable", () => {
+  // One clean year, with the price of its first row replaced.
+  const priced = (price: string) => { const rows: [number, number | string][] = yearOf(); rows[0] = [rows[0]![0], price]; return parseHistory(csv(rows)); };
+  for (const ok of ["100", "100.5", ".5", "0001", "1e3", "1.5E-2", "2e+1"]) assert.ok(priced(ok).ok, ok);
+  for (const bad of ["1.", "abc", "1e", "1.2.3", "--1", "0x10", "1e3.5", "-"]) assert.equal(priced(bad).ok, false, bad);
+});
+
+test("a long malformed price is refused in linear time, not quadratic (CodeQL: polynomial regex)", () => {
+  const rows: [number, number | string][] = yearOf();
+  rows[0] = [rows[0]![0], "1".repeat(200_000) + "x"];
+  const started = performance.now();
+  assert.equal(parseHistory(csv(rows)).ok, false);
+  assert.ok(performance.now() - started < 250, `took ${Math.round(performance.now() - started)} ms`);
+});
