@@ -8,7 +8,6 @@ import { createWatch, drift, runWatch, WATCH, type WatchedAgent, type WatchEvent
 import { proposal } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-
 const ORG = "owner--near", AGENT = "portfolio", USDC = "nep141:usdc", WNEAR = "nep141:wrap.near";
 const WATCHED: WatchedAgent = { organization: ORG, agent: AGENT, driftPoints: 5, intervalS: 300, proposalHours: 24 };
 const T0 = Date.parse("2026-11-05T12:00:00.000Z");

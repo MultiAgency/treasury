@@ -606,6 +606,7 @@ test("rejecting relays the owner's signature over the reject text the same way",
 
 test("an audit trail that can't record the attempt stops an approve, reject or execute before the platform sees it", async t => {
   t.mock.method(console, "error", () => {});
+  t.after(() => { delete auditFails.stage; });
   const cookie = await signIn(owner);
   for (const [action, state] of [["approve", "proposed"], ["reject", "proposed"], ["execute", "approved"]] as const) {
     cleanProposals();
