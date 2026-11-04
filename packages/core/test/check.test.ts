@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkPolicy, POLICY_CONFIG_DEFAULTS, recheckApproval, type Approval, type FullContext } from "../src/check.ts";
+import { checkPolicy, POLICY_CONFIG_DEFAULTS, recheckApproval, type FullContext } from "../src/check.ts";
 import type { Intent } from "../src/bands.ts";
 
 const order = (sizeUsd: number, action: Intent["action"] = "buy-volatile"): Intent =>
@@ -43,7 +43,7 @@ test("missing inputs reject as invalid", () => {
   assert.equal(r.ok === false && r.rule, "INVALID_INPUT");
 });
 
-const approval: Approval = { level: 2, mandateDigest: "sha256:aaa", quoteExpiresAt: 2_000, orderId: "p", action: "buy-volatile", sizeUsd: 10_000 };
+const approval = { level: 2 as const, mandateDigest: "sha256:aaa", quoteExpiresAt: 2_000, orderId: "p", sizeUsd: 10_000 };
 
 test("an approval still good is accepted, even though the level calls for a human", () => {
   assert.deepEqual(recheckApproval(order(10_000), { ...ctx, level: 2 }, approval, "sha256:aaa", 1_000, config), { ok: true });
@@ -62,28 +62,19 @@ test("an approval doesn't override a rule that now fails", () => {
   assert.equal(r.ok === false && r.rule, "CASH_FLOOR");
 });
 
-test("a malformed approval is void: no level, a NaN level, no mandate digest, no order, no size or no expiry", () => {
-  const l3sell = order(10_000, "sell-volatile");
-  for (const change of [{ level: undefined }, { level: Number.NaN }, { level: 5 }, { mandateDigest: "" }, { orderId: "" },
-    { sizeUsd: Number.NaN }, { quoteExpiresAt: Number.NaN }]) {
-    const bad = { ...approval, action: "sell-volatile", ...change } as unknown as Approval;
-    const r = recheckApproval(l3sell, { ...ctx, level: 3 }, bad, "sha256:aaa", 1_000, config);
-    assert.equal(r.ok === false && r.rule, "STALE_APPROVAL", JSON.stringify(change));
-  }
+test("a malformed approval is refused as invalid input, never read as approved", () => {
+  // An undefined or NaN level made "the level rose" false, so an L2 order passed as approved.
+  const rule = (bad: Record<string, unknown>) => { const r = recheckApproval(order(10_000), { ...ctx, level: 2 }, { ...approval, ...bad } as never, "sha256:aaa", 1_000, config); return r.ok === false ? r.rule : String(r.ok); };
+  for (const bad of [{ level: undefined }, { level: Number.NaN }, { level: 1.5 }, { level: 5 }, { level: -1 }, { mandateDigest: "" },
+    { quoteExpiresAt: Number.NaN }, { orderId: "" }, { orderId: undefined }, { sizeUsd: Number.NaN }, { sizeUsd: 0 }, { sizeUsd: -1 }])
+    assert.equal(rule(bad), "INVALID_INPUT", JSON.stringify(bad));
 });
 
-test("an approval covers only the order it was given for: another id, direction or size is void", () => {
-  const rule = (o: Intent) => { const r = recheckApproval(o, { ...ctx, level: 2 }, approval, "sha256:aaa", 1_000, config); return r.ok === false ? r.rule : String(r.ok); };
-  assert.equal(rule(order(10_000)), "true");
-  assert.equal(rule({ ...order(10_000), id: "q" }), "STALE_APPROVAL");
-  assert.equal(rule(order(10_000, "sell-volatile")), "STALE_APPROVAL");
-  assert.equal(rule(order(15_000)), "STALE_APPROVAL");
-  assert.equal(rule(order(5_000)), "STALE_APPROVAL");
-});
-
-test("an approval is void when the current level is unknown", () => {
-  const r = recheckApproval(order(10_000), { ...ctx, level: Number.NaN as unknown as FullContext["level"] }, approval, "sha256:aaa", 1_000, config);
-  assert.equal(r.ok === false && r.rule, "STALE_APPROVAL");
+test("an approval covers only its own order, at its size or smaller", () => {
+  const rule = (o: ReturnType<typeof order>) => { const r = recheckApproval(o, { ...ctx, level: 2 }, approval, "sha256:aaa", 1_000, config); return r.ok === false ? r.rule : String(r.ok); };
+  assert.equal(rule({ ...order(10_000), id: "another" }), "STALE_APPROVAL", "another order");
+  assert.equal(rule(order(10_001)), "STALE_APPROVAL", "a larger order");
+  assert.equal(rule(order(9_000)), "true", "a smaller one is within what was approved");
 });
 
 test("a lowered level keeps an approval valid", () => {

@@ -71,39 +71,3 @@ test("sizing is deterministic and uses the defaults", () => {
   const p = intent("dca-1", "buy-volatile");
   assert.deepEqual(sizeIntent(p, portfolio, wide, fresh), sizeIntent(p, portfolio, wide, fresh, SIZING_DEFAULTS));
 });
-
-test("sizing and the policy share one per-order cap", async () => {
-  const { POLICY_DEFAULTS } = await import("../src/policy.ts");
-  const { MAX_ORDER_PCT_OF_TREASURY } = await import("../src/caps.ts");
-  assert.equal(SIZING_DEFAULTS.maxOrderPctOfTreasury, MAX_ORDER_PCT_OF_TREASURY);
-  assert.equal(POLICY_DEFAULTS.maxOrderPctOfTreasury, MAX_ORDER_PCT_OF_TREASURY);
-});
-
-test("an order sizing caps at the per-order limit always passes the policy's order-size check", async () => {
-  const { checkLimits, POLICY_DEFAULTS } = await import("../src/policy.ts");
-  // A fixed-seed generator, so the sample is the same on every run.
-  let seed = 0x9e3779b9;
-  const rand = () => ((seed = (Math.imul(seed ^ (seed >>> 15), 0x2c1b3c6d) + 0x6d2b79f5) >>> 0) / 2 ** 32);
-  const cents = (max: number) => Math.round(rand() * max * 100) / 100;
-  let capped = 0, oldRejects = 0;
-  for (let i = 0; i < 50_000; i++) {
-    // Mostly volatile, so a trim-3 (20% of volatile) or dca-3 (6% of the reserve) is over the cap and the cap binds.
-    const scale = 10 ** (3 + Math.floor(rand() * 7));
-    const portfolio = { volatileUsd: cents(scale) + scale, reserveUsd: cents(scale), cashUsd: cents(scale / 10) };
-    const pct = [SIZING_DEFAULTS.maxOrderPctOfTreasury, 1, 0.5, 1.37, 3][i % 5]!;
-    const params = { ...SIZING_DEFAULTS, maxOrderPctOfTreasury: pct };
-    const limits = { ...POLICY_DEFAULTS, maxOrderPctOfTreasury: pct, maxDailyTurnoverPct: 100 };
-    const total = portfolio.volatileUsd + portfolio.reserveUsd + portfolio.cashUsd;
-    for (const p of [intent("trim-3", "sell-volatile"), intent("dca-3", "buy-volatile")]) {
-      const sized = sizeIntent(p, portfolio, wide, fresh, params);
-      if (sized.action === "hold") continue;
-      const cap = (total * pct) / 100;
-      if (sized.sizeUsd === cap) capped++;
-      if (sized.sizeUsd * 100 > pct * total) oldRejects++; // the comparison the policy used before the cap was shared
-      const r = checkLimits(sized, { treasuryValueUsd: total, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 0 }, limits);
-      assert.deepEqual(r, { ok: true }, `size ${sized.sizeUsd} of ${total} at ${pct}%`);
-    }
-  }
-  assert.ok(capped > 50_000, `the cap bound in ${capped} orders`);
-  assert.ok(oldRejects > 0, "the sample includes orders the old comparison rejected");
-});

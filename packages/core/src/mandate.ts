@@ -9,7 +9,7 @@ import { LEVEL_DEFAULTS, levelProblems, type Level } from "./levels.ts";
 import { POLICY_DEFAULTS, policyLimitProblems, type PolicyLimits } from "./policy.ts";
 import type { PolicyConfig } from "./check.ts";
 import type { WeightBounds } from "./sizing.ts";
-import { isPct, isPositive, isPositiveInt, report } from "./validate.ts";
+import { isNum, isPct, isPositive, isPositiveInt, report } from "./validate.ts";
 
 export const MANDATE_VERSION = 1;
 export type ProfileName = "conservative" | "balanced" | "growth";
@@ -87,7 +87,6 @@ const NEAR_ACCOUNT = /^(?=.{2,64}$)[a-z0-9]+([-_.][a-z0-9]+)*$/;
 const MAX_CASH_MONTHS = 36;
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
-const isNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const hasOwn = (x: object, key: string) => Object.prototype.hasOwnProperty.call(x, key);
 /** A field the object holds itself: nothing inherited, and `undefined` for anything that isn't an object. */
 const own = (x: unknown, key: string): unknown => isRecord(x) && hasOwn(x, key) ? x[key] : undefined;
@@ -141,7 +140,7 @@ export function mandateProblems(m: unknown): string[] {
   if (!profile) return r.problems;
 
   const p = name as string;
-  r.need(!isNumber(months) || months >= profile.minCashMonths, `the ${p} profile needs at least ${profile.minCashMonths} months of operating cash, not ${show(months)}`);
+  r.need(!isNum(months) || months >= profile.minCashMonths, `the ${p} profile needs at least ${profile.minCashMonths} months of operating cash, not ${show(months)}`);
   r.need(approvers.length >= profile.approvalsRequired, `the ${p} profile needs ${profile.approvalsRequired} approver(s), not ${approvers.length}`);
   r.need(sameAs(own(m, "weights"), profile.weights), `the weights must be the ${p} profile's`);
   r.need(sameAs(own(m, "bounds"), profile.bounds), `the volatile bounds must be the ${p} profile's`);
@@ -170,9 +169,9 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
   if (!isRecord(answers)) return { ok: false, problems: [...r.problems, "answers must be an object"] };
 
   const spend = own(answers, "monthlySpendUsd"), months = own(answers, "operatingCashMonths"), treasury = own(answers, "treasuryValueUsd");
-  r.need(isNumber(spend) && isPositive(spend), "monthlySpendUsd must be a number above zero (a zero spend would switch the cash floor off)");
-  r.need(isNumber(months) && isPositive(months) && months <= MAX_CASH_MONTHS, `operatingCashMonths must be above 0 and at most ${MAX_CASH_MONTHS}`);
-  r.need(isNumber(treasury) && isPositive(treasury), "treasuryValueUsd must be a number above zero");
+  r.need(isNum(spend) && isPositive(spend), "monthlySpendUsd must be a number above zero (a zero spend would switch the cash floor off)");
+  r.need(isNum(months) && isPositive(months) && months <= MAX_CASH_MONTHS, `operatingCashMonths must be above 0 and at most ${MAX_CASH_MONTHS}`);
+  r.need(isNum(treasury) && isPositive(treasury), "treasuryValueUsd must be a number above zero");
   const volatile = list(r, "volatileAssets", own(answers, "volatileAssets"), SYMBOL, "asset symbol", true, true);
   const stablecoins = list(r, "stablecoins", own(answers, "stablecoins"), SYMBOL, "asset symbol", true, true);
   const destinations = list(r, "destinations", own(answers, "destinations"), NEAR_ACCOUNT, "NEAR account", false, true);
@@ -183,13 +182,13 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
   let floor = 0;
   if (profile) {
     r.need(approvers.length >= profile.approvalsRequired, `the ${profileName as string} profile needs ${profile.approvalsRequired} approver(s), not ${approvers.length}`);
-    if (isNumber(months)) r.need(months >= profile.minCashMonths, `the ${profileName as string} profile needs at least ${profile.minCashMonths} months of operating cash, not ${months}`);
+    if (isNum(months)) r.need(months >= profile.minCashMonths, `the ${profileName as string} profile needs at least ${profile.minCashMonths} months of operating cash, not ${months}`);
   }
-  if (profile && isNumber(spend) && isNumber(months) && isNumber(treasury) && spend > 0 && months > 0 && treasury > 0) {
+  if (profile && isNum(spend) && isNum(months) && isNum(treasury) && spend > 0 && months > 0 && treasury > 0) {
     floor = spend * months;
     r.need(floor * 100 <= treasury * profile.weights.cashPct, `a cash floor of ${floor} USD is over the ${profile.weights.cashPct}% cash share of a ${treasury} USD treasury: the ${profileName as string} profile can't meet it`);
   }
-  if (r.problems.length > 0 || !profile || !isNumber(spend) || !isNumber(months)) return { ok: false, problems: r.problems };
+  if (r.problems.length > 0 || !profile || !isNum(spend) || !isNum(months)) return { ok: false, problems: r.problems };
 
   const exposure: ExposureLimits = { maxVenueExposurePct: EXPOSURE_DEFAULTS.maxVenueExposurePct, operatingCashMonths: months, monthlySpendUsd: spend };
   const mandate: Mandate = {

@@ -4,12 +4,11 @@
 // defaults, awaiting H6's rules-to-policy map and H9's calibration.
 
 import type { Intent } from "./bands.ts";
-import { MAX_ORDER_PCT_OF_TREASURY, withinOrderCap } from "./caps.ts";
-import { isNonNegative, isPct, isPositiveInt, report } from "./validate.ts";
+import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const POLICY_DEFAULTS = {
-  /** One order, as a percent of the treasury value. Shared with sizing (caps.ts), so a size it caps always passes here. */
-  maxOrderPctOfTreasury: MAX_ORDER_PCT_OF_TREASURY,
+  /** One order, as a percent of the treasury value. */
+  maxOrderPctOfTreasury: 2,
   /** Gross traded value in a rolling day, as a percent of the treasury value. */
   maxDailyTurnoverPct: 10,
   maxOrdersPerHour: 10,
@@ -47,7 +46,6 @@ export type PolicyResult =
   /** Used by level gating (A5.3). */
   | { ok: "needs-approval"; reason: string };
 
-const finite = (n: number | null): n is number => n !== null && Number.isFinite(n);
 
 /** What is wrong with the limits, if anything. */
 export function policyLimitProblems(l: PolicyLimits): string[] {
@@ -57,6 +55,19 @@ export function policyLimitProblems(l: PolicyLimits): string[] {
   r.need(isPositiveInt(l.maxOrdersPerHour), "maxOrdersPerHour must be a whole number of at least 1");
   r.need(isNonNegative(l.maxSlippageBps), "maxSlippageBps must be zero or more");
   return r.problems;
+}
+
+/** Whether an order of `sizeUsd` is within `pct` percent of `valueUsd`: compared without dividing, so exactly at it is. */
+export const withinOrderCap = (sizeUsd: number, valueUsd: number, pct: number) => sizeUsd * 100 <= pct * valueUsd;
+
+/**
+ * The largest order `withinOrderCap` accepts: `valueUsd × pct / 100`, stepped down past any rounding that puts it a
+ * hair over. Sizing uses this, so an order sized to the cap always passes the policy's check of it.
+ */
+export function orderCapUsd(valueUsd: number, pct: number): number {
+  let cap = (valueUsd * pct) / 100;
+  while (cap > 0 && !withinOrderCap(cap, valueUsd, pct)) cap -= Math.abs(cap) * Number.EPSILON;
+  return cap;
 }
 
 /**
@@ -69,14 +80,13 @@ export function checkLimits(order: Intent, ctx: PolicyContext, limits: PolicyLim
   const badLimits = policyLimitProblems(limits);
   if (badLimits.length > 0) return bad(`invalid limits: ${badLimits.join("; ")}`);
 
-  if (!finite(order.sizeUsd) || order.sizeUsd <= 0) return bad("order size must be above zero");
-  if (!finite(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return bad("no usable treasury value");
-  if (!finite(ctx.turnoverTodayUsd) || ctx.turnoverTodayUsd < 0) return bad("no usable turnover so far");
+  if (!isNum(order.sizeUsd) || order.sizeUsd <= 0) return bad("order size must be above zero");
+  if (!isNum(ctx.treasuryValueUsd) || ctx.treasuryValueUsd <= 0) return bad("no usable treasury value");
+  if (!isNum(ctx.turnoverTodayUsd) || ctx.turnoverTodayUsd < 0) return bad("no usable turnover so far");
   if (!Number.isInteger(ctx.ordersLastHour) || ctx.ordersLastHour < 0) return bad("no usable order count");
-  if (!finite(ctx.quotedSlippageBps) || ctx.quotedSlippageBps < 0) return bad("no fresh quote: slippage unknown");
+  if (!isNum(ctx.quotedSlippageBps) || ctx.quotedSlippageBps < 0) return bad("no fresh quote: slippage unknown");
 
-  // Order size uses the cap arithmetic sizing uses (caps.ts), so an order sized at the cap passes. The other limits are
-  // compared without dividing: amount × 100 against percent × value, so a value exactly at the limit passes.
+  // Compared without dividing: size × 100 against percent × value, so a value exactly at the limit passes.
   const value = ctx.treasuryValueUsd;
   const failures: [PolicyRule, string][] = [];
   if (!withinOrderCap(order.sizeUsd, value, limits.maxOrderPctOfTreasury))

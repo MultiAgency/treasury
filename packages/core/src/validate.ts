@@ -15,6 +15,17 @@ export function report(): { problems: string[]; need: (ok: boolean, message: str
   return { problems, need: (ok, message) => { if (!ok) problems.push(message); } };
 }
 
+/**
+ * Runs a configuration check that reads nested fields. A missing object makes such a read throw a TypeError; that is a
+ * problem with the configuration like any other, so it is reported, never thrown at the engine that asked.
+ */
+export function guarded(check: () => string[]): string[] {
+  try { return check(); } catch (error) {
+    if (error instanceof TypeError) return [`the configuration is missing a field (${error.message})`];
+    throw error;
+  }
+}
+
 export class InvalidConfigError extends Error {
   readonly problems: string[];
   constructor(name: string, problems: string[]) {

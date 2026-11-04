@@ -123,8 +123,9 @@ test("a mandate read back follows the compiler's rules for spend and months: a z
     assert.ok(mandateProblems(withExposure(change)).length > 0, JSON.stringify(change));
   const order: Intent = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 5000, dcaUnits: 1, reason: "", at: 1 };
   const ctx: FullContext = { treasuryValueUsd: 1_000_000, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 10, venueExposureUsd: 0, cashUsd: 0, spendsCashUsd: 0, level: 0 };
-  // The policy refuses a zero spend too since #49, so a mandate that slipped past the read-back still can't trade without a floor.
-  assert.equal(checkPolicy(order, ctx, policyConfigOf(withExposure({ monthlySpendUsd: 0 }))).ok, false);
+  // The policy itself now refuses a zero spend too (#98); the read-back check above still refuses it first.
+  const r = checkPolicy(order, ctx, policyConfigOf(withExposure({ monthlySpendUsd: 0 })));
+  assert.equal(r.ok === false && r.rule, "INVALID_INPUT");
 });
 
 test("a mandate read back carries its profile's values exactly: nothing loosened, nothing changed", () => {

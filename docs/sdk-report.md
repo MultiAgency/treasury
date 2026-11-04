@@ -122,7 +122,7 @@ Ordered by how much they would remove from this app.
 
 ## 5. Issue status on this branch
 
-**Done** means every acceptance criterion is met. **Built** means the code is complete but something outside this repo is still needed (data, an account, a host). **Blocked** means the platform has to act first. All 615 tests pass on the branch (249 core, 224 server, 142 web). The Arc UI overhaul of the owner UI is deferred.
+**Done** means every acceptance criterion is met. **Built** means the code is complete but something outside this repo is still needed (data, an account, a host). **Blocked** means the platform has to act first. All 605 tests pass on the branch (239 core, 224 server, 142 web). The Arc UI overhaul of the owner UI is deferred.
 
 <!-- ISSUE_STATUS -->
 
