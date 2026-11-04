@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createCredential } from "../src/credential.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 /** Credentials in the platform's format: `tap_<uuid>.<43 base64url characters>`. */
 const tap = (fill: string) => `tap_00000000-0000-4000-8000-000000000000.${fill.repeat(43).slice(0, 43)}`;
 const fileWith = (contents: string) => {
-  const file = join(mkdtempSync(join(tmpdir(), "credential-")), "app-credential");
+  const file = join(tempDir("credential-"), "app-credential");
   writeFileSync(file, contents, { mode: 0o600 });
   return file;
 };

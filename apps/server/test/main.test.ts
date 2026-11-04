@@ -1,17 +1,17 @@
 // The entry point as it runs: configuration into dependencies, and the server listening. Each case starts
 // `node src/main.ts` as its own process, as `pnpm start` does.
-import { after, test, type TestContext } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { chmodSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const MAIN = join(import.meta.dirname, "..", "src", "main.ts");
 const tap = `tap_00000000-0000-4000-8000-000000000000.${"a".repeat(43)}`;
 
 function environment(credentialMode = 0o600, audit?: string) {
-  const dir = mkdtempSync(join(tmpdir(), "treasury-main-")), credential = join(dir, "app-credential");
+  const dir = tempDir("treasury-main-"), credential = join(dir, "app-credential");
   writeFileSync(credential, tap, { mode: 0o600 });
   chmodSync(credential, credentialMode);
   return {
@@ -54,7 +54,7 @@ test("a missing setting stops startup, naming it", async t => {
 });
 
 test("an audit trail it can't append to stops startup", async t => {
-  const blocked = join(mkdtempSync(join(tmpdir(), "treasury-audit-")), "file");
+  const blocked = join(tempDir("treasury-audit-"), "file");
   writeFileSync(blocked, "");
   const { code } = await start(t, environment(0o600, join(blocked, "audit.jsonl"))).exited;
   assert.notEqual(code, 0, "its directory is a file");
@@ -79,12 +79,9 @@ test("with valid settings it listens, issues challenges for its own host, refuse
   assert.equal((await exited).code, 0, "a shutdown signal ends it cleanly");
 });
 
-const watchDirs: string[] = [];
-after(() => { for (const dir of watchDirs) rmSync(dir, { recursive: true, force: true }); });
 /** An agents file for `watch` and a place for its stored requests, beside the rest of `env`. */
 function withWatch(env: ReturnType<typeof environment>, agents: unknown[]) {
-  const dir = mkdtempSync(join(tmpdir(), "treasury-main-watch-")), file = join(dir, "watch.json");
-  watchDirs.push(dir);
+  const dir = tempDir("treasury-main-watch-"), file = join(dir, "watch.json");
   writeFileSync(file, JSON.stringify({ agents }), { mode: 0o600 });
   return { ...env, TREASURY_WATCH_FILE: file, TREASURY_REQUESTS_FILE: join(dir, "requests.json"), PLATFORM_TIMEOUT_MS: "500" };
 }

@@ -5,10 +5,9 @@
 // `signOwner` control; the stack doesn't publish its chain RPC, so the server's key check is a stand-in for the owner's key.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
@@ -22,9 +21,10 @@ import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
 import { signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
-const audit = fileAudit(join(mkdtempSync(join(tmpdir(), "treasury-proposals-")), "audit.jsonl"));
+const audit = fileAudit(join(tempDir("treasury-proposals-"), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */

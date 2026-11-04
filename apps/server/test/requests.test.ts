@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 import { proposalCreateInput } from "@multiagency/sdk";
 import { createRequests, type Body } from "../src/requests.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-const dirs: string[] = [];
-after(() => Promise.all(dirs.map(dir => rm(dir, { recursive: true, force: true }))));
-const scratch = async () => { const dir = await mkdtemp(join(tmpdir(), "treasury-requests-")); dirs.push(dir); return join(dir, "requests.json"); };
+const scratch = async () => join(tempDir("treasury-requests-"), "requests.json");
 
 const BODY: Body = { legs: "strategy", expiresAt: "2026-11-05T12:00:00.000Z" };
 const ID = "0123456789abcdef0123456789abcdef";
