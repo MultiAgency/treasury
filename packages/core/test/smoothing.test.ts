@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanSamples, ema, historySpan, twap } from "../src/smoothing.ts";
+import { cleanSamples, ema, historySpan, largestGap, twap } from "../src/smoothing.ts";
 
 const NOW = 1_800_000_000_000;
 const MIN = 60_000;
@@ -8,10 +8,26 @@ const near = (a: number | null, b: number) => assert.ok(a !== null && Math.abs(a
 
 test("samples that are unusable are dropped, and the rest are ordered, one per timestamp", () => {
   const cleaned = cleanSamples([
-    { at: NOW - 2, price: 5 }, { at: NOW - 3, price: 4 }, { at: NOW - 3, price: 6 },
+    { at: NOW - 2, price: 5 }, { at: NOW - 3, price: 4 }, { at: NOW - 4, price: 7 }, { at: NOW - 4, price: 7 },
     { at: NOW + 1, price: 5 }, { at: NOW - 1, price: 0 }, { at: NOW - 1, price: Number.NaN },
   ], NOW);
-  assert.deepEqual(cleaned, [{ at: NOW - 3, price: 6 }, { at: NOW - 2, price: 5 }]);
+  assert.deepEqual(cleaned, [{ at: NOW - 4, price: 7 }, { at: NOW - 3, price: 4 }, { at: NOW - 2, price: 5 }]);
+});
+
+test("two prices at one instant are ambiguous: the instant is dropped, so the order they come in doesn't matter", () => {
+  const at = NOW - 10 * MIN, before = { at: NOW - 20 * MIN, price: 100 };
+  const one = [before, { at, price: 100 }, { at, price: 200 }], other = [before, { at, price: 200 }, { at, price: 100 }];
+  assert.deepEqual(cleanSamples(one, NOW), [before]);
+  assert.deepEqual(cleanSamples(other, NOW), [before]);
+  near(twap(one, NOW, 15 * MIN), 100);
+  assert.equal(twap(one, NOW, 15 * MIN), twap(other, NOW, 15 * MIN));
+});
+
+test("the largest gap over a window counts from the sample holding at its start up to now", () => {
+  const samples = [{ at: NOW - 30 * MIN, price: 1 }, { at: NOW - 5 * MIN, price: 1 }, { at: NOW, price: 1 }];
+  assert.equal(largestGap(samples, NOW, 15 * MIN), 25 * MIN, "the sample before the window holds until the next");
+  assert.equal(largestGap([{ at: NOW - 30 * MIN, price: 1 }], NOW, 15 * MIN), 30 * MIN, "the last sample holds until now");
+  assert.equal(largestGap([{ at: NOW - 5 * MIN, price: 1 }], NOW, 15 * MIN), null, "nothing holds at the window's start");
 });
 
 test("TWAP: 100 for 5 minutes then 110 for 10 minutes over a 15-minute window", () => {

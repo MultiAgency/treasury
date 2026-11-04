@@ -10,7 +10,7 @@ const quotes = (): PriceQuote[] => ["a", "b", "c"].map(source => ({ source, asse
 test("the default smoothing limits are valid", () => assert.deepEqual(smoothingProblems(SMOOTHING_DEFAULTS), []));
 
 test("unusable smoothing limits freeze the reading; unusable windows give no average", () => {
-  for (const change of [{ emaTauMs: 0 }, { emaTauMs: NaNv }, { twapWindowMs: -5 }, { twapWindowMs: NaNv }, { minEmaHistoryMs: -1 }]) {
+  for (const change of [{ emaTauMs: 0 }, { emaTauMs: NaNv }, { twapWindowMs: -5 }, { twapWindowMs: NaNv }, { minEmaHistoryMs: -1 }, { maxSampleGapMs: 0 }, { maxSampleGapMs: NaNv }]) {
     const r = readOracle("wNEAR", quotes(), [], NOW, ORACLE_DEFAULTS, { ...SMOOTHING_DEFAULTS, ...change });
     assert.equal(r.frozen && r.reason, "invalid-config", JSON.stringify(change));
   }

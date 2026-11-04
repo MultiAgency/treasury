@@ -6,7 +6,7 @@
 // the plan's source values, awaiting the backtest's calibration (H9); equality at a limit passes, since the plan says
 // "over 2%" and "over 5 minutes".
 
-import { ema, historySpan, twap, type Sample } from "./smoothing.ts";
+import { ema, historySpan, largestGap, twap, type Sample } from "./smoothing.ts";
 import { isNonNegative, isPositive, isPositiveInt, report } from "./validate.ts";
 
 export const ORACLE_DEFAULTS = {
@@ -116,9 +116,14 @@ export const SMOOTHING_DEFAULTS = {
   twapWindowMs: 15 * 60_000,
   /** The history must reach back this far before the EMA is trusted (warm-up). */
   minEmaHistoryMs: 30 * 86_400_000,
+  /**
+   * The longest stretch without a sample the TWAP window may hold a price across (one hour, the readings' cadence in the
+   * backtest; awaiting H9). Past it the reading freezes, rather than averaging a price from before the gap.
+   */
+  maxSampleGapMs: 3_600_000,
 } as const;
 
-export type SmoothingLimits = { emaTauMs: number; twapWindowMs: number; minEmaHistoryMs: number };
+export type SmoothingLimits = { emaTauMs: number; twapWindowMs: number; minEmaHistoryMs: number; maxSampleGapMs: number };
 
 /** What is wrong with the smoothing limits, if anything. */
 export function smoothingProblems(s: SmoothingLimits): string[] {
@@ -126,6 +131,7 @@ export function smoothingProblems(s: SmoothingLimits): string[] {
   r.need(isPositive(s.emaTauMs), "emaTauMs must be above zero");
   r.need(isPositive(s.twapWindowMs), "twapWindowMs must be above zero");
   r.need(isNonNegative(s.minEmaHistoryMs), "minEmaHistoryMs must be zero or more");
+  r.need(isPositive(s.maxSampleGapMs), "maxSampleGapMs must be above zero");
   return r.problems;
 }
 
@@ -136,7 +142,8 @@ export type OracleReading =
 /**
  * One reading: the quote checks first, then the EMA and TWAP over `history` (earlier medians) plus this median.
  * A frozen quote check gives a frozen reading with the same reason. A history too short for the TWAP window or the EMA's
- * warm-up gives `warming-up`. Nothing is guessed: a frozen reading carries no prices.
+ * warm-up, or with a gap over the TWAP window longer than `maxSampleGapMs`, gives `warming-up`. Nothing is guessed: a
+ * frozen reading carries no prices.
  */
 export function readOracle(asset: string, quotes: readonly PriceQuote[], history: readonly Sample[], now: number,
   limits: OracleLimits = ORACLE_DEFAULTS, smoothing: SmoothingLimits = SMOOTHING_DEFAULTS): OracleReading {
@@ -151,5 +158,7 @@ export function readOracle(asset: string, quotes: readonly PriceQuote[], history
   const average = twap(samples, now, smoothing.twapWindowMs);
   const reference = ema(samples, now, smoothing.emaTauMs);
   if (average === null || reference === null) return frozen("history doesn't cover the TWAP window");
+  const gap = largestGap(samples, now, smoothing.twapWindowMs)!;
+  if (gap > smoothing.maxSampleGapMs) return frozen(`a gap of ${gap} ms in the history over the TWAP window, ${smoothing.maxSampleGapMs} ms allowed`);
   return { frozen: false, asset, at: now, quotes: checked.quotes, median: checked.median, ema30d: reference, twap15m: average };
 }

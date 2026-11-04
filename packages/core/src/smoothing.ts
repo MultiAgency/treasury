@@ -3,13 +3,18 @@
 
 export type Sample = { at: number; price: number };
 
-/** Keeps usable samples (finite, price above zero, not in the future), oldest first; one per timestamp, the last wins. */
+/**
+ * Keeps usable samples (finite, price above zero, not in the future), oldest first, one per timestamp. Two prices at
+ * one instant are ambiguous, so that instant is dropped: keeping either would make the result depend on input order.
+ */
 export function cleanSamples(samples: readonly Sample[], now: number): Sample[] {
-  const byTime = new Map<number, Sample>();
+  const byTime = new Map<number, Sample | null>();
   for (const s of samples) {
-    if (Number.isFinite(s.at) && Number.isFinite(s.price) && s.price > 0 && s.at <= now) byTime.set(s.at, s);
+    if (!(Number.isFinite(s.at) && Number.isFinite(s.price) && s.price > 0 && s.at <= now)) continue;
+    const seen = byTime.get(s.at);
+    byTime.set(s.at, seen === undefined || (seen !== null && seen.price === s.price) ? s : null);
   }
-  return [...byTime.values()].sort((a, b) => a.at - b.at);
+  return [...byTime.values()].filter((s): s is Sample => s !== null).sort((a, b) => a.at - b.at);
 }
 
 /**
@@ -33,6 +38,21 @@ export function twap(samples: readonly Sample[], now: number, windowMs: number):
   }
   if (price === undefined) return null;
   return (area + price * (now - t)) / windowMs;
+}
+
+/**
+ * The longest stretch over the last `windowMs` up to `now` with no new sample: from the sample holding at the window's
+ * start to the next, between samples, and from the last one to `now`. A TWAP holds each price across its gap, so a long
+ * one averages a stale price. Null when no sample holds at the window's start.
+ */
+export function largestGap(samples: readonly Sample[], now: number, windowMs: number): number | null {
+  const start = now - windowMs;
+  const clean = cleanSamples(samples, now);
+  const from = clean.findLastIndex(s => s.at <= start);
+  if (from < 0) return null;
+  let gap = 0;
+  for (let i = from; i < clean.length; i++) gap = Math.max(gap, (clean[i + 1]?.at ?? now) - clean[i]!.at);
+  return gap;
 }
 
 /**

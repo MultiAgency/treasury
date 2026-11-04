@@ -109,6 +109,21 @@ test("a frozen quote check gives a frozen reading with the same reason, and no p
   assert.equal("median" in r, false);
 });
 
+test("a gap in the history longer than the limit freezes the reading, instead of averaging a stale price", () => {
+  // One sample 30 days ago at 100 and fresh quotes at 50: the TWAP would be 100 while the price has halved.
+  const r = readOracle("wNEAR", three(50, 50, 50), [{ at: NOW - 30 * DAY, price: 100 }], NOW);
+  assert.equal(r.frozen && r.reason, "warming-up");
+  assert.match(r.frozen ? r.detail : "", /gap/);
+  const recent = hourly(31).slice(0, -2);
+  assert.equal(readOracle("wNEAR", three(), recent, NOW).frozen, true, "the newest earlier sample is 3 hours old");
+  assert.equal(readOracle("wNEAR", three(), hourly(31), NOW).frozen, false, "hourly samples: a gap of exactly the 1-hour limit passes");
+});
+
+test("a gap outside the TWAP window doesn't freeze the reading", () => {
+  const holed = hourly(31).filter(s => !(s.at > NOW - 10 * DAY && s.at < NOW - 10 * DAY + 5 * 3_600_000));
+  assert.equal(readOracle("wNEAR", three(), holed, NOW).frozen, false);
+});
+
 test("the smoothing limits can be changed", () => {
   const short = { ...SMOOTHING_DEFAULTS, minEmaHistoryMs: DAY };
   assert.equal(readOracle("wNEAR", three(), hourly(2), NOW, undefined, short).frozen, false);
