@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkPolicy, POLICY_CONFIG_DEFAULTS, recheckApproval, type FullContext } from "../src/check.ts";
-import type { Proposal } from "../src/bands.ts";
+import type { Intent } from "../src/bands.ts";
 
-const order = (sizeUsd: number, action: Proposal["action"] = "buy-volatile"): Proposal =>
+const order = (sizeUsd: number, action: Intent["action"] = "buy-volatile"): Intent =>
   ({ id: "p", zone: "dca-1", action, sizeUsd, dcaUnits: 1, reason: "", at: 1 });
 // The user defines the monthly spend rate; the defaults leave it unset.
 const config = { ...POLICY_CONFIG_DEFAULTS, exposure: { ...POLICY_CONFIG_DEFAULTS.exposure, monthlySpendUsd: 10_000 } };
@@ -18,7 +18,7 @@ test("a clean order at L0 passes; a hold passes anywhere", () => {
 });
 
 test("each family of rules can reject, with its name", () => {
-  const rule = (o: Proposal, c: FullContext) => { const r = checkPolicy(o, c, config); return r.ok === false ? r.rule : String(r.ok); };
+  const rule = (o: Intent, c: FullContext) => { const r = checkPolicy(o, c, config); return r.ok === false ? r.rule : String(r.ok); };
   assert.equal(rule(order(30_000), ctx), "ORDER_SIZE");
   assert.equal(rule(order(10_000), { ...ctx, quotedSlippageBps: 80 }), "SLIPPAGE");
   assert.equal(rule(order(10_000), { ...ctx, venueExposureUsd: 249_000 }), "VENUE_EXPOSURE");

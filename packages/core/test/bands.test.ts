@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BAND_DEFAULTS, classifyZone, deviationPct, proposeZone, type BandZone } from "../src/bands.ts";
+import { BAND_DEFAULTS, classifyZone, deviationPct, intentForZone, type BandZone } from "../src/bands.ts";
 import type { OracleReading } from "../src/oracle.ts";
 
 const AT = 1_800_000_000_000;
@@ -30,26 +30,26 @@ test("unusable prices have no zone", () => {
 });
 
 test("the zone's direction: trims sell, DCA buys, hold and buy halt do nothing", () => {
-  assert.equal(proposeZone(reading(120)).action, "sell-volatile");
-  assert.equal(proposeZone(reading(80)).action, "buy-volatile");
-  assert.equal(proposeZone(reading(100)).action, "hold");
-  const halt = proposeZone(reading(50));
+  assert.equal(intentForZone(reading(120)).action, "sell-volatile");
+  assert.equal(intentForZone(reading(80)).action, "buy-volatile");
+  assert.equal(intentForZone(reading(100)).action, "hold");
+  const halt = intentForZone(reading(50));
   assert.deepEqual([halt.zone, halt.action], ["buy-halt", "hold"]);
 });
 
-test("no proposal has a size yet", () => {
-  for (const price of [100, 120, 80, 50]) assert.deepEqual([proposeZone(reading(price)).sizeUsd, proposeZone(reading(price)).dcaUnits], [0, 0]);
+test("no intent has a size yet", () => {
+  for (const price of [100, 120, 80, 50]) assert.deepEqual([intentForZone(reading(price)).sizeUsd, intentForZone(reading(price)).dcaUnits], [0, 0]);
 });
 
 test("a frozen oracle always holds, with its reason", () => {
   const frozen: OracleReading = { frozen: true, asset: "wNEAR", at: AT, quotes: [], reason: "disagreement", detail: "" };
-  const p = proposeZone(frozen);
+  const p = intentForZone(frozen);
   assert.deepEqual([p.action, p.sizeUsd], ["hold", 0]);
   assert.match(p.reason, /disagreement/);
 });
 
 test("an unusable EMA holds", () => {
-  const p = proposeZone(reading(120, 0));
+  const p = intentForZone(reading(120, 0));
   assert.deepEqual([p.action, p.zone], ["hold", "hold"]);
 });
 
@@ -64,6 +64,6 @@ test("custom bands move the thresholds", () => {
   assert.equal(classifyZone(105, 100, bands), "trim-1");
 });
 
-test("same input, same proposal", () => {
-  assert.deepEqual(proposeZone(reading(120)), proposeZone(reading(120)));
+test("same input, same intent", () => {
+  assert.deepEqual(intentForZone(reading(120)), intentForZone(reading(120)));
 });

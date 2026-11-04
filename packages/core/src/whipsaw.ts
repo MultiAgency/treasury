@@ -2,7 +2,7 @@
 // and the regime are passed in, and the next state is returned, never stored here. Numbers are named defaults awaiting
 // H6/H9; the regime comes from the edge-case detectors (A6) and must be stated by the caller (fail closed).
 
-import { BAND_DEFAULTS, bandProblems, type Bands, type BandZone, type Proposal, type ProposalAction } from "./bands.ts";
+import { BAND_DEFAULTS, bandProblems, type Bands, type BandZone, type Intent, type IntentAction } from "./bands.ts";
 import { isNonNegative, report } from "./validate.ts";
 
 export const WHIPSAW_DEFAULTS = {
@@ -17,11 +17,11 @@ export const WHIPSAW_DEFAULTS = {
 export type WhipsawLimits = { cooldownMs: number; reversalLockMs: number; hysteresisPct: number };
 
 /** `normal` is the only regime the engine trades in; any other holds. */
-export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress";
+export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress" | "system-fault";
 
 export type WhipsawState = {
   lastActionAt?: number;
-  lastAction?: Exclude<ProposalAction, "hold">;
+  lastAction?: Exclude<IntentAction, "hold">;
   /**
    * The most extreme zone disarmed on its side: it and every less extreme zone there can't trade until the deviation
    * retreats past their lines, one line at a time. A more extreme zone stays armed.
@@ -38,7 +38,7 @@ export function whipsawProblems(l: WhipsawLimits): string[] {
   return r.problems;
 }
 
-const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
+const hold = (p: Intent, reason: string): Intent => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
 
 /** Each side's trading zones, least extreme first. */
 const SIDES: readonly (readonly BandZone[])[] = [["trim-1", "trim-2", "trim-3"], ["dca-1", "dca-2", "dca-3"]];
@@ -51,8 +51,8 @@ function heldBy(zone: BandZone, disarmed: BandZone | undefined) {
 /** The next less extreme zone on `zone`'s side, or undefined past the first. */
 const lessExtreme = (zone: BandZone) => { const side = SIDES.find(s => s.includes(zone)); return side?.[side.indexOf(zone) - 1]; };
 
-/** Lets a proposal through, or turns it into a hold with the reason. A hold passes unchanged. */
-export function gate(p: Proposal, state: WhipsawState, regime: Regime, now: number, limits: WhipsawLimits = WHIPSAW_DEFAULTS): Proposal {
+/** Lets an intent through, or turns it into a hold with the reason. A hold passes unchanged. */
+export function gate(p: Intent, state: WhipsawState, regime: Regime, now: number, limits: WhipsawLimits = WHIPSAW_DEFAULTS): Intent {
   if (p.action === "hold") return p;
   const bad = whipsawProblems(limits);
   if (bad.length > 0) return hold(p, `invalid anti-whipsaw configuration: ${bad.join("; ")}`);
@@ -88,10 +88,10 @@ function line(zone: BandZone, bands: Bands): number | undefined {
  * extreme zones on its side). Once the deviation has retreated `hysteresisPct` inside the disarmed zone's line, the
  * next less extreme zone is the one disarmed, and so on past the first; with no deviation nothing re-arms.
  */
-export function nextState(state: WhipsawState, proposal: Proposal, deviationPct: number | null, now: number,
+export function nextState(state: WhipsawState, intent: Intent, deviationPct: number | null, now: number,
   limits: WhipsawLimits = WHIPSAW_DEFAULTS, bands: Bands = BAND_DEFAULTS): WhipsawState {
   if (whipsawProblems(limits).length > 0 || bandProblems(bands).length > 0) return state;
-  if (proposal.action !== "hold") return { lastActionAt: now, lastAction: proposal.action, disarmed: proposal.zone };
+  if (intent.action !== "hold") return { lastActionAt: now, lastAction: intent.action, disarmed: intent.zone };
   if (state.disarmed === undefined || deviationPct === null) return state;
   let zone: BandZone | undefined = state.disarmed;
   while (zone !== undefined) {

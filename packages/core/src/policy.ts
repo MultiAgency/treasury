@@ -3,7 +3,7 @@
 // platform's own signed owner policy: it can reject more, never allow what the platform refuses. Limits are the plan's
 // defaults, awaiting H6's rules-to-policy map and H9's calibration.
 
-import type { Proposal } from "./bands.ts";
+import type { Intent } from "./bands.ts";
 import { isNonNegative, isNum, isPct, isPositiveInt, report } from "./validate.ts";
 
 export const POLICY_DEFAULTS = {
@@ -28,7 +28,7 @@ export type PolicyRule = "INVALID_INPUT" | "ORDER_SIZE" | "DAILY_TURNOVER" | "OR
 /** The order rules are reported in: the first failing one is the result's `rule`. */
 export const RULE_ORDER: readonly PolicyRule[] = ["INVALID_INPUT", "STALE_APPROVAL", "LEVEL", "ORDER_SIZE", "DAILY_TURNOVER", "ORDER_RATE", "SLIPPAGE", "VENUE_EXPOSURE", "CASH_FLOOR"];
 
-/** What the check needs. The treasury value is one snapshot taken when the order was proposed, never re-read mid-check. */
+/** What the check needs. The treasury value is one snapshot taken when the intent was formed, never re-read mid-check. */
 export type PolicyContext = {
   treasuryValueUsd: number;
   /** Gross USD traded in the rolling 24 hours before this order. */
@@ -74,7 +74,7 @@ export function orderCapUsd(valueUsd: number, pct: number): number {
  * Checks one order against the limits. A hold always passes. Missing, non-finite or impossible inputs reject as
  * `INVALID_INPUT` and nothing else is evaluated. A value exactly at a limit passes; only over it rejects.
  */
-export function checkLimits(order: Proposal, ctx: PolicyContext, limits: PolicyLimits = POLICY_DEFAULTS): PolicyResult {
+export function checkLimits(order: Intent, ctx: PolicyContext, limits: PolicyLimits = POLICY_DEFAULTS): PolicyResult {
   if (order.action === "hold") return { ok: true };
   const bad = (detail: string): PolicyResult => ({ ok: false, rule: "INVALID_INPUT", detail, failed: ["INVALID_INPUT"] });
   const badLimits = policyLimitProblems(limits);

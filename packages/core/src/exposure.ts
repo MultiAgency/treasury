@@ -3,7 +3,7 @@
 // rate is user-defined (set in the limits, no default), cash means stablecoins and every other asset is a risk asset.
 // What a "venue" is and any valuation haircut on the cash are still for H6 to define.
 
-import type { Proposal } from "./bands.ts";
+import type { Intent } from "./bands.ts";
 import type { PolicyResult, PolicyRule } from "./policy.ts";
 import { isNonNegative, isNum, isPct, isPositive, report } from "./validate.ts";
 
@@ -70,7 +70,7 @@ const reject = (failures: [PolicyRule, string][]): PolicyResult => {
  * No buy while operating cash is under the floor, and no order may use cash if that leaves less than the floor.
  * Unknown or unusable numbers reject as `INVALID_INPUT`.
  */
-export function checkExposure(order: Proposal, ctx: ExposureContext, limits: ExposureLimits = EXPOSURE_CONFIG_DEFAULTS): PolicyResult {
+export function checkExposure(order: Intent, ctx: ExposureContext, limits: ExposureLimits = EXPOSURE_CONFIG_DEFAULTS): PolicyResult {
   if (order.action === "hold") return { ok: true };
   const invalid = (detail: string) => reject([["INVALID_INPUT", detail]]);
   const badLimits = exposureProblems(limits);
