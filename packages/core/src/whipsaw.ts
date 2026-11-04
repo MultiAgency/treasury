@@ -2,7 +2,7 @@
 // and the regime are passed in, and the next state is returned, never stored here. Numbers are named defaults awaiting
 // H6/H9; the regime comes from the edge-case detectors (A6) and must be stated by the caller (fail closed).
 
-import { BAND_DEFAULTS, bandProblems, type Bands, type BandZone, type Proposal, type ProposalAction } from "./bands.ts";
+import { BAND_DEFAULTS, bandProblems, type Bands, type BandZone, type Intent, type IntentAction } from "./bands.ts";
 import { isNonNegative, report } from "./validate.ts";
 
 export const WHIPSAW_DEFAULTS = {
@@ -21,7 +21,7 @@ export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress"
 
 export type WhipsawState = {
   lastActionAt?: number;
-  lastAction?: Exclude<ProposalAction, "hold">;
+  lastAction?: Exclude<IntentAction, "hold">;
   /** The zone just traded; it can't trade again until the deviation retreats past the hysteresis. */
   disarmed?: BandZone;
 };
@@ -35,10 +35,10 @@ export function whipsawProblems(l: WhipsawLimits): string[] {
   return r.problems;
 }
 
-const hold = (p: Proposal, reason: string): Proposal => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
+const hold = (p: Intent, reason: string): Intent => ({ ...p, action: "hold", sizeUsd: 0, dcaUnits: 0, reason });
 
-/** Lets a proposal through, or turns it into a hold with the reason. A hold passes unchanged. */
-export function gate(p: Proposal, state: WhipsawState, regime: Regime, now: number, limits: WhipsawLimits = WHIPSAW_DEFAULTS): Proposal {
+/** Lets a intent through, or turns it into a hold with the reason. A hold passes unchanged. */
+export function gate(p: Intent, state: WhipsawState, regime: Regime, now: number, limits: WhipsawLimits = WHIPSAW_DEFAULTS): Intent {
   if (p.action === "hold") return p;
   const bad = whipsawProblems(limits);
   if (bad.length > 0) return hold(p, `invalid anti-whipsaw configuration: ${bad.join("; ")}`);
@@ -70,10 +70,10 @@ function line(zone: BandZone, bands: Bands): number | undefined {
  * The state after a reading. An action records its time, direction and zone (and disarms the zone). A disarmed zone
  * re-arms once the deviation has retreated `hysteresisPct` inside its line; with no deviation it stays disarmed.
  */
-export function nextState(state: WhipsawState, proposal: Proposal, deviationPct: number | null, now: number,
+export function nextState(state: WhipsawState, intent: Intent, deviationPct: number | null, now: number,
   limits: WhipsawLimits = WHIPSAW_DEFAULTS, bands: Bands = BAND_DEFAULTS): WhipsawState {
   if (whipsawProblems(limits).length > 0 || bandProblems(bands).length > 0) return state;
-  if (proposal.action !== "hold") return { lastActionAt: now, lastAction: proposal.action, disarmed: proposal.zone };
+  if (intent.action !== "hold") return { lastActionAt: now, lastAction: intent.action, disarmed: intent.zone };
   const zone = state.disarmed;
   if (zone === undefined || deviationPct === null) return state;
   const at = line(zone, bands);

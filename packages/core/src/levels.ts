@@ -3,7 +3,7 @@
 // The plan doesn't specify what L1 and L3 restrict (H11), so these are the most conservative readings, as named defaults:
 // L1 halves the per-order cap; L3 allows only risk-reducing sells, and they need approval too.
 
-import type { Proposal } from "./bands.ts";
+import type { Intent } from "./bands.ts";
 import type { PolicyResult } from "./policy.ts";
 import { isPct, report } from "./validate.ts";
 
@@ -28,7 +28,7 @@ export function levelProblems(l: LevelLimits): string[] {
 export const isLevel = (n: unknown): n is Level => n === 0 || n === 1 || n === 2 || n === 3 || n === 4;
 
 /** The level's effect on one order: pass, reject (rule `LEVEL`), or needs-approval. A hold always passes. */
-export function checkLevel(order: Proposal, level: Level, treasuryValueUsd: number, limits: LevelLimits): PolicyResult {
+export function checkLevel(order: Intent, level: Level, treasuryValueUsd: number, limits: LevelLimits): PolicyResult {
   if (order.action === "hold") return { ok: true };
   const reject = (detail: string): PolicyResult => ({ ok: false, rule: "LEVEL", detail, failed: ["LEVEL"] });
   const badLimits = levelProblems(limits);

@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
 const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
  import { BAND_DEFAULTS } from "../src/bands.ts";
-import type { Proposal } from "../src/bands.ts";
+import type { Intent } from "../src/bands.ts";
 import { ENGINE_DEFAULTS, evaluateBands } from "../src/engine.ts";
 import { SIZING_DEFAULTS } from "../src/sizing.ts";
 import { gate, nextState, WHIPSAW_DEFAULTS, whipsawProblems } from "../src/whipsaw.ts";
 
-const buy: Proposal = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 100, dcaUnits: 1, reason: "", at: 1 };
+const buy: Intent = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 100, dcaUnits: 1, reason: "", at: 1 };
 const reading = (twap15m: number) => ({ frozen: false as const, asset: "wNEAR", at: NOW, quotes: [], median: twap15m, ema30d: 100, twap15m });
 
 test("the default anti-whipsaw limits are valid", () => assert.deepEqual(whipsawProblems(WHIPSAW_DEFAULTS), []));

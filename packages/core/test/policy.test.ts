@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkLimits, POLICY_DEFAULTS, type PolicyContext } from "../src/policy.ts";
-import type { Proposal } from "../src/bands.ts";
+import type { Intent } from "../src/bands.ts";
 
-const order = (sizeUsd: number, action: Proposal["action"] = "buy-volatile"): Proposal =>
+const order = (sizeUsd: number, action: Intent["action"] = "buy-volatile"): Intent =>
   ({ id: "p", zone: "dca-1", action, sizeUsd, dcaUnits: 1, reason: "", at: 1 });
 // A 1,000,000 USD treasury: 2% order = 20,000; 10% daily = 100,000.
 const ctx: PolicyContext = { treasuryValueUsd: 1_000_000, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 10 };

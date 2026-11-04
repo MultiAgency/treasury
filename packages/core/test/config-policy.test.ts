@@ -2,10 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
 const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
- import type { Proposal } from "../src/bands.ts";
+ import type { Intent } from "../src/bands.ts";
 import { checkLimits, POLICY_DEFAULTS, policyLimitProblems, type PolicyContext } from "../src/policy.ts";
 
-const order: Proposal = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 10_000, dcaUnits: 1, reason: "", at: 1 };
+const order: Intent = { id: "p", zone: "dca-1", action: "buy-volatile", sizeUsd: 10_000, dcaUnits: 1, reason: "", at: 1 };
 const ctx: PolicyContext = { treasuryValueUsd: 1_000_000, turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 10 };
 
 test("the default policy limits are valid", () => assert.deepEqual(policyLimitProblems(POLICY_DEFAULTS), []));
