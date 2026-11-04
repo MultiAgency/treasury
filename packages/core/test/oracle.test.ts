@@ -81,3 +81,40 @@ test("the same input always gives the same answer", () => {
   const input = three(100, 100.5, 99.7);
   assert.deepEqual(checkQuotes("wNEAR", input, NOW), checkQuotes("wNEAR", input, NOW));
 });
+
+// --- readOracle (A3.2) ---
+import { readOracle, SMOOTHING_DEFAULTS } from "../src/oracle.ts";
+import type { Sample } from "../src/smoothing.ts";
+
+const DAY = 86_400_000;
+const hourly = (days: number, price = 100): Sample[] =>
+  Array.from({ length: days * 24 + 1 }, (_, i) => ({ at: NOW - (days * 24 - i + 1) * 3_600_000, price }));
+
+test("a full history of 100 gives EMA 100, TWAP 100 and median 100", () => {
+  const r = readOracle("wNEAR", three(), hourly(31), NOW);
+  assert.ok(!r.frozen);
+  assert.deepEqual(!r.frozen && [r.median, r.ema30d, r.twap15m].map(v => Math.round(v * 1e9) / 1e9), [100, 100, 100]);
+});
+
+test("a short history freezes as warming-up, not with a guess", () => {
+  const r = readOracle("wNEAR", three(), hourly(10), NOW);
+  assert.equal(r.frozen && r.reason, "warming-up");
+  assert.equal(readOracle("wNEAR", three(), [], NOW).frozen, true);
+});
+
+test("a frozen quote check gives a frozen reading with the same reason, and no prices", () => {
+  const r = readOracle("wNEAR", three(100, 100, 130), hourly(31), NOW);
+  assert.ok(r.frozen);
+  assert.equal(r.reason, "disagreement");
+  assert.equal("median" in r, false);
+});
+
+test("the smoothing limits can be changed", () => {
+  const short = { ...SMOOTHING_DEFAULTS, minEmaHistoryMs: DAY };
+  assert.equal(readOracle("wNEAR", three(), hourly(2), NOW, undefined, short).frozen, false);
+});
+
+test("a reading is deterministic", () => {
+  const h = hourly(31, 100);
+  assert.deepEqual(readOracle("wNEAR", three(), h, NOW), readOracle("wNEAR", three(), h, NOW));
+});

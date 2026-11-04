@@ -2,9 +2,11 @@
 // Pure and deterministic: the clock is passed in, nothing is read or fetched here. Anything missing, stale or
 // disagreeing freezes the reading, so nothing downstream trades on it (fail closed).
 //
-// The EMA reference and the TWAP are the next step (A3.2). Defaults are the plan's source values, awaiting the
-// backtest's calibration (H9); equality at a limit passes, since the plan says "over 2%" and "over 5 minutes".
+// `readOracle` (A3.2) adds the 30-day EMA reference and the 15-minute TWAP on top of the quote checks. Defaults are
+// the plan's source values, awaiting the backtest's calibration (H9); equality at a limit passes, since the plan says
+// "over 2%" and "over 5 minutes".
 
+import { ema, historySpan, twap, type Sample } from "./smoothing.ts";
 import { isNonNegative, isPositive, isPositiveInt, report } from "./validate.ts";
 
 export const ORACLE_DEFAULTS = {
@@ -96,4 +98,49 @@ export function checkQuotes(asset: string, quotes: readonly PriceQuote[], now: n
     return { frozen: true, reason: "disagreement", detail: `sources differ by ${((spread / mid) * 100).toFixed(2)}% (limit ${limits.maxDisagreementPct}%)`, quotes: fresh };
   }
   return { frozen: false, median: mid, quotes: fresh };
+}
+
+export const SMOOTHING_DEFAULTS = {
+  /** Time constant of the EMA reference. */
+  emaTauMs: 30 * 86_400_000,
+  /** Window of the TWAP. */
+  twapWindowMs: 15 * 60_000,
+  /** The history must reach back this far before the EMA is trusted (warm-up). */
+  minEmaHistoryMs: 30 * 86_400_000,
+} as const;
+
+export type SmoothingLimits = { emaTauMs: number; twapWindowMs: number; minEmaHistoryMs: number };
+
+/** What is wrong with the smoothing limits, if anything. */
+export function smoothingProblems(s: SmoothingLimits): string[] {
+  const r = report();
+  r.need(isPositive(s.emaTauMs), "emaTauMs must be above zero");
+  r.need(isPositive(s.twapWindowMs), "twapWindowMs must be above zero");
+  r.need(isNonNegative(s.minEmaHistoryMs), "minEmaHistoryMs must be zero or more");
+  return r.problems;
+}
+
+export type OracleReading =
+  | { frozen: false; asset: string; at: number; quotes: PriceQuote[]; median: number; ema30d: number; twap15m: number }
+  | { frozen: true; asset: string; at: number; quotes: PriceQuote[]; reason: FrozenReason | "warming-up"; detail: string };
+
+/**
+ * One reading: the quote checks first, then the EMA and TWAP over `history` (earlier medians) plus this median.
+ * A frozen quote check gives a frozen reading with the same reason. A history too short for the TWAP window or the EMA's
+ * warm-up gives `warming-up`. Nothing is guessed: a frozen reading carries no prices.
+ */
+export function readOracle(asset: string, quotes: readonly PriceQuote[], history: readonly Sample[], now: number,
+  limits: OracleLimits = ORACLE_DEFAULTS, smoothing: SmoothingLimits = SMOOTHING_DEFAULTS): OracleReading {
+  const badSmoothing = smoothingProblems(smoothing);
+  if (badSmoothing.length > 0) return { frozen: true, asset, at: now, quotes: [], reason: "invalid-config", detail: badSmoothing.join("; ") };
+  const checked = checkQuotes(asset, quotes, now, limits);
+  if (checked.frozen) return { frozen: true, asset, at: now, quotes: checked.quotes, reason: checked.reason, detail: checked.detail };
+  const samples = [...history, { at: now, price: checked.median }];
+  const frozen = (detail: string): OracleReading => ({ frozen: true, asset, at: now, quotes: checked.quotes, reason: "warming-up", detail });
+  const covered = historySpan(samples, now);
+  if (covered < smoothing.minEmaHistoryMs) return frozen(`history reaches back ${covered} ms, ${smoothing.minEmaHistoryMs} ms needed`);
+  const average = twap(samples, now, smoothing.twapWindowMs);
+  const reference = ema(samples, now, smoothing.emaTauMs);
+  if (average === null || reference === null) return frozen("history doesn't cover the TWAP window");
+  return { frozen: false, asset, at: now, quotes: checked.quotes, median: checked.median, ema30d: reference, twap15m: average };
 }
