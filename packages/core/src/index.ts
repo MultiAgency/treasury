@@ -13,4 +13,5 @@ export * from "./faults.ts";
 export * from "./replay.ts";
 export * from "./history.ts";
 export * from "./calibration.ts";
+export * from "./mandate.ts";
 export * from "./validate.ts";
