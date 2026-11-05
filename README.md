@@ -6,10 +6,10 @@ The owner UI moves to the app's own routes on the platform (`/apps/v1`): the own
 
 This repository had a CLI on Treasury's machine route (`/machine/v1`). It was removed in favour of the app route: the SDK's [getting-started](https://github.com/MultiAgency/platform/blob/sdk-v0.5.1/src/contract/skills/getting-started/SKILL.md) skill says the machine route isn't extended and is retired once Treasury moves to app access, and that a new app uses `appClient`. `watch` (#2) comes back as the app server's proposer (#20).
 
-Both run against the platform's simulated stack at [`2223d11`](https://github.com/MultiAgency/platform/commit/2223d11) (tag `sdk-v0.5.1`, the commit SDK 0.5.1 was published from). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
+Both run against the platform's simulated stack at [`35683b2`](https://github.com/MultiAgency/platform/commit/35683b2) (the commit SDK 0.5.1 was published from, `2223d11`, plus the stack's simulated DAO). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 2223d11
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 35683b2
 (cd ../platform && pnpm install --frozen-lockfile)
 pnpm install
 ```
@@ -38,7 +38,7 @@ SDK and platform feedback goes to [MultiAgency/platform](https://github.com/Mult
 ```sh
 pnpm --filter @treasury/server typecheck
 pnpm --filter @treasury/server test          # in-process, with fakes for the platform and the chain
-pnpm --filter @treasury/server test:stack    # against a fresh stack started with --app
+pnpm --filter @treasury/server test:stack    # against fresh stacks started with --app, one with a DAO-owned agent (--dao-treasury)
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check against near-kit's local NEAR node; not run in CI
 ```
 
@@ -60,9 +60,9 @@ The app-access migration's target architecture, contract gaps and acceptance ste
 pnpm --filter @treasury/web build       # web/dist (the owner UI, with contract.json) and web/dist-proposals (the proposals page)
 pnpm --filter @treasury/web typecheck
 pnpm --filter @treasury/web test        # platform.ts with a mocked fetch
-pnpm --filter @treasury/web test:stack  # builds, then drives the owner UI on a stack served with --frontend, and the proposals page through the app server on its own stack
+pnpm --filter @treasury/web test:stack  # builds, then drives the owner UI on a stack served with --frontend, and the proposals page through the app server on its own stacks, one with a DAO-owned agent
 ```
 
 The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
 
-CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at 2223d11. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at 2223d11 with its dependencies installed.
+CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at 35683b2. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at 35683b2 with its dependencies installed.
