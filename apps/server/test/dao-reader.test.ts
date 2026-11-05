@@ -24,7 +24,7 @@ async function world() {
   };
   const consentText = JSON.stringify({ type: "multiagency.app-consent", version: 1, host: "platform.test", deployment: "treasury", organization: ORG,
     owner: DAO, agent: "dao-treasury", agentId: "id-dao-treasury", scopes: ["read", "treasury"], expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
-  const consent = await store(await fake.platform.daoConsents.file(consentText), { kind: "consent" });
+  const consent = await store(await fake.platform.daoConsents.file(consentText), { kind: "consent", agentId: "id-dao-treasury" });
   const votes = [];
   for (const id of ["1".repeat(32), "2".repeat(32)]) {
     fake.proposals.push({ ...proposal({ id, organization: ORG, agentId: "id-dao-treasury" }), agent: "dao-treasury" });

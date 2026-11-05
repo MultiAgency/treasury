@@ -141,7 +141,7 @@ function proposalFailure(answer: Exclude<ProposalAnswer | ProposalListAnswer, { 
   return unavailable();
 }
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
-async function relay(call: () => Promise<ProposalAnswer>, agent: string): Promise<ProposalAnswer> {
+async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
 }
 /** Whether the platform's answer may have been lost: then the proposal is read once, never the call sent again. */
@@ -263,8 +263,9 @@ async function filing(subject: DaoSubject, account: string, identity: Admitted &
   // A consent's text is this server's, by its hash; a vote's is the platform's own text of the proposal it names.
   const recorded = subject.kind === "consent" ? { signedTextSha256: sha256(message!) } : { subject: subject.proposal, verdict: subject.verdict };
   await audit.append({ who: account, action, agent, ...recorded, stage: "attempt" });
-  const filed = subject.kind === "consent" ? await platform.daoConsents.file(message!)
-    : await platform.daoVotes.file({ organization, agent, proposal: subject.proposal, verdict: subject.verdict });
+  // A thrown call is a lost answer: recorded as such, and not filed again by this click.
+  const filed = subject.kind === "consent" ? await relay(() => platform.daoConsents.file(message!), agent)
+    : await relay(() => platform.daoVotes.file({ organization, agent, proposal: subject.proposal, verdict: subject.verdict }), agent);
   if (!filed.ok) log(`platform_${action.replace("-", "_")}_failed`, { agent, ...failure(filed) });
   const transactions = filed.ok ? parse(contract.daoTransactions,
     { proposal: filed.value.transactions.proposal, proposalAndVote: filed.value.transactions.proposalAndVote }) : undefined;
@@ -272,7 +273,8 @@ async function filing(subject: DaoSubject, account: string, identity: Admitted &
   if (filed.ok && transactions) {
     const { request } = filed.value;
     const common = { organization, agent, id: request.id, description: request.description, votingUntil: request.votingUntil, filed: { dao: identity.owner, next, transactions } };
-    const stored: StoredDaoRequest = subject.kind === "consent" ? { kind: "consent", ...common } : { kind: "vote", ...common, proposal: subject.proposal, verdict: subject.verdict };
+    const stored: StoredDaoRequest = subject.kind === "consent" ? { kind: "consent", ...common, agentId: identity.agentId }
+      : { kind: "vote", ...common, proposal: subject.proposal, verdict: subject.verdict };
     // The platform filed it: one that can't be stored now (another filing took the last room, or the disk failed) is
     // logged and recorded by its ID, since nothing here will follow it.
     const kept = await daoRequests.add(stored).catch(error => { log("dao_request_store_failed", { agent, request: request.id, error: String(error) }); return false; });

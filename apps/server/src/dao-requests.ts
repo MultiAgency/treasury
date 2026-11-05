@@ -14,11 +14,15 @@ const common = {
   votingUntil: z.number(),
   filed: z.strictObject({ dao: z.string(), next: z.number().int().nonnegative(), transactions: daoTransactions }),
 };
-/** Why a consent request ended without a consent: its vote didn't pass in time, a DAO stop ended it, or the DAO voted it down. */
-export type DaoEnding = "expired" | "stopped" | "rejected";
+/**
+ * Why a consent request ended without a consent: its vote didn't pass in time, a DAO stop ended it, the DAO voted it
+ * down, or the agent isn't the DAO's with the identity the consent names any more.
+ */
+export type DaoEnding = "expired" | "stopped" | "rejected" | "changed";
 /** A DAO's consent to this app, or its vote on one of this app's Treasury proposals. */
 const storedDaoRequest = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("consent"), ...common }),
+  /** A consent names the agent's identity (`agentId`) as it was when filed. */
+  z.strictObject({ kind: z.literal("consent"), ...common, agentId: z.string().min(1) }),
   z.strictObject({ kind: z.literal("vote"), ...common, proposal: proposalId, verdict: z.enum(["approve", "reject"]) }),
 ]);
 /** A DAO request this server filed and hasn't seen end: what it needs to show it again and to read its state. */
