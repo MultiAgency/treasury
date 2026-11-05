@@ -1071,6 +1071,7 @@ test("the platform's refusals of a filing map to the browser's codes, are record
   const cookie = await signIn(council);
   const logged = t.mock.method(console, "error", () => {});
   const cases = [
+    [{ ok: false, kind: "rate_limited", status: 429, error: "Too many DAO requests today", retryAfterSeconds: 3600 }, 429, "rate_limited"],
     [{ ok: false, kind: "refused", status: 429, error: "Too many DAO requests today" }, 429, "rate_limited"],
     [{ ok: false, kind: "refused", status: 409, error: "Read the agent again" }, 409, "agent_changed"],
     [{ ok: false, kind: "unavailable" }, 503, undefined],
@@ -1188,6 +1189,7 @@ test("the platform's refusals of a vote map to the browser's codes: not open, no
   for (const [answer, code] of [
     [{ ok: false, kind: "refused", status: 409, error: "This proposal is approved" }, "not_open"],
     [{ ok: false, kind: "refused", status: 403, error: "No live DAO consent covers this agent" }, "not_connected"],
+    [{ ok: false, kind: "rate_limited", status: 429, error: "Too many DAO requests today", retryAfterSeconds: 3600 }, "rate_limited"],
     [{ ok: false, kind: "refused", status: 429, error: "Too many DAO requests today" }, "rate_limited"],
   ] as const) {
     fake.voteAnswers.push(answer as never);

@@ -424,7 +424,7 @@ async function filing(subject: DaoSubject, account: string, target: DaoTarget, c
     // identity was read; its 403: the agent isn't this DAO's. A vote's 409: the proposal isn't open, or it (or the
     // consent it would be relayed under) expires too soon for a vote; its 403: no live consent of the DAO covers it.
     // Anything else may work later as is.
-    const status = filed.kind === "refused" ? filed.status : filed.kind === "forbidden" ? 403 : undefined;
+    const status = filed.kind === "refused" || filed.kind === "rate_limited" ? filed.status : filed.kind === "forbidden" ? 403 : undefined;
     outcome = status === 429 ? refused(429, "rate_limited")
       : subject.kind === "setup" ? (status === 403 ? refused(403, "setup_unavailable") : status === 409 ? refused(409, "not_a_dao") : unavailable())
       : status === 409 ? refused(409, subject.kind === "consent" ? "agent_changed" : "not_open")
