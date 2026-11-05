@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 2223d11), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 35683b2), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -6,8 +6,11 @@ import { request } from "node:https";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-/** The platform commit the stack runs from: the one `@multiagency/sdk` 0.5.1 was published from (tag `sdk-v0.5.1`). */
-export const PLATFORM_COMMIT = "2223d11";
+/**
+ * The platform commit the stack runs from: the stack's simulated DAO (`--dao-treasury`) on top of the commit
+ * `@multiagency/sdk` 0.5.1 was published from (`2223d11`, tag `sdk-v0.5.1`).
+ */
+export const PLATFORM_COMMIT = "35683b2";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";
@@ -22,20 +25,20 @@ export function stack(directory: string): Stack {
 }
 
 /**
- * Starts a fresh stack with the Treasury agent from a platform checkout at `PLATFORM_COMMIT` with its dependencies
+ * Starts a fresh stack with the Treasury agent (owned by the stack's owner, or with `owner: "dao"` by its simulated DAO) from a platform checkout at `PLATFORM_COMMIT` with its dependencies
  * installed (`../platform` by default, or TREASURY_PLATFORM), as the platform's own specs do, and answers it with a
  * `stop` that ends it. `args` are the stack's other flags: without a browser by default, or `--frontend <dist>` to serve
  * an owner build in the stack's browser, whose owner page starts signed in (`state().cdp` attaches to it).
  * `appCredential` runs the platform's operator command for app credentials (`pnpm app-credential …`) in the stack's
  * gateway, as the stack itself does to issue its first: `issue`, `list` or `revoke`.
  */
-export async function startStack({ args = ["--no-browser"], platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform") }: { args?: string[]; platform?: string } = {}) {
+export async function startStack({ args = ["--no-browser"], owner = "wallet", platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform") }: { args?: string[]; owner?: "wallet" | "dao"; platform?: string } = {}) {
   const head = execFileSync("git", ["-C", platform, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
   if (!head.startsWith(PLATFORM_COMMIT)) throw new Error(`Check out ${PLATFORM_COMMIT} in ${platform} (it's at ${head.slice(0, 7)})`);
   // Inside the platform checkout, as its own runs are: the stack's agents resolve their dependencies from there.
   mkdirSync(join(platform, ".test-artifacts"), { recursive: true });
   const artifacts = mkdtempSync(join(platform, ".test-artifacts", "treasury-stack-")), directory = join(artifacts, "stack");
-  const child = spawn(process.execPath, [join(platform, "test", "e2e", "stack.mjs"), "--treasury", ...args],
+  const child = spawn(process.execPath, [join(platform, "test", "e2e", "stack.mjs"), owner === "dao" ? "--dao-treasury" : "--treasury", ...args],
     { cwd: platform, env: { ...process.env, PROTO_E2E_ARTIFACTS: artifacts }, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
   child.stdout.on("data", chunk => { output += chunk; });
@@ -55,9 +58,13 @@ export async function startStack({ args = ["--no-browser"], platform = process.e
   }
   const state = () => JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as {
     cdp: string | null; dashboard: string; ownerAccount: string; testPublicKey: string;
-    treasury: { agent: string; agentId: string };
+    treasury: { agent: string; agentId: string; owner: string; signer: "wallet" | "dao" };
     /** With `--app <deployment>`: the app's base and the 0600 file holding its `tap_` credential. */
     app: { deployment: string; base: string; credentialFile: string } | null;
+    /** With `owner: "dao"`: the DAO and its Group members, the council (may file and vote) and a member who may only vote. */
+    dao: { account: string; council: string; member: string } | null;
+    /** The simulated chain's RPC, as the stack's own services read it. */
+    chain: { rpc: string };
   };
   const appCredential = (...command: string[]) => execFileSync(process.execPath, ["--import", "tsx", join(platform, "src", "app-credential.ts"), ...command],
     { cwd: join(directory, "environment", "gateway"), encoding: "utf8", env: { PATH: process.env.PATH, NODE_OPTIONS: process.env.NODE_OPTIONS } });
@@ -123,3 +130,6 @@ export const revealOwnerOutcome = (target: Stack) => control(target, { command: 
 /** The owner signs a NEP-413 message, as their wallet would for an app; answers the signing account, key and signature. */
 export const signOwner = (target: Stack, payload: { message: string; recipient: string; nonce: string }) =>
   control<{ accountId: string; publicKey: string; signature: string }>(target, { command: "signOwner", ...payload });
+
+/** The DAO passes the proposal that signs `hash` (a DAO request's NEP-413 hash): the simulated MPC key signs it, as an executed proposal would. */
+export const daoVote = (target: Stack, hash: string) => control(target, { command: "daoVote", hash });

@@ -1,0 +1,154 @@
+// The proposals page for a DAO-owned agent, served by the app server, on its own fresh stack (platform at
+// PLATFORM_COMMIT, `--dao-treasury --app`). The signed-in member is the DAO's council; their wallet is near-connect's
+// injected-wallet interface, signing with the member's own key, and it sends nothing: the transaction it's given is
+// checked and recorded, and the DAO's vote on it is the stack's `daoVote` control. The server reads the DAO's policy
+// from the stack's chain.
+import { after, before, test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import { AxeBuilder } from "@axe-core/playwright";
+import { appClient, type ProposalView } from "@multiagency/sdk";
+import { chromium, type Browser, type Page } from "playwright";
+import { fileAudit } from "../../apps/server/src/audit.ts";
+import { createCredential } from "../../apps/server/src/credential.ts";
+import { chainDaos } from "../../apps/server/src/dao.ts";
+import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
+import { createServer } from "../../apps/server/src/http.ts";
+import { standInKeyLookup } from "../../apps/server/src/keys.ts";
+import { loadPage } from "../../apps/server/src/page.ts";
+import { createPlatform } from "../../apps/server/src/platform.ts";
+import { createSessions } from "../../apps/server/src/sessions.ts";
+import { createSignIn } from "../../apps/server/src/signin.ts";
+import { wallet } from "../../apps/server/test/fakes.ts";
+import { daoVote, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { tempDir } from "../../scripts/temp-dirs.ts";
+
+const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
+let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, dao: string, council: ReturnType<typeof wallet>;
+let server: Server, origin: string, browser: Browser, page: Page;
+/** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
+const unexpected: string[] = [];
+/** What the member's wallet was asked to send, in order. */
+const sent: { signerId: string; receiverId: string; actions: unknown[] }[] = [];
+
+/** The NEP-413 hash a member's filing asks the DAO to sign: the argument of its proposal's `v1.signer` call. */
+function hashOf(transaction: { actions: unknown[] }): string {
+  const [action] = transaction.actions as { params: { methodName: string; args: { proposal: { kind: { FunctionCall: { actions: { args: string }[] } } } } } }[];
+  assert.equal(action!.params.methodName, "add_proposal");
+  return JSON.parse(Buffer.from(action!.params.args.proposal.kind.FunctionCall.actions[0]!.args, "base64").toString()).request.payload_v2.Eddsa;
+}
+
+before(async () => {
+  stack = await startStack({ owner: "dao", args: ["--no-browser", "--app", "treasury-test"] });
+  target = stack.target;
+  const state = stack.state();
+  assert.ok(state.app && state.dao, "the stack was started with --dao-treasury --app");
+  dao = state.dao.account;
+  council = wallet(state.dao.council);
+  let handle: (req: IncomingMessage, res: ServerResponse) => void = (_, res) => { res.writeHead(503).end(); };
+  server = createHttpServer((req, res) => handle(req, res));
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  origin = `http://localhost:${(server.address() as AddressInfo).port}`;
+  const keyLookup = standInKeyLookup({ [council.accountId]: [council.publicKey] });
+  handle = createServer({
+    platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
+    signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
+    audit: fileAudit(join(tempDir("treasury-dao-proposals-"), "audit.jsonl")), consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
+    daos: chainDaos({ rpcUrl: state.chain.rpc, apiKey: undefined, timeoutMs: 5_000 }),
+    daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+    page: await loadPage(join(import.meta.dirname, "..", "dist-proposals")),
+  });
+
+  browser = await chromium.launch();
+  // Reduced motion, which the page honours by dropping transitions: a button whose colours are still fading when the
+  // accessibility check reads them (here, "Check again" while the request is read again) fails it at random.
+  const context = await browser.newContext({ reducedMotion: "reduce" });
+  await context.route("**/*", async route => {
+    const url = new URL(route.request().url());
+    if (url.origin === origin) return route.continue();
+    if (url.hostname === "cdn.jsdelivr.net" && url.pathname === "/npm/@fastnear/near-connect@0.14.1/+esm")
+      return route.fulfill({ contentType: "text/javascript", body: readFileSync(join(PLATFORM, "node_modules", "@fastnear", "near-connect", "cdn", "hot-connect.es.js"), "utf8") });
+    if (["cdn.jsdelivr.net", "raw.githubusercontent.com"].includes(url.hostname) && url.pathname.endsWith("/manifest.json"))
+      return route.fulfill({ json: { version: "1.0.0", wallets: [] } });
+    unexpected.push(url.href);
+    await route.abort();
+  });
+  await context.exposeFunction("__memberSign", (payload: { message: string; recipient: string; nonce: string }) => council.sign(payload));
+  // The wallet's success for a sent transaction; the DAO's proposal it would file passes at once.
+  await context.exposeFunction("__memberSend", async (transaction: { signerId: string; receiverId: string; actions: unknown[] }) => {
+    sent.push(transaction);
+    await daoVote(target, hashOf(transaction));
+    return { status: { SuccessValue: "" } };
+  });
+  await context.addInitScript(({ account, publicKey }) => {
+    const accounts = [{ accountId: account, publicKey }];
+    const call = (window as unknown as Record<"__memberSign" | "__memberSend", (p: unknown) => Promise<unknown>>);
+    const memberWallet = { manifest: { id: "local-test-wallet", name: "Local test wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
+      signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => {},
+      signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) =>
+        call.__memberSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
+      signAndSendTransaction: (transaction: unknown) => call.__memberSend(transaction) };
+    window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: memberWallet })));
+    localStorage.setItem("proposals:selected-wallet:mainnet", "local-test-wallet");
+  }, { account: council.accountId, publicKey: council.publicKey });
+  page = await context.newPage();
+}, { timeout: 180_000 });
+
+after(async () => {
+  await browser?.close().catch(() => {});
+  server?.close();
+  await stack?.stop();
+});
+
+const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ state: "visible", timeout: 20_000 });
+const axe = async () => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations
+  .map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
+const fileButton = (scope: ReturnType<Page["getByRole"]>) => scope.getByRole("button", { name: /^File (the DAO proposal|and vote)$/ });
+
+test("a council member asks the DAO to connect the agent, files its proposal from their wallet, and the page shows it connected once the vote passes", { timeout: 120_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.getByRole("button", { name: "Sign in with wallet" }).click();
+  await visible(page.getByText(`Signed in as ${council.accountId}`));
+  const connection = page.getByRole("region", { name: "Connection" });
+  await visible(connection.getByRole("status").filter({ hasText: `Not connected. ${dao} consents by its own vote` }));
+  assert.deepEqual(await axe(), [], "not connected");
+
+  await connection.getByRole("button", { name: "Ask the DAO to connect it" }).click();
+  await visible(connection.getByRole("status").filter({ hasText: `Waiting for the vote of ${dao} to connect this agent.` }));
+  assert.ok(await connection.getByRole("list", { name: "What the DAO votes on" }).isVisible());
+  assert.deepEqual(await axe(), [], "waiting for the vote");
+
+  await fileButton(connection).click();
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected by the vote of / }));
+  assert.equal(sent.length, 1, "filed once");
+  assert.deepEqual([sent[0]!.signerId, sent[0]!.receiverId], [council.accountId, dao], "from the member's wallet, to the DAO");
+  assert.deepEqual(await axe(), [], "connected");
+});
+
+test("a council member asks the DAO to approve a proposal, files the vote from their wallet, and the page shows it approved", { timeout: 120_000 }, async () => {
+  const state = stack.state();
+  const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const made = await app.agent(dao.replaceAll(".", "--"), target.agent).call("proposals/create",
+    { requestId: `dao-page-${Date.now()}`, legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString() });
+  assert.ok(made.ok, JSON.stringify(made));
+  const proposal = made.value as ProposalView;
+
+  await page.goto(`${origin}/agents/${target.agent}/proposals/${proposal.id}`);
+  const region = page.getByRole("region", { name: "State" });
+  await visible(region.getByRole("button", { name: "Ask the DAO to approve" }));
+  await region.getByRole("button", { name: "Ask the DAO to approve" }).click();
+  await visible(region.getByRole("status").filter({ hasText: `${dao} votes to approve this proposal.` }));
+  assert.deepEqual(await axe(), [], "the DAO's vote waiting");
+
+  await fileButton(region).click();
+  await visible(region.getByText("Approved", { exact: true }));
+  assert.equal(sent.length, 2);
+  assert.deepEqual([sent[1]!.signerId, sent[1]!.receiverId], [council.accountId, dao]);
+  assert.deepEqual(await axe(), [], "approved");
+  assert.deepEqual(unexpected, [], "the page reached nothing but this server and the wallet's boundary");
+});

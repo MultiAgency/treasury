@@ -9,7 +9,7 @@
     "build": "rsbuild build",
     "typecheck": "tsc",
     "test": "node --test test/*.test.ts",
-    "test:stack": "rsbuild build && node --test --test-concurrency=1 test/stack.e2e.ts test/proposals.e2e.ts"
+    "test:stack": "rsbuild build && node --test --test-concurrency=1 test/stack.e2e.ts test/proposals.e2e.ts test/dao-proposals.e2e.ts"
   },
   "dependencies": {
     "@fastnear/near-connect": "0.14.1",
