@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AGENT_PAGES, agentAddress, isProposalId, NAVIGATION, place, proposalAddress } from "../src/proposals/pages.ts";
+import { join } from "node:path";
+import type { ProposalView } from "@multiagency/sdk";
+import { createRequests } from "../../apps/server/src/requests.ts";
+import { createWatch } from "../../apps/server/src/watch.ts";
+import { tempDir } from "../../scripts/temp-dirs.ts";
+import { AGENT_PAGES, agentAddress, isProposalId, NAVIGATION, place, proposalAddress, ROOT_TITLE, DAO_TITLE } from "../src/proposals/pages.ts";
 
 const ID = "0123456789abcdef0123456789abcdef";
 
@@ -25,9 +30,42 @@ test("the addresses the table builds are read back as the same page", () => {
   assert.deepEqual(place(proposalAddress("portfolio", ID)), { kind: "proposal", title: "Proposal", agent: "portfolio", id: ID });
 });
 
-test("the link a watch notice sends opens the proposal", () => {
-  assert.equal(proposalAddress("portfolio", ID), `/agents/portfolio/proposals/${ID}`);
-  assert.equal(place(proposalAddress("portfolio", ID)).kind, "proposal");
+test("the link a watch notice sends opens the proposal: taken from what watch itself sends, not rebuilt here", async () => {
+  const ORG = "owner--near", AGENT = "portfolio", NOW = Date.parse("2026-11-05T12:00:00.000Z");
+  const row = (asset: string, usd: number) => ({ asset, symbol: asset, decimals: 6, public: 0n, confidential: 0n, price: 1, priceUpdatedAt: null, priceExpiresAt: null, usd });
+  const view = { id: ID, requestId: "r", state: "proposed", createdAt: new Date(NOW).toISOString(), expiresAt: new Date(NOW + 86_400_000).toISOString(), approvedAt: null } as unknown as ProposalView;
+  const platform = {
+    overview: async () => ({ ok: true, value: { agentId: "id", book: [row("usdc", 80), row("wnear", 20)], unmanaged: [], target: { usdc: 0.5, wnear: 0.5 }, rebalance: { minLegUsd: 1, maxCostBps: 50 }, notInForce: null } }),
+    unresolved: async () => ({ ok: true, value: [] }),
+    autopilot: async () => ({ ok: true, value: { on: false } }),
+    create: async () => ({ ok: true, value: view }),
+    get: async () => ({ ok: true, value: view }),
+  } as never;
+  const requests = await createRequests(join(tempDir("treasury-pages-"), "requests.json"));
+  const watch = createWatch({ platform, requests, publicOrigin: "https://treasury.test", now: () => NOW });
+  const sent: { page: string }[] = [];
+  const event = await watch.tick({ organization: ORG, agent: AGENT, driftPoints: 5, intervalS: 300, proposalHours: 24,
+    notify: async payload => { sent.push(payload as { page: string }); return { ok: true as const }; } });
+  assert.equal(event.proposed, ID, JSON.stringify(event));
+  assert.equal(sent.length, 1);
+  const link = new URL(sent[0]!.page);
+  assert.equal(link.origin, "https://treasury.test");
+  assert.deepEqual(place(link.pathname), { kind: "proposal", title: "Proposal", agent: AGENT, id: ID }, "the page it opens");
+  assert.equal(link.pathname, proposalAddress(AGENT, ID), "and the address this build builds for it");
+});
+
+test("the root and a DAO's setup take their headings from the table", () => {
+  assert.equal(place("/").title, ROOT_TITLE);
+  assert.equal(place("/setup/dao/council.sputnik-dao.near").title, DAO_TITLE);
+});
+
+test("a malformed escape names nothing, whichever part of the address holds it", () => {
+  for (const address of ["/agents/portfolio/proposals/%E0%A4%A", "/setup/dao/%E0%A4%A", "/agents/%E0%A4%A"]) {
+    const read = place(address);
+    assert.equal(read.kind, "missing", address);
+    assert.equal(read.title, "Page not found", address);
+  }
+  assert.deepEqual(place("/agents/portfolio/proposals/%30123456789abcdef0123456789abcdef"), { kind: "proposal", title: "Proposal", agent: "portfolio", id: ID }, "a well-formed escape is read");
 });
 
 test("an address that names nothing is named as such, never mistaken for a page", () => {

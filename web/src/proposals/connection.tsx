@@ -57,7 +57,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
     const stored = await reads.agent.connect({ message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature });
     if (stored.ok) {
       setReview(undefined);
-      setNotice(asked.upgrade ? "Owner actions allowed. The connection was replaced: its open proposals were withdrawn." : "Connected. The agent's proposals now reach this page.");
+      setNotice(asked.upgrade ? "Owner actions allowed. The connection was replaced: its open proposals were withdrawn." : "Connected. The agent's proposals now reach this app: see them on its Proposals page.");
       client.setQueryData(reads.consent.queryKey, stored.value);
       void client.invalidateQueries({ queryKey: reads.proposals.queryKey });
       return;

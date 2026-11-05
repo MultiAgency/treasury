@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Outlet, useRouterState } from "@tanstack/react-router";
+import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, type ReactNode } from "react";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
@@ -8,7 +8,7 @@ import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
 import { Funding } from "./funding";
 import { PageLink } from "./nav";
-import { AGENT_PAGES, isProposalId, MISSING_TITLE, NAVIGATION, place, type Place } from "./pages";
+import { AGENT_PAGES, agentAddress, isProposalId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
@@ -22,7 +22,25 @@ export const usePlace = (): Place => place(useRouterState({ select: state => sta
 /** The page's frame: the skip link, the brand and the main region every page sits in. Sets the document's title to the page's. */
 export function Shell() {
   const here = usePlace();
+  const router = useRouter();
   useEffect(() => { document.title = `Treasury proposals · ${here.title}`; }, [here.title]);
+  // A link followed from a page's content unmounts with that page, and the focus it held falls to <body>, so a keyboard
+  // or screen reader user starts again from the top without being told the page changed. Once the new address has
+  // rendered (the router's own event: its location changes before the old page's content is replaced), the focus goes to
+  // what the address names: the section its hash names, else the page's heading. Focus that is somewhere else (a link of
+  // the navigation, which stays) is left alone. The router is typed against the owner UI's routes, hence the cast.
+  useEffect(() => {
+    const events = router as unknown as { subscribe(type: "onRendered", listener: (event: { toLocation: { hash: string }; hrefChanged: boolean }) => void): () => void };
+    return events.subscribe("onRendered", ({ toLocation, hrefChanged }) => {
+      if (!hrefChanged) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const target = (toLocation.hash && document.getElementById(toLocation.hash)) || document.querySelector<HTMLElement>("main h1") || document.getElementById("main");
+      if (!target) return;
+      if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+      target.focus();
+    });
+  }, [router]);
   return <>
     <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
     <header className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-8"><TreasuryBrand /></header>
@@ -37,7 +55,7 @@ export function Missing({ why }: { why?: string }) {
   return <>
     <h1 className="text-2xl font-semibold">{MISSING_TITLE}</h1>
     <p role="alert">{reason}</p>
-    <PageLink to="/" className="self-start text-sm underline">Your treasuries</PageLink>
+    <PageLink to="/" className="self-start text-sm underline">{ROOT_TITLE}</PageLink>
   </>;
 }
 
@@ -55,7 +73,7 @@ function AgentNav({ agent }: { agent: string }) {
   return <nav aria-label="Agent pages">
     <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
       {NAVIGATION.map(page => <li key={page}>
-        <PageLink to={`/agents/$agent${AGENT_PAGES[page].path}`} params={{ agent }} exact={page === "home"} className="underline underline-offset-4 aria-[current=page]:font-semibold aria-[current=page]:no-underline">
+        <PageLink to={agentAddress(agent, page)} exact={page === "home"} className="underline underline-offset-4 aria-[current=page]:font-semibold aria-[current=page]:no-underline">
           {AGENT_PAGES[page].title}
         </PageLink>
       </li>)}
@@ -95,7 +113,7 @@ function Gate({ name, title, home }: { name: string; title: string; home: boolea
     {signedIn}
     <AgentNav agent={name} />
     {/* An agent set up but not created yet: its creation comes first, on its home, and nothing else reaches it until then. */}
-    {agentId === null && !home ? <p role="status">This agent hasn't been created yet. <PageLink to="/agents/$agent" params={{ agent: name }} className="underline">Create it on its home page</PageLink>.</p> : <Outlet />}
+    {agentId === null && !home ? <p role="status">This agent hasn't been created yet. <PageLink to={agentAddress(name)} className="underline">Create it on its home page</PageLink>.</p> : <Outlet />}
   </AgentContext.Provider>;
 }
 
@@ -106,7 +124,7 @@ function WhenConnected({ children }: { children: ReactNode }) {
   if (consent.isPending) return <Loading label="Reading the connection…" />;
   if (consent.isError) return <QueryError error={consent.error} retry={() => consent.refetch()} />;
   return consent.data.consent ? <>{children}</>
-    : <p role="status">This agent isn't connected to the app. <PageLink to="/agents/$agent" params={{ agent: identity.agent }} hash="connection" className="underline">Connect the agent</PageLink> first.</p>;
+    : <p role="status">This agent isn't connected to the app. <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connect the agent</PageLink> first.</p>;
 }
 
 /** Home (`/agents/<agent>/`): creating the agent while it isn't, then its connection and its portfolio once connected. */
@@ -133,7 +151,7 @@ export function ProposalPage() {
   const id = here.kind === "proposal" ? here.id : "";
   return isProposalId(id) ? <ProposalDetail reads={reads} id={id} identity={identity} />
     : <div className="flex flex-col items-start gap-4">
-      <PageLink to="/agents/$agent/proposals" params={{ agent: identity.agent }} className="text-sm underline">Back to proposals</PageLink>
+      <PageLink to={agentAddress(identity.agent, "proposals")} className="text-sm underline">Back to proposals</PageLink>
       <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
     </div>;
 }

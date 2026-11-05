@@ -207,7 +207,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Skip to main content | link | every page |
 | This agent isn't connected to the app. Connect the agent first. | status, with a link to Home's Connection | Strategy and Funding, while not connected (#129) |
 | This agent hasn't been created yet. Create it on its home page. | status, with a link to Home | every agent page but Home, while the agent isn't created (#129) |
-| Agent name, Open proposals | textbox, button | `/`, Open an agent |
+| Agent name, Open proposals | textbox, button; the button opens the agent's Proposals page (`/agents/<agent>/proposals`, was its one page) | `/`, Open an agent |
 | Sign in, Sign in with wallet | heading (level 2), button | signed out |
 | Signed in as `<owner>`, Sign out | text, button | signed in |
 | Connection | region, heading (level 2) | `/agents/<agent>/` (Home; was `/agents/<agent>`) |
@@ -243,7 +243,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Autopilot, Check again | region and heading (level 2), button | `/agents/<agent>/strategy` (was `/agents/<agent>`), once connected |
 | From strategy to autopilot: 1. Configure the strategy, 2. Authorize it, 3. Turn autopilot on | ordered list, headings (level 3), in that order | Autopilot |
 | Strategy targets; Why autopilot can't be turned on | lists | Autopilot (steps 1 and 3) |
-| With a $0 ceiling, autopilot makes no swaps on its own…; Propose a rebalance | text; link to the Proposals section (`#proposals`) | Autopilot, step 1, at a $0 ceiling |
+| With a $0 ceiling, autopilot makes no swaps on its own…; Propose a rebalance | text; link to the agent's Proposals page (`/agents/<agent>/proposals`, was the `#proposals` section) | Autopilot, step 1, at a $0 ceiling |
 | Autopilot is on… or Autopilot is off. | status | Autopilot |
 | Turn on, Let the agent act on its own?; Turn off; Run now, Run the strategy once now? | button, dialog; button; button, dialog | Autopilot, for an account that may file and vote (Run now only while the grant binds the strategy) |
 | Edit strategy; Edit strategy (form, opening at its heading, focus back on Edit strategy when it closes): USDC (%), wNEAR (%), ETH (%), Run every (minutes), Automatic rebalance ceiling (USD), Swap limits, Minimum swap (USD), Maximum swap cost (%), Cancel, Save with autopilot off | button; form, fields, disclosure, buttons | Autopilot, for an account that may save the strategy |

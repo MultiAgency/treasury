@@ -1,6 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button, ErrorBox, errorMessage, Spinner } from "../shared/ui";
+import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
+import { PageLink } from "./nav";
+import { agentAddress } from "./pages";
 import type { GrantPrepared, Identity, StrategyRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";
@@ -23,12 +26,13 @@ const STAGE_WORDS: Record<string, string> = {
  * Authorizing the saved strategy: a grant bound to its digest, which autopilot and Run now need. A wallet owner signs
  * its intent here, once their connection allows owner actions; a DAO's member files it for the DAO's vote, which must
  * pass before it expires, in minutes. Its status is read every few seconds until it's final, and the strategy then read
- * again. Nothing is signed or filed twice from here.
+ * again. Nothing is signed or filed twice from here: the grant prepared for the strategy is kept outside the component
+ * (`kept-outcomes.ts`), so leaving the Strategy page and coming back resumes reading it, not starting another.
  */
 export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Reads; identity: Identity; strategy: StrategyRead; ownerAllowed: boolean }) {
   const client = useQueryClient();
   const [reviewing, setReviewing] = useState(false);
-  const [grant, setGrant] = useState<GrantPrepared>();
+  const [grant, setGrant] = useState<GrantPrepared | undefined>(() => keptGrant(reads.name, strategy.digest));
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
@@ -44,6 +48,8 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
   });
   const stage = status.data?.stage;
   useEffect(() => { if (stage === "submitted") void client.invalidateQueries({ queryKey: reads.strategy.queryKey }); }, [stage, client, reads]);
+  // One that ended without taking effect is over: a new one may be started, and a return doesn't resume it.
+  useEffect(() => { if (stage === "expired" || stage === "failed") forgetGrant(reads.name); }, [stage, reads.name]);
   const dao = identity.signer === "dao";
 
   const authorize = async () => {
@@ -59,6 +65,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
       return;
     }
     setGrant(prepared.value);
+    keepGrant(reads.name, strategy.digest, prepared.value);
     try {
       if (prepared.value.intent) {
         const signedData = await signIntent(prepared.value.intent, identity.owner);
@@ -83,7 +90,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
   const final = stage !== undefined && FINAL.has(stage);
   const canStart = (!grant || (final && stage !== "submitted")) && !busy && (dao ? identity.access.canPropose : ownerAllowed);
   return <div className="flex flex-col items-start gap-2">
-    {!dao && !ownerAllowed && <p>Your connection doesn't allow owner actions yet: allow them in Connection, then authorize the strategy here.</p>}
+    {!dao && !ownerAllowed && <p>Your connection doesn't allow owner actions yet: allow them in <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connection, on the agent's Home page</PageLink>, then authorize the strategy here.</p>}
     <Button disabled={!canStart} onClick={() => setReviewing(true)}>{busy && <Spinner />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
     {grant?.confirm && <p>Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
       It expires {when(grant.confirm.expiresAt)}.</p>}

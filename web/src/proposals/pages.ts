@@ -58,7 +58,11 @@ export function place(pathname: string): Place {
     if (parts.length === 2) return { kind: "agent", title: AGENT_PAGES.home.title, agent, page: "home" };
     const page = (Object.keys(AGENT_PAGES) as AgentPage[]).find(key => key !== "home" && AGENT_PAGES[key].path === `/${parts[2]}`);
     // Whether the ID is one is for the page to say (`isProposalId`): a bad one is shown as such, inside the agent's page.
-    if (page === "proposals" && parts.length === 4) return { kind: "proposal", title: PROPOSAL_TITLE, agent, id: decode(parts[3]!) ?? parts[3]! };
+    if (page === "proposals" && parts.length === 4) {
+      // A malformed escape names nothing, as the router reads it: not a proposal ID that happens to be bad.
+      const id = decode(parts[3]!);
+      return id === undefined ? missing("This address isn't a page of this app.") : { kind: "proposal", title: PROPOSAL_TITLE, agent, id };
+    }
     if (page !== undefined && parts.length === 3) return { kind: "agent", title: AGENT_PAGES[page].title, agent, page };
   }
   return missing("This address isn't a page of this app.");

@@ -4,6 +4,7 @@ import { Button, ErrorBox, Spinner } from "../shared/ui";
 import type { agentReads } from "./queries";
 import { failureText } from "./words";
 import { PageLink } from "./nav";
+import { proposalAddress } from "./pages";
 
 /** A request ID of this page's own: the platform keeps one proposal per ID, so a lost answer is found by it, never asked again. */
 const freshRequestId = () => `page-${Array.from(crypto.getRandomValues(new Uint8Array(12)), byte => byte.toString(16).padStart(2, "0")).join("")}`;
@@ -46,7 +47,7 @@ export function ProposeRebalance({ reads }: { reads: ReturnType<typeof agentRead
   return <div className="flex flex-col items-start gap-2">
     <p className="text-sm text-muted-foreground">A rebalance to the saved strategy, proposed for approval. It's quoted now and open for a day.</p>
     <Button variant="outline" disabled={busy} onClick={() => void ask()}>{busy && <Spinner />} Propose a rebalance</Button>
-    <p role="status" className="text-sm">{notice}{made && <> <PageLink to="/agents/$agent/proposals/$id" params={{ agent: reads.name, id: made }} className="underline">Review the proposal</PageLink></>}</p>
+    <p role="status" className="text-sm">{notice}{made && <> <PageLink to={proposalAddress(reads.name, made)} className="underline">Review the proposal</PageLink></>}</p>
     <ErrorBox error={error} />
   </div>;
 }

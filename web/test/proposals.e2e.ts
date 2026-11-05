@@ -161,7 +161,7 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   assert.deepEqual(await axe(), [], "the consent dialog");
   await consent.getByRole("button", { name: "Sign and connect" }).click();
   await visible(connection.getByRole("status").filter({ hasText: /^Connected: read, treasury and owner, until / }));
-  await visible(page.getByText("Connected. The agent's proposals now reach this page."));
+  await visible(page.getByText("Connected. The agent's proposals now reach this app: see them on its Proposals page."));
   assert.deepEqual(await axe(), []);
   await nav("Proposals").click();
   await visible(page.getByRole("heading", { level: 1, name: "Proposals" }));
@@ -462,6 +462,17 @@ test("each of the agent's pages opens by its address, with its own heading and t
     assert.equal(await page.locator("nav[aria-label='Agent pages'] [aria-current=page]").count(), 1, `${path}: one page marked`);
     assert.deepEqual(await axe(), [], `${path}: the page`);
   }
+  // The root and a DAO's setup are pages too: one heading, their own title, no agent navigation, and an axe scan.
+  for (const [path, title] of [["/", "Your treasuries"], ["/setup/dao/council.sputnik-dao.near", "A DAO's Treasury"]] as const) {
+    await page.goto(`${origin}${path}`);
+    await visible(page.getByRole("heading", { level: 1, name: title, exact: true }));
+    assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1, `${path}: one h1`);
+    assert.equal(await page.title(), `Treasury proposals · ${title}`, path);
+    assert.equal(await page.getByRole("navigation", { name: "Agent pages" }).count(), 0, `${path}: no agent navigation`);
+    await page.waitForLoadState("networkidle");
+    assert.equal(await page.getByText("Checking your session…").count(), 0, `${path}: loaded`);
+    assert.deepEqual(await axe(), [], `${path}: the page`);
+  }
   assert.deepEqual(unexpected, []);
 });
 
@@ -486,6 +497,24 @@ test("the agent's pages are reached by keyboard alone, the current one marked as
   assert.deepEqual(unexpected, []);
 });
 
+test("following a link from a page's content moves the focus to the new page's heading, not back to the top of the document", { timeout: 60_000 }, async () => {
+  const made = await propose(`page-${Date.now()}-focus`);
+  await page.goto(here("/proposals"));
+  const link = page.getByRole("list", { name: "Proposals" }).getByRole("link", { name: `Review proposal ${made.id.slice(0, 8)}…${made.id.slice(-6)}` });
+  await visible(link);
+  await link.focus();
+  await page.keyboard.press("Enter");
+  await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), "H1", "the link unmounted with its page: focus is on the new heading");
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Proposal");
+  // A link of the navigation stays mounted, and keeps the focus it was given.
+  await nav("Strategy").focus();
+  await page.keyboard.press("Enter");
+  await visible(page.getByRole("heading", { level: 1, name: "Strategy", exact: true }));
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), "Strategy");
+  assert.deepEqual(unexpected, []);
+});
+
 test("an address that names nothing is shown as such: a bad proposal ID, a bad agent name, and a page that doesn't exist", { timeout: 60_000 }, async () => {
   await page.goto(here("/proposals/not-an-id"));
   await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
@@ -499,6 +528,10 @@ test("an address that names nothing is shown as such: a bad proposal ID, a bad a
   await visible(page.getByRole("alert").filter({ hasText: "This address doesn't name an agent" }));
   assert.equal(await page.title(), "Treasury proposals · Page not found");
   assert.deepEqual(await axe(), [], "a bad agent name");
+
+  await page.goto(here("/proposals/%E0%A4%A"));
+  await visible(page.getByRole("heading", { level: 1, name: "Page not found", exact: true }));
+  assert.equal(await page.title(), "Treasury proposals · Page not found", "the title and the page agree on a malformed escape");
 
   await page.goto(here("/nothing-here"));
   await visible(page.getByRole("heading", { level: 1, name: "Page not found", exact: true }));
