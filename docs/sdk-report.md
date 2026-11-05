@@ -2,11 +2,11 @@
 
 What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what would improve the SDK from here.
 
-Reviewed against SDK 0.5.0 and platform `6ba0831` on 4 November 2026. This describes merged Treasury work through #109; held work from #104 is identified separately. Host availability is an operator check, not a guarantee from this SDK pin.
+Reviewed against SDK 0.5.0 and platform `6ba0831` on 4 November 2026, describing merged Treasury work through #109; held work from #104 is identified separately. Sections 3.1, 3.2, 3.3, 3.5 and 3.6 were rechecked on 5 November 2026 against SDK 0.5.1 (pinned since #119), the platform at `c671872`, and merged work through #143. Host availability is an operator check, not a guarantee from this SDK pin.
 
 ## Summary
 
-The Treasury app (owner UI in `web/`, app server in `apps/server/`, engines in `packages/core/`) runs on `@multiagency/sdk` 0.5.0. Upgrading from 0.4.1 needed no code changes beyond the version and the platform pin (PR #97).
+The Treasury app (owner UI in `web/`, app server in `apps/server/`, engines in `packages/core/`) runs on `@multiagency/sdk` 0.5.1 (#119). Upgrading from 0.4.1 to 0.5.0 needed no code changes beyond the version and the platform pin (PR #97).
 
 The engines in `packages/core` don't use the SDK at all. They are pure decision logic: oracle, bands, sizing, anti-whipsaw, policy, levels, detectors, replay and mandate. The SDK matters where those decisions meet the platform: proposals, owner signatures, consents, reads and execution.
 
@@ -15,6 +15,8 @@ The engines in `packages/core` don't use the SDK at all. They are pure decision 
 1. **Owner UIs are moving to the app route.** The platform answered on platform#14: owner UIs move to `/apps/v1`, and the owner session gets no production host. Several procedures the owner UI uses have no app-route version yet (section 3.1).
 2. **DAO-owned treasuries.** 0.5.0 adds DAO consents, votes and setups. The app server now supports DAO-owned agents (#20) against the SDK types, with the implementation merged in #109 and simulated-stack coverage. Confirm deployment availability with the operator; the file calls have no idempotency key (section 3.4).
 3. **Limits the signed policy can't express.** Venue exposure and the cash floor are enforced app-side only. They can refuse a trade the platform would allow, but nothing outside this app enforces them.
+
+Against the plan's four proposed procedures, the app route already has ledger export, and partly has DCA schedules, approval gates and an emergency stop (section 3.6).
 
 ## 1. How the app uses the SDK
 
@@ -49,22 +51,22 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 | Procedure | Used by | Today |
 |---|---|---|
 | `setup` (identity, instance, overview fields) | owner UI frame | owner session only |
-| `reconcileBooks` | portfolio | owner session only |
-| `treasury/link`, `unlink`, `setConfidential`, `fund` | funding page | owner session only |
-| `autopilot/tick` ("Run now") | automations (#7) | owner session only |
+| `reconcileBooks` | portfolio | On the app route since 0.5.1 (`read`); the app server reads it |
+| `treasury/link`, `unlink`, `setConfidential` | funding page | On the app route since 0.5.1 (`treasury`, wallet owners only); the proposals page uses them (#121) |
+| `treasury/fund` | funding page | Owner session only; on the app route, `deposit` and the SDK's `fundingTransaction` fund the agent instead (#121) |
+| `autopilot/tick` ("Run now") | automations (#7) | On the app route since 0.5.1 (`treasury`); the proposals page's Run now uses it (#126) |
 | `steward/propose` | steward page (#7) | owner session only |
 | `inbox/list`, `inbox/dismiss` | attention inbox (#7) | owner session only |
-| `/gw/agents`, `/gw/treasuries` | Treasury creation (#12) | Replace with `POST /apps/v1/setup` for wallets or `/apps/v1/dao-setups` for DAOs |
+| `/gw/agents`, `/gw/treasuries` | Treasury creation (#12) | Replaced: creation runs on `/apps/v1/setup` and `/apps/v1/dao-setups` (#117) |
 
 ### 3.2 Needs to confirm against the platform and deployment
 
 | Gap | Why the app needs it | Issue |
 |---|---|---|
-| Approving a held withdrawal to a NEAR account | Recheck the earlier reject-only limitation against 0.5.0 before proposing an extension | #62 |
-| Emergency-stop requirements | Decide whether immediate wallet autopilot stop followed by signed freeze, or DAO-voted stop, meets A14 before requesting new authority | #95, #62 |
+| Approving a held withdrawal to a NEAR account | Still reject-only at `c671872`: "approving a held withdrawal isn't available yet: its approval can't be verified" (the platform's `src/payment-approval.ts`). A candidate for #62's contracts | #62 |
+| Emergency-stop requirements | What the app route offers, for a wallet owner and for a DAO, is in 3.6; whether it meets A14 waits on A14's wording | #95, #62 |
 | Venue exposure and cash floor in the signed policy | Enforced app-side only; the platform would allow a trade they refuse | #49, #62 |
-| Treasury setup on production and the simulated stack | At the pin, staging offers Treasury setup; production and the stack offer payables only. Rebuild creation through the app server | #12 |
-| Creation contract | Use the existing app setup API; do not carry the held owner-session reservation workaround into the new flow | #12 |
+| Treasury setup on production and the simulated stack | Creation runs through the app server (#117), but at `c671872` only staging offers the `treasury` area; production and the stack offer payables only | #12 |
 | Staging access and production readiness | Request the staging host, deployment credential through a private channel, and network; SDK support does not establish access | #95 |
 | Budget visibility, `Retry-After`, and typed 429 | A shared deployment limit already exists (1,200 calls/hour); explicit budget and backoff signals are missing | platform#15 |
 | The consent cap counts revoked consents | A user who reconnects often can be locked out | #20 threat model |
@@ -78,8 +80,8 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 | `accessOf`, `mayCall` | Members are gated by role against the DAO's on-chain policy, read and cached by the server |
 | `app.daoConsents` | The server files the DAO's consent and follows it by state until the vote passes |
 | `app.daoVotes` | Approve and reject become DAO votes, with the platform's `/confirm/dao/<hash>` link for voters |
-| `app.daoSetups`, `owner/prepare` with `signer: "dao"` | Not used by the Treasury UI yet. Staging offers Treasury setup at the pin; production and the stack still need it |
-| `appClient(...).stream` for `sweep`, `rebalance`, `executePlan` | Not used by the owner UI yet: `sweep` is in `treasury`; `rebalance` and `executePlan` additionally require `treasury-execute` |
+| `app.daoSetups`, `owner/prepare` with `signer: "dao"` | A DAO's setup is filed for its vote and completed when it passes (#117); production and the stack don't offer the `treasury` area yet |
+| `appClient(...).stream` for `sweep`, `rebalance`, `executePlan` | `sweep` on the proposals page, answered as its AG-UI run (#122); `rebalance` and `executePlan` aren't used: they need `treasury-execute` |
 
 ### 3.4 Gaps found while building DAO agents
 
@@ -100,8 +102,21 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 
 | Gap | Effect today |
 |---|---|
-| `autopilot/tick` takes no input and returns no id | After a lost answer nothing links the attempt to a recorded run, so Run now is only held back for as long as the page is open, plus while a run or unresolved operation is visible |
-| `autopilot/tick`, `steward/propose` and `inbox/*` exist only on the owner session; `rebalance` and `executePlan` reach the app route only under `treasury-execute` | Moving owner UIs to `/apps/v1` (platform#14) means reworking the automations, runs, steward and attention pages |
+| `autopilot/tick` takes no input and returns no id | After a lost answer nothing links the attempt to a recorded run, so Run now is only held back for as long as the page is open, plus while a run or unresolved operation is visible. The merged proposals page's Run now (#126) has the same limit: a lost answer is never sent again from there |
+| `steward/propose` and `inbox/*` exist only on the owner session (`autopilot/tick` reached the app route in 0.5.1); `rebalance` and `executePlan` reach the app route only under `treasury-execute` | Moving owner UIs to `/apps/v1` (platform#14) means reworking the steward, runs and attention pages |
+
+### 3.6 The plan's proposed procedures (#62)
+
+The plan proposes new procedures for four needs, as #62 quotes it; the task card itself (Ballast's `docs/TASKS.md`) hasn't been received. Each against SDK 0.5.1 on the app route and the platform at `c671872`:
+
+| Plan's procedure | What the app route offers | Status | What's left |
+|---|---|---|---|
+| Adaptive DCA strategy schemas | `strategy/save` takes target weights, a minimum leg, a cost limit, and the autopilot's interval and auto-execute ceiling (the platform's `src/strategy-digest.ts`); nothing for bands, DCA units or anti-whipsaw. The app can carry its own: `proposals/create` takes the app's legs, and `externalPlan` (with `treasury-execute`) runs an app-built plan within the policy, the cost limit and a grant binding the strategy | Partly | Ballast's band, DCA and whipsaw state stays in `packages/core` and reaches the platform as proposal legs (#60's `legsFor`). A new procedure is needed only if the owner must sign the DCA schedule itself |
+| Escalation and approval gates | A proposal's swaps run only after the owner's wallet signs its exact text, or the DAO votes. The autopilot executes alone only up to the strategy's `autopilot.maxUsd`, under a grant binding it; 0 leaves every autopilot swap to the owner. A payout is held for a wallet owner's vote (`approval_vote`) when the policy sets `owner_approval` | Partly | The `maxUsd` ceiling applies to autopilot runs only: with `treasury-execute`, an app's `rebalance`, `externalPlan` and `executePlan` swap without a signature and without an amount ceiling, within the policy and the cost limit (the platform's `src/authorize.ts`). `owner_approval` holds every payout or none (`src/policy.ts`), so a hold only above an amount can't be expressed. A DAO can't vote on a held payout through an app (`DAO_APP_ACTIONS` has no `approval_vote`). Telling the owner a decision waits is the app's job (#131) |
+| Emergency-stop orchestration | `autopilot/stop` at once, with no signature. Freeze through `owner/prepare`, effective once the owner's wallet signs on the confirm page, or the DAO's vote passes, before the intent expires. The DAO stop page, done by the DAO's vote, ends every app's consent and turns autopilot off | Partly | **Wallet owner:** after `autopilot/stop`, swaps still go out through Run now, autopilot turned on again, another app's `executePlan`, and approved proposals; freeze stops every send, once signed within minutes (#133). **DAO:** the stop ends those app paths but doesn't freeze or revoke the grant, and a freeze needs the DAO's vote within the same minutes, impractical for most DAOs (platform#20). Details in #95; section 4, item 7 |
+| Ledger export | `ledger`, `ledgerCsv`, `reconcileBooks`, `activity` and `paymentHistory`, app-route reads under `read` | Have | Nothing new |
+
+The candidates for #62's contracts, then: the gaps above (an amount ceiling on `treasury-execute` plans, a payout hold above an amount, a DAO's vote on a held payout, a freeze effective at once), with approving a held withdrawal to a NEAR account and venue exposure and a cash floor in the signed policy (both in 3.2).
 
 ## 4. Improvements to the SDK going forward
 
