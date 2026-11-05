@@ -152,11 +152,24 @@ export const overviewRead = ownerOutputs.overview.extend({
   unmanaged: z.array(overviewShape.unmanaged.element.extend({ amount: rawAmount })),
 });
 export const activityRead = ownerOutputs.activity;
+/** The agent's account: its wallet (the NEAR account that holds its balances), and the grants its executor holds. */
+export const accountRead = ownerOutputs.account;
 export const heldRead = ownerOutputs.held;
 export const unresolvedRead = ownerOutputs.unresolved;
 /** The autopilot's recorded runs, and one run's recording (the platform's strict recording format). */
 export const runsRead = ownerOutputs["autopilot/evidence"];
 export const recordingRead = RecordingSchema;
+/** The account linked to fund the agent (`treasury/get`), or null: its balances are decimal strings already. */
+export const treasuryRead = z.strictObject({ treasury: ownerOutputs["treasury/get"] });
+/** A deposit address is asked for by asset: USDC, or NEAR, which funds the agent as wNEAR. */
+export const depositRequest = z.strictObject({ asset: z.enum(["USDC", "NEAR"]) });
+/** A one-time deposit address (`deposit`): pay it once, before it expires, with its memo if it names one. */
+export const depositRead = z.strictObject({ deposit: ownerOutputs.deposit });
+/** A wallet owner's changes to the agent's funding account. Each answers nothing; the page reads the account again. */
+export const linkRequest = z.strictObject({ accountId });
+export const unlinkRequest = z.strictObject({});
+export const confidentialRequest = z.strictObject({ confidential: z.boolean() });
+export const fundingChanged = z.strictObject({});
 /** A proposal found by the `requestId` it was proposed with. */
 export const requestRead = z.strictObject({ proposal: proposalView });
 /**
@@ -174,7 +187,7 @@ export const operationRead = z.strictObject({ correlationId: z.string(), at: z.s
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, or a read's `not_found`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a read's `not_found`, or a funding code: `dao_funding_fixed`, `funding_refused`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */

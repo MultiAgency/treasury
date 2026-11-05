@@ -140,3 +140,15 @@ test("the DAO approves one proposal and rejects another: a read relays the first
   assert.ok(read.ok, JSON.stringify(read));
   assert.equal((read.value as ProposalView).state, "rejected", "relayed with nobody reading the page");
 });
+
+test("the DAO's council reads the DAO as the funding account and gets a deposit address; no member links another account", async () => {
+  const cookie = await signIn(council);
+  const read = await call("GET", `${agentPath()}/treasury`, cookie);
+  assert.equal(read.status, 200, JSON.stringify(read.body));
+  assert.equal(contract.treasuryRead.parse(read.body.value).treasury?.accountId, dao, "fixed at setup");
+  const deposit = await call("POST", `${agentPath()}/deposit`, cookie, { asset: "USDC" });
+  assert.equal(deposit.status, 200, JSON.stringify(deposit.body));
+  contract.depositRead.parse(deposit.body.value);
+  assert.deepEqual((await call("POST", `${agentPath()}/treasury/link`, cookie, { accountId: council.accountId })).body,
+    { ok: false, kind: "refused", code: "dao_funding_fixed" }, "the stack's council has every DAO permission");
+});

@@ -5,9 +5,11 @@ import { accountId, agentName } from "../../../apps/server/src/contract.ts";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
 import { Connection } from "./connection";
+import { Funding } from "./funding";
 import { ProposalDetail } from "./proposal-detail";
 import { Portfolio } from "./portfolio";
 import { ProposalList } from "./proposal-list";
+import type { Identity } from "./proposals-api";
 import { agentReads, failureOf } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { CreateAgent, DaoSetup, Home } from "./setup";
@@ -64,7 +66,7 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
     {heading}
     {signedIn}
     <Connection reads={reads} identity={identity.data} />
-    {id === undefined && <ConnectedPortfolio reads={reads} />}
+    {id === undefined && <Connected reads={reads} identity={identity.data} />}
     {id === undefined ? <ProposalList reads={reads} />
       : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
       : <div className="flex flex-col items-start gap-4">
@@ -74,8 +76,8 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
   </>;
 }
 
-/** The portfolio, once a live consent connects the agent: every owner read needs it. */
-function ConnectedPortfolio({ reads }: { reads: ReturnType<typeof agentReads> }) {
+/** The portfolio and funding, once a live consent connects the agent: every owner read and funding call needs it. */
+function Connected({ reads, identity }: { reads: ReturnType<typeof agentReads>; identity: Identity }) {
   const consent = useQuery(reads.consent);
-  return consent.data?.consent ? <Portfolio reads={reads} /> : null;
+  return consent.data?.consent ? <><Portfolio reads={reads} /><Funding reads={reads} identity={identity} /></> : null;
 }

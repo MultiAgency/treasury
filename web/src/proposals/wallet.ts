@@ -1,4 +1,5 @@
 import { NearConnector } from "@fastnear/near-connect";
+import type { fundingTransaction } from "@multiagency/sdk";
 import { fromBase64, HOT_WALLETS, namespaced, walletSession } from "../app/wallet";
 import { transactionOutcome, type TransactionOutcome } from "../app/wallet-transaction";
 import { signerProblem } from "./dao-filing";
@@ -37,3 +38,24 @@ export async function file(transaction: MemberTransaction, member: string): Prom
 
 /** The wallet is connected as another account than the member signed in: nothing was sent. */
 export class WrongAccount extends Error {}
+
+/**
+ * A DAO acting through Trezu, beside the owner's own wallet: what it's sent, it files as one proposal the DAO's members
+ * vote on. Its connection is kept apart from the owner UI's (`proposals-dao:` storage).
+ */
+const trezu = walletSession(() => new NearConnector({ network: "mainnet", manifest: HOT_WALLETS, storage: namespaced("proposals-dao") }), "trezu-wallet");
+
+/**
+ * Sends a funding transaction as `account`, the agent's funding account: from the owner's wallet, or for a DAO through
+ * Trezu, which files it as a proposal. Each connects first, and sends only when connected as `account` (else it throws,
+ * having sent nothing). Only a success the wallet reports proves it executed; a failure reverted it whole.
+ */
+export async function fund(transaction: ReturnType<typeof fundingTransaction>, account: string, { dao }: { dao: boolean }): Promise<TransactionOutcome> {
+  const session = dao ? trezu : wallet;
+  const connected = async () => (await session.connector.getConnectedWallet().catch(() => null))?.accounts[0]?.accountId;
+  if (await connected() !== account) await session.connect();
+  const now = await connected();
+  if (now !== account) throw new WrongAccount(`${dao ? "Trezu" : "Your wallet"} is connected as ${now ?? "no account"}, not the funding account ${account}. Nothing was ${dao ? "filed" : "sent"}. ${dao ? "Connect Trezu to" : "Switch the wallet to"} ${account}.`);
+  // The SDK types each call's arguments as `object`; they're its own plain JSON arguments, as the wallet sends them.
+  return transactionOutcome(await session.send(transaction as Parameters<typeof session.send>[0]));
+}

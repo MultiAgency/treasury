@@ -20,7 +20,11 @@ export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
-export type ReadAnswer<P extends "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
+export type ReadAnswer<P extends "account" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
+/** A call that funds the agent, or changes its funding account, as the SDK answers it. */
+export type FundingAnswer<P extends "treasury/get" | "deposit" | "treasury/link" | "treasury/unlink" | "treasury/setConfidential"> = OwnerResult<OwnerOutput<P>>;
+/** The assets a deposit address takes: USDC, or wNEAR, which NEAR is wrapped into to fund it. */
+export type DepositAsset = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1" | "nep141:wrap.near";
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
 export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
 
@@ -103,17 +107,31 @@ export type Platform = {
     status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };
   /**
-   * The agent's owner reads under an Organization's consent (#61): its holdings and policy, its activity, payouts held
-   * for approval, operations whose outcome isn't proven, and the autopilot's recorded runs and one run's recording.
+   * The agent's owner reads under an Organization's consent: its account (its wallet and the grants its executor
+   * holds), its holdings and policy, its activity, payouts held for approval, operations whose outcome isn't proven,
+   * and the autopilot's recorded runs and one run's recording.
    * Reads only: nothing here sends anything.
    */
   reads: {
+    account(organization: string, agent: string): Promise<ReadAnswer<"account">>;
     overview(organization: string, agent: string): Promise<ReadAnswer<"overview">>;
     activity(organization: string, agent: string): Promise<ReadAnswer<"activity">>;
     held(organization: string, agent: string): Promise<ReadAnswer<"held">>;
     unresolved(organization: string, agent: string): Promise<ReadAnswer<"unresolved">>;
     runs(organization: string, agent: string): Promise<ReadAnswer<"autopilot/evidence">>;
     recording(organization: string, agent: string, tickId: string): Promise<ReadAnswer<"autopilot/log">>;
+  };
+  /**
+   * Funding the agent under an Organization's consent (its `treasury` scope): the account linked to fund it, a one-time
+   * deposit address, and a wallet owner's link to that account. A DAO's consent is refused the link and its setting:
+   * a DAO agent's funding account is the DAO, fixed at setup.
+   */
+  funding: {
+    treasury(organization: string, agent: string): Promise<FundingAnswer<"treasury/get">>;
+    deposit(organization: string, agent: string, asset: DepositAsset): Promise<FundingAnswer<"deposit">>;
+    link(organization: string, agent: string, accountId: string): Promise<FundingAnswer<"treasury/link">>;
+    unlink(organization: string, agent: string): Promise<FundingAnswer<"treasury/unlink">>;
+    setConfidential(organization: string, agent: string, confidential: boolean): Promise<FundingAnswer<"treasury/setConfidential">>;
   };
 };
 
@@ -203,12 +221,20 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
       status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
     },
     reads: {
+      account: async (organization, agent) => (await client()).agent(organization, agent).call("account"),
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       activity: async (organization, agent) => (await client()).agent(organization, agent).call("activity"),
       held: async (organization, agent) => (await client()).agent(organization, agent).call("held"),
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
       runs: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/evidence", {}),
       recording: async (organization, agent, tickId) => (await client()).agent(organization, agent).call("autopilot/log", { tickId }),
+    },
+    funding: {
+      treasury: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/get"),
+      deposit: async (organization, agent, asset) => (await client()).agent(organization, agent).call("deposit", { asset }),
+      link: async (organization, agent, accountId) => (await client()).agent(organization, agent).call("treasury/link", { accountId }),
+      unlink: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/unlink"),
+      setConfidential: async (organization, agent, confidential) => (await client()).agent(organization, agent).call("treasury/setConfidential", { confidential }),
     },
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),

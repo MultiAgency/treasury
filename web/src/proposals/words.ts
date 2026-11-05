@@ -3,7 +3,7 @@ import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
-export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal";
+export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding";
 
 const SIGN_IN: Record<string, string> = {
   rate_limited: "Too many sign-in attempts from this address. Wait a minute, then sign in again.",
@@ -47,6 +47,11 @@ const PROPOSAL: Record<string, string> = {
   rate_limited: "Too many requests from this account. Wait a minute, then try again.",
 };
 
+const FUNDING: Record<string, string> = {
+  funding_refused: "The platform didn't accept that change to the funding account. Nothing changed. Check the account exists, then try again.",
+  not_permitted: "Your roles don't allow this. A DAO agent's funding account is the DAO itself, and a deposit address is asked for by a member who may file proposals.",
+};
+
 /** A failure in words for the owner, from its kind and code only. */
 export function failureText(failure: Failure, context: Context): string {
   switch (failure.kind) {
@@ -59,7 +64,7 @@ export function failureText(failure: Failure, context: Context): string {
       ? "The answer was lost or couldn't be read. Reading again is safe."
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
-      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : {};
+      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : {};
       return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }

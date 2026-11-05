@@ -103,6 +103,17 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
         runs: () => call(contract.runsRead, `${base}/runs`),
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
+        /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
+        account: () => call(contract.accountRead, `${base}/account`),
+        /** The account linked to fund the agent, or null. */
+        treasury: () => call(contract.treasuryRead, `${base}/treasury`),
+        /** A fresh one-time deposit address for USDC, or for NEAR (as wNEAR). A lost answer may be asked for again: each is new. */
+        deposit: (asset: "USDC" | "NEAR") => call(contract.depositRead, `${base}/deposit`, { method: "POST", body: contract.depositRequest.parse({ asset }) }),
+        /** A wallet owner's changes to the funding account, each sent once; the account is read again after. */
+        link: (accountId: string) => call(contract.fundingChanged, `${base}/treasury/link`, { method: "POST", body: contract.linkRequest.parse({ accountId }) }),
+        unlink: () => call(contract.fundingChanged, `${base}/treasury/unlink`, { method: "POST" }),
+        setConfidential: (confidential: boolean) =>
+          call(contract.fundingChanged, `${base}/treasury/confidential`, { method: "POST", body: contract.confidentialRequest.parse({ confidential }) }),
         /** A proposal by the `requestId` it was proposed with; read only. */
         request: (requestId: string) => call(contract.requestRead, `${base}/requests/${readId.parse(requestId)}`),
         /** An operation's status by its `correlationId`, from its activity row: null until an outcome is recorded. */
@@ -128,6 +139,8 @@ export type ProposalRead = z.output<typeof contract.proposalRead>;
 export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
+export type TreasuryRead = z.output<typeof contract.treasuryRead>["treasury"];
+export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

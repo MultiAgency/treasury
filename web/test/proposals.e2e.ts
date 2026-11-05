@@ -31,6 +31,8 @@ let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
 const unexpected: string[] = [];
+/** What the owner's wallet was asked to send, in order: it sends nothing on the stack, whose chain takes no transactions. */
+const sent: { signerId: string; receiverId: string; actions: { params: { methodName: string; args: Record<string, unknown>; deposit: string } }[] }[] = [];
 
 before(async () => {
   stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
@@ -54,7 +56,9 @@ before(async () => {
   });
 
   browser = await chromium.launch();
-  const context = await browser.newContext();
+  // Reduced motion, which the page honours by dropping transitions: a button whose colours are still fading when the
+  // accessibility check reads them (here, the deposit button turning outline once an address is shown) fails it at random.
+  const context = await browser.newContext({ reducedMotion: "reduce" });
   await context.route("**/*", async route => {
     const url = new URL(route.request().url());
     if (url.origin === origin) return route.continue();
@@ -67,13 +71,15 @@ before(async () => {
   });
   // The owner's wallet signs as the stack's owner, through its control: never a module of the page replaced.
   await context.exposeFunction("__localSign", (payload: { message: string; recipient: string; nonce: string }) => signOwner(target, payload));
+  // The wallet's success for a transaction: recorded, never sent.
+  await context.exposeFunction("__localSend", (transaction: (typeof sent)[number]) => { sent.push(transaction); return { status: { SuccessValue: "" } }; });
   await context.addInitScript(({ account, publicKey }) => {
     const accounts = [{ accountId: account, publicKey }];
     const wallet = { manifest: { id: "local-test-wallet", name: "Local test wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
       signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => {},
       signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) =>
         (window as unknown as { __localSign: (p: unknown) => Promise<unknown> }).__localSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
-      signAndSendTransaction: async () => { throw new Error("This test wallet only signs messages"); } };
+      signAndSendTransaction: (transaction: unknown) => (window as unknown as { __localSend: (t: unknown) => Promise<unknown> }).__localSend(transaction) };
     window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet })));
     localStorage.setItem("proposals:selected-wallet:mainnet", "local-test-wallet");
   }, { account: owner, publicKey: state.testPublicKey });
@@ -230,4 +236,40 @@ test("a connected agent's page shows its portfolio from the owner reads: holding
   for (const name of ["Needs attention", "Activity", "Autopilot runs"]) await portfolio.getByRole("heading", { name }).waitFor();
   assert.deepEqual(await axe(), []);
   assert.deepEqual(unexpected, []);
+});
+
+test("the owner links their own account to fund the agent, sends exactly the reviewed USDC transfer from their wallet, gets a deposit address, and unlinks", { timeout: 90_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const funding = page.getByRole("region", { name: "Funding" });
+  await signInIfAsked(funding);
+  await visible(funding.getByText("No funding account is linked. Link the NEAR account that funds this agent"));
+  assert.deepEqual(await axe(), [], "nothing linked");
+  await funding.getByRole("button", { name: `Use ${owner}` }).click();
+  await visible(funding.getByRole("status").filter({ hasText: `Funded from ${owner}.` }));
+
+  await funding.getByLabel("Funding amount").fill("1.5");
+  await funding.getByRole("button", { name: "Review transfer" }).click();
+  const review = funding.getByRole("group", { name: "Funding transfer to sign" });
+  await visible(review);
+  assert.match(await review.innerText(), /exactly 1\.5 USDC from/);
+  const address = (await review.locator("code").first().innerText()).trim();
+  assert.deepEqual(await axe(), [], "the review");
+  await review.getByRole("button", { name: "Send" }).click();
+  await visible(funding.getByRole("status").filter({ hasText: "Sent. The portfolio updates once the deposit lands." }));
+  assert.equal(sent.length, 1, "sent once");
+  const [transfer] = sent;
+  assert.equal(transfer!.signerId, owner, "from the funding account");
+  const ft = transfer!.actions.find(action => action.params.methodName === "ft_transfer")!;
+  assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "1500000"], "exactly the address and amount reviewed");
+
+  await funding.getByRole("button", { name: "Get a deposit address" }).click();
+  await visible(funding.getByText("Deposit address", { exact: true }));
+  assert.deepEqual(await axe(), [], "a deposit address");
+
+  await funding.getByRole("button", { name: "Unlink" }).click();
+  const unlink = dialog("Unlink the funding account?");
+  await visible(unlink);
+  await unlink.getByRole("button", { name: "Unlink" }).click();
+  await visible(funding.getByText("No funding account is linked. Link the NEAR account that funds this agent"));
+  assert.deepEqual(unexpected, [], "the page reached nothing but this server and the wallet's boundary");
 });

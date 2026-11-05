@@ -830,7 +830,7 @@ test("a DAO policy that can't be read admits no one: unavailable, and logged", a
   assert.ok(logged.mock.calls.some(c => String(c.arguments[0]).includes("dao_policy_unavailable")));
 });
 
-test("each agent route asks for what it needs: a member who may only file is refused execute, one with no rights is refused filing, and no member signs", async t => {
+test("each agent route asks for what it needs: a member who may only file is refused execute, one with no rights is refused filing, and no member signs or links", async t => {
   policies[DAO] = DAO_POLICY;
   t.after(() => { delete policies[DAO]; });
   const needs = Object.fromEntries(routes.flatMap(route => route.access === "owner" || route.access === "owner-fresh" ? [[`${route.method} ${route.path}`, route.needs]] : []));
@@ -841,6 +841,9 @@ test("each agent route asks for what it needs: a member who may only file is ref
     file: { council: true, proposer: true, reader: false },
     execute: { council: true, proposer: false, reader: false },
     sign: { council: false, proposer: false, reader: false },
+    // A deposit address, as filing: anyone who may file a proposal. The funding account is the DAO's own, so no member links it.
+    deposit: { council: true, proposer: true, reader: false },
+    link: { council: false, proposer: false, reader: false },
   };
   for (const route of routes.filter(route => route.access === "owner" || route.access === "owner-fresh")) {
     const need = needs[`${route.method} ${route.path}`]!;

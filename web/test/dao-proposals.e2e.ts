@@ -33,6 +33,8 @@ let server: Server, origin: string, browser: Browser, page: Page;
 const unexpected: string[] = [];
 /** What the member's wallet was asked to send, in order. */
 const sent: { signerId: string; receiverId: string; actions: unknown[] }[] = [];
+/** What Trezu was asked to file as the DAO's proposals, in order: it files nothing on the stack. */
+const filed: { signerId: string; receiverId: string; actions: { params: { methodName: string; args: Record<string, unknown> } }[] }[] = [];
 
 /** The NEP-413 hash a member's filing asks the DAO to sign: the argument of its proposal's `v1.signer` call. */
 function hashOf(transaction: { actions: unknown[] }): string {
@@ -85,9 +87,17 @@ before(async () => {
     await daoVote(target, hashOf(transaction));
     return { status: { SuccessValue: "" } };
   });
-  await context.addInitScript(({ account, publicKey }) => {
+  // Trezu, connected as the DAO: what it's sent, it would file as the DAO's proposal. Recorded, never filed.
+  await context.exposeFunction("__trezuSend", (transaction: (typeof filed)[number]) => { filed.push(transaction); return { status: { SuccessValue: "" } }; });
+  await context.addInitScript(({ account, publicKey, dao }) => {
     const accounts = [{ accountId: account, publicKey }];
-    const call = (window as unknown as Record<"__memberSign" | "__memberSend", (p: unknown) => Promise<unknown>>);
+    const call = (window as unknown as Record<"__memberSign" | "__memberSend" | "__trezuSend", (p: unknown) => Promise<unknown>>);
+    const icon = "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>";
+    const daoAccounts = [{ accountId: dao, publicKey }];
+    const trezu = { manifest: { id: "trezu-wallet", name: "Trezu", type: "injected", icon, features: {} },
+      signIn: async () => daoAccounts, getAccounts: async () => daoAccounts, signOut: async () => {},
+      signAndSendTransaction: (transaction: unknown) => call.__trezuSend(transaction) };
+    window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: trezu })));
     const memberWallet = { manifest: { id: "local-test-wallet", name: "Local test wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
       signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => {},
       signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) =>
@@ -95,7 +105,7 @@ before(async () => {
       signAndSendTransaction: (transaction: unknown) => call.__memberSend(transaction) };
     window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: memberWallet })));
     localStorage.setItem("proposals:selected-wallet:mainnet", "local-test-wallet");
-  }, { account: council.accountId, publicKey: council.publicKey });
+  }, { account: council.accountId, publicKey: council.publicKey, dao: state.dao.account });
   page = await context.newPage();
 }, { timeout: 180_000 });
 
@@ -151,4 +161,28 @@ test("a council member asks the DAO to approve a proposal, files the vote from t
   assert.deepEqual([sent[1]!.signerId, sent[1]!.receiverId], [council.accountId, dao]);
   assert.deepEqual(await axe(), [], "approved");
   assert.deepEqual(unexpected, [], "the page reached nothing but this server and the wallet's boundary");
+});
+
+test("the DAO funds its agent from its own account: no link controls, and Trezu files exactly the reviewed USDC transfer as the DAO's proposal", { timeout: 90_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const funding = page.getByRole("region", { name: "Funding" });
+  await visible(funding);
+  await visible(funding.getByRole("status").filter({ hasText: `Funded from ${dao}, a DAO with ` }));
+  assert.equal(await funding.getByRole("button", { name: "Unlink" }).count(), 0, "a DAO agent's funding account is fixed");
+  assert.deepEqual(await axe(), [], "the DAO's funding account");
+
+  await funding.getByLabel("Funding amount").fill("2");
+  await funding.getByRole("button", { name: "Review proposal" }).click();
+  const review = funding.getByRole("group", { name: "Funding transfer to sign" });
+  await visible(review);
+  assert.match(await review.innerText(), new RegExp(`The proposal pays exactly 2 USDC from ${dao.replaceAll(".", "\\.")}`));
+  const address = (await review.locator("code").first().innerText()).trim();
+  await review.getByRole("button", { name: "File funding proposal" }).click();
+  await visible(funding.getByRole("status").filter({ hasText: /^Filed in Trezu\./ }));
+  assert.equal(filed.length, 1, "filed once");
+  assert.equal(filed[0]!.signerId, dao, "as the DAO, through Trezu");
+  const ft = filed[0]!.actions.find(action => action.params.methodName === "ft_transfer")!;
+  assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "2000000"]);
+  assert.deepEqual(await axe(), [], "filed");
+  assert.deepEqual(unexpected, []);
 });

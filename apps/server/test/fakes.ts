@@ -73,6 +73,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * `readAnswers[name]` queues answers given before it; an Error is thrown, as a broken call would.
    */
   const reads: { [K in ReadName]: ReadValue<K> } = {
+    account: { agentId: "id-portfolio", executor: true, wallet: "portfolio.agents.near", grant: null, stagedGrant: null },
     overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
   };
   const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
@@ -83,6 +84,20 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     if (queued) return queued;
     const value = reads[name];
     return value === undefined ? { ok: false, kind: "refused", status: 404, error: "No such run" } as never : { ok: true, value } as never;
+  };
+  /**
+   * Funding as the platform keeps it: the account each agent's owner linked to fund it (none until linked), and the
+   * deposit addresses it gave, each fresh. `fundingAnswers` queues answers a funding call gives instead, by call; an
+   * Error is thrown, as a broken call would.
+   */
+  const treasuries: Record<string, { accountId: string; confidential: boolean }> = {};
+  const deposits: { agent: string; asset: string; address: string }[] = [];
+  const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
+  const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
+    calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
+    const queued = fundingAnswers[name]?.shift();
+    if (queued instanceof Error) throw queued;
+    return (queued ?? { ok: true, value: value() }) as never;
   };
   /** Proposals as the platform keeps them, under the Organization that made them. */
   const proposals: (ProposalView & { agent: string })[] = [];
@@ -278,12 +293,29 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       },
     },
     reads: {
+      account: (organization, agent) => read("account", organization, agent),
       overview: (organization, agent) => read("overview", organization, agent),
       activity: (organization, agent) => read("activity", organization, agent),
       held: (organization, agent) => read("held", organization, agent),
       unresolved: (organization, agent) => read("unresolved", organization, agent),
       runs: (organization, agent) => read("runs", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
+    },
+    funding: {
+      treasury: async (organization, agent) => funding("treasury", organization, agent, [], () => {
+        const linked = treasuries[agent];
+        return linked ? { accountId: linked.accountId, dao: null, balances: { near: "1000000000000000000000000", usdc: "5000000" }, confidential: linked.confidential, payees: [] } : null;
+      }),
+      deposit: async (organization, agent, asset) => funding("deposit", organization, agent, [asset], () => {
+        const address = `${(deposits.length + 1).toString(16).padStart(64, "0")}`;
+        deposits.push({ agent, asset, address });
+        return { correlationId: `deposit-${deposits.length}`, address, memo: null, minAmount: null, expiresAt: new Date(Date.now() + 3_600_000).toISOString() };
+      }),
+      link: async (organization, agent, accountId) => funding("link", organization, agent, [accountId], () => { treasuries[agent] = { accountId, confidential: false }; }),
+      unlink: async (organization, agent) => funding("unlink", organization, agent, [], () => { delete treasuries[agent]; }),
+      setConfidential: async (organization, agent, confidential) => funding("setConfidential", organization, agent, [String(confidential)], () => {
+        if (treasuries[agent]) treasuries[agent].confidential = confidential;
+      }),
     },
   };
   /** The agent's creation completes: it has an ID from now on. */
@@ -297,7 +329,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers,
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers,
     reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 
@@ -348,7 +380,7 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
 }
 
 /** The owner reads by name, and the platform procedure each one is. */
-const READ_PATHS = { overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
+const READ_PATHS = { account: "account", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
 type ReadName = keyof typeof READ_PATHS;
 type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
 type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);

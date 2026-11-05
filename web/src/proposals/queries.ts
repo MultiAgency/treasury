@@ -41,6 +41,9 @@ export function agentReads(name: string) {
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
+    /** The funding account and the agent's own account, read as the owner reads above. */
+    treasury: queryOptions({ queryKey: [...key, "treasury"], queryFn: async () => answered(await agent.treasury()).treasury, retry: false }),
+    account: queryOptions({ queryKey: [...key, "account"], queryFn: async () => answered(await agent.account()), retry: false }),
     proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false,
       refetchInterval: 30_000 }),
     /** One proposal, and for a DAO the DAO's vote on it while one waits: read again while either may change on its own. */
