@@ -1,14 +1,22 @@
+import { mayCall } from "@multiagency/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { ago } from "../shared/format";
 import { Card, Loading, Note, QueryError, short } from "../shared/ui";
+import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
+import { ProposeRebalance } from "./propose-rebalance";
 import { Legs, StateBadge, when } from "./ui";
 
-/** The agent's proposals under the owner's own Organization, newest first, each with its terms and a link to review it. */
-export function ProposalList({ reads }: { reads: ReturnType<typeof agentReads> }) {
+/**
+ * The agent's proposals under the owner's own Organization, newest first, each with its terms and a link to review it;
+ * once connected, the owner (or a DAO member who may file proposals) may ask for a rebalance to approve.
+ */
+export function ProposalList({ reads, identity }: { reads: ReturnType<typeof agentReads>; identity: Identity }) {
   const proposals = useQuery(reads.proposals);
+  const consent = useQuery(reads.consent);
   return <section aria-labelledby="proposals-title" className="flex flex-col gap-4">
     <h2 id="proposals-title" className="text-xl font-semibold">Proposals</h2>
+    {consent.data?.consent && mayCall(identity.access, "proposals/create") && <ProposeRebalance reads={reads} />}
     {proposals.isPending ? <Loading label="Reading proposals…" />
       : proposals.isError ? <QueryError error={proposals.error} retry={() => proposals.refetch()} />
       : proposals.data.length === 0 ? <Note>No proposals yet. The agent's proposals appear here once it proposes.</Note>

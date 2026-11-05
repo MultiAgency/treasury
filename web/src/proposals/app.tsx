@@ -67,7 +67,7 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
     {signedIn}
     <Connection reads={reads} identity={identity.data} />
     {id === undefined && <Connected reads={reads} identity={identity.data} />}
-    {id === undefined ? <ProposalList reads={reads} />
+    {id === undefined ? <ProposalList reads={reads} identity={identity.data} />
       : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
       : <div className="flex flex-col items-start gap-4">
         <a href={`/agents/${name}`} className="text-sm underline">Back to proposals</a>

@@ -306,3 +306,20 @@ test("a public wNEAR balance is previewed and shielded once through the server, 
   assert.equal(books.status, 200);
   contract.booksRead.parse(((await books.json()) as { value: unknown }).value);
 });
+
+test("the owner asks for a rebalance to a drifted strategy: proposed under their consent, found by its requestId, nothing executed", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  await setTargets(target, { [USDC]: 0, [WNEAR]: 0, [ETH]: 10_000 });
+  const requestId = `page-stack-${Date.now()}`;
+  const response = await post(`${agent}/proposals`, { requestId }, cookie);
+  const body = await response.json() as { value: unknown };
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const { proposal } = contract.rebalanceMade.parse(body.value);
+  assert.deepEqual([proposal.requestId, proposal.state], [requestId, "proposed"]);
+  assert.ok(proposal.legs.length > 0, "the strategy's legs, quoted now");
+  const found = await (await get(`${agent}/requests/${requestId}`, cookie)).json() as { value: { proposal: { id: string } } };
+  assert.equal(found.value.proposal.id, proposal.id);
+});

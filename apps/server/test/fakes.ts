@@ -108,7 +108,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
   /** Proposals as the platform keeps them, under the Organization that made them. */
   const proposals: (ProposalView & { agent: string })[] = [];
   /** Answers the next proposal actions give instead of their own, by action; an Error is thrown, as a broken call would. */
-  const proposalAnswers: Partial<Record<"approve" | "reject" | "execute" | "get", (ProposalAnswer | Error)[]>> = {};
+  const proposalAnswers: Partial<Record<"create" | "approve" | "reject" | "execute" | "get", (ProposalAnswer | Error)[]>> = {};
   const next = (action: keyof typeof proposalAnswers) => {
     const queued = proposalAnswers[action]?.shift();
     if (queued instanceof Error) throw queued;
@@ -135,6 +135,17 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       return { answer: answer(agent, owners[agent]), cached: false };
     },
     proposals: {
+      async create(organization, agent, input) {
+        calls.push(`proposals.create ${organization} ${agent} ${input.requestId} ${JSON.stringify(input.legs)}`);
+        const queued = next("create");
+        if (queued) return queued;
+        const made = proposals.find(item => item.organization === organization && item.agent === agent && item.requestId === input.requestId);
+        if (made) return { ok: true, value: shown(made) };
+        const created = { ...proposal({ id: (proposals.length + 1).toString(16).padStart(32, "0"), requestId: input.requestId, organization,
+          expiresAt: input.expiresAt, note: input.note ?? null }), agent };
+        proposals.push(created);
+        return { ok: true, value: shown(created) };
+      },
       async list(organization, agent) {
         calls.push(`proposals.list ${organization} ${agent}`);
         return { ok: true, value: { proposals: proposals.filter(item => item.organization === organization && item.agent === agent).map(shown) } };

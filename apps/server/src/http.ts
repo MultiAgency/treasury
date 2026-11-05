@@ -89,9 +89,9 @@ type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string }
  * signs (`owner/prepare`: the owner, or a DAO member who may file its proposals, which the DAO contract checks too);
  * `execute` asking for a proposal's execution.
  */
-export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep";
+export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep" | "propose";
 const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute",
-  deposit: "deposit", link: "treasury/link", sweep: "sweep" };
+  deposit: "deposit", link: "treasury/link", sweep: "sweep", propose: "proposals/create" };
 type Route = { method: "GET" | "POST" | "DELETE"; path: string; handle(call: Call, context: Context): Promise<Reply> }
   & ({ access: "public" } | { access: "session" } | { access: "owner" | "owner-fresh"; needs: Need });
 
@@ -134,7 +134,9 @@ const audited = (answer: { ok: true } | { ok: false; kind: string; status?: numb
     ..."code" in reply.body && { code: reply.body.code }, ...(!reply.body.ok && reply.body.kind === "not_owner" && { code: "not_owner" }) };
 /** The platform's refusal codes for a proposal call that the page may act on, with the status the browser gets. */
 const PROPOSAL_CODES: Record<string, number> = { signature_invalid: 400, invalidated: 409, withdrawn: 409, not_open: 409, expired: 409,
-  not_approved: 409, policy_not_in_force: 409 };
+  not_approved: 409, policy_not_in_force: 409, nothing_to_propose: 409, too_many_proposals: 409, not_proposable: 409, request_conflict: 409 };
+/** How long a rebalance the owner asks for stays open for approval: as long as one `watch` proposes. */
+const REBALANCE_HOURS = 24;
 /**
  * A failed proposal call as the browser gets it: no such proposal, the platform's own code where the page can act on
  * it, `not_connected` when no live consent covers the agent (the platform's 403), and `unavailable` for anything else,
@@ -669,6 +671,26 @@ export const routes: Route[] = [
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
       const { revoked, complete } = await revokeAll(liveConsents(listed.value.consents, identity!), account!, identity!.agent, context);
       return complete ? ok({ revoked }) : unavailable();
+    },
+  },
+  {
+    /**
+     * A rebalance to the saved strategy, proposed for the owner (or the DAO) to approve, as `watch` proposes one: the
+     * strategy's legs, open for a day. The page names the `requestId`, so after a lost answer it finds the proposal by it
+     * (`…/requests/:id`) rather than asking again; the platform keeps one proposal per `requestId`. Recorded before the
+     * platform is asked and after. Nothing executes until it's approved.
+     */
+    method: "POST", path: "/api/agents/:agent/proposals", access: "owner-fresh", needs: "propose",
+    async handle({ body, account, identity }, { platform, audit }) {
+      const { agent, owner } = identity!;
+      const input = parse(contract.rebalanceRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "propose", agent, stage: "attempt" });
+      const made = await relay(() => platform.proposals.create(organizationOf(owner), agent, { requestId: input.requestId, legs: "strategy",
+        expiresAt: new Date(Date.now() + REBALANCE_HOURS * 3_600_000).toISOString(), note: "Asked for on the proposals page" }), agent);
+      const reply = made.ok ? ok({ proposal: made.value }) : proposalFailure(made, agent);
+      await audit.append({ who: account!, action: "propose", agent, subject: made.ok ? made.value.id : undefined, stage: "result", answer: audited(made, reply) });
+      return reply;
     },
   },
   {

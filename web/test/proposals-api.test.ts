@@ -197,3 +197,11 @@ test("funding: the account and the funding account as GETs, a deposit address an
   assert.throws(() => agent.link("Not An Account"), "held to the server's schema before anything is sent");
   assert.throws(() => agent.deposit("ETH" as "USDC"));
 });
+
+test("asking for a rebalance is one JSON POST naming the request; its proposal parses", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  server.answer(`POST ${base}/proposals`, ok({ proposal: proposal() }));
+  assert.equal((await agent.proposeRebalance("page-1")).ok, true);
+  assert.deepEqual(server.sent.map(request => [request.method, request.path, JSON.parse(request.body)]), [["POST", `${base}/proposals`, { requestId: "page-1" }]]);
+  assert.throws(() => agent.proposeRebalance("has space"), "held to the server's schema before anything is sent");
+});

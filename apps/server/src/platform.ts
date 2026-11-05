@@ -64,6 +64,8 @@ export type Platform = {
    * execution asked for once. Only these procedures; the server can't reach any other of the agent's.
    */
   proposals: {
+    /** Proposes a swap plan for the owner to approve: sent again only unchanged, under the same `requestId`. */
+    create(organization: string, agent: string, input: AppInputs["proposals/create"]): Promise<ProposalAnswer>;
     list(organization: string, agent: string): Promise<ProposalListAnswer>;
     get(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
     approve(organization: string, agent: string, input: { id: string; signed: Signed }): Promise<ProposalAnswer>;
@@ -197,6 +199,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     return { answer: await ((!fresh && reading.get(agent)) || read(agent)), cached: false };
   };
   const proposals: Platform["proposals"] = {
+    create: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/create", input) as Promise<ProposalAnswer>,
     list: async (organization, agent) => (await client()).agent(organization, agent).call("proposals/list") as Promise<ProposalListAnswer>,
     get: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/get", { id }) as Promise<ProposalAnswer>,
     approve: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/approve", input) as Promise<ProposalAnswer>,
@@ -269,7 +272,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
       autopilot: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/get"),
       list: proposals.list,
       get: proposals.get,
-      create: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/create", input) as Promise<ProposalAnswer>,
+      create: proposals.create,
       identity,
       consents: consents.list,
     },
