@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { fromUnits } from "../shared/format";
 import { Button, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
+import { blockShield, useShieldBlock } from "./kept-outcomes";
 import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { sweepOutcome } from "./sweep-run";
@@ -14,8 +15,8 @@ type Read = ReturnType<typeof sweepOutcome>;
 
 /** What a failed sweep means for the owner, by kind: never the platform's text. */
 const FAILED: Record<string, string> = {
-  partial: "At least one shield went out, and not every one succeeded. Funds may have moved: check Activity before shielding again.",
-  unknown: "The sweep's outcome isn't known: a shield may have gone out. Check Activity before shielding again.",
+  partial: "At least one shield went out, and not every one succeeded. Funds may have moved: check Activity, in Portfolio on the agent's Home page, before shielding again.",
+  unknown: "The sweep's outcome isn't known: a shield may have gone out. Check Activity, in Portfolio on the agent's Home page, before shielding again.",
   refused: "Nothing was shielded: the platform refused the sweep.",
   provider: "Nothing was shielded: the provider refused it.",
   busy: "Nothing was shielded: the agent is busy with another operation. Try again shortly.",
@@ -26,7 +27,7 @@ const FAILED: Record<string, string> = {
 /**
  * Previews, then shields, the agent's managed public balances into its confidential balance. Each sweep is sent once and
  * decided from what its run reported; after one whose outcome is unknown or partly sent, Shield isn't offered again
- * while the page is loaded. Shielding needs the executor to hold a treasury grant.
+ * while the page is loaded, whichever of the agent's pages it is left for. Shielding needs the executor to hold a treasury grant.
  */
 export function Sweep({ reads, identity }: { reads: Reads; identity: Identity }) {
   const client = useQueryClient();
@@ -35,7 +36,8 @@ export function Sweep({ reads, identity }: { reads: Reads; identity: Identity })
   const [busy, setBusy] = useState<"preview" | "shield">();
   const [error, setError] = useState<string>();
   const [reviewing, setReviewing] = useState(false);
-  const [unsettled, setUnsettled] = useState(false);
+  // Outside the component: leaving Funding for Home and back must not offer Shield again (`kept-outcomes.ts`).
+  const unsettled = useShieldBlock(reads.name);
   const grant = account.data?.grant?.label;
   const canShield = account.data?.executor === true && (grant === "treasury" || Boolean(grant?.startsWith("treasury:")));
   const canSweep = mayCall(identity.access, "sweep") && canShield;
@@ -49,13 +51,13 @@ export function Sweep({ reads, identity }: { reads: Reads; identity: Identity })
     setBusy(undefined);
     if (!answer.ok) {
       // A shield's lost answer may have sent one: never offered again from here.
-      if (execute && answer.kind === "lost") setUnsettled(true);
+      if (execute && answer.kind === "lost") blockShield(reads.name);
       setError(failureText(answer, execute ? "funding" : "read"));
       return;
     }
     const decided = sweepOutcome(answer.value, execute);
     setRead({ ...decided, execute });
-    if (!decided.offerAgain) setUnsettled(true);
+    if (!decided.offerAgain) blockShield(reads.name);
     if (!decided.outcome.ok) setError(FAILED[decided.outcome.kind] ?? `The sweep failed (${decided.outcome.kind}).`);
     if (execute) void client.invalidateQueries({ queryKey: reads.overview.queryKey });
   };

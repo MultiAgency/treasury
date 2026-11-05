@@ -6,6 +6,8 @@ import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ProposeRebalance } from "./propose-rebalance";
 import { Legs, StateBadge, when } from "./ui";
+import { PageLink } from "./nav";
+import { proposalAddress } from "./pages";
 
 /**
  * The agent's proposals under the owner's own Organization, newest first, each with its terms and a link to review it;
@@ -25,7 +27,7 @@ export function ProposalList({ reads, identity }: { reads: ReturnType<typeof age
           <Card className="gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <StateBadge state={view.state} />
-              <a href={`/agents/${reads.name}/proposals/${view.id}`} className="text-sm underline">Review proposal {short(view.id, 12)}</a>
+              <PageLink to={proposalAddress(reads.name, view.id)} className="text-sm underline">Review proposal {short(view.id, 12)}</PageLink>
             </div>
             <Legs view={view} />
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">

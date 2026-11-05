@@ -9,6 +9,9 @@ import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
+import { forgetGrant } from "./kept-outcomes";
+import { PageLink } from "./nav";
+import { agentAddress } from "./pages";
 
 type Reads = ReturnType<typeof agentReads>;
 type Confirm = "enable" | "tick";
@@ -50,11 +53,14 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
     }
     // A Run now whose answer was lost may have run, and swapped: never sent again from here.
     if (what === "tick" && (answer.kind === "lost" || answer.kind === "unavailable"))
-      setError("The run's answer was lost: it may have run. Check the autopilot's runs in Portfolio before running again.");
+      setError("The run's answer was lost: it may have run. Check the autopilot's runs, in Portfolio on the agent's Home page, before running again.");
     else setError(failureText(answer, "autopilot"));
   };
 
   const s = strategy.data, on = schedule.data?.on === true;
+  // Once the grant binds the strategy, the one kept for it (`kept-outcomes.ts`) has done its work: a later unbinding starts afresh.
+  const bound = s?.grantMatches === true;
+  useEffect(() => { if (bound) forgetGrant(reads.name); }, [bound, reads.name]);
   const canControl = mayCall(identity.access, "autopilot/enable");
   const canSave = mayCall(identity.access, "strategy/save");
   /** Keyboard focus goes back to Edit strategy when the editor closes, so a keyboard user carries on from there. */
@@ -87,7 +93,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             <p>Swaps of at least ${s!.strategy.minLegUsd}, costing at most {s!.strategy.maxCostBps / 100}%. On autopilot: every {s!.strategy.autopilot.everyMin} minutes,
               up to ${s!.strategy.autopilot.maxUsd} a run.</p>
             {s!.strategy.autopilot.maxUsd === 0 && <p>With a $0 ceiling, autopilot makes no swaps on its own: swaps are proposed for your approval
-              instead. <a className="underline" href="#proposals">Propose a rebalance</a>.</p>}
+              instead. <PageLink to={agentAddress(identity.agent, "proposals")} className="underline">Propose a rebalance</PageLink>.</p>}
             {canSave ? <Button ref={editButton} variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>
               : identity.signer === "dao" && <p>Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
           </li>

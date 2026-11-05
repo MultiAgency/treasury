@@ -1,54 +1,101 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
-import { proposalId } from "@multiagency/sdk";
-import { accountId, agentName } from "../../../apps/server/src/contract.ts";
+import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
-import { Connection } from "./connection";
+import { AgentContext, useAgent } from "./agent-context";
 import { Autopilot } from "./autopilot";
+import { Connection } from "./connection";
 import { Funding } from "./funding";
-import { ProposalDetail } from "./proposal-detail";
+import { PageLink } from "./nav";
+import { AGENT_PAGES, agentAddress, isProposalId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
+import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
-import type { Identity } from "./proposals-api";
 import { agentReads, failureOf } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { CreateAgent, DaoSetup, Home } from "./setup";
 
-/**
- * Where the page is: the account's treasuries (`/`), a DAO's setup (`/setup/dao/<dao>`), an agent's proposals
- * (`/agents/<agent>`), or one of them (`…/proposals/<id>`).
- */
-function place(pathname: string): { agent: string; id: string | undefined } | { dao: string } | undefined {
-  const [, dao] = /^\/setup\/dao\/([^/]+)\/?$/.exec(pathname) ?? [];
-  if (dao) {
-    const decoded = (() => { try { return decodeURIComponent(dao); } catch { return ""; } })();
-    return accountId.safeParse(decoded).success ? { dao: decoded } : undefined;
-  }
-  const [, agent, , id] = /^\/agents\/([^/]+)(\/proposals\/([^/]+))?\/?$/.exec(pathname) ?? [];
-  return agent && agentName.safeParse(agent).success ? { agent, id } : undefined;
-}
+/** Where the page is, from the router's address: the one reading of it (`pages.ts`). */
+export const usePlace = (): Place => place(useRouterState({ select: state => state.location.pathname }));
 
-export function App() {
-  const here = useMemo(() => place(location.pathname), []);
+/** The page's frame: the skip link, the brand and the main region every page sits in. Sets the document's title to the page's. */
+export function Shell() {
+  const here = usePlace();
+  const router = useRouter();
+  useEffect(() => { document.title = `Treasury proposals · ${here.title}`; }, [here.title]);
+  // A link followed from a page's content unmounts with that page, and the focus it held falls to <body>, so a keyboard
+  // or screen reader user starts again from the top without being told the page changed. Once the new address has
+  // rendered (the router's own event: its location changes before the old page's content is replaced), the focus goes to
+  // what the address names: the section its hash names, else the page's heading. Focus that is somewhere else (a link of
+  // the navigation, which stays) is left alone. The router is typed against the owner UI's routes, hence the cast.
+  useEffect(() => {
+    const events = router as unknown as { subscribe(type: "onRendered", listener: (event: { toLocation: { hash: string }; hrefChanged: boolean }) => void): () => void };
+    return events.subscribe("onRendered", ({ toLocation, hrefChanged }) => {
+      if (!hrefChanged) return;
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const target = (toLocation.hash && document.getElementById(toLocation.hash)) || document.querySelector<HTMLElement>("main h1") || document.getElementById("main");
+      if (!target) return;
+      if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+      target.focus();
+    });
+  }, [router]);
   return <>
     <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
     <header className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-8"><TreasuryBrand /></header>
-    <main id="main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-10 px-4 pb-16 sm:px-8">
-      {!here ? <Home /> : "dao" in here ? <DaoSetup dao={here.dao} /> : <Agent name={here.agent} id={here.id} />}
-    </main>
+    <main id="main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-10 px-4 pb-16 sm:px-8"><Outlet /></main>
   </>;
 }
 
+/** An address that names nothing: the page says so and what was wrong with it, and the way back. */
+export function Missing({ why }: { why?: string }) {
+  const here = usePlace();
+  const reason = why ?? (here.kind === "missing" ? here.why : "This address isn't a page of this app.");
+  return <>
+    <h1 className="text-2xl font-semibold">{MISSING_TITLE}</h1>
+    <p role="alert">{reason}</p>
+    <PageLink to="/" className="self-start text-sm underline">{ROOT_TITLE}</PageLink>
+  </>;
+}
+
+/** The root: the account's own treasuries (`/`). Its heading is its own. */
+export const RootPage = () => <Home />;
+
+/** A DAO's Treasury setup (`/setup/dao/<dao>`), for one of its members. */
+export function DaoPage() {
+  const here = usePlace();
+  return here.kind === "dao" ? <DaoSetup dao={here.dao} /> : <Missing />;
+}
+
+/** The navigation between an agent's pages, the current one marked. Only pages that exist are listed. */
+function AgentNav({ agent }: { agent: string }) {
+  return <nav aria-label="Agent pages">
+    <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+      {NAVIGATION.map(page => <li key={page}>
+        <PageLink to={agentAddress(agent, page)} exact={page === "home"} className="underline underline-offset-4 aria-[current=page]:font-semibold aria-[current=page]:no-underline">
+          {AGENT_PAGES[page].title}
+        </PageLink>
+      </li>)}
+    </ul>
+  </nav>;
+}
+
 /**
- * An agent's page, once the signed-in account is its owner or a member of the DAO that owns it: who's signed in, the
- * connection, then its proposals.
+ * An agent's frame, around each of its pages: the agent's name, who is signed in, and the navigation. The identity check
+ * gates every page of it, once the signed-in account is the agent's owner or a member of the DAO that owns it. Signing
+ * in, and the answer for an account that isn't the owner, live here and not in each page.
  */
-function Agent({ name, id }: { name: string; id: string | undefined }) {
+export function AgentFrame() {
+  const here = usePlace();
+  if (here.kind !== "agent" && here.kind !== "proposal") return <Missing />;
+  return <Gate name={here.agent} title={here.title} home={here.kind === "agent" && here.page === "home"} />;
+}
+
+function Gate({ name, title, home }: { name: string; title: string; home: boolean }) {
   const reads = useMemo(() => agentReads(name), [name]);
   const identity = useQuery(reads.identity);
   const failure = failureOf(identity.error);
-  const title = id ? "Proposal" : "Treasury proposals";
   const heading = <div className="flex flex-col gap-1">
     <h1 className="text-2xl font-semibold">{title}</h1>
     <p className="text-sm text-muted-foreground">Agent <span className="font-mono">{name}</span></p>
@@ -61,24 +108,63 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
   </>;
   const { account, owner, signer, agentId } = identity.data;
   const signedIn = <SignedIn>Signed in as <span className="font-mono">{account}</span>{signer === "dao" && <>, a member of <span className="font-mono">{owner}</span>, which owns this agent</>}</SignedIn>;
-  // An agent set up but not created yet: its creation comes first, and nothing else reaches it until then.
-  if (agentId === null) return <>{heading}{signedIn}<CreateAgent reads={reads} identity={identity.data} /></>;
-  return <>
+  return <AgentContext.Provider value={{ reads, identity: identity.data }}>
     {heading}
     {signedIn}
-    <Connection reads={reads} identity={identity.data} />
-    {id === undefined && <Connected reads={reads} identity={identity.data} />}
-    {id === undefined ? <ProposalList reads={reads} identity={identity.data} />
-      : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
-      : <div className="flex flex-col items-start gap-4">
-        <a href={`/agents/${name}`} className="text-sm underline">Back to proposals</a>
-        <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
-      </div>}
+    <AgentNav agent={name} />
+    {/* An agent set up but not created yet: its creation comes first, on its home, and nothing else reaches it until then. */}
+    {agentId === null && !home ? <p role="status">This agent hasn't been created yet. <PageLink to={agentAddress(name)} className="underline">Create it on its home page</PageLink>.</p> : <Outlet />}
+  </AgentContext.Provider>;
+}
+
+/** The pages that need the agent connected: a live consent, which every owner read and call needs. */
+function WhenConnected({ children }: { children: ReactNode }) {
+  const { reads, identity } = useAgent();
+  const consent = useQuery(reads.consent);
+  if (consent.isPending) return <Loading label="Reading the connection…" />;
+  if (consent.isError) return <QueryError error={consent.error} retry={() => consent.refetch()} />;
+  return consent.data.consent ? <>{children}</>
+    : <p role="status">This agent isn't connected to the app. <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connect the agent</PageLink> first.</p>;
+}
+
+/** Home (`/agents/<agent>/`): creating the agent while it isn't, then its connection and its portfolio once connected. */
+export function HomePage() {
+  const { reads, identity } = useAgent();
+  const consent = useQuery(reads.consent);
+  if (identity.agentId === null) return <CreateAgent reads={reads} identity={identity} />;
+  return <>
+    <Connection reads={reads} identity={identity} />
+    {consent.data?.consent ? <Portfolio reads={reads} /> : null}
   </>;
 }
 
-/** The portfolio, autopilot and funding, once a live consent connects the agent: every owner read and call needs it. */
-function Connected({ reads, identity }: { reads: ReturnType<typeof agentReads>; identity: Identity }) {
-  const consent = useQuery(reads.consent);
-  return consent.data?.consent ? <><Portfolio reads={reads} /><Autopilot reads={reads} identity={identity} /><Funding reads={reads} identity={identity} /></> : null;
+/** Proposals (`/agents/<agent>/proposals`). */
+export function ProposalsPage() {
+  const { reads, identity } = useAgent();
+  return <ProposalList reads={reads} identity={identity} />;
 }
+
+/** One proposal (`…/proposals/<id>`): a bad ID is shown as such, with the way back. */
+export function ProposalPage() {
+  const { reads, identity } = useAgent();
+  const here = usePlace();
+  const id = here.kind === "proposal" ? here.id : "";
+  return isProposalId(id) ? <ProposalDetail reads={reads} id={id} identity={identity} />
+    : <div className="flex flex-col items-start gap-4">
+      <PageLink to={agentAddress(identity.agent, "proposals")} className="text-sm underline">Back to proposals</PageLink>
+      <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
+    </div>;
+}
+
+/** Strategy (`…/strategy`): the schedule, its grant and the strategy's editor. */
+export function StrategyPage() {
+  const { reads, identity } = useAgent();
+  return <WhenConnected><Autopilot reads={reads} identity={identity} /></WhenConnected>;
+}
+
+/** Funding (`…/funding`). */
+export function FundingPage() {
+  const { reads, identity } = useAgent();
+  return <WhenConnected><Funding reads={reads} identity={identity} /></WhenConnected>;
+}
+

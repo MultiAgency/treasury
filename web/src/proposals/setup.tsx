@@ -8,6 +8,7 @@ import { api, failureOf, setupReads, type agentReads } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { ReviewDialog, SignedText, when } from "./ui";
 import { file, sign, WrongAccount } from "./wallet";
+import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
 import { failureText } from "./words";
 
 const agentLink = (agent: string) => `/agents/${encodeURIComponent(agent)}`;
@@ -20,7 +21,7 @@ export function Home() {
   const setups = useQuery(setupReads.mine);
   const failure = failureOf(setups.error);
   return <>
-    <h1 className="text-2xl font-semibold">Your treasuries</h1>
+    <h1 className="text-2xl font-semibold">{ROOT_TITLE}</h1>
     {setups.isPending ? <Loading label="Checking your session…" />
       : failure?.kind === "not_signed_in" ? <SignIn />
       : setups.isError ? <QueryError error={setups.error} retry={() => setups.refetch()} />
@@ -127,7 +128,8 @@ function OpenByName() {
   const open = (event: FormEvent) => {
     event.preventDefault();
     if (!/^[a-z0-9-]{1,32}$/.test(name)) return setError("An agent's name is lowercase letters, digits and hyphens, at most 32.");
-    location.assign(agentLink(name));
+    // The button says proposals, so it opens the agent's Proposals page, not its Home.
+    location.assign(agentAddress(name, "proposals"));
   };
   return <section aria-labelledby="by-name" className="flex flex-col gap-3">
     <h2 id="by-name" className="text-xl font-semibold">Open an agent</h2>
@@ -164,7 +166,7 @@ export function DaoSetup({ dao }: { dao: string }) {
   };
 
   const heading = <div className="flex flex-col gap-1">
-    <h1 className="text-2xl font-semibold">A DAO's Treasury</h1>
+    <h1 className="text-2xl font-semibold">{DAO_TITLE}</h1>
     <p className="text-sm text-muted-foreground">DAO <span className="font-mono">{dao}</span></p>
   </div>;
   if (setup.isPending) return <>{heading}<Loading label="Checking your session…" /></>;

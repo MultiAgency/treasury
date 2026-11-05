@@ -10,6 +10,8 @@ import type { agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";
 import { failureText, NOT_EXECUTABLE, outcomeText, PENDING, STATE_WORDS } from "./words";
+import { PageLink } from "./nav";
+import { agentAddress } from "./pages";
 
 type Reads = ReturnType<typeof agentReads>;
 /** The verdict review: reading, the text shown for signing (with why it's shown again), or the wallet at work. */
@@ -52,7 +54,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const failureNotice = (failure: Failure): Notice => ({ tone: "alert", body: <>
     {failureText(failure, "proposal")}{" "}
     {failure.kind === "refused" && failure.code === "policy_not_in_force" && <a className="underline" href={`https://${host}/a/${reads.name}/policy`}>Open the Policy page</a>}
-    {failure.kind === "refused" && failure.code === "not_connected" && <a className="underline" href="#connection">Connect the agent</a>}
+    {failure.kind === "refused" && failure.code === "not_connected" && <PageLink to={agentAddress(reads.name)} hash="connection" className="underline">Connect the agent</PageLink>}
   </> });
 
   /** Asks the DAO for its verdict: the server files the DAO's vote, or answers the one already open on this proposal. */
@@ -137,7 +139,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
 
   if (proposal.isPending) return <Loading label="Reading the proposal…" />;
   if (proposal.isError && !proposal.data) return <div className="flex flex-col gap-4">
-    <a href={`/agents/${reads.name}`} className="self-start text-sm underline">Back to proposals</a>
+    <PageLink to={agentAddress(reads.name, "proposals")} className="self-start text-sm underline">Back to proposals</PageLink>
     <QueryError error={proposal.error} retry={() => proposal.refetch()} />
   </div>;
   const { proposal: view, vote } = proposal.data;
@@ -145,7 +147,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const open = verdictOffered(view) && !vote && (!dao || identity.access.canPropose);
   const executable = executeOffered(view, held) && identity.access.canExecute;
   return <div className="flex flex-col gap-8">
-    <a href={`/agents/${reads.name}`} className="self-start text-sm underline">Back to proposals</a>
+    <PageLink to={agentAddress(reads.name, "proposals")} className="self-start text-sm underline">Back to proposals</PageLink>
     {proposal.isError && <QueryError error={proposal.error} retry={recheck} />}
 
     <section aria-labelledby="terms-title" className="flex flex-col gap-4">
