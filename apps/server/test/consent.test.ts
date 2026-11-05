@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { consentMessage, parseConsentMessage } from "@multiagency/sdk";
-import { CONSENT_DAYS, checkConsent, consentText, liveConsents, organizationOf } from "../src/consent.ts";
+import { CONSENT_DAYS, CONSENT_SCOPES, OWNER_CONSENT_SCOPES, checkConsent, consentText, liveConsents, organizationOf } from "../src/consent.ts";
 
 /** The decoding decision 5 promises: each "--" back to ".". */
 const accountOf = (organization: string) => organization.replaceAll("--", ".");
@@ -33,6 +33,17 @@ test("the consent text names this deployment, the owner's Organization, the agen
   });
   assert.notEqual(consentText(expected).nonce, text.nonce, "a fresh nonce each time");
   assert.deepEqual(checkConsent(text.message, expected), { ok: true });
+});
+
+test("a wallet owner's consent text carries owner, in the order the platform sorts scopes; both scope sets are still accepted", () => {
+  const withOwner = consentText({ ...expected, owner: true });
+  assert.deepEqual(parseConsentMessage(withOwner.message)?.scopes, ["owner", "read", "treasury"]);
+  assert.deepEqual(checkConsent(withOwner.message, expected), { ok: true }, "the default consent");
+  const without = consentText({ ...expected, owner: false });
+  assert.deepEqual(parseConsentMessage(without.message)?.scopes, ["read", "treasury"]);
+  assert.deepEqual(checkConsent(without.message, expected), { ok: true }, "a consent made before the default, still live");
+  assert.equal(OWNER_CONSENT_SCOPES.includes("owner"), true);
+  assert.equal(CONSENT_SCOPES.includes("owner" as never), false, "a DAO's scope set never carries owner");
 });
 
 test("a signed text is relayed only if it's exactly a consent this server would ask for now: read and treasury, or with owner too", () => {

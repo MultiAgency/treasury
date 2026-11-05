@@ -113,3 +113,9 @@ export function outcomeText(outcome: Outcome, state: ProposalState): string {
 export const NOT_EXECUTABLE = "Nothing was sent, and the proposal is still approved. The platform refused to start it before claiming it: a price below a signed floor, a provider warning, a short balance, no live treasury grant, or the policy not in force. You can execute it again later.";
 
 export const PENDING = "The outcome isn't known yet: the execution may still be running, or its answer was lost. Nothing is sent again from here.";
+
+/** The scopes of a connection in a fixed order (read, treasury, owner, then any other), as "read, treasury and owner". */
+const SCOPE_ORDER = ["read", "treasury", "owner"];
+export const scopeList = (scopes: readonly string[]) => [...scopes]
+  .sort((a, b) => (SCOPE_ORDER.indexOf(a) + 1 || 99) - (SCOPE_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b))
+  .join(", ").replace(/, ([^,]*)$/, " and $1");

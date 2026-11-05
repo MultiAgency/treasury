@@ -6,9 +6,10 @@ import type { ConsentRecord } from "./platform.ts";
 /** What this server asks an owner to consent to: reads and Treasury proposals the owner approves one by one. Never `treasury-execute`. */
 export const CONSENT_SCOPES = ["read", "treasury"] as const;
 /**
- * With a wallet owner's explicit opt-in, also `owner`: the app may prepare owner actions (a strategy grant) and relay
- * the owner's own signature over each, which alone makes one take effect. A DAO's consent never carries it: the
- * platform files a DAO's owner actions for its vote under `treasury`.
+ * A wallet owner's consent also carries `owner` by default (#135): the app may prepare owner actions (a strategy grant)
+ * and relay the owner's own signature over each, which alone makes one take effect. A DAO's consent never carries it: the
+ * platform files a DAO's owner actions for its vote under `treasury`. `CONSENT_SCOPES` stays accepted, since live
+ * consents without `owner` exist.
  */
 export const OWNER_CONSENT_SCOPES = ["read", "treasury", "owner"] as const;
 /** Whether a consent carries `owner`. */

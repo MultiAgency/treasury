@@ -13,6 +13,7 @@ import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page } from "playwright";
 import { fileAudit } from "../../apps/server/src/audit.ts";
+import { consentText } from "../../apps/server/src/consent.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
 import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
 import { standInDaos } from "../../apps/server/src/dao.ts";
@@ -104,6 +105,22 @@ async function signInIfAsked(shown: ReturnType<Page["getByRole"]>) {
   await visible(shown);
 }
 
+/**
+ * Replaces the connection with one as a page made it before owner came by default: read and treasury only, signed by the
+ * owner's wallet and relayed through the page's own session. The server still accepts it, since live consents like it exist.
+ */
+async function connectWithoutOwner() {
+  const state = stack.state();
+  const call = (path: string, body?: unknown) => page.evaluate(async ({ url, body }) => {
+    const response = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
+    return response.status;
+  }, { url: `${origin}/api/agents/${target.agent}${path}`, body });
+  assert.equal(await call("/consent/revoke"), 200, "the connection made so far is revoked");
+  const text = consentText({ identity: { agent: target.agent, owner, agentId: state.treasury.agentId, host: new URL(state.dashboard).host }, deployment: state.app!.deployment });
+  const signed = await signOwner(target, text);
+  assert.equal(await call("/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }), 200, "the older connection is stored");
+}
+
 /** The stack's portfolio proposes a swap through the app route, as the app's proposer does (#20 PR 4). */
 async function propose(requestId: string): Promise<ProposalView> {
   const state = stack.state();
@@ -128,15 +145,18 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(page.getByRole("region", { name: "Proposals" }).getByText(/No proposals yet|isn't connected|No live consent/));
   assert.deepEqual(await axe(), [], "signed in, not connected");
 
+  assert.equal(await connection.getByRole("checkbox").count(), 0, "no choice to make: owner actions come with the connection");
   await connection.getByRole("button", { name: "Connect" }).click();
   const consent = dialog("Connect this agent to the Treasury app?");
   await visible(consent);
   const text = await consent.getByLabel("Text to sign").innerText();
   assert.match(text, new RegExp(`${target.agent}`), "the platform's consent text, naming the agent");
   assert.match(text, /treasury/);
+  assert.match(text, /owner/, "a wallet owner's consent asks for owner by default");
+  await visible(consent.getByText("What the owner scope allows the app"));
   assert.deepEqual(await axe(), [], "the consent dialog");
   await consent.getByRole("button", { name: "Sign and connect" }).click();
-  await visible(connection.getByRole("status").filter({ hasText: /^Connected: read and treasury, until / }));
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected: read, treasury and owner, until / }));
   await visible(page.getByText("Connected. The agent's proposals now reach this page."));
   assert.deepEqual(await axe(), []);
 });
@@ -324,6 +344,10 @@ test("the owner allows owner actions: told first that open proposals are withdra
   const open = await propose(`page-${Date.now()}-owner`);
   await page.goto(`${origin}/agents/${target.agent}`);
   const connection = page.getByRole("region", { name: "Connection" });
+  await signInIfAsked(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  await connectWithoutOwner();
+  await page.reload();
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected: read and treasury, until / }));
   await signInIfAsked(connection.getByRole("button", { name: "Allow owner actions" }));
   await connection.getByRole("button", { name: "Allow owner actions" }).click();
   const allow = dialog("Allow owner actions for this agent?");
@@ -332,7 +356,7 @@ test("the owner allows owner actions: told first that open proposals are withdra
   assert.match(await allow.getByLabel("Text to sign").innerText(), /owner/);
   assert.deepEqual(await axe(), [], "the owner consent dialog");
   await allow.getByRole("button", { name: "Sign and allow" }).click();
-  await visible(connection.getByRole("status").filter({ hasText: /^Connected: owner, read and treasury, until / }));
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected: read, treasury and owner, until / }));
   assert.equal(await connection.getByRole("button", { name: "Allow owner actions" }).count(), 0, "not offered again");
   // The platform answers a read of a proposal whose consent ended as withdrawn.
   await page.goto(`${origin}/agents/${target.agent}/proposals/${open.id}`);

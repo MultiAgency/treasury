@@ -15,6 +15,7 @@ import { createDaoRequests } from "../src/dao-requests.ts";
 import { createDaoReader } from "../src/dao-reader.ts";
 import { createSettle } from "../src/dao-settle.ts";
 import { standInDaos, type DaoProposal, type Policy } from "../src/dao.ts";
+import { consentText } from "../src/consent.ts";
 import { clientAddress, COOKIE, createServer, routes } from "../src/http.ts";
 import { standInKeyLookup, type KeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
@@ -384,7 +385,7 @@ test("connecting: the server's text from a fresh identity, the owner's signature
   const cookie = await signIn(owner);
   const { text, submission } = await signedConsent(cookie);
   assert.equal(text.recipient, "platform.test");
-  assert.deepEqual(parseConsentMessage(text.message)?.scopes, ["read", "treasury"]);
+  assert.deepEqual(parseConsentMessage(text.message)?.scopes, ["owner", "read", "treasury"], "a wallet owner connects with owner by default");
   assert.equal(parseConsentMessage(text.message)?.organization, "owner--near");
   fake.calls.length = 0;
   const { status, body } = await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission }));
@@ -476,24 +477,37 @@ test("an agent already connected isn't offered a new signature, and a reconnect 
   assert.ok(results().some(entry => entry.action === "revoke" && entry.subject === kept.id && entry.answer.ok), "and recorded");
 });
 
-test("owner is asked for only at the owner's choice: at connect, or to add it to a connection without it, which the new consent then replaces", async () => {
+test("a wallet owner's consent always carries owner, and a connection without it may add it, which the new consent then replaces", async () => {
   clean();
   const cookie = await signIn(owner);
   const textFor = async (body: unknown) => json(await call("POST", "/api/agents/portfolio/consent/text", { cookie, body }));
   const scopesOf = (text: { message: string }) => parseConsentMessage(text.message)!.scopes;
-  assert.deepEqual(scopesOf((await textFor({})).body.value), ["read", "treasury"], "never by default");
-  assert.deepEqual(scopesOf((await textFor({ owner: true })).body.value), ["owner", "read", "treasury"]);
-  assert.equal((await textFor({ owner: false })).status, 400, "only true asks for it");
-  const kept = (await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: (await signedConsent(cookie)).submission }))).body.value.consent;
+  assert.deepEqual(scopesOf((await textFor({})).body.value), ["owner", "read", "treasury"], "by default, with no body");
+  assert.deepEqual(scopesOf((await textFor({ owner: true })).body.value), ["owner", "read", "treasury"], "an older page's { owner: true } still works");
+  assert.equal((await textFor({ owner: false })).status, 400, "only true is a valid body");
+  // A live connection without owner, as one made before this default: it is kept, and offered the upgrade.
+  fake.consents.push(record("legacy"));
+  assert.deepEqual(await textFor({}), { status: 409, body: { ok: false, kind: "refused", code: "already_connected" } }, "a body-less request never replaces a live connection");
   const upgrade = await textFor({ owner: true });
   assert.equal(upgrade.status, 200, "a connection without owner may add it");
   const signed = owner.sign(upgrade.body.value);
   const stored = await json(await call("POST", "/api/agents/portfolio/consent", { cookie,
     body: { message: upgrade.body.value.message, nonce: upgrade.body.value.nonce, publicKey: signed.publicKey, signature: signed.signature } }));
   assert.deepEqual(stored.body.value.consent.scopes, ["owner", "read", "treasury"]);
-  assert.equal(fake.consents.find(consent => consent.id === kept.id)?.revoked, true, "the one without owner is replaced");
+  assert.equal(fake.consents.find(consent => consent.id === "legacy".padEnd(64, "0"))?.revoked, true, "the one without owner is replaced");
   for (const body of [{}, { owner: true }])
     assert.deepEqual(await textFor(body), { status: 409, body: { ok: false, kind: "refused", code: "already_connected" } }, JSON.stringify(body));
+});
+
+test("a signed consent without owner, as an older page's, is still relayed", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const text = consentText({ identity: { agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test" }, deployment: "treasury", owner: false });
+  assert.deepEqual(parseConsentMessage(text.message)!.scopes, ["read", "treasury"]);
+  const signed = owner.sign(text);
+  const stored = await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature } }));
+  assert.equal(stored.status, 200, JSON.stringify(stored.body));
+  assert.deepEqual(stored.body.value.consent.scopes, ["read", "treasury"]);
 });
 
 test("new consents are limited per account a day, since even revoked ones count against the deployment's cap", async t => {
