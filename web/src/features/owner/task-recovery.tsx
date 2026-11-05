@@ -26,6 +26,7 @@ export function useStopSchedule() {
   // Provider-independent identity is an observation, never permission to send.
   const instance = useQuery(reads(AGENT!, viewer?.account ?? null).instance);
   const canStop = useCanCall("autopilot/stop");
+  const checkingIdentity = canStop && instance.isPending;
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<OwnerResult<unknown>>();
   const reason = !canStop ? "Your account cannot stop the schedule."
@@ -42,13 +43,13 @@ export function useStopSchedule() {
     // An unknown outcome may have changed anything: every read is read again, and nothing is sent again.
     await queryClient.invalidateQueries(!stopped.ok && stopped.kind === "unknown" ? undefined : { predicate: query => scheduleRead(query.queryKey) });
   };
-  return { stop, busy, result, instance, reason, disabled: reason !== undefined || busy };
+  return { stop, busy, result, instance, reason, checkingIdentity, disabled: reason !== undefined || busy };
 }
 
 /** Why the schedule can't be stopped here, and a failed identity read with its retry; nothing when it can. */
-export function StopBlocked({ control: { instance, reason } }: { control: ReturnType<typeof useStopSchedule> }) {
+export function StopBlocked({ control: { instance, reason, checkingIdentity } }: { control: ReturnType<typeof useStopSchedule> }) {
   return <>
-    {reason && (instance.isPending ? <Loading label={reason} /> : <p>{reason}</p>)}
+    {reason && (checkingIdentity ? <Loading label={reason} /> : <p>{reason}</p>)}
     {instance.error && <QueryError error={instance.error} retry={() => instance.refetch()} />}
   </>;
 }
