@@ -1,6 +1,6 @@
 # 2. Move owner pages behind the Treasury app server
 
-**Status:** proposed implementation; blocked on the platform contract, 2026-11-04.
+**Status:** accepted, 2026-11-05. The first steps landed in #118 (owner reads and a read-only portfolio through the app server). SDK 0.5.1 settles platform#17: the table below is the 0.5.0 inventory, and the upgrade rewrites it.
 
 Replaces the production destination in [ADR 1](0001-owner-session-and-app-server.md). Keep the existing owner-session build as the simulated-stack reference until its replacement passes equivalent workflows.
 
