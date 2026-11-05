@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { APP_READS, APP_OWNER, APP_PAYOUT, APP_TREASURY, APP_TREASURY_EXECUTE,
-  appScopesCover, DAO_CONSENT_SCOPES, type AppScope } from "@multiagency/sdk";
+  appScopesCover, DAO_CONSENT_SCOPES, daoScopesCover, type AppScope } from "@multiagency/sdk";
 
 const SCOPES: AppScope[] = ["read", "owner", "payout", "treasury", "treasury-execute"];
 const procedures = [...new Set([...APP_READS, ...APP_OWNER, ...APP_PAYOUT, ...APP_TREASURY, ...APP_TREASURY_EXECUTE])];
@@ -11,6 +11,8 @@ export function scopesFor(procedure: string): AppScope[] {
     ? !appScopesCover(["treasury"], procedure) && appScopesCover(["treasury", scope], procedure)
     : appScopesCover([scope], procedure));
 }
+/** Whether a DAO's consent reaches the procedure: its scopes, less what the platform refuses DAO consents. */
+export const daoCovers = (procedure: string): boolean => daoScopesCover(DAO_CONSENT_SCOPES, procedure);
 
 /** Literal owner call inventory, using the same convention as contract.test.ts. */
 export function callsIn(source: string): string[] {
@@ -46,7 +48,7 @@ export function report(root: string): string {
     "",
     "| Procedure | Wallet consent scopes | DAO consent covers | Call sites |",
     "| --- | --- | --- | --- |",
-    ...[...calls].map(([path, sites]) => `| ${path} | ${scopesFor(path).join(", ") || "Unavailable"} | ${appScopesCover(DAO_CONSENT_SCOPES, path) ? "Yes" : "No"} | ${sites.join(", ")} |`),
+    ...[...calls].map(([path, sites]) => `| ${path} | ${scopesFor(path).join(", ") || "Unavailable"} | ${daoCovers(path) ? "Yes" : "No"} | ${sites.join(", ")} |`),
     "",
     `Missing from all app scopes (${missing.length}): ${missing.join(", ") || "none"}.`,
     "",

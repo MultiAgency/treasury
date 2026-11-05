@@ -1,6 +1,6 @@
 # 2. Move owner pages behind the Treasury app server
 
-**Status:** accepted, 2026-11-05. The first steps landed in #118 (owner reads and a read-only portfolio through the app server). SDK 0.5.1 settles platform#17: the table below is the 0.5.0 inventory, and the upgrade rewrites it.
+**Status:** accepted, 2026-11-05. The first steps landed in #118 (owner reads and a read-only portfolio through the app server). SDK 0.5.1 answers platform#17; the gaps below are as of 0.5.1.
 
 Replaces the production destination in [ADR 1](0001-owner-session-and-app-server.md). Keep the existing owner-session build as the simulated-stack reference until its replacement passes equivalent workflows.
 
@@ -8,7 +8,7 @@ Replaces the production destination in [ADR 1](0001-owner-session-and-app-server
 
 The Treasury app server serves owner pages and proposals from one origin. Its existing wallet sign-in, session, per-agent ownership checks and DAO membership checks gate every API route. Only the server calls `/apps/v1`; deployment credentials never reach browser code. The browser uses the existing server session rather than the platform's `/gw/*` session.
 
-Add explicit, schema-checked endpoints per supported workflow, each checking the required member permission and platform consent. Connecting an agent must not silently add consent scopes. The existing proposals connection requests only `read` and `treasury`; wallet owner actions need an explicit consent change for `owner`, and deposit needs `payout`. DAO consent cannot include those scopes in SDK 0.5.0. SDK 0.5.1 puts `deposit` in the `treasury` scope, so funding needs no `payout` consent, for wallet and DAO owners alike.
+Add explicit, schema-checked endpoints per supported workflow, each checking the required member permission and platform consent. Connecting an agent must not silently add consent scopes. The existing proposals connection requests only `read` and `treasury`, which covers funding (`deposit`) for wallet and DAO owners alike. Wallet owner actions need an explicit consent change for `owner`, which a DAO's consent can't include.
 
 Wallet NEP-366 actions open the platform's confirm page and follow their status. DAO owner actions use the SDK's DAO preparation/vote flow. Neither uses the owner-session submit flow as a generic replacement. Actions and streams remain single-attempt; follow an interrupted action with observations rather than replaying it.
 
@@ -16,22 +16,22 @@ Wallet NEP-366 actions open the platform's confirm page and follow their status.
 
 Run `pnpm --filter @treasury/web audit:app-access` to inventory current literal `.read`, `.act` and `.stream` call sites against the installed SDK's scope rules. This is a source inventory, not proof that every flow works; dynamic calls and gateway routes require separate review. A unit test tracks the unsupported procedure set so an SDK or UI change triggers a migration review.
 
-At SDK 0.5.0, seven procedures used by the owner UI are absent from every app scope:
+At SDK 0.5.1, `reconcileBooks` is under `read`. Three procedures the owner UI uses are absent from every app scope, and a DAO's consent is refused three more:
 
 | Procedure | Required treatment |
 | --- | --- |
-| `setup` | Replace with identity, instance and overview after the missing agent wallet and executor-held grant ID have a supported observation. Never infer the held grant from the grants list. Grant adoption is also a platform concern. |
-| `recover` | Replace the manual trigger in the app-access UI with reads of `unresolved` while the platform reconciles automatically, as decided in platform#14. |
-| `reconcileBooks` | Await the platform's read-scope decision; ledger records cannot substitute for independent reconciliation evidence. |
-| `treasury/link`, `treasury/unlink`, `treasury/setConfidential`, `treasury/fund` | Await explicit scope and DAO authorization decisions. |
+| `setup` | Read `account` (`read`): the agent's wallet, the grant its executor holds and any staged grant, matched by the token, never inferred from the grants list. Owner and signer come from `GET /apps/v1/agents/<agent>`. It adopts nothing: a staged grant takes effect once its owner action settles. |
+| `recover` | Remove the manual trigger and follow `unresolved`, which the platform reconciles on its own (platform#14). After a lost reply, read the action's own record; never resend while it's unknown. |
+| `treasury/fund` | `deposit` (`treasury`) for the address, then the SDK's `fundingTransaction()`: the owner's wallet sends it, or a DAO member files the same calls as one proposal. |
+| `treasury/link`, `treasury/unlink`, `treasury/setConfidential` | Under `treasury` for wallet owners. Refused under a DAO's consent: a DAO agent's link is the DAO, fixed at setup, so its page hides the controls. |
 
-The planned Runs/manual-rebalance/steward work additionally needs decisions for `autopilot/tick` and `steward/propose`, and explicit `treasury-execute` consent for execution without per-swap signatures. Creation uses app `setup` or `daoSetups`, followed by wallet confirmation or a DAO vote, rather than `/gw/agents`.
+Run now is `autopilot/tick` under `treasury`; offer it only when the held grant binds the saved strategy, or the tick swaps nothing. Suggested swaps come from Treasury's own agent through `proposals/create`; `steward/propose` stays off app access. Execution without per-swap signatures needs explicit `treasury-execute` consent. Creation uses app `setup` or `daoSetups`, followed by wallet confirmation or a DAO vote, rather than `/gw/agents`.
 
-Sources checked on 2026-11-04: [platform#14 decision](https://github.com/MultiAgency/platform/issues/14), [platform#17 open contract decisions](https://github.com/MultiAgency/platform/issues/17), and the installed SDK's exported scope definitions. The SDK is the executable contract.
+Sources checked on 2026-11-05: [platform#14 decision](https://github.com/MultiAgency/platform/issues/14), [platform#17](https://github.com/MultiAgency/platform/issues/17) as answered by SDK 0.5.1 (platform `2223d11`), and the installed SDK's exported scope definitions. The SDK is the executable contract.
 
 ## Implementation order and acceptance
 
-1. Resolve frame observations and scope decisions in the platform; publish the SDK and update this repository's SDK/stack pin together.
+1. Platform decisions, the SDK and this repository's SDK/stack pin: done with 0.5.1. The hosts answer these procedures only once the platform deploys that code.
 2. Add explicit owner observation endpoints. Test ownership transfer, DAO roles, cross-organization isolation, missing consent and malformed upstream responses. Consolidate page reads to respect the deployment's shared 1,200-call hourly allowance.
 3. Move browser discovery and owner reads to the server session. Preserve retained-record recovery and clear private caches when account or access changes.
 4. Port owner actions, strategy and funding with consent review and wallet-confirm/DAO-vote outcomes. Required workflows must be supported before declaring the migration complete.
