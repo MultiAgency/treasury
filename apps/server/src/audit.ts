@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { appendLine, ensureAppendable } from "./files.ts";
 
 /**
  * What an audit record says about a relayed owner action. It has no field that could carry a credential, session or
@@ -38,22 +37,9 @@ export type AuditEntry = {
 );
 
 /**
- * Where relayed owner actions are recorded, append-only: each `append` resolves once its record is durable. One JSON
- * line per record for now; A7's hash-chained store (#53) can implement the same interface.
+ * Where relayed owner actions are recorded, append-only: each `append` resolves once its record is durable. The server
+ * records through A7's hash-chained store (`chain.ts`, #53).
  */
 export type Audit = { append(entry: AuditEntry): Promise<void> };
 
 export const sha256 = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
-
-/**
- * The audit trail as a file of JSON lines, owner-only, each flushed before `append` resolves. `check` opens it for
- * appending and checks its mode, so a server that couldn't record relayed actions stops at startup rather than at the
- * first one.
- */
-export function fileAudit(file: string, now: () => number = Date.now): Audit & { file: string; check(): Promise<void> } {
-  return {
-    file,
-    check: () => ensureAppendable(file),
-    append: entry => appendLine(file, JSON.stringify({ at: new Date(now()).toISOString(), ...entry })),
-  };
-}

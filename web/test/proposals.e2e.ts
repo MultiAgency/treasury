@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page } from "playwright";
-import { fileAudit } from "../../apps/server/src/audit.ts";
+import { chainedFileAudit, verifyChain } from "../../apps/server/src/chain.ts";
 import { consentText } from "../../apps/server/src/consent.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
 import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
@@ -27,7 +27,8 @@ import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, W
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
-const audit = fileAudit(join(tempDir("treasury-proposals-"), "audit.jsonl"));
+// The store the server records through (`main.ts`): a hash chain, checked before the first append.
+const audit = chainedFileAudit(join(tempDir("treasury-proposals-"), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
@@ -36,6 +37,7 @@ const unexpected: string[] = [];
 const sent: { signerId: string; receiverId: string; actions: { params: { methodName: string; args: Record<string, unknown>; deposit: string } }[] }[] = [];
 
 before(async () => {
+  await audit.check();
   stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
   target = stack.target;
   const state = stack.state();
@@ -216,7 +218,9 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   await visible(state.getByText("Rejected", { exact: true }));
   assert.equal(await state.getByRole("button", { name: "Approve" }).count(), 0);
 
-  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const text = readFileSync(audit.file, "utf8");
+  assert.ok(verifyChain(text).ok, "the audit trail chains");
+  const lines = text.trim().split("\n").map(line => JSON.parse(line).entry);
   assert.deepEqual(lines.map(line => [line.action, line.stage, line.who, line.answer?.ok]), [
     ["consent", "attempt", owner, undefined], ["consent", "result", owner, true],
     ["approve", "attempt", owner, undefined], ["approve", "result", owner, true],

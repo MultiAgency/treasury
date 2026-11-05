@@ -66,3 +66,20 @@ test("watch runs only when its agents' file is named, and then needs a file for 
   const on = loadConfig({ ...env, TREASURY_WATCH_FILE: "/etc/treasury/watch.json", TREASURY_REQUESTS_FILE: "/var/lib/treasury/requests.json" }).settings;
   assert.equal(on.TREASURY_REQUESTS_FILE, "/var/lib/treasury/requests.json");
 });
+
+test("the audit anchor needs its account and its key file together, anchors hourly on mainnet by default, and its account must be on its network (#55)", () => {
+  assert.equal(loadConfig(env).settings.TREASURY_ANCHOR_INTERVAL_S, 3600);
+  assert.equal(loadConfig(env).settings.TREASURY_ANCHOR_NETWORK, "mainnet");
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.near" }), /set both or neither/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_KEY_FILE: "/k" }), /set both or neither/);
+  const both = loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.near", TREASURY_ANCHOR_KEY_FILE: "/k" }).settings;
+  assert.equal(both.TREASURY_ANCHOR_ACCOUNT, "contextual.near");
+  const testnet = loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.testnet", TREASURY_ANCHOR_KEY_FILE: "/k", TREASURY_ANCHOR_NETWORK: "testnet" }).settings;
+  assert.equal(testnet.TREASURY_ANCHOR_NETWORK, "testnet");
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.testnet", TREASURY_ANCHOR_KEY_FILE: "/k" }), /not an account on TREASURY_ANCHOR_NETWORK/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.near", TREASURY_ANCHOR_KEY_FILE: "/k", TREASURY_ANCHOR_NETWORK: "testnet" }), /not an account on TREASURY_ANCHOR_NETWORK/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_NETWORK: "betanet" }), /TREASURY_ANCHOR_NETWORK/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_ACCOUNT: "Not An Account", TREASURY_ANCHOR_KEY_FILE: "/k" }), /TREASURY_ANCHOR_ACCOUNT/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_INTERVAL_S: "5" }), /TREASURY_ANCHOR_INTERVAL_S/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ANCHOR_INTERVAL_S: "86401" }), /TREASURY_ANCHOR_INTERVAL_S/, "at most the heartbeat's day, and well inside a timer's range");
+});

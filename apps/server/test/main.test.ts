@@ -116,3 +116,33 @@ test("with watch configured it ticks each agent, logs each event as a line, and 
   child.kill("SIGTERM");
   assert.equal((await exited).code, 0);
 });
+
+/** An anchor account on testnet and its key file, beside the rest of `env` (A7.3, #55). */
+function withAnchor(env: ReturnType<typeof environment>, keyMode = 0o600) {
+  const file = join(tempDir("treasury-main-anchor-"), "anchor.key");
+  writeFileSync(file, `ed25519:${"3".repeat(88)}`, { mode: 0o600 });
+  chmodSync(file, keyMode);
+  return { ...env, TREASURY_ANCHOR_ACCOUNT: "contextual.testnet", TREASURY_ANCHOR_KEY_FILE: file, TREASURY_ANCHOR_NETWORK: "testnet" };
+}
+
+test("an anchor key file others can read stops startup", async t => {
+  const { code, stderr } = await start(t, withAnchor(environment(), 0o644)).exited;
+  assert.notEqual(code, 0);
+  assert.match(stderr, /anchor\.key is readable by others: it must be 0600/);
+});
+
+test("with an anchor configured it anchors at startup, an empty log needing none, and still stops cleanly", async t => {
+  const { child, exited } = start(t, withAnchor(environment()));
+  let stdout = "";
+  const event = new Promise<Record<string, unknown>>((resolve, reject) => {
+    const deadline = setTimeout(() => reject(new Error(`no anchor event after 8 s: ${stdout}`)), 8_000);
+    child.stdout.on("data", chunk => {
+      stdout += chunk;
+      const line = stdout.split("\n").find(text => text.includes("\"event\":\"anchor\""));
+      if (line) { clearTimeout(deadline); resolve(JSON.parse(line)); }
+    });
+  });
+  assert.deepEqual(await event, { event: "anchor", anchored: false }, "nothing recorded, nothing sent");
+  child.kill("SIGTERM");
+  assert.equal((await exited).code, 0);
+});

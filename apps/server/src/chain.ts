@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rename, stat } from "node:fs/promises";
 import type { AuditEntry } from "./audit.ts";
 import { appendLine, ensureAppendable } from "./files.ts";
 
-// The hash-chained audit store (A7.1, #53). With the server's own entry type it is an `Audit` like `fileAudit`, so the server writes
+// The hash-chained audit store (A7.1, #53). With the server's own entry type it is the server's `Audit`, so the server writes
 // through `append(entry)` unchanged. Every record carries the hash of the one before it, so an edit, a removed record
 // or a reordering is found by `verifyChain`. Only hashes ever leave the machine (A7.3 anchors the head hash); the
 // entries stay here.
@@ -174,4 +174,24 @@ export function chainedFileAudit<E extends object = AuditEntry>(file: string, no
       return { ...head };
     },
   };
+}
+
+/**
+ * Moves a log in the old plain format (one JSON line per record, as the server wrote before this store) aside before
+ * the chained store takes the file, as the switch to this store requires (#90): it is renamed beside itself with the
+ * time in its name, never deleted. Only a log with no line shaped like a chained record (`seq`, `prev` and `hash`) is
+ * moved; a chained log that is broken, even at its first record, stays put, so `check()` refuses it. Answers the new
+ * name, or `undefined` when nothing was moved.
+ */
+export async function movePlainLogAside(file: string, now: () => number = Date.now): Promise<string | undefined> {
+  const size = await stat(file).then(s => s.size, () => 0);
+  if (size === 0) return undefined;
+  const text = await readFile(file, "utf8");
+  const chainedShape = (line: string) => {
+    try { const value = JSON.parse(line) as Record<string, unknown>; return ["seq", "prev", "hash"].some(field => field in value); } catch { return false; }
+  };
+  if (verifyChain(text).ok || text.split("\n").some(chainedShape)) return undefined;
+  const aside = `${file}.plain-${new Date(now()).toISOString().replace(/[:.]/g, "-")}`;
+  await rename(file, aside);
+  return aside;
 }

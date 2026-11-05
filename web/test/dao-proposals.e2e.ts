@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page } from "playwright";
-import { fileAudit } from "../../apps/server/src/audit.ts";
+import { chainedFileAudit } from "../../apps/server/src/chain.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
 import { chainDaos } from "../../apps/server/src/dao.ts";
 import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
@@ -55,12 +55,15 @@ before(async () => {
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   origin = `http://localhost:${(server.address() as AddressInfo).port}`;
   const keyLookup = standInKeyLookup({ [council.accountId]: [council.publicKey] });
+  // The store the server records through (`main.ts`): a hash chain, checked before the first append.
+  const audit = chainedFileAudit(join(tempDir("treasury-dao-proposals-"), "audit.jsonl"));
+  await audit.check();
   handle = createServer({
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
-    audit: fileAudit(join(tempDir("treasury-dao-proposals-"), "audit.jsonl")), consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
+    audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
     daos: chainDaos({ rpcUrl: state.chain.rpc, apiKey: undefined, timeoutMs: 5_000 }),
     daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(join(import.meta.dirname, "..", "dist-proposals")),

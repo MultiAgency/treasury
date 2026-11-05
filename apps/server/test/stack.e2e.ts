@@ -12,7 +12,7 @@ import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
 import { authorizeStrategy, ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import type { z } from "zod";
-import { fileAudit } from "../src/audit.ts";
+import { chainedFileAudit, verifyChain } from "../src/chain.ts";
 import * as contract from "../src/contract.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
@@ -29,11 +29,13 @@ import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const intruder = wallet("intruder.near");
 const clock = { now: Date.now() };
-const audit = fileAudit(join(tempDir("treasury-stack-"), "audit.jsonl"));
+// The store the server records through (`main.ts`): a hash chain, checked before the first append.
+const audit = chainedFileAudit(join(tempDir("treasury-stack-"), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string, server: Server, base: string;
 let platform: ReturnType<typeof createPlatform>;
 
 before(async () => {
+  await audit.check();
   stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
   target = stack.target;
   const state = stack.state();
@@ -137,7 +139,9 @@ test("the owner connects the agent with a consent their wallet signs, the platfo
   const revoked = await post(`${agent}/consent/revoke`, {}, cookie);
   assert.deepEqual(await revoked.json(), { ok: true, value: { revoked: 1 } });
   assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent: null } });
-  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line));
+  const text = readFileSync(audit.file, "utf8");
+  assert.ok(verifyChain(text).ok, "the audit trail chains");
+  const lines = text.trim().split("\n").map(line => JSON.parse(line).entry);
   assert.deepEqual(lines.map(line => [line.action, line.stage, line.who, line.subject, line.answer?.ok]),
     [["consent", "attempt", owner, undefined, undefined], ["consent", "result", owner, consent.id, true],
      ["revoke", "attempt", owner, consent.id, undefined], ["revoke", "result", owner, consent.id, true]], "each action recorded before and after");
@@ -196,7 +200,7 @@ test("the owner reads, approves and executes a proposal through the server, and 
   const rejected = await verdict(second, "reject");
   assert.equal(rejected.body.value.proposal.state, "rejected");
 
-  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line)).filter(line => line.subject === first.id || line.subject === second.id);
+  const lines = readFileSync(audit.file, "utf8").trim().split("\n").map(line => JSON.parse(line).entry).filter(line => line.subject === first.id || line.subject === second.id);
   assert.deepEqual(lines.map(line => [line.action, line.stage, line.answer?.ok]), [
     ["approve", "attempt", undefined], ["approve", "result", true], ["execute", "attempt", undefined], ["execute", "result", true],
     ["reject", "attempt", undefined], ["reject", "result", true],
