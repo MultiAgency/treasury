@@ -1,6 +1,6 @@
 import { mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { symbolOf } from "../shared/format";
 import { Button, Card, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
 import type { Identity } from "./proposals-api";
@@ -43,8 +43,9 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
       : what === "stop" ? await reads.agent.stopAutopilot() : await reads.agent.runNow();
     setBusy(undefined);
     refresh();
+    // Turning it on or off is said by the schedule's own status, read again above: only a run's summary is news.
     if (answer.ok) {
-      setNotice(what === "enable" ? "Autopilot is on." : what === "stop" ? "Autopilot is off." : `Run now: ${"summary" in answer.value ? answer.value.summary : ""}`);
+      if (what === "tick" && "summary" in answer.value) setNotice(`Run now: ${answer.value.summary}`);
       return;
     }
     // A Run now whose answer was lost may have run, and swapped: never sent again from here.
@@ -56,10 +57,15 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const s = strategy.data, on = schedule.data?.on === true;
   const canControl = mayCall(identity.access, "autopilot/enable");
   const canSave = mayCall(identity.access, "strategy/save");
+  /** Keyboard focus goes back to Edit strategy when the editor closes, so a keyboard user carries on from there. */
+  const editButton = useRef<HTMLButtonElement>(null);
+  const [returnFocus, setReturnFocus] = useState(false);
+  useEffect(() => { if (returnFocus && !editing) { editButton.current?.focus(); setReturnFocus(false); } }, [returnFocus, editing, strategy.data]);
   const doneEditing = (saved: boolean) => {
     setEditing(false);
+    setReturnFocus(true);
     refresh();
-    if (saved) { setError(undefined); setNotice("Strategy saved, with autopilot off. Authorize it next."); }
+    if (saved) { setError(undefined); setNotice("Strategy saved. Authorize it next."); }
   };
   return <section id="autopilot" aria-labelledby="autopilot-title" className="flex flex-col gap-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -71,33 +77,44 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
         : strategy.isError ? <QueryError error={strategy.error} retry={() => strategy.refetch()} />
         : schedule.isError ? <QueryError error={schedule.error} retry={() => schedule.refetch()} />
         : editing ? <StrategyEditor reads={reads} strategy={s!} onDone={doneEditing} />
-        : <div className="flex flex-col gap-3 text-sm">
-          <h3 className="text-base font-semibold">Saved strategy</h3>
-          <ul aria-label="Strategy targets" className="flex flex-col gap-1">
-            {Object.entries(s!.strategy.targetBps).filter(([, bps]) => bps > 0).map(([asset, bps]) =>
-              <li key={asset}>{symbolOf(asset, [])}: {bps / 100}%</li>)}
-          </ul>
-          <p>Swaps of at least ${s!.strategy.minLegUsd}, costing at most {s!.strategy.maxCostBps / 100}%. On autopilot: every {s!.strategy.autopilot.everyMin} minutes,
-            up to ${s!.strategy.autopilot.maxUsd} a run.</p>
-          <p role="status">{on ? `Autopilot is on${schedule.data!.nextRun ? `; next run ${when(schedule.data!.nextRun)}` : ""}.` : "Autopilot is off."}
-            {schedule.data!.lastRun && ` Last run ${when(schedule.data!.lastRun)}.`}</p>
-          {s!.grantMatches === false && <>
-            <p role="status">The agent's grant doesn't bind this saved strategy, so autopilot can't run it, and Run now would swap nothing.
-              {on ? " Turn autopilot off to authorize it." : " Authorize it first."}</p>
-            {!on && s!.executor && <Grant reads={reads} identity={identity} strategy={s!} ownerAllowed={ownerAllowed} />}
-          </>}
-          {!on && s!.readiness.reasons.length > 0 && <ul aria-label="Why autopilot can't be turned on" className="flex flex-col gap-1">
-            {s!.readiness.reasons.map(reason => <li key={reason}>{reason}</li>)}
-          </ul>}
-          {canControl && <div className="flex flex-wrap gap-3">
-            {on ? <Button variant="outline" disabled={busy !== undefined} onClick={() => void act("stop")}>{busy === "stop" && <Spinner />} Turn off</Button>
-              : <Button disabled={busy !== undefined || !s!.readiness.canEnable} onClick={() => setConfirm("enable")}>Turn on</Button>}
-            {s!.grantMatches && s!.executor && <Button variant="outline" disabled={busy !== undefined} onClick={() => setConfirm("tick")}>{busy === "tick" && <Spinner />} Run now</Button>}
-          </div>}
-          {!canControl && <p>Autopilot and Run now need a member who may both file and vote on proposals.</p>}
-          {canSave ? <Button variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>
-            : identity.signer === "dao" && <p>Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
-        </div>}
+        : <ol aria-label="From strategy to autopilot" className="flex flex-col gap-5 text-sm">
+          <li className="flex flex-col gap-3">
+            <h3 className="text-base font-semibold">1. Configure the strategy</h3>
+            <ul aria-label="Strategy targets" className="flex flex-col gap-1">
+              {Object.entries(s!.strategy.targetBps).filter(([, bps]) => bps > 0).map(([asset, bps]) =>
+                <li key={asset}>{symbolOf(asset, [])}: {bps / 100}%</li>)}
+            </ul>
+            <p>Swaps of at least ${s!.strategy.minLegUsd}, costing at most {s!.strategy.maxCostBps / 100}%. On autopilot: every {s!.strategy.autopilot.everyMin} minutes,
+              up to ${s!.strategy.autopilot.maxUsd} a run.</p>
+            {s!.strategy.autopilot.maxUsd === 0 && <p>With a $0 ceiling, autopilot makes no swaps on its own: swaps are proposed for your approval
+              instead. <a className="underline" href="#proposals">Propose a rebalance</a>.</p>}
+            {canSave ? <Button ref={editButton} variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>
+              : identity.signer === "dao" && <p>Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
+          </li>
+          <li className="flex flex-col gap-3">
+            <h3 className="text-base font-semibold">2. Authorize it</h3>
+            {!s!.executor ? <p>This host only approves: the strategy is authorized on the agent's executor.</p>
+              : s!.grantMatches ? <p>Authorized: the agent's grant binds this strategy.</p>
+              : <>
+                <p>Not authorized: the agent's grant doesn't bind this strategy, so autopilot can't run it, and Run now would swap nothing.
+                  {on && " Turn autopilot off to authorize it."}</p>
+                {!on && <Grant reads={reads} identity={identity} strategy={s!} ownerAllowed={ownerAllowed} />}
+              </>}
+          </li>
+          <li className="flex flex-col gap-3">
+            <h3 className="text-base font-semibold">3. Turn autopilot on</h3>
+            <p role="status">{on ? `Autopilot is on${schedule.data!.nextRun ? `; next run ${when(schedule.data!.nextRun)}` : ""}.` : "Autopilot is off."}
+              {schedule.data!.lastRun && ` Last run ${when(schedule.data!.lastRun)}.`}</p>
+            {!on && s!.readiness.reasons.length > 0 && <ul aria-label="Why autopilot can't be turned on" className="flex flex-col gap-1">
+              {s!.readiness.reasons.map(reason => <li key={reason}>{reason}</li>)}
+            </ul>}
+            {canControl ? <div className="flex flex-wrap gap-3">
+              {on ? <Button variant="outline" disabled={busy !== undefined} onClick={() => void act("stop")}>{busy === "stop" && <Spinner />} Turn off</Button>
+                : <Button disabled={busy !== undefined || !s!.readiness.canEnable} onClick={() => setConfirm("enable")}>Turn on</Button>}
+              {s!.grantMatches && s!.executor && <Button variant="outline" disabled={busy !== undefined} onClick={() => setConfirm("tick")}>{busy === "tick" && <Spinner />} Run now</Button>}
+            </div> : <p>Autopilot and Run now need a member who may both file and vote on proposals.</p>}
+          </li>
+        </ol>}
       <p role="status" className="text-sm">{notice}</p>
       <ErrorBox error={error} />
     </Card>

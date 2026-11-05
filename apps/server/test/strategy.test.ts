@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
 import { createDaoRequests } from "../src/dao-requests.ts";
-import { standInDaos } from "../src/dao.ts";
+import { standInDaos, type Policy } from "../src/dao.ts";
 import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
@@ -14,8 +14,16 @@ import { createSignIn } from "../src/signin.ts";
 import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-const owner = wallet("owner.near");
-const fake = fakePlatform({ portfolio: "owner.near" });
+const DAO = "agentic.sputnik-dao.near";
+const owner = wallet("owner.near"), council = wallet("council.near");
+const fake = fakePlatform({ portfolio: "owner.near", daoagent: DAO }, { daos: ["daoagent"] });
+/** A council that files and votes on proposals, without the DAO's policy-change rights that saving needs (`canManage`). */
+const policy: Policy = {
+  proposal_bond: "100000000000000000000000", proposal_period: String(7 * 86_400 * 1e9), default_vote_policy: { threshold: [1, 2] },
+  roles: [{ name: "all", kind: "Everyone", permissions: [], vote_policy: {} },
+    { name: "council", kind: { Group: ["council.near"] }, permissions: ["call:AddProposal", "call:VoteApprove", "call:VoteReject"], vote_policy: {} }],
+};
+let councilCookie: string;
 const audit: AuditEntry[] = [];
 const DIGEST = `sha256:${"a".repeat(64)}`;
 const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near";
@@ -25,16 +33,20 @@ let server: Server, base: string, cookie: string;
 before(async () => {
   server = createHttpServer(createServer({
     platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ [owner.accountId]: [owner.publicKey] }) }),
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
+      keyLookup: standInKeyLookup({ [owner.accountId]: [owner.publicKey], [council.accountId]: [council.publicKey] }) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-strategy-"), "dao-requests.json")),
+    daos: standInDaos({ [DAO]: policy }, { [DAO]: [] }), daoRequests: await createDaoRequests(join(tempDir("treasury-strategy-"), "dao-requests.json")),
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const issued = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
   cookie = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(owner.sign(issued.value)) }))
+    .headers.get("set-cookie")!.split(";")[0]!;
+  const again = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
+  councilCookie = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(council.sign(again.value)) }))
     .headers.get("set-cookie")!.split(";")[0]!;
 });
 after(() => server.close());
@@ -87,4 +99,12 @@ test("a refusal is strategy_changed when the strategy changed since the owner sa
   fake.autopilotAnswers.save = [new Error("socket hang up")];
   assert.equal((await call("POST", { strategy, expectedDigest: DIGEST })).status, 503);
   assert.equal(audit.filter(entry => entry.stage === "result").length, 3, "each recorded");
+});
+
+test("a DAO member without the DAO's policy-change rights is refused saving, before anything is asked or recorded", async () => {
+  reset();
+  const response = await fetch(`${base}/api/agents/daoagent/strategy`, { method: "POST", headers: { cookie: councilCookie, origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify({ strategy, expectedDigest: DIGEST }) });
+  assert.deepEqual([response.status, await response.json()], [403, { ok: false, kind: "refused", code: "not_permitted" }]);
+  assert.deepEqual([saves(), audit], [[], []]);
 });

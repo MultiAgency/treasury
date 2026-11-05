@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { parseStrategyDraft, strategyDraft } from "../features/portfolio/strategy-form";
 import { confirmDiscard } from "../shared/dirty-draft";
@@ -35,6 +35,9 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const dirty = JSON.stringify(draft) !== JSON.stringify(strategyDraft(strategy.strategy));
+  // Focus moves to the editor's heading when it opens, so a keyboard or screen-reader user starts at the form.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, []);
   useUnsavedDraft(dirty && !busy);
   const field = (key: "everyMin" | "maxUsd" | "minLegUsd" | "maxCost", label: string) => <Field label={label}
     inputMode={key === "maxCost" ? "decimal" : "numeric"} value={draft[key]} error={errors[key]} disabled={busy}
@@ -57,6 +60,7 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
     if (parsed.strategy) void save(parsed.strategy);
     else focusInvalid(event.currentTarget);
   }}>
+    <h3 ref={heading} tabIndex={-1} className="text-base font-semibold">Edit strategy</h3>
     <FieldSet className="gap-3">
       <FieldLegend variant="label">Target allocation · total 100%</FieldLegend>
       <FieldGroup className="grid gap-3 sm:grid-cols-3">
