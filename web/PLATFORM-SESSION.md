@@ -237,7 +237,6 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Funding transfer to sign; Cancel, Send or File funding proposal | group (the exact transfer); buttons | Money in, once reviewed |
 | Open payment in Trezu | link, with the agent's `nearcom:` recipient | Money in, a confidential DAO |
 | Get a deposit address or Get a new deposit address | button | Receive funds |
-| Also let this app relay owner actions you sign, such as a strategy grant. … | checkbox | Connection, not connected, a wallet owner |
 | Allow owner actions; Allow owner actions for this agent?, Sign and allow | button; dialog (warns that open proposals are withdrawn), button | Connection, connected without owner, a wallet owner |
 | Propose a rebalance; Proposed. Review it below: nothing is sent until it's approved.; Review the proposal | button; status; link | Proposals, once connected, for an account that may file proposals |
 | Autopilot, Check again | region and heading (level 2), button | `/agents/<agent>/strategy` (was `/agents/<agent>`), once connected |

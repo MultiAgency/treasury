@@ -55,6 +55,16 @@ export function agentReads(name: string) {
   };
 }
 
+/**
+ * Reads the portfolio anew: shown, it's read again now; not shown, it's read when it next is. A read is repeated only
+ * once it's a minute old (`main.tsx`), so after a swap or a shield the portfolio would otherwise show the book from
+ * before it for up to that long.
+ */
+export function refreshPortfolio(client: QueryClient, reads: ReturnType<typeof agentReads>) {
+  for (const read of [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books])
+    void client.invalidateQueries({ queryKey: read.queryKey });
+}
+
 /** The setup reads: the signed-in account's own treasuries, and a DAO's setup, read again every half minute while it waits for the vote. */
 export const setupReads = {
   mine: queryOptions({ queryKey: ["setup"], queryFn: async () => answered(await api.setups()), retry: false }),

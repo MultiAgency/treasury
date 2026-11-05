@@ -141,7 +141,7 @@ export function HomePage() {
 /** Proposals (`/agents/<agent>/proposals`). */
 export function ProposalsPage() {
   const { reads, identity } = useAgent();
-  return <ProposalList reads={reads} identity={identity} />;
+  return <WhenConnected><ProposalList reads={reads} identity={identity} /></WhenConnected>;
 }
 
 /** One proposal (`…/proposals/<id>`): a bad ID is shown as such, with the way back. */

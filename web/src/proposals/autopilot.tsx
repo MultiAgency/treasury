@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Button, Card, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
 import type { Identity } from "./proposals-api";
-import type { agentReads } from "./queries";
+import { refreshPortfolio, type agentReads } from "./queries";
 import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
 import { StrategyTerms } from "./strategy-terms";
@@ -46,6 +46,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
       : what === "stop" ? await reads.agent.stopAutopilot() : await reads.agent.runNow();
     setBusy(undefined);
     refresh();
+    // A run may have swapped and shielded whatever its answer: the portfolio is read anew.
+    if (what === "tick") refreshPortfolio(client, reads);
     // Turning it on or off is said by the schedule's own status, read again above: only a run's summary is news.
     if (answer.ok) {
       if (what === "tick" && "summary" in answer.value) setNotice(`Run now: ${answer.value.summary}`);
