@@ -347,3 +347,33 @@ test("autopilot is turned on for the bound strategy, run now and left on; discon
   const schedule = contract.autopilotRead.parse(((await (await get(`${again.agent}/autopilot`, again.cookie)).json()) as { value: unknown }).value);
   assert.equal(schedule.on, false);
 });
+
+test("with owner actions allowed, the owner signs a grant for the saved strategy here; once submitted, it binds the strategy", { timeout: 90_000 }, async () => {
+  const issued = await challenge();
+  const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const agent = `/api/agents/${target.agent}`;
+  const text = await post(`${agent}/consent/text`, { owner: true }, cookie);
+  const asked = ((await text.json()) as { value: { message: string; nonce: string; recipient: string } }).value;
+  if (text.status === 200) {
+    const signed = await signOwner(target, asked);
+    assert.equal((await post(`${agent}/consent`, { message: asked.message, nonce: asked.nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie)).status, 200);
+  }
+  await setTargets(target, { [USDC]: 2_500, [WNEAR]: 7_500, [ETH]: 0 });
+  const strategyNow = async () => contract.strategyRead.parse(((await (await get(`${agent}/strategy`, cookie)).json()) as { value: unknown }).value);
+  const before = await strategyNow();
+  assert.equal(before.grantMatches, false, "saving the strategy unbinds the grant");
+  const prepared = await post(`${agent}/grant`, { expectedDigest: before.digest }, cookie);
+  const preparedBody = await prepared.json() as { value: unknown };
+  assert.equal(prepared.status, 200, JSON.stringify(preparedBody));
+  const grant = contract.grantPrepared.parse(preparedBody.value);
+  assert.ok(grant.intent, JSON.stringify(grant));
+  const signed = await signOwner(target, grant.intent.payload);
+  const submitted = await post(`${agent}/grant/${grant.correlationId}/submit`, { signedData: { ...grant.intent, public_key: signed.publicKey, signature: signed.signature } }, cookie);
+  assert.equal(submitted.status, 200, await submitted.clone().text());
+  for (let waited = 0; ; waited += 1_000) {
+    const stage = contract.ownerActionStatus.parse(((await (await get(`${agent}/grant/${grant.correlationId}`, cookie)).json()) as { value: unknown }).value).stage;
+    if (stage === "submitted" && (await strategyNow()).grantMatches) break;
+    assert.ok(waited < 45_000, `still ${stage}`);
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+});

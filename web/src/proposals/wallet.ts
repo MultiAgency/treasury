@@ -3,7 +3,7 @@ import type { fundingTransaction } from "@multiagency/sdk";
 import { fromBase64, HOT_WALLETS, namespaced, walletSession } from "../app/wallet";
 import { transactionOutcome, type TransactionOutcome } from "../app/wallet-transaction";
 import { signerProblem } from "./dao-filing";
-import type { DaoRequest, SignRequest, Signed } from "./proposals-api";
+import type { DaoRequest, GrantPrepared, SignRequest, Signed } from "./proposals-api";
 
 /**
  * The owner's wallet on the proposals page: NEP-413 messages (sign-in, the consent, verdicts), so any wallet that
@@ -34,6 +34,18 @@ export async function file(transaction: MemberTransaction, member: string): Prom
   const problem = signerProblem((await wallet.connector.getConnectedWallet()).accounts[0]?.accountId, member);
   if (problem) throw new WrongAccount(problem);
   return transactionOutcome(await wallet.send(transaction));
+}
+
+/**
+ * Signs a grant's NEP-413 intent exactly as the platform prepared it, in the owner's wallet, connecting it first: only as
+ * `owner` (else it throws, having signed nothing). Answers the intent with the key that signed it and its signature.
+ */
+export async function signIntent(intent: NonNullable<GrantPrepared["intent"]>, owner: string) {
+  if ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
+  const { wallet: connected, accounts } = await wallet.connector.getConnectedWallet();
+  if (accounts[0]?.accountId !== owner) throw new WrongAccount(`Your wallet is connected as ${accounts[0]?.accountId ?? "no account"}, not the owner ${owner}. Nothing was signed. Switch the wallet to ${owner}.`);
+  const signed = await connected.signMessage({ ...intent.payload, nonce: fromBase64(intent.payload.nonce) });
+  return { ...intent, public_key: signed.publicKey, signature: signed.signature };
 }
 
 /** The wallet is connected as another account than the member signed in: nothing was sent. */

@@ -1,0 +1,116 @@
+import { after, before, test } from "node:test";
+import assert from "node:assert/strict";
+import { createServer as createHttpServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { join } from "node:path";
+import type { AuditEntry } from "../src/audit.ts";
+import * as contract from "../src/contract.ts";
+import { createDaoRequests } from "../src/dao-requests.ts";
+import { standInDaos, type Policy } from "../src/dao.ts";
+import { createServer } from "../src/http.ts";
+import { standInKeyLookup } from "../src/keys.ts";
+import { createSessions } from "../src/sessions.ts";
+import { createSignIn } from "../src/signin.ts";
+import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
+import { tempDir } from "../../../scripts/temp-dirs.ts";
+
+const DAO = "agentic.sputnik-dao.near", DIGEST = `sha256:${"a".repeat(64)}`;
+const owner = wallet("owner.near"), council = wallet("council.near");
+const fake = fakePlatform({ portfolio: "owner.near", daoagent: DAO }, { daos: ["daoagent"] });
+const policy: Policy = {
+  proposal_bond: "100000000000000000000000", proposal_period: String(7 * 86_400 * 1e9), default_vote_policy: { threshold: [1, 2] },
+  roles: [{ name: "all", kind: "Everyone", permissions: [], vote_policy: {} },
+    { name: "council", kind: { Group: ["council.near"] }, permissions: ["call:AddProposal", "call:VoteApprove", "call:VoteReject"], vote_policy: {} }],
+};
+const audit: AuditEntry[] = [];
+const cookies: Record<string, string> = {};
+let server: Server, base: string;
+
+before(async () => {
+  server = createHttpServer(createServer({
+    platform: fake.platform,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
+      keyLookup: standInKeyLookup(Object.fromEntries([owner, council].map(who => [who.accountId, [who.publicKey]]))) }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
+    audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
+    daos: standInDaos({ [DAO]: policy }, { [DAO]: [] }), daoRequests: await createDaoRequests(join(tempDir("treasury-grant-"), "dao-requests.json")),
+  }));
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  for (const who of [owner, council]) {
+    const issued = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
+    cookies[who.accountId] = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(who.sign(issued.value)) }))
+      .headers.get("set-cookie")!.split(";")[0]!;
+  }
+});
+after(() => server.close());
+
+const call = async (method: "GET" | "POST", path: string, body: unknown = {}, as = owner, agent = "portfolio") => {
+  const response = await fetch(`${base}/api/agents/${agent}/${path}`, { method, headers: { cookie: cookies[as.accountId]!, ...(method === "POST" && { origin: ORIGIN, "content-type": "application/json" }) },
+    ...(method === "POST" && { body: JSON.stringify(body) }) });
+  return { status: response.status, text: await response.clone().text(), body: await response.json() as any };
+};
+const consent = (scopes: ("read" | "treasury" | "owner")[]) => ({ id: "c".padEnd(64, "0"), deployment: "treasury", host: "platform.test", organization: "owner--near",
+  owner: "owner.near", agent: "portfolio", agentId: "id-portfolio", scopes, expiresAt: Date.now() + 86_400_000, createdAt: 0, publicKey: "k", revoked: false, revokedAt: null });
+const reset = (scopes: ("read" | "treasury" | "owner")[] = ["owner", "read", "treasury"]) => {
+  fake.calls.length = 0; audit.length = 0; fake.grants.length = 0;
+  fake.schedules.portfolio = { on: false, unbound: true };
+  fake.consents.length = 0; fake.consents.push(consent(scopes));
+};
+const prepares = () => fake.calls.filter(made => made.startsWith("grant.prepare"));
+const signedFor = (intent: { standard: "nep413"; payload: { message: string; recipient: string; nonce: string } }) => ({ signedData: { ...intent, public_key: owner.publicKey, signature: "ed25519:sig" } });
+
+test("a wallet owner whose connection allows owner actions signs the grant's intent; submitted once, it binds the strategy", async () => {
+  reset();
+  const prepared = await call("POST", "grant", { expectedDigest: DIGEST });
+  assert.equal(prepared.status, 200, prepared.text);
+  const grant = contract.grantPrepared.parse(prepared.body.value);
+  assert.ok(grant.intent && !grant.dao && !grant.confirm, "an intent to sign here");
+  assert.deepEqual(prepares(), [`grant.prepare owner--near portfolio wallet ${DIGEST}`], "bound to the digest the owner saw");
+  const submitted = await call("POST", `grant/${grant.correlationId}/submit`, signedFor(grant.intent!));
+  assert.deepEqual(submitted.body, { ok: true, value: { status: "SUCCESS", failureCode: null } });
+  assert.deepEqual(contract.ownerActionStatus.parse((await call("GET", `grant/${grant.correlationId}`)).body.value), { stage: "submitted" });
+  assert.equal(contract.strategyRead.parse((await call("GET", "strategy")).body.value).grantMatches, true);
+  assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["grant", "attempt"], ["grant", "result"], ["grant-submit", "attempt"], ["grant-submit", "result"]]);
+});
+
+test("nothing is prepared for a changed strategy, with autopilot on, without owner actions allowed, or while a grant waits", async () => {
+  reset();
+  assert.deepEqual((await call("POST", "grant", { expectedDigest: `sha256:${"b".repeat(64)}` })).body, { ok: false, kind: "refused", code: "strategy_changed" });
+  fake.schedules.portfolio = { on: true, unbound: true };
+  assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "autopilot_on" });
+  reset(["read", "treasury"]);
+  assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "owner_not_allowed" });
+  assert.deepEqual(prepares(), []);
+  reset();
+  assert.equal((await call("POST", "grant", { expectedDigest: DIGEST })).status, 200);
+  assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "grant_pending" }, "followed, never signed twice");
+  assert.equal(prepares().length, 1);
+});
+
+test("a malformed signature is refused unasked; a lost submit is unavailable and recorded; the platform's refusal is grant_refused", async () => {
+  reset();
+  const grant = contract.grantPrepared.parse((await call("POST", "grant", { expectedDigest: DIGEST })).body.value);
+  assert.deepEqual((await call("POST", `grant/${grant.correlationId}/submit`, { signedData: { standard: "nep413" } })).body, { ok: false, kind: "refused", code: "bad_request" });
+  fake.grantAnswers.submit = [new Error("socket hang up"), { ok: false, kind: "refused", status: 400, error: "signature invalid: detail" }];
+  assert.equal((await call("POST", `grant/${grant.correlationId}/submit`, signedFor(grant.intent!))).status, 503);
+  const refused = await call("POST", `grant/${grant.correlationId}/submit`, signedFor(grant.intent!));
+  assert.deepEqual(refused.body, { ok: false, kind: "refused", code: "grant_refused" });
+  assert.ok(!refused.text.includes("detail"));
+  assert.deepEqual(audit.filter(entry => entry.action === "grant-submit" && entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined),
+    [{ ok: false, kind: "unavailable" }, { ok: false, kind: "refused", status: 400, code: "grant_refused" }]);
+});
+
+test("a DAO's member asks for the grant: prepared for the DAO's vote as the transaction they file; no member submits a signature", async () => {
+  reset();
+  fake.schedules.daoagent = { on: false, unbound: true };
+  const prepared = await call("POST", "grant", { expectedDigest: DIGEST }, council, "daoagent");
+  assert.equal(prepared.status, 200, prepared.text);
+  const grant = contract.grantPrepared.parse(prepared.body.value);
+  assert.ok(grant.dao && !grant.intent, "a transaction to file, not an intent to sign");
+  assert.deepEqual(prepares(), [`grant.prepare ${DAO.replaceAll(".", "--")} daoagent dao ${DIGEST}`]);
+  assert.deepEqual(contract.ownerActionStatus.parse((await call("GET", `grant/${grant.correlationId}`, {}, council, "daoagent")).body.value), { stage: "voting" });
+  assert.deepEqual((await call("POST", `grant/${grant.correlationId}/submit`, { signedData: { standard: "nep413", payload: { message: "m", recipient: "r", nonce: "n" }, public_key: "k", signature: "s" } }, council, "daoagent")).body,
+    { ok: false, kind: "refused", code: "not_permitted" });
+});

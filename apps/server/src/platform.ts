@@ -150,6 +150,17 @@ export type Platform = {
     sweep(organization: string, agent: string, execute: boolean): Promise<SweepRun>;
   };
   /**
+   * A grant binding the saved strategy (`grant_issue`, label `treasury`, for the strategy's digest): prepared for a wallet
+   * owner to sign (under `owner`) or for a DAO's vote (under `treasury`), a wallet owner's signature submitted, and its
+   * owner actions and their status read.
+   */
+  grant: {
+    prepare(organization: string, agent: string, input: { action: { type: "grant_issue"; label: "treasury"; expectedStrategyDigest: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
+    submit(organization: string, agent: string, input: { correlationId: string; signedData: Record<string, unknown> }): Promise<OwnerResult<OwnerOutput<"owner/submit">>>;
+    actions(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"owner/actions">>>;
+    status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
+  };
+  /**
    * The agent's saved strategy and autopilot, under an Organization's consent (`treasury`): the strategy with whether
    * the held grant binds it, the schedule's state, and the schedule turned on (for the strategy digest the owner saw),
    * off, or run once now within its ceiling.
@@ -279,6 +290,12 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
           return { events, ended: { ok: false, kind: "unknown", procedure: "sweep", identity: { execute } } };
         }
       },
+    },
+    grant: {
+      prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),
+      submit: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/submit", input),
+      actions: async (organization, agent) => (await client()).agent(organization, agent).call("owner/actions"),
+      status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
     },
     autopilot: {
       strategy: async (organization, agent) => (await client()).agent(organization, agent).call("strategy/get"),

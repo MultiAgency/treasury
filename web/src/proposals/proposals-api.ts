@@ -111,6 +111,15 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
+        /**
+         * A grant binding the saved strategy the owner saw (its digest): an intent for a wallet owner's wallet to sign (or
+         * the platform's confirm page), or for a DAO the transaction a member files. Each call prepares a new one.
+         */
+        grant: (expectedDigest: string) => call(contract.grantPrepared, `${base}/grant`, { method: "POST", body: contract.grantRequest.parse({ expectedDigest }) }),
+        /** A wallet owner's signed grant intent, relayed once: never sent again for a lost answer; its status says what happened. */
+        submitGrant: (id: string, signedData: z.input<typeof contract.grantSubmission>["signedData"]) =>
+          call(contract.grantSubmitted, `${base}/grant/${correlation.parse(id)}/submit`, { method: "POST", body: contract.grantSubmission.parse({ signedData }) }),
+        grantStatus: (id: string) => call(contract.ownerActionStatus, `${base}/grant/${correlation.parse(id)}`),
         /** The saved strategy and whether the held grant binds it; the schedule. */
         strategy: () => call(contract.strategyRead, `${base}/strategy`),
         autopilot: () => call(contract.autopilotRead, `${base}/autopilot`),
@@ -162,6 +171,7 @@ export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
 export type SweepRun = z.output<typeof contract.sweepRun>;
 export type BooksRead = z.output<typeof contract.booksRead>;
 export type StrategyRead = z.output<typeof contract.strategyRead>;
+export type GrantPrepared = z.output<typeof contract.grantPrepared>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
