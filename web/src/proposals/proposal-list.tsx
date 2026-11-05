@@ -14,7 +14,7 @@ import { Legs, StateBadge, when } from "./ui";
 export function ProposalList({ reads, identity }: { reads: ReturnType<typeof agentReads>; identity: Identity }) {
   const proposals = useQuery(reads.proposals);
   const consent = useQuery(reads.consent);
-  return <section aria-labelledby="proposals-title" className="flex flex-col gap-4">
+  return <section id="proposals" aria-labelledby="proposals-title" className="flex flex-col gap-4">
     <h2 id="proposals-title" className="text-xl font-semibold">Proposals</h2>
     {consent.data?.consent && mayCall(identity.access, "proposals/create") && <ProposeRebalance reads={reads} />}
     {proposals.isPending ? <Loading label="Reading proposals…" />

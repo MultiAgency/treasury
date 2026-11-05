@@ -305,6 +305,10 @@ test("the owner asks for a rebalance to the drifted strategy, and reviews the pr
   const proposals = page.getByRole("region", { name: "Proposals" });
   const ask = proposals.getByRole("button", { name: "Propose a rebalance" });
   await signInIfAsked(ask);
+  // A $0 ceiling: autopilot swaps nothing on its own, and the strategy says where swaps come from instead.
+  const zero = page.getByRole("region", { name: "Autopilot" }).getByText(/^With a \$0 ceiling, autopilot makes no swaps on its own/);
+  await visible(zero);
+  assert.equal(await zero.getByRole("link", { name: "Propose a rebalance" }).getAttribute("href"), "#proposals");
   assert.deepEqual(await axe(), [], "offered");
   await ask.click();
   await visible(proposals.getByRole("status").filter({ hasText: "Proposed. Review it below: nothing is sent until it's approved." }));
@@ -340,20 +344,40 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   await page.goto(`${origin}/agents/${target.agent}`);
   const autopilot = page.getByRole("region", { name: "Autopilot" });
   await signInIfAsked(autopilot);
-  await autopilot.getByRole("button", { name: "Edit strategy" }).click();
+  // The three steps read in order: configure, authorize, turn on.
+  await visible(autopilot.getByRole("list", { name: "From strategy to autopilot" }));
+  assert.deepEqual(await autopilot.getByRole("list", { name: "From strategy to autopilot" }).getByRole("heading", { level: 3 }).allInnerTexts(),
+    ["1. Configure the strategy", "2. Authorize it", "3. Turn autopilot on"]);
+  // By keyboard only: Enter opens the editor at its heading, Tab moves through the targets, Enter submits.
+  const focused = () => page.evaluate(() => {
+    const element = document.activeElement as HTMLInputElement | null;
+    return element?.labels?.[0]?.textContent?.trim() ?? element?.textContent?.trim() ?? "";
+  });
+  const typeHere = async (value: string) => { await page.keyboard.press("ControlOrMeta+a"); await page.keyboard.type(value); };
+  await autopilot.getByRole("button", { name: "Edit strategy" }).focus();
+  await page.keyboard.press("Enter");
   const editor = autopilot.getByRole("form", { name: "Edit strategy" });
   await visible(editor);
-  await editor.getByLabel("USDC (%)").fill("50");
-  await editor.getByLabel("wNEAR (%)").fill("40");
-  await editor.getByLabel("ETH (%)").fill("0");
-  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
+  assert.equal(await focused(), "Edit strategy", "focus starts at the editor");
+  const first: Record<string, string> = { "USDC (%)": "50", "wNEAR (%)": "40", "ETH (%)": "0" };
+  for (let i = 0; i < 3; i++) {
+    await page.keyboard.press("Tab");
+    const label = await focused();
+    assert.ok(label in first, `a target field, not ${label}`);
+    await typeHere(first[label]!);
+  }
+  await page.keyboard.press("Enter");
   await visible(editor.getByText("Target allocations must add up to 100%.").first());
   assert.deepEqual(await axe(), [], "the editor, refusing a total under 100%");
-  await editor.getByLabel("wNEAR (%)").fill("50");
-  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
-  await visible(autopilot.getByRole("status").filter({ hasText: "Strategy saved, with autopilot off. Authorize it next." }));
+  // Focus went to an invalid target: Tab and Shift+Tab reach wNEAR within the three.
+  for (let i = 0; i < 4 && (await focused()) !== "wNEAR (%)"; i++) await page.keyboard.press(i < 2 ? "Tab" : "Shift+Tab");
+  assert.equal(await focused(), "wNEAR (%)");
+  await typeHere("50");
+  await page.keyboard.press("Enter");
+  await visible(autopilot.getByRole("status").filter({ hasText: "Strategy saved. Authorize it next." }));
+  assert.equal(await focused(), "Edit strategy", "focus returns to Edit strategy");
   await visible(autopilot.getByRole("list", { name: "Strategy targets" }).getByText("USDC: 50%"));
-  await visible(autopilot.getByRole("status").filter({ hasText: "Autopilot is off." }));
+  assert.equal(await autopilot.getByText("Autopilot is off.", { exact: true }).count(), 1, "the schedule's state said once");
   // Saving the strategy unbound the grant: the owner signs a new one here, their connection allowing owner actions.
   await autopilot.getByRole("button", { name: "Authorize this strategy" }).click();
   const authorize = dialog("Authorize this saved strategy?");

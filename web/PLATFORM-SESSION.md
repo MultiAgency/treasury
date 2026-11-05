@@ -236,11 +236,13 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Allow owner actions; Allow owner actions for this agent?, Sign and allow | button; dialog (warns that open proposals are withdrawn), button | Connection, connected without owner, a wallet owner |
 | Propose a rebalance; Proposed. Review it below: nothing is sent until it's approved.; Review the proposal | button; status; link | Proposals, once connected, for an account that may file proposals |
 | Autopilot, Check again | region and heading (level 2), button | `/agents/<agent>`, once connected |
-| Saved strategy; Strategy targets; Why autopilot can't be turned on | heading (level 3); lists | Autopilot |
+| From strategy to autopilot: 1. Configure the strategy, 2. Authorize it, 3. Turn autopilot on | ordered list, headings (level 3), in that order | Autopilot |
+| Strategy targets; Why autopilot can't be turned on | lists | Autopilot (steps 1 and 3) |
+| With a $0 ceiling, autopilot makes no swaps on its own…; Propose a rebalance | text; link to the Proposals section (`#proposals`) | Autopilot, step 1, at a $0 ceiling |
 | Autopilot is on… or Autopilot is off. | status | Autopilot |
 | Turn on, Let the agent act on its own?; Turn off; Run now, Run the strategy once now? | button, dialog; button; button, dialog | Autopilot, for an account that may file and vote (Run now only while the grant binds the strategy) |
-| Edit strategy; Edit strategy (form): USDC (%), wNEAR (%), ETH (%), Run every (minutes), Automatic rebalance ceiling (USD), Swap limits, Minimum swap (USD), Maximum swap cost (%), Cancel, Save with autopilot off | button; form, fields, disclosure, buttons | Autopilot, for an account that may save the strategy |
-| Strategy saved, with autopilot off. Authorize it next. | status | Autopilot, after a save |
+| Edit strategy; Edit strategy (form, opening at its heading, focus back on Edit strategy when it closes): USDC (%), wNEAR (%), ETH (%), Run every (minutes), Automatic rebalance ceiling (USD), Swap limits, Minimum swap (USD), Maximum swap cost (%), Cancel, Save with autopilot off | button; form, fields, disclosure, buttons | Autopilot, for an account that may save the strategy |
+| Strategy saved. Authorize it next. | status (the schedule's own status says it's off) | Autopilot, after a save |
 | Authorize this strategy or Ask the DAO to authorize this strategy; Authorize this saved strategy?, Sign in wallet or File for the DAO's vote | button; dialog, button | Autopilot, while the grant doesn't bind the saved strategy and autopilot is off |
 | Shield public balances | heading (level 3) | Funding |
 | Preview, Shield; Public balances | buttons; list (each balance exactly, then its shield's status) | Shield public balances, once the executor holds a treasury grant |
