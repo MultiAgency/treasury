@@ -9,6 +9,7 @@ import { ago, fromUnits, toUnits } from "../shared/format";
 import { Button, Card, CopyButton, ErrorBox, errorMessage, input, Loading, QueryError, Spinner } from "../shared/ui";
 import type { DepositRead, Identity, TreasuryRead } from "./proposals-api";
 import type { agentReads } from "./queries";
+import { Sweep } from "./sweep";
 import { ReviewDialog } from "./ui";
 import { fund, WrongAccount } from "./wallet";
 import { failureText } from "./words";
@@ -45,6 +46,10 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
     <Card>
       <h3 className="text-base font-semibold">Receive funds</h3>
       <Deposit reads={reads} identity={identity} />
+    </Card>
+    <Card>
+      <h3 className="text-base font-semibold">Shield public balances</h3>
+      <Sweep reads={reads} identity={identity} />
     </Card>
   </section>;
 }

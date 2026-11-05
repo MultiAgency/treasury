@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { EventType } from "@ag-ui/core";
+import { PROTOCOL_VERSION } from "@ag-ui/core/schemas";
 import { accessOf, mayCall, proposalId, type ProposalView } from "@multiagency/sdk";
 import { verifyNep413Signature } from "near-kit";
 import type { z } from "zod";
@@ -13,7 +16,7 @@ import type { Page } from "./page.ts";
 import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
 import * as contract from "./contract.ts";
 import type { Admitted } from "./contract.ts";
-import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer, ProposalListAnswer } from "./platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer, ProposalListAnswer, SweepRun } from "./platform.ts";
 import { failure, log } from "./log.ts";
 import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import { agentsOf, checkSetup, DAO_SETUP_MS, setupConsents, setupFor, setupText } from "./setup.ts";
@@ -86,9 +89,9 @@ type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string }
  * signs (`owner/prepare`: the owner, or a DAO member who may file its proposals, which the DAO contract checks too);
  * `execute` asking for a proposal's execution.
  */
-export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link";
+export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep";
 const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute",
-  deposit: "deposit", link: "treasury/link" };
+  deposit: "deposit", link: "treasury/link", sweep: "sweep" };
 type Route = { method: "GET" | "POST" | "DELETE"; path: string; handle(call: Call, context: Context): Promise<Reply> }
   & ({ access: "public" } | { access: "session" } | { access: "owner" | "owner-fresh"; needs: Need });
 
@@ -193,6 +196,38 @@ const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unli
     return reply;
   },
 });
+
+/** A failed sweep's `RUN_ERROR` message, for a person, by the failure's kind; its `code` is the kind itself. */
+const SWEEP_FAILED: Record<string, string> = {
+  refused: "The platform refused the sweep.",
+  forbidden: "No live consent covers this agent.",
+  provider: "The provider refused the sweep.",
+  busy: "The agent is busy with another operation.",
+  unresolved: "An earlier operation's outcome isn't proven yet.",
+};
+/**
+ * A sweep as AG-UI 1.0 events (`contract.sweepRun`): the run's start, a snapshot of its activity after each event the
+ * platform gave, and its end. A stream the SDK reports `unknown` (lost after it began) gets no terminal event: the run
+ * is truncated, and a truncated run is never reported as finished or failed.
+ */
+function sweepEvents(agent: string, { events, ended }: SweepRun) {
+  const threadId = `sweep-${agent}`, runId = randomUUID(), messageId = `${runId}-activity`;
+  const plan = events.find(event => event.type === "plan");
+  const shields: z.output<typeof contract.sweepActivity>["shields"] = [];
+  const activity = [];
+  for (const event of events) {
+    if (event.type === "shield") shields.push({ asset: event.asset, status: event.status, correlationId: event.correlationId, failureCode: event.failureCode ?? null });
+    const content: z.output<typeof contract.sweepActivity> = {
+      exposed: (plan?.type === "plan" ? plan.exposed : []).map(({ asset, symbol, decimals, public: amount }) => ({ asset, symbol, decimals, public: String(amount) })),
+      shields: [...shields],
+    };
+    activity.push({ type: EventType.ACTIVITY_SNAPSHOT, messageId, activityType: contract.SWEEP_ACTIVITY, content });
+  }
+  const end = !ended ? [{ type: EventType.RUN_FINISHED, threadId, runId }]
+    : ended.kind === "unknown" ? []
+    : [{ type: EventType.RUN_ERROR, message: SWEEP_FAILED[ended.kind] ?? "The sweep failed.", code: ended.kind }];
+  return [{ type: EventType.RUN_STARTED, threadId, runId, protocolVersion: PROTOCOL_VERSION }, ...activity, ...end];
+}
 
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
@@ -688,6 +723,38 @@ export const routes: Route[] = [
       const answer = await relay(() => platform.funding.deposit(organizationOf(owner), agent, DEPOSIT_ASSETS[input.asset]), agent);
       const reply = answer.ok ? ok({ deposit: answer.value }) : readFailure(answer, agent, "deposit");
       await audit.append({ who: account!, action: "deposit", agent, subject: answer.ok ? answer.value.correlationId : undefined, stage: "result", answer: audited(answer, reply) });
+      return reply;
+    },
+  },
+  {
+    // Per asset, the provider's balances against the chain and against recorded executions.
+    method: "GET", path: "/api/agents/:agent/books", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.reads.books(organizationOf(owner), agent), agent);
+      return answer.ok ? ok(answer.value) : readFailure(answer, agent, "reconcileBooks");
+    },
+  },
+  {
+    /**
+     * A sweep, sent once and read to its end: a preview of the managed public balances, or their shielding into the
+     * confidential balance (recorded before the platform is asked and after). Answered as the run's AG-UI events
+     * (`contract.sweepRun`), whatever its outcome, so the page decides from what it reported. A call that throws before
+     * any event is `unavailable`; no live consent before any event is `not_connected`.
+     */
+    method: "POST", path: "/api/agents/:agent/sweep", access: "owner-fresh", needs: "sweep",
+    async handle({ body, account, identity }, { platform, audit }) {
+      const { agent, owner } = identity!;
+      const input = parse(contract.sweepRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      if (input.execute) await audit.append({ who: account!, action: "sweep", agent, stage: "attempt" });
+      const run = await relay(() => platform.funding.sweep(organizationOf(owner), agent, input.execute), agent);
+      const reply = !("events" in run) ? unavailable()
+        : !run.events.length && run.ended?.kind === "forbidden" ? refused(409, "not_connected")
+        : ok({ events: sweepEvents(agent, run) });
+      const ended = "events" in run ? run.ended : run;
+      if (ended && ended.kind !== "forbidden") log("platform_sweep_ended", { agent, execute: input.execute, ...failure(ended) });
+      if (input.execute) await audit.append({ who: account!, action: "sweep", agent, stage: "result", answer: audited(ended ?? { ok: true }, reply) });
       return reply;
     },
   },

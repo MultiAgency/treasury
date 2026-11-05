@@ -105,6 +105,10 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
+        /** Per asset, the provider's balances against the chain and against recorded executions. */
+        books: () => call(contract.booksRead, `${base}/books`),
+        /** A sweep, sent once, answered as its AG-UI run: a preview, or the shielding of the public balances. Never sent again for a lost answer. */
+        sweep: (execute: boolean) => call(contract.sweepRun, `${base}/sweep`, { method: "POST", body: contract.sweepRequest.parse({ execute }) }),
         /** The account linked to fund the agent, or null. */
         treasury: () => call(contract.treasuryRead, `${base}/treasury`),
         /** A fresh one-time deposit address for USDC, or for NEAR (as wNEAR). A lost answer may be asked for again: each is new. */
@@ -141,6 +145,8 @@ export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
 export type TreasuryRead = z.output<typeof contract.treasuryRead>["treasury"];
 export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
+export type SweepRun = z.output<typeof contract.sweepRun>;
+export type BooksRead = z.output<typeof contract.booksRead>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

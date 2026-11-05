@@ -3,6 +3,7 @@
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
 import { appConsentSubmission, ownerOutputs, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
+import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
 
 export const agentName = z.string().regex(/^[a-z0-9-]{1,32}$/);
@@ -170,6 +171,26 @@ export const linkRequest = z.strictObject({ accountId });
 export const unlinkRequest = z.strictObject({});
 export const confidentialRequest = z.strictObject({ confidential: z.boolean() });
 export const fundingChanged = z.strictObject({});
+/** Per asset, the provider's balances against the chain and against recorded executions (raw units as decimal strings). */
+export const booksRead = ownerOutputs.reconcileBooks;
+/** A sweep is a preview of the public balances (`execute: false`) or their shielding (`execute: true`). */
+export const sweepRequest = z.strictObject({ execute: z.boolean() });
+/** What a sweep's activity shows: the public balances it found (raw units as decimal strings), and each shield it sent. */
+export const sweepActivity = z.strictObject({
+  exposed: z.array(z.strictObject({ asset: z.string(), symbol: z.string(), decimals: z.number(), public: rawAmount })),
+  shields: z.array(z.strictObject({ asset: z.string(), status: z.string(), correlationId: z.string(), failureCode: z.string().nullable() })),
+});
+/** The activity type a sweep's snapshots carry. */
+export const SWEEP_ACTIVITY = "treasury.sweep";
+/**
+ * A sweep as it ran, as AG-UI 1.0 events in arrival order, delivered whole: `RUN_STARTED`, an `ACTIVITY_SNAPSHOT` of
+ * `treasury.sweep` (`sweepActivity`) after each event the platform's stream gave, then `RUN_FINISHED` when it ended
+ * normally, or `RUN_ERROR` (`code`: the failure's kind) when it failed. A run with no terminal event is truncated: the
+ * platform's stream was lost after it began, so a shield may have gone out, and nothing is sent again.
+ */
+export const sweepRun = z.strictObject({
+  events: z.array(z.discriminatedUnion("type", [RunStartedEventSchema, ActivitySnapshotEventSchema, RunFinishedEventSchema, RunErrorEventSchema])),
+});
 /** A proposal found by the `requestId` it was proposed with. */
 export const requestRead = z.strictObject({ proposal: proposalView });
 /**

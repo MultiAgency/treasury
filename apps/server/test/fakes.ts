@@ -1,7 +1,7 @@
 // Fakes for the server's outside services: the platform and the chain. Tests run the server in-process against these.
 import { parseConsentMessage, parseSetupMessage, type ProposalView } from "@multiagency/sdk";
 import { generateKey } from "near-kit";
-import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, ReadAnswer, SetupAnswer, StatusAnswer } from "../src/platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, ReadAnswer, SetupAnswer, StatusAnswer, SweepRun } from "../src/platform.ts";
 import type { Challenge } from "../src/signin.ts";
 
 export const HOST = "treasury.test";
@@ -74,6 +74,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    */
   const reads: { [K in ReadName]: ReadValue<K> } = {
     account: { agentId: "id-portfolio", executor: true, wallet: "portfolio.agents.near", grant: null, stagedGrant: null },
+    books: [],
     overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
   };
   const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
@@ -92,6 +93,11 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    */
   const treasuries: Record<string, { accountId: string; confidential: boolean }> = {};
   const deposits: { agent: string; asset: string; address: string }[] = [];
+  /**
+   * Sweeps as the platform's stream gives them: `sweepRuns` queues runs (an Error is thrown, as a broken call would);
+   * otherwise a preview finds one public wNEAR balance past 2^53 raw units, and a shield sends it, succeeding.
+   */
+  const sweepRuns: (SweepRun | Error)[] = [];
   const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
@@ -294,6 +300,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     },
     reads: {
       account: (organization, agent) => read("account", organization, agent),
+      books: (organization, agent) => read("books", organization, agent),
       overview: (organization, agent) => read("overview", organization, agent),
       activity: (organization, agent) => read("activity", organization, agent),
       held: (organization, agent) => read("held", organization, agent),
@@ -316,6 +323,14 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       setConfidential: async (organization, agent, confidential) => funding("setConfidential", organization, agent, [String(confidential)], () => {
         if (treasuries[agent]) treasuries[agent].confidential = confidential;
       }),
+      async sweep(organization, agent, execute) {
+        calls.push(`funding.sweep ${organization} ${agent} ${execute}`);
+        const queued = sweepRuns.shift();
+        if (queued instanceof Error) throw queued;
+        if (queued) return queued;
+        const plan = { type: "plan" as const, exposed: [{ asset: "nep141:wrap.near", symbol: "wNEAR", decimals: 24, price: 2.5, public: BIG, confidential: 0n, usd: 308.64 }] };
+        return { events: execute ? [plan, { type: "shield" as const, asset: "nep141:wrap.near", status: "SUCCESS", correlationId: "shield-1" }] : [plan], ended: null };
+      },
     },
   };
   /** The agent's creation completes: it has an ID from now on. */
@@ -329,7 +344,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers,
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns,
     reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 
@@ -380,7 +395,7 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
 }
 
 /** The owner reads by name, and the platform procedure each one is. */
-const READ_PATHS = { account: "account", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
+const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
 type ReadName = keyof typeof READ_PATHS;
 type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
 type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);
