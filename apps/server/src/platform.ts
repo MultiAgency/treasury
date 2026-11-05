@@ -1,4 +1,4 @@
-import { appClient, type AppBase, type AppInputs, type OwnerOutput, type OwnerResult, type ProposalView } from "@multiagency/sdk";
+import { appClient, type AppBase, type AppInputs, type OwnerFailure, type OwnerOutput, type OwnerResult, type ProposalView } from "@multiagency/sdk";
 import type { Credential } from "./credential.ts";
 
 type App = ReturnType<typeof appClient>;
@@ -20,7 +20,12 @@ export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
-export type ReadAnswer<P extends "account" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
+export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
+/**
+ * A sweep as it ran: every event the stream gave, and how it ended (`null` when it ended normally). A stream lost after
+ * any event ends `unknown`, as the SDK reports it: a shield may have gone out.
+ */
+export type SweepRun = { events: OwnerOutput<"sweep">[]; ended: OwnerFailure | null };
 /** A call that funds the agent, or changes its funding account, as the SDK answers it. */
 export type FundingAnswer<P extends "treasury/get" | "deposit" | "treasury/link" | "treasury/unlink" | "treasury/setConfidential"> = OwnerResult<OwnerOutput<P>>;
 /** The assets a deposit address takes: USDC, or wNEAR, which NEAR is wrapped into to fund it. */
@@ -114,6 +119,8 @@ export type Platform = {
    */
   reads: {
     account(organization: string, agent: string): Promise<ReadAnswer<"account">>;
+    /** Per asset, the provider's balances against the chain and against recorded executions. */
+    books(organization: string, agent: string): Promise<ReadAnswer<"reconcileBooks">>;
     overview(organization: string, agent: string): Promise<ReadAnswer<"overview">>;
     activity(organization: string, agent: string): Promise<ReadAnswer<"activity">>;
     held(organization: string, agent: string): Promise<ReadAnswer<"held">>;
@@ -132,6 +139,11 @@ export type Platform = {
     link(organization: string, agent: string, accountId: string): Promise<FundingAnswer<"treasury/link">>;
     unlink(organization: string, agent: string): Promise<FundingAnswer<"treasury/unlink">>;
     setConfidential(organization: string, agent: string, confidential: boolean): Promise<FundingAnswer<"treasury/setConfidential">>;
+    /**
+     * Shields the managed public balances (`execute`), or previews which are public: one stream, read to its end, never
+     * sent again. A throw before any event is the caller's lost answer.
+     */
+    sweep(organization: string, agent: string, execute: boolean): Promise<SweepRun>;
   };
 };
 
@@ -222,6 +234,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     },
     reads: {
       account: async (organization, agent) => (await client()).agent(organization, agent).call("account"),
+      books: async (organization, agent) => (await client()).agent(organization, agent).call("reconcileBooks"),
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       activity: async (organization, agent) => (await client()).agent(organization, agent).call("activity"),
       held: async (organization, agent) => (await client()).agent(organization, agent).call("held"),
@@ -235,6 +248,20 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
       link: async (organization, agent, accountId) => (await client()).agent(organization, agent).call("treasury/link", { accountId }),
       unlink: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/unlink"),
       setConfidential: async (organization, agent, confidential) => (await client()).agent(organization, agent).call("treasury/setConfidential", { confidential }),
+      async sweep(organization, agent, execute) {
+        const events: OwnerOutput<"sweep">[] = [];
+        const stream = (await client()).agent(organization, agent).stream("sweep", { execute });
+        try {
+          for (let next = await stream.next(); ; next = await stream.next()) {
+            if (next.done) return { events, ended: next.value ?? null };
+            events.push(next.value);
+          }
+        } catch (error) {
+          if (!events.length) throw error;
+          void stream.return(undefined).catch(() => {});
+          return { events, ended: { ok: false, kind: "unknown", procedure: "sweep", identity: { execute } } };
+        }
+      },
     },
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),

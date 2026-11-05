@@ -3,7 +3,7 @@ import { ago, describeRequest, usd } from "../shared/format";
 import { Button, Card, Loading, QueryError } from "../shared/ui";
 import { holdingsOf, recentActivity, recentRuns } from "./portfolio-view";
 import type { agentReads } from "./queries";
-import { when } from "./ui";
+import { amountText, when } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
 
@@ -15,9 +15,9 @@ type Reads = ReturnType<typeof agentReads>;
 export function Portfolio({ reads }: { reads: Reads }) {
   const client = useQueryClient();
   const overview = useQuery(reads.overview);
-  const [activity, held, unresolved, runs] = useQueries({ queries: [reads.activity, reads.held, reads.unresolved, reads.runs] });
-  const keys = [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs].map(read => read.queryKey);
-  const fetching = [overview, activity, held, unresolved, runs].some(read => read.isFetching);
+  const [activity, held, unresolved, runs, books] = useQueries({ queries: [reads.activity, reads.held, reads.unresolved, reads.runs, reads.books] });
+  const keys = [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books].map(read => read.queryKey);
+  const fetching = [overview, activity, held, unresolved, runs, books].some(read => read.isFetching);
   const refresh = () => keys.forEach(queryKey => void client.invalidateQueries({ queryKey }));
   const book = overview.data?.book ?? [];
 
@@ -81,6 +81,23 @@ export function Portfolio({ reads }: { reads: Reads }) {
           </li>)}
         </ul>}
       {runs.data && runs.data.corrupt.length > 0 && <p className="text-sm" role="alert">{runs.data.corrupt.length} recorded line(s) couldn't be read.</p>}
+    </Card>
+
+    <Card>
+      <h3 className="text-base font-semibold">Books</h3>
+      <p className="text-sm text-muted-foreground">The provider's balances checked against the chain, and its private balances against recorded executions.</p>
+      {books.isPending ? <Loading label="Reading the books…" />
+        : books.isError ? <QueryError error={books.error} retry={() => books.refetch()} />
+        : books.data.length === 0 ? <p className="text-sm" role="status">No balances to reconcile.</p>
+        : <table className="w-full text-sm">
+          <caption className="sr-only">Books</caption>
+          <thead><tr className="text-left text-muted-foreground"><th scope="col" className="py-1 font-medium">Asset</th><th scope="col" className="py-1 font-medium">Public drift from chain</th><th scope="col" className="py-1 font-medium">Private, not attributed</th></tr></thead>
+          <tbody>{books.data.map(row => <tr key={row.asset} className="border-t">
+            <th scope="row" className="py-1 font-medium">{row.symbol}</th>
+            <td className="py-1 font-mono break-all">{row.public.drift === "0" ? "none" : amountText(row.public.drift, row.asset)}</td>
+            <td className="py-1 font-mono break-all">{row.confidential.unattributed === "0" ? "none" : amountText(row.confidential.unattributed, row.asset)}</td>
+          </tr>)}</tbody>
+        </table>}
     </Card>
   </section>;
 }

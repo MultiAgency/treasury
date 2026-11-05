@@ -844,6 +844,8 @@ test("each agent route asks for what it needs: a member who may only file is ref
     // A deposit address, as filing: anyone who may file a proposal. The funding account is the DAO's own, so no member links it.
     deposit: { council: true, proposer: true, reader: false },
     link: { council: false, proposer: false, reader: false },
+    // Shielding executes, as a proposal's execution does.
+    sweep: { council: true, proposer: false, reader: false },
   };
   for (const route of routes.filter(route => route.access === "owner" || route.access === "owner-fresh")) {
     const need = needs[`${route.method} ${route.path}`]!;

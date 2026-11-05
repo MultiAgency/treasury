@@ -22,7 +22,7 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { fundPublic, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -272,4 +272,29 @@ test("the owner links their own account to fund the agent, sends exactly the rev
   await unlink.getByRole("button", { name: "Unlink" }).click();
   await visible(funding.getByText("No funding account is linked. Link the NEAR account that funds this agent"));
   assert.deepEqual(unexpected, [], "the page reached nothing but this server and the wallet's boundary");
+});
+
+test("the owner previews a public wNEAR balance, shields it once after reviewing it, and reads the books", { timeout: 90_000 }, async () => {
+  await fundPublic(target, WNEAR, "1000000000000000000000000");
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const funding = page.getByRole("region", { name: "Funding" });
+  await signInIfAsked(funding);
+  await visible(page.getByRole("region", { name: "Portfolio" }).getByRole("table", { name: "Books" }));
+  // Enabled once the account reads a treasury grant held by the executor.
+  const preview = funding.getByRole("button", { name: "Preview", exact: true, disabled: false });
+  await visible(preview);
+  await preview.click();
+  const balances = funding.getByRole("list", { name: "Public balances" });
+  await visible(balances.getByText(/^1 wNEAR public$/));
+  assert.deepEqual(await axe(), [], "a preview");
+  await funding.getByRole("button", { name: "Shield", exact: true }).click();
+  const review = dialog("Shield these public balances?");
+  await visible(review);
+  await visible(review.getByRole("list", { name: "Public balances to shield" }).getByText("1 wNEAR", { exact: true }));
+  assert.deepEqual(await axe(), [], "the review");
+  await review.getByRole("button", { name: "Shield now" }).click();
+  await visible(funding.getByRole("status").filter({ hasText: "Shielded." }));
+  await visible(balances.getByText(/^1 wNEAR public · shield success$/));
+  assert.equal(await funding.getByRole("button", { name: "Shield", exact: true }).isDisabled(), true, "shielded once; a new preview comes first");
+  assert.deepEqual(unexpected, []);
 });

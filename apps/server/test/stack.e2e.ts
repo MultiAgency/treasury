@@ -10,7 +10,7 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
-import { ETH, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
+import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import type { z } from "zod";
 import { fileAudit } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
@@ -279,4 +279,30 @@ test("the owner links their own account to fund the agent, reads it back, gets a
   const account = await get(`${agent}/account`, cookie);
   assert.equal(account.status, 200);
   contract.accountRead.parse(((await account.json()) as { value: unknown }).value);
+});
+
+test("a public wNEAR balance is previewed and shielded once through the server, each run a well-formed AG-UI run; the books read", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  await fundPublic(target, WNEAR, "1000000000000000000000000");
+  const sweep = async (execute: boolean) => {
+    const response = await post(`${agent}/sweep`, { execute }, cookie);
+    const body = await response.json() as { value: unknown };
+    assert.equal(response.status, 200, JSON.stringify(body));
+    const { events } = contract.sweepRun.parse(body.value);
+    assert.deepEqual([events[0]!.type, events.at(-1)!.type], ["RUN_STARTED", "RUN_FINISHED"], JSON.stringify(events));
+    const last = events.filter(event => event.type === "ACTIVITY_SNAPSHOT").at(-1)!;
+    return contract.sweepActivity.parse(last.type === "ACTIVITY_SNAPSHOT" && last.content);
+  };
+  const preview = await sweep(false);
+  const wnear = preview.exposed.find(holding => holding.asset === WNEAR);
+  assert.ok(wnear && BigInt(wnear.public) >= 10n ** 24n, JSON.stringify(preview));
+  assert.deepEqual(preview.shields, [], "a preview sends nothing");
+  const shielded = await sweep(true);
+  assert.deepEqual(shielded.shields.filter(shield => shield.asset === WNEAR).map(shield => shield.status), ["SUCCESS"]);
+  const books = await get(`${agent}/books`, cookie);
+  assert.equal(books.status, 200);
+  contract.booksRead.parse(((await books.json()) as { value: unknown }).value);
 });
