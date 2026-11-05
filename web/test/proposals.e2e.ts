@@ -368,7 +368,7 @@ test("the owner asks for a rebalance to the drifted strategy, and reviews the pr
   assert.deepEqual(unexpected, []);
 });
 
-test("a page returned to shows what it read, without reading the platform again", { timeout: 60_000 }, async () => {
+test("a page returned to within a minute shows what it read, without reading the platform again", { timeout: 60_000 }, async () => {
   await page.goto(here());
   const portfolio = page.getByRole("region", { name: "Portfolio" }), autopilot = page.getByRole("region", { name: "Autopilot" });
   await signInIfAsked(portfolio.getByRole("button", { name: "Check again", disabled: false }));

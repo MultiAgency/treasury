@@ -56,8 +56,9 @@ export function agentReads(name: string) {
 }
 
 /**
- * Reads the portfolio anew: shown, it's read again now; not shown, it's read when it next is. Reads aren't repeated on
- * their own (`main.tsx`), so after a swap or a shield the portfolio would otherwise show the book from before it.
+ * Reads the portfolio anew: shown, it's read again now; not shown, it's read when it next is. A read is repeated only
+ * once it's a minute old (`main.tsx`), so after a swap or a shield the portfolio would otherwise show the book from
+ * before it for up to that long.
  */
 export function refreshPortfolio(client: QueryClient, reads: ReturnType<typeof agentReads>) {
   for (const read of [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books])
