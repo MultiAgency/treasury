@@ -3,7 +3,7 @@ import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
-export type Context = "read" | "sign-in" | "consent" | "proposal";
+export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal";
 
 const SIGN_IN: Record<string, string> = {
   rate_limited: "Too many sign-in attempts from this address. Wait a minute, then sign in again.",
@@ -11,6 +11,18 @@ const SIGN_IN: Record<string, string> = {
   bad_signature: "The signature didn't verify for this server. Sign in again.",
   expired: "The sign-in text expired before it was signed. Sign in again.",
   unknown_challenge: "That sign-in text was already used, or this server didn't issue it. Sign in again.",
+};
+const SETUP: Record<string, string> = {
+  not_this_setup: "The signed text isn't the setup this server asks for now. Nothing was set up. Start again.",
+  already_set_up: "This Treasury is already set up, or this host can't set one up now. A Treasury already set up shows under your treasuries.",
+  setup_unavailable: "This host doesn't set up Treasury agents.",
+  setup_refused: "The platform didn't accept the setup. Nothing was set up.",
+  not_set_up: "The setup this agent was reserved with has lapsed: it's good for an hour. Set it up again, then create it.",
+  already_created: "This agent is already created.",
+  no_creation: "The platform has no record of that creation. Create the agent again.",
+  not_a_dao: "The platform doesn't read that account as a DAO. A wallet owner sets up their own Treasury.",
+  not_permitted: "Your roles in the DAO don't allow this: a member who may file proposals does.",
+  rate_limited: "Too many requests from this account. Wait a minute and try again; after several setups today, setting up again waits until tomorrow.",
 };
 const CONSENT: Record<string, string> = {
   not_created: "This agent hasn't been created yet, so it can't be connected.",
@@ -47,7 +59,7 @@ export function failureText(failure: Failure, context: Context): string {
       ? "The answer was lost or couldn't be read. Reading again is safe."
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
-      const table = context === "sign-in" ? SIGN_IN : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : {};
+      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : {};
       return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }

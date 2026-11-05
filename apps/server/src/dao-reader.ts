@@ -1,8 +1,9 @@
 import type { DaoRequests } from "./dao-requests.ts";
 import type { Settle, Settled } from "./dao-settle.ts";
 
-/** What one read of an open request found, for the log: never a consent's or a vote's content. */
-export type ReadEvent = { request: string; kind: "consent" | "vote"; agent: string } & ({ result: Settled["result"] } | { failed: string });
+/** What one read of an open request found, for the log: never a request's content. A setup names its DAO, not an agent. */
+export type ReadEvent = { request: string } & ({ kind: "consent" | "vote"; agent: string } | { kind: "setup"; dao: string })
+  & ({ result: Settled["result"] } | { failed: string });
 
 /**
  * Passes over the DAO requests still open (`settle`), so a vote that passed while nobody has the page open is
@@ -24,7 +25,7 @@ export function createDaoReader({ daoRequests, settle }: { daoRequests: DaoReque
       const events: ReadEvent[] = [];
       for (const request of due) {
         lastRead.set(request.id, passes);
-        const about = { request: request.id, kind: request.kind, agent: request.agent };
+        const about = request.kind === "setup" ? { request: request.id, kind: request.kind, dao: request.filed.dao } : { request: request.id, kind: request.kind, agent: request.agent };
         try { events.push({ ...about, result: (await settle(request)).result }); }
         catch (error) { events.push({ ...about, failed: error instanceof Error ? error.message : String(error) }); }
       }

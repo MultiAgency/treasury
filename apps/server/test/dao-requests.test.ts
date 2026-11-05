@@ -70,3 +70,20 @@ test("a file others can read, or one that isn't these records, is refused at sta
   await writeFile(wrong, JSON.stringify({ version: 1, requests: [{ ...request("a"), kind: "vote" }] }), { mode: 0o600 });
   await assert.rejects(createDaoRequests(wrong), /doesn't hold the DAO requests/);
 });
+
+test("one setup is open per Organization, beside its agents' consent requests and votes", async () => {
+  const file = scratch(), requests = await createDaoRequests(file);
+  const setup = (id: string, organization = "agentic--sputnik-dao--near") => {
+    const { agent: _agent, agentId: _agentId, kind: _kind, ...base } = request("dao-treasury", id) as Extract<StoredDaoRequest, { kind: "consent" }>;
+    return { ...base, organization, kind: "setup" as const };
+  };
+  assert.equal(await requests.add(request("dao-treasury")), true);
+  assert.equal(await requests.add(setup("12".repeat(32))), true, "a setup beside a consent request");
+  assert.equal(await requests.add(setup("34".repeat(32))), false, "a second setup for the same Organization");
+  assert.equal(await requests.add(setup("56".repeat(32), "other--sputnik-dao--near")), true, "another Organization's");
+  const reloaded = await createDaoRequests(file);
+  assert.equal(reloaded.setup("agentic--sputnik-dao--near")?.id, "12".repeat(32));
+  await reloaded.close("12".repeat(32), "expired");
+  assert.equal(reloaded.setupEnded("agentic--sputnik-dao--near"), "expired");
+  assert.equal(reloaded.ended("agentic--sputnik-dao--near", "dao-treasury"), undefined, "a setup's ending isn't an agent's");
+});

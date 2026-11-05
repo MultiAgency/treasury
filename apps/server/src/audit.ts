@@ -10,12 +10,19 @@ export type AuditEntry = {
   /** The signed-in NEAR account the action was relayed for. */
   who: string;
   /**
-   * `dao-consent` and `dao-vote`: a DAO's consent, or its vote on a proposal, filed for the DAO to vote on (the text it
-   * will sign, by its hash). `dao-consent-stored` and `dao-vote-relayed`: a read found the DAO's vote passed and the
-   * consent stored or the vote relayed, recorded once, as a result, for the DAO (`who`).
+   * `dao-setup`, `dao-consent` and `dao-vote`: a DAO's setup, its consent, or its vote on a proposal, filed for the DAO
+   * to vote on (the text it will sign, by its hash). `dao-setup-reserved`, `dao-consent-stored` and `dao-vote-relayed`: a
+   * read found the DAO's vote passed and the agent reserved, the consent stored or the vote relayed, recorded once, as a
+   * result, for the DAO (`who`).
    */
-  action: "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-consent" | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed";
-  agent: string;
+  action: "setup" | "create" | "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-setup" | "dao-setup-reserved" | "dao-consent"
+    | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed";
+  /**
+   * The agent the action concerns. A setup's attempt has none: the platform names the agent it reserves in its answer.
+   * `setup`: a wallet owner's signed setup text relayed (`subject`: the setup consent); `create`: an agent's creation
+   * prepared under it (`subject`: its correlation ID).
+   */
+  agent?: string;
   /** The consent or proposal the action concerns, once it's known. */
   subject?: string;
   /** A DAO request's platform ID, once filed: the hash the DAO's vote signs, which links its records. */

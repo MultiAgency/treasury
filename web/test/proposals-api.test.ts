@@ -109,3 +109,31 @@ test("inputs are held to the server's own schemas before anything is sent", () =
   assert.throws(() => api.signIn({ accountId: "Owner", publicKey: KEY, signature: "s", nonce: NONCE }));
   assert.deepEqual(server.sent, []);
 });
+
+test("setup: the account's treasuries, the setup text and the signed setup, a DAO's setup, and an agent's creation and its status", async () => {
+  const server = scripted(), api = proposalsApi(server.fetcher), agent = api.agent("treasury-1");
+  const signed = { message: "setup", nonce: NONCE, publicKey: KEY, signature: "s" };
+  const transaction = { receiverId: "agentic.sputnik-dao.near", actions: [{ type: "FunctionCall", params: { methodName: "add_proposal", args: { proposal: {} }, gas: "1", deposit: "0" } }] };
+  const dao = "/api/setup/dao/agentic.sputnik-dao.near";
+  server.answer("GET /api/setup", ok({ account: "owner.near", agents: ["treasury-1"] }));
+  server.answer("POST /api/setup/text", ok({ message: "setup", nonce: NONCE, recipient: "platform.test" }));
+  server.answer("POST /api/setup", ok({ agent: "treasury-1" }));
+  const access = { canSign: false, canPropose: true, canVote: true, canExecute: true, canManage: false };
+  server.answer(`GET ${dao}`, ok({ account: "council.near", access, agents: [], request: null, ended: "expired" }));
+  server.answer(`POST ${dao}`, ok({ request: { id: "e".repeat(64), description: "* Signs", votingUntil: 1, check: "https://platform.test/confirm/dao/e", offer: { state: "file", transaction } } }));
+  server.answer("POST /api/agents/treasury-1/creation", ok({ correlationId: "create-1", expiresAt: "2026-11-05T00:10:00.000Z",
+    confirm: { url: "https://platform.test/confirm/create-1", expiresAt: "2026-11-05T00:10:00.000Z" } }));
+  server.answer("GET /api/agents/treasury-1/creation/create-1", ok({ stage: "voting" }));
+
+  assert.deepEqual(await api.setups(), { ok: true, value: { account: "owner.near", agents: ["treasury-1"] } });
+  assert.equal((await api.setupText()).ok, true);
+  assert.deepEqual(await api.setup(signed), { ok: true, value: { agent: "treasury-1" } });
+  assert.deepEqual(await api.daoSetup("agentic.sputnik-dao.near"), { ok: true, value: { account: "council.near", access, agents: [], request: null, ended: "expired" } });
+  assert.equal((await api.fileDaoSetup("agentic.sputnik-dao.near")).ok, true);
+  assert.equal((await agent.create()).ok, true);
+  assert.deepEqual(await agent.creation("create-1"), { ok: true, value: { stage: "voting" } });
+  assert.deepEqual(JSON.parse(server.sent.find(request => request.path === "/api/setup" && request.method === "POST")!.body), signed, "the signed body, as signed");
+  // Nothing typed reaches a path unchecked: a DAO is an account ID, a correlation ID a token.
+  assert.throws(() => api.daoSetup("../agents"));
+  assert.throws(() => agent.creation("../consent"));
+});
