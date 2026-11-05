@@ -6,10 +6,10 @@ The owner UI moves to the app's own routes on the platform (`/apps/v1`): the own
 
 This repository had a CLI on Treasury's machine route (`/machine/v1`). It was removed in favour of the app route: the SDK's [getting-started](https://github.com/MultiAgency/platform/blob/sdk-v0.5.1/src/contract/skills/getting-started/SKILL.md) skill says the machine route isn't extended and is retired once Treasury moves to app access, and that a new app uses `appClient`. `watch` (#2) comes back as the app server's proposer (#20).
 
-Both run against the platform's simulated stack at [`35683b2`](https://github.com/MultiAgency/platform/commit/35683b2) (the commit SDK 0.5.1 was published from, `2223d11`, plus the stack's simulated DAO). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
+Both run against the platform's simulated stack at [`c671872`](https://github.com/MultiAgency/platform/commit/c671872) (after the commit SDK 0.5.1 was published from, `2223d11`: the stack's simulated DAO, and proposals stored at a market price). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 35683b2
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout c671872
 (cd ../platform && pnpm install --frozen-lockfile)
 pnpm install
 ```
@@ -67,4 +67,4 @@ pnpm --filter @treasury/web test:stack  # builds, then drives the owner UI on a 
 
 The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
 
-CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at 35683b2. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at 35683b2 with its dependencies installed.
+CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at c671872. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at c671872 with its dependencies installed.
