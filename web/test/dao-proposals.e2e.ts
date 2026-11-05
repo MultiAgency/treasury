@@ -165,7 +165,7 @@ test("a council member asks the DAO to approve a proposal, files the vote from t
 });
 
 test("the DAO funds its agent from its own account: no link controls, and Trezu files exactly the reviewed USDC transfer as the DAO's proposal", { timeout: 90_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(`${origin}/agents/${target.agent}/funding`);
   const funding = page.getByRole("region", { name: "Funding" });
   await visible(funding);
   await visible(funding.getByRole("status").filter({ hasText: `Funded from ${dao}, a DAO with ` }));
@@ -189,7 +189,7 @@ test("the DAO funds its agent from its own account: no link controls, and Trezu 
 });
 
 test("a council member asks the DAO to authorize the saved strategy: filed from their wallet, voted, and the strategy reads bound", { timeout: 120_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(`${origin}/agents/${target.agent}/strategy`);
   const autopilot = page.getByRole("region", { name: "Autopilot" });
   await visible(autopilot);
   const ask = autopilot.getByRole("button", { name: "Ask the DAO to authorize this strategy" });

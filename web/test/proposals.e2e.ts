@@ -97,6 +97,10 @@ const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ st
 const axe = async () => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations
   .map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
 const dialog = (name: string) => page.getByRole("dialog", { name });
+/** A link of the agent's navigation. */
+const nav = (name: string) => page.getByRole("navigation", { name: "Agent pages" }).getByRole("link", { name });
+/** The page `address` names, for the agent: its own `<h1>`, and the navigation marking it. */
+const here = (path = "") => `${origin}/agents/${target.agent}${path}`;
 /** Signs in when the page asks (a test before may have signed out), then waits for `shown`. */
 async function signInIfAsked(shown: ReturnType<Page["getByRole"]>) {
   const signIn = page.getByRole("button", { name: "Sign in with wallet" });
@@ -132,9 +136,9 @@ async function propose(requestId: string): Promise<ProposalView> {
 }
 
 test("the owner signs in with their wallet, connects the agent with a consent they read first, and sees no proposals yet", { timeout: 120_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
-  assert.equal(await page.title(), "Treasury proposals");
-  await visible(page.getByRole("heading", { level: 1, name: "Treasury proposals" }));
+  await page.goto(here());
+  assert.equal(await page.title(), "Treasury proposals · Home");
+  await visible(page.getByRole("heading", { level: 1, name: "Home" }));
   await visible(page.getByRole("heading", { level: 2, name: "Sign in" }));
   assert.deepEqual(await axe(), [], "signed out");
   await page.getByRole("button", { name: "Sign in with wallet" }).click();
@@ -142,7 +146,7 @@ test("the owner signs in with their wallet, connects the agent with a consent th
 
   const connection = page.getByRole("region", { name: "Connection" });
   await visible(connection.getByRole("status").filter({ hasText: "Not connected" }));
-  await visible(page.getByRole("region", { name: "Proposals" }).getByText(/No proposals yet|isn't connected|No live consent/));
+  await visible(nav("Home").and(page.locator("[aria-current=page]")));
   assert.deepEqual(await axe(), [], "signed in, not connected");
 
   assert.equal(await connection.getByRole("checkbox").count(), 0, "no choice to make: owner actions come with the connection");
@@ -159,11 +163,14 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(connection.getByRole("status").filter({ hasText: /^Connected: read, treasury and owner, until / }));
   await visible(page.getByText("Connected. The agent's proposals now reach this page."));
   assert.deepEqual(await axe(), []);
+  await nav("Proposals").click();
+  await visible(page.getByRole("heading", { level: 1, name: "Proposals" }));
+  await visible(page.getByRole("region", { name: "Proposals" }).getByText(/No proposals yet/));
 });
 
 test("the owner approves a proposal by its exact text, executes it once to executed, and rejects another", { timeout: 180_000 }, async () => {
   const first = await propose(`page-${Date.now()}-1`), second = await propose(`page-${Date.now()}-2`);
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(here("/proposals"));
   const list = page.getByRole("list", { name: "Proposals" });
   await visible(list);
   assert.equal(await list.getByRole("link", { name: /^Review proposal / }).count(), 2);
@@ -259,7 +266,7 @@ test("a connected agent's page shows its portfolio from the owner reads: holding
 });
 
 test("the owner links their own account to fund the agent, sends exactly the reviewed USDC transfer from their wallet, gets a deposit address, and unlinks", { timeout: 90_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(here("/funding"));
   const funding = page.getByRole("region", { name: "Funding" });
   await signInIfAsked(funding);
   await visible(funding.getByText("No funding account is linked. Link the NEAR account that funds this agent"));
@@ -296,10 +303,9 @@ test("the owner links their own account to fund the agent, sends exactly the rev
 
 test("the owner previews a public wNEAR balance, shields it once after reviewing it, and reads the books", { timeout: 90_000 }, async () => {
   await fundPublic(target, WNEAR, "1000000000000000000000000");
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(here("/funding"));
   const funding = page.getByRole("region", { name: "Funding" });
   await signInIfAsked(funding);
-  await visible(page.getByRole("region", { name: "Portfolio" }).getByRole("table", { name: "Books" }));
   // Enabled once the account reads a treasury grant held by the executor.
   const preview = funding.getByRole("button", { name: "Preview", exact: true, disabled: false });
   await visible(preview);
@@ -316,20 +322,24 @@ test("the owner previews a public wNEAR balance, shields it once after reviewing
   await visible(funding.getByRole("status").filter({ hasText: "Shielded." }));
   await visible(balances.getByText(/^1 wNEAR public · shield success$/));
   assert.equal(await funding.getByRole("button", { name: "Shield", exact: true }).isDisabled(), true, "shielded once; a new preview comes first");
+  // The books are on the home page, with the rest of the portfolio.
+  await nav("Home").click();
+  await visible(page.getByRole("region", { name: "Portfolio" }).getByRole("table", { name: "Books" }));
   assert.deepEqual(unexpected, []);
 });
 
 test("the owner asks for a rebalance to the drifted strategy, and reviews the proposal it made, awaiting their decision", { timeout: 90_000 }, async () => {
   await setTargets(target, { [USDC]: 0, [WNEAR]: 0, [ETH]: 10_000 });
-  await page.goto(`${origin}/agents/${target.agent}`);
-  const proposals = page.getByRole("region", { name: "Proposals" });
-  const ask = proposals.getByRole("button", { name: "Propose a rebalance" });
-  await signInIfAsked(ask);
+  await page.goto(here("/strategy"));
   // A $0 ceiling: autopilot swaps nothing on its own, and the strategy says where swaps come from instead.
   const zero = page.getByRole("region", { name: "Autopilot" }).getByText(/^With a \$0 ceiling, autopilot makes no swaps on its own/);
-  await visible(zero);
-  assert.equal(await zero.getByRole("link", { name: "Propose a rebalance" }).getAttribute("href"), "#proposals");
+  await signInIfAsked(zero);
+  assert.equal(await zero.getByRole("link", { name: "Propose a rebalance" }).getAttribute("href"), `/agents/${target.agent}/proposals`);
   assert.deepEqual(await axe(), [], "offered");
+  await zero.getByRole("link", { name: "Propose a rebalance" }).click();
+  const proposals = page.getByRole("region", { name: "Proposals" });
+  const ask = proposals.getByRole("button", { name: "Propose a rebalance" });
+  await visible(ask);
   await ask.click();
   await visible(proposals.getByRole("status").filter({ hasText: "Proposed. Review it below: nothing is sent until it's approved." }));
   assert.deepEqual(await axe(), [], "proposed");
@@ -365,7 +375,7 @@ test("the owner allows owner actions: told first that open proposals are withdra
 });
 
 test("the owner edits the strategy, authorizes it in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
+  await page.goto(here("/strategy"));
   const autopilot = page.getByRole("region", { name: "Autopilot" });
   await signInIfAsked(autopilot);
   // The three steps read in order: configure, authorize, turn on.
@@ -422,6 +432,7 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   await visible(autopilot.getByRole("status").filter({ hasText: /^Run now: / }));
   assert.deepEqual(await axe(), [], "on, after a run");
 
+  await nav("Home").click();
   const connection = page.getByRole("region", { name: "Connection" });
   await connection.getByRole("button", { name: "Disconnect" }).click();
   const disconnect = dialog("Disconnect this agent?");
@@ -429,4 +440,77 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   await disconnect.getByRole("button", { name: "Disconnect" }).click();
   await visible(connection.getByRole("status").filter({ hasText: "Not connected." }));
   assert.deepEqual(unexpected, []);
+});
+
+test("each of the agent's pages opens by its address, with its own heading and the navigation marking it, and passes an axe scan", { timeout: 120_000 }, async () => {
+  // Disconnecting ended the last test with the agent not connected: connect it again, so every page has what it shows.
+  await page.goto(here());
+  const connection = page.getByRole("region", { name: "Connection" });
+  await signInIfAsked(connection);
+  await connection.getByRole("button", { name: "Connect" }).click();
+  await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  const made = await propose(`page-${Date.now()}-pages`);
+  const pages: [string, string, string][] = [["", "Home", "Home"], ["/", "Home", "Home"], ["/proposals", "Proposals", "Proposals"],
+    [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"]];
+  for (const [path, title, current] of pages) {
+    await page.goto(here(path));
+    await visible(page.getByRole("heading", { level: 1, name: title, exact: true }));
+    assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1, `${path}: one h1`);
+    assert.equal(await page.title(), `Treasury proposals · ${title}`, path);
+    await visible(nav(current).and(page.locator("[aria-current=page]")));
+    assert.equal(await page.locator("nav[aria-label='Agent pages'] [aria-current=page]").count(), 1, `${path}: one page marked`);
+    assert.deepEqual(await axe(), [], `${path}: the page`);
+  }
+  assert.deepEqual(unexpected, []);
+});
+
+test("the agent's pages are reached by keyboard alone, the current one marked as it changes", { timeout: 60_000 }, async () => {
+  await page.goto(here());
+  await visible(page.getByRole("heading", { level: 1, name: "Home", exact: true }));
+  await nav("Home").focus();
+  for (const title of ["Proposals", "Strategy", "Funding"]) {
+    await page.keyboard.press("Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), title, `Tab reaches ${title}`);
+    await page.keyboard.press("Enter");
+    await visible(page.getByRole("heading", { level: 1, name: title, exact: true }));
+    await visible(nav(title).and(page.locator("[aria-current=page]")));
+  }
+  // Back to the first, by shift-tabbing along the navigation.
+  for (const title of ["Strategy", "Proposals", "Home"]) {
+    await page.keyboard.press("Shift+Tab");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), title);
+  }
+  await page.keyboard.press("Enter");
+  await visible(page.getByRole("heading", { level: 1, name: "Home", exact: true }));
+  assert.deepEqual(unexpected, []);
+});
+
+test("an address that names nothing is shown as such: a bad proposal ID, a bad agent name, and a page that doesn't exist", { timeout: 60_000 }, async () => {
+  await page.goto(here("/proposals/not-an-id"));
+  await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
+  await visible(page.getByRole("alert").filter({ hasText: "This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters." }));
+  await page.getByRole("link", { name: "Back to proposals" }).click();
+  await visible(page.getByRole("heading", { level: 1, name: "Proposals", exact: true }));
+  assert.deepEqual(await axe(), [], "a bad proposal ID, and its way back");
+
+  await page.goto(`${origin}/agents/Bad_Name`);
+  await visible(page.getByRole("heading", { level: 1, name: "Page not found", exact: true }));
+  await visible(page.getByRole("alert").filter({ hasText: "This address doesn't name an agent" }));
+  assert.equal(await page.title(), "Treasury proposals · Page not found");
+  assert.deepEqual(await axe(), [], "a bad agent name");
+
+  await page.goto(here("/nothing-here"));
+  await visible(page.getByRole("heading", { level: 1, name: "Page not found", exact: true }));
+  await page.getByRole("link", { name: "Your treasuries" }).click();
+  await visible(page.getByRole("heading", { level: 1, name: "Your treasuries", exact: true }));
+  assert.deepEqual(unexpected, []);
+});
+
+test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, async () => {
+  const made = await propose(`page-${Date.now()}-notice`);
+  // As `watch` builds it: the server's origin, then /agents/<agent>/proposals/<id>.
+  await page.goto(`${origin}/agents/${target.agent}/proposals/${made.id}`);
+  await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
+  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
 });

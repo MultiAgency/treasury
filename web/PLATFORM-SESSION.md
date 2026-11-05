@@ -190,7 +190,10 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 
 | Name | Role | Where |
 | --- | --- | --- |
-| Treasury proposals | page title; heading (level 1) on `/agents/<agent>` | |
+| Treasury proposals · `<page>` | page title (#129): the build's name, then the page's own title (was just "Treasury proposals") | every page |
+| Home, Proposals, Strategy, Funding | heading (level 1), one per agent page: `/agents/<agent>/`, `…/proposals`, `…/strategy`, `…/funding` (was "Treasury proposals" on `/agents/<agent>` for all of it) | an agent's pages |
+| Agent pages | navigation (landmark): links Home, Proposals, Strategy, Funding, the current one `aria-current="page"` (Proposals also on `…/proposals/<id>`) | an agent's pages, signed in |
+| Page not found | heading (level 1), with an alert saying what the address got wrong (a bad agent name, a bad DAO account, a page that isn't one); link Your treasuries | any address that names nothing |
 | Your treasuries | heading (level 1) on `/`; list of links, one per agent | `/`, signed in |
 | Set up your Treasury, Set up a Treasury | heading (level 2), button | `/`, an account with no Treasury |
 | Set up a Treasury for your account?, Text to sign, Cancel, Sign and set up | dialog, the signed text (labelled), buttons | `/` |
@@ -202,15 +205,17 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | open the confirm page; Create it again | link (the platform's confirm page); button | Create the agent |
 | Proposal | heading (level 1) on `/agents/<agent>/proposals/<id>` | |
 | Skip to main content | link | every page |
+| This agent isn't connected to the app. Connect the agent first. | status, with a link to Home's Connection | Strategy and Funding, while not connected (#129) |
+| This agent hasn't been created yet. Create it on its home page. | status, with a link to Home | every agent page but Home, while the agent isn't created (#129) |
 | Agent name, Open proposals | textbox, button | `/`, Open an agent |
 | Sign in, Sign in with wallet | heading (level 2), button | signed out |
 | Signed in as `<owner>`, Sign out | text, button | signed in |
-| Connection | region, heading (level 2) | an agent's pages |
+| Connection | region, heading (level 2) | `/agents/<agent>/` (Home; was `/agents/<agent>`) |
 | Connected: `<scopes>`, until `<date>`. or Not connected. … | status | Connection |
 | Connect, Disconnect | button | Connection |
 | Connect this agent to the Treasury app?, Text to sign, Cancel, Sign and connect | dialog, the signed text (labelled), buttons | Connection |
 | Disconnect this agent?, Cancel, Disconnect | dialog, buttons | Connection |
-| Proposals | region and heading (level 2); list | `/agents/<agent>` |
+| Proposals | region and heading (level 2); list | `/agents/<agent>/proposals` (was `/agents/<agent>`) |
 | Review proposal `<id, shortened>` | link | each proposal in the list |
 | Swaps | list (each leg: "Swap `<amount>` for at least `<floor>`", exactly as the signed text names them, and its quote, rounded) | list and proposal |
 | Back to proposals | link | proposal, and an address whose ID isn't a proposal's ("This address doesn't name a proposal: …", alert) |
@@ -221,10 +226,10 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Approve this proposal? or Reject this proposal?, Text to sign, Cancel, Sign and approve or Sign and reject | dialog, the signed text (labelled), buttons | proposal |
 | Execute this proposal?, Cancel, Execute now | dialog, buttons | proposal |
 | You approved this proposal., You rejected this proposal., Executed. Every swap succeeded. | status | proposal, State |
-| Portfolio, Check again | region and heading (level 2), button | `/agents/<agent>`, once connected |
+| Portfolio, Check again | region and heading (level 2), button | `/agents/<agent>/` (Home), once connected |
 | Holdings | table (Asset, Amount exactly, Value) | Portfolio |
 | Needs attention, Activity, Autopilot runs | headings (level 3); lists | Portfolio |
-| Funding, Check again | region and heading (level 2), button | `/agents/<agent>`, once connected |
+| Funding, Check again | region and heading (level 2), button | `/agents/<agent>/funding` (was `/agents/<agent>`), once connected |
 | Funding account; Money in: from `<account>` to this agent; Receive funds | headings (level 3) | Funding |
 | Funded from `<account>`. or Funded from `<dao>`, a DAO with `<n>` members. | status | Funding account, once linked |
 | Use `<account>`, Funding NEAR account, Link; Unlink, Unlink the funding account?; Confidential in Trezu | buttons, field; button, dialog; checkbox (a linked DAO) | Funding account, a wallet owner only |
@@ -235,7 +240,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Also let this app relay owner actions you sign, such as a strategy grant. … | checkbox | Connection, not connected, a wallet owner |
 | Allow owner actions; Allow owner actions for this agent?, Sign and allow | button; dialog (warns that open proposals are withdrawn), button | Connection, connected without owner, a wallet owner |
 | Propose a rebalance; Proposed. Review it below: nothing is sent until it's approved.; Review the proposal | button; status; link | Proposals, once connected, for an account that may file proposals |
-| Autopilot, Check again | region and heading (level 2), button | `/agents/<agent>`, once connected |
+| Autopilot, Check again | region and heading (level 2), button | `/agents/<agent>/strategy` (was `/agents/<agent>`), once connected |
 | From strategy to autopilot: 1. Configure the strategy, 2. Authorize it, 3. Turn autopilot on | ordered list, headings (level 3), in that order | Autopilot |
 | Strategy targets; Why autopilot can't be turned on | lists | Autopilot (steps 1 and 3) |
 | With a $0 ceiling, autopilot makes no swaps on its own…; Propose a rebalance | text; link to the Proposals section (`#proposals`) | Autopilot, step 1, at a $0 ceiling |
@@ -257,7 +262,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | File the DAO proposal or File and vote; Vote on it in Trezu; Check the exact text and hash the DAO signs | button; links | a waiting DAO request |
 
 How it departs from the brief, or decides what the brief leaves open:
-- **The agent comes from the address** (`/agents/<agent>`). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.
+- **The agent comes from the address** (`/agents/<agent>/…`, one frame around each of its pages). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.
 - **Setup (#12) is the app server's**, through `/apps/v1/setup` and `/apps/v1/dao-setups`, not the owner session's `/gw/agents`. An account with no Treasury signs the server's setup text; the agent's page then offers its creation (`agent_create` under the setup consent), signed on the platform's confirm page, or for a DAO filed for its vote. The setup consent lasts an hour; after that, creating asks for the setup again. The stack sets up Payables agents only (`hostedAreas: ['payables']` at `c671872`), so setup and creation are covered by the server's unit tests, not a stack test.
 - **The portfolio is read-only (#7 on `/apps/v1`).** It shows the owner reads (#61) once the agent is connected: holdings with exact amounts, what needs attention, the latest 20 activity rows and 10 autopilot runs. Plans, the steward and the inbox aren't here: they need `treasury-execute` (which this app doesn't ask for) or procedures no app scope covers. A rebalance is a proposal instead: "Propose a rebalance" asks the platform for one to the saved strategy, as `watch` does, and the owner approves it like any other; after a lost answer the page finds it by its request ID rather than asking again. Each read is a call from the deployment's shared 1,200 an hour, so the page reads them once and again only on "Check again".
 - **Funding is the app's, under its `treasury` consent.** The funding account is read with `treasury/get`; a wallet owner links, unlinks and marks it confidential through the server, and a DAO agent's account is the DAO, fixed at setup, so no member gets those controls, whatever their roles. Money in asks the server for a fresh `deposit` address, builds the transfer with the SDK's `fundingTransaction` in place of the owner session's `treasury/fund`, checks and shows it exactly, then reads the account again before the funding account signs: the owner's wallet sends it, or Trezu files it as the DAO's proposal. After an answer the wallet doesn't give, it isn't offered again while the page is loaded. A confidential DAO pays from Trezu to the agent's `nearcom:` wallet, read with `account`. The stack takes USDC deposits only and answers the agent's wallet as the address, so NEAR funding and fresh addresses are the unit tests'; the stack's wallets record what they're asked to send and send nothing.

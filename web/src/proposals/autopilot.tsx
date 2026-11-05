@@ -9,6 +9,7 @@ import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
+import { PageLink } from "./nav";
 
 type Reads = ReturnType<typeof agentReads>;
 type Confirm = "enable" | "tick";
@@ -87,7 +88,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             <p>Swaps of at least ${s!.strategy.minLegUsd}, costing at most {s!.strategy.maxCostBps / 100}%. On autopilot: every {s!.strategy.autopilot.everyMin} minutes,
               up to ${s!.strategy.autopilot.maxUsd} a run.</p>
             {s!.strategy.autopilot.maxUsd === 0 && <p>With a $0 ceiling, autopilot makes no swaps on its own: swaps are proposed for your approval
-              instead. <a className="underline" href="#proposals">Propose a rebalance</a>.</p>}
+              instead. <PageLink to="/agents/$agent/proposals" params={{ agent: identity.agent }} className="underline">Propose a rebalance</PageLink>.</p>}
             {canSave ? <Button ref={editButton} variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>
               : identity.signer === "dao" && <p>Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
           </li>
