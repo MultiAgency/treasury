@@ -15,3 +15,4 @@ export * from "./history.ts";
 export * from "./calibration.ts";
 export * from "./mandate.ts";
 export * from "./validate.ts";
+export * from "./legs.ts";
