@@ -47,8 +47,8 @@ jobs:
         with:
           persist-credentials: false
           repository: MultiAgency/platform
-          # The commit @multiagency/sdk 0.5.0 was published from (tag sdk-v0.5.0); startStack checks it.
-          ref: 6ba0831f18ca84b2093187750f1a5f0cc8ed14d9
+          # The commit @multiagency/sdk 0.5.1 was published from (tag sdk-v0.5.1); startStack checks it.
+          ref: 2223d11995042ee62d9006ff2e6520988b4e0ea5
           path: platform
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
