@@ -5,6 +5,8 @@ import type { Overview } from "../platform";
 import { totalUsd } from "./prices.ts";
 
 export type Holding = Overview["book"][number];
+/** What naming an asset's amount needs of a holding: its ID, symbol and decimals, whichever form its balances take. */
+export type AssetInfo = Pick<Holding, "asset" | "decimals" | "symbol">;
 
 /** Whether the policy lets the agent swap. The target allocation, rebalancing and the steward apply only then. */
 export const swaps = (data: Overview) => Boolean(data.policy.policy?.actions.includes("swap"));
@@ -18,27 +20,27 @@ export const bookValue = (data: Pick<Overview, "book">) => totalUsd(data.book);
  * A raw amount of `asset` in words: at the book's decimals, or the platform's for its own assets when the book doesn't
  * list them (an empty wallet's book lists nothing). Any other asset stays in raw units, never read as whole tokens.
  */
-export function amountOf(raw: string, asset: string, book: Holding[]) {
+export function amountOf(raw: string, asset: string, book: readonly AssetInfo[]) {
   const h = assetInfo(asset, book);
   return h ? amount(raw, h) : `${raw} raw units · ${asset}`;
 }
 
 /** A raw amount of `asset` exactly, never rounded: what a signed text names. An asset without known decimals stays in raw units. */
-export function exactAmountOf(raw: string, asset: string, book: Holding[]) {
+export function exactAmountOf(raw: string, asset: string, book: readonly AssetInfo[]) {
   const h = assetInfo(asset, book);
   return h ? `${fromUnits(raw, h.decimals)} ${h.symbol}` : `${raw} raw units · ${asset}`;
 }
 
 /** An asset's symbol and decimals: the book's, else the platform's for its own assets; undefined for any other. */
-function assetInfo(asset: string, book: Holding[]): Pick<Holding, "decimals" | "symbol"> | undefined {
+function assetInfo(asset: string, book: readonly AssetInfo[]): Pick<Holding, "decimals" | "symbol"> | undefined {
   return book.find((b) => b.asset === asset) ?? (Object.hasOwn(PROPOSAL_TOKENS, asset) ? PROPOSAL_TOKENS[asset] : undefined);
 }
 
 /** An asset's symbol: the book's, else the platform's for its own assets, else its id. */
-export const symbolOf = (asset: string, book: Holding[]) => assetInfo(asset, book)?.symbol ?? asset;
+export const symbolOf = (asset: string, book: readonly AssetInfo[]) => assetInfo(asset, book)?.symbol ?? asset;
 
 /** Exact payment terms for a decision: never rounded, and the account never replaced with an alias. */
-export function exactPayment(request: Record<string, unknown>, book: Holding[]) {
+export function exactPayment(request: Record<string, unknown>, book: readonly AssetInfo[]) {
   const { amount: raw, asset, recipient } = request;
   if (typeof raw !== "string" || !/^\d+$/.test(raw) || typeof asset !== "string" || typeof recipient !== "string") return "Payment terms unavailable";
   const token = assetInfo(asset, book);
@@ -46,7 +48,7 @@ export function exactPayment(request: Record<string, unknown>, book: Holding[]) 
 }
 
 /** A money action's request in words: what moves, how much, and to whom. */
-export function describeRequest(request: Record<string, unknown>, book: Holding[], nameOf: (account: string) => string = (a) => a) {
+export function describeRequest(request: Record<string, unknown>, book: readonly AssetInfo[], nameOf: (account: string) => string = (a) => a) {
   const r = request as Partial<Record<"origin_asset" | "destination_asset" | "asset" | "amount" | "recipient", string>>;
   return r.origin_asset && r.destination_asset && r.amount
     ? `${amountOf(r.amount, r.origin_asset, book)} → ${symbolOf(r.destination_asset, book)}`

@@ -1,7 +1,7 @@
 // Fakes for the server's outside services: the platform and the chain. Tests run the server in-process against these.
 import { parseConsentMessage, parseSetupMessage, type ProposalView } from "@multiagency/sdk";
 import { generateKey } from "near-kit";
-import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, SetupAnswer, StatusAnswer } from "../src/platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, ReadAnswer, SetupAnswer, StatusAnswer } from "../src/platform.ts";
 import type { Challenge } from "../src/signin.ts";
 
 export const HOST = "treasury.test";
@@ -68,6 +68,22 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
   const creationAnswers: (PreparedAnswer | Error)[] = [];
   const statusAnswers: (StatusAnswer | Error)[] = [];
   const thrown = <A>(queued: A | Error | undefined) => { if (queued instanceof Error) throw queued; return queued; };
+  /**
+   * The owner reads' answers, by read: `reads[name]` is what the platform answers (a test may replace it), and
+   * `readAnswers[name]` queues answers given before it; an Error is thrown, as a broken call would.
+   */
+  const reads: { [K in ReadName]: ReadValue<K> } = {
+    overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
+  };
+  const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
+  const read = async <K extends ReadName>(name: K, organization: string, agent: string, ...rest: string[]): Promise<ReadAnswer<ReadPath<K>>> => {
+    calls.push([`reads.${name}`, organization, agent, ...rest].join(" "));
+    const queued = readAnswers[name]?.shift();
+    if (queued instanceof Error) throw queued;
+    if (queued) return queued;
+    const value = reads[name];
+    return value === undefined ? { ok: false, kind: "refused", status: 404, error: "No such run" } as never : { ok: true, value } as never;
+  };
   /** Proposals as the platform keeps them, under the Organization that made them. */
   const proposals: (ProposalView & { agent: string })[] = [];
   /** Answers the next proposal actions give instead of their own, by action; an Error is thrown, as a broken call would. */
@@ -261,6 +277,14 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         return { ok: true, value: { stage: found.stage } } as StatusAnswer;
       },
     },
+    reads: {
+      overview: (organization, agent) => read("overview", organization, agent),
+      activity: (organization, agent) => read("activity", organization, agent),
+      held: (organization, agent) => read("held", organization, agent),
+      unresolved: (organization, agent) => read("unresolved", organization, agent),
+      runs: (organization, agent) => read("runs", organization, agent),
+      recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
+    },
   };
   /** The agent's creation completes: it has an ID from now on. */
   const create = (agent: string) => { unborn.splice(unborn.indexOf(agent), 1); };
@@ -274,7 +298,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     return { ok: true, value: shown(found) };
   }
   return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers,
-    reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create };
+    reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 
 /**
@@ -322,3 +346,25 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
     sha256: "d".repeat(64), state: "proposed", reason: null, approvedAt: null, planId: null, operations: [], ...change,
   };
 }
+
+/** The owner reads by name, and the platform procedure each one is. */
+const READ_PATHS = { overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
+type ReadName = keyof typeof READ_PATHS;
+type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
+type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);
+
+/** A wNEAR balance past 2^53 raw units: a float would lose it, so it must reach the page exactly. */
+export const BIG = 123_456_789_012_345_678_901_234_567n;
+/** The portfolio's overview as the SDK answers it: amounts as `bigint`. */
+export const OVERVIEW: Extract<ReadAnswer<"overview">, { ok: true }>["value"] = {
+  agentId: "id-portfolio",
+  book: [{ asset: "nep141:wrap.near", symbol: "wNEAR", decimals: 24, public: 0n, confidential: BIG, price: 2.5, priceUpdatedAt: "2026-11-05T00:00:00.000Z",
+    priceExpiresAt: "2026-11-05T00:05:00.000Z", usd: 308.64 }],
+  unmanaged: [{ asset: "nep141:usdt.tether-token.near", symbol: "USDT", decimals: 6, amount: 5_000_000n, price: null, priceUpdatedAt: null, priceExpiresAt: null, usd: null }],
+  target: { "nep141:wrap.near": 5000 }, rebalance: { minLegUsd: 10, maxCostBps: 50 },
+  policy: { wallet_id: "wallet-portfolio", revision: 3, status: "APPLIED", provider_policy_synced: true,
+    cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, policy: null,
+    usage: { budget: Object.fromEntries(["daily", "weekly", "monthly"].map(window => [window, { limit_usd: null, spent_usd: "0.000000", remaining_usd: null, resets_at: null }])) as never,
+      timelock: { delay_ms: 0, scheduled_count: 0 } } },
+  digest: null, notInForce: null, agreed: [], grants: [],
+};

@@ -19,6 +19,8 @@ export type SetupAnswer = Awaited<ReturnType<App["setup"]>>;
 export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
+/** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
+export type ReadAnswer<P extends "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
 export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
 
@@ -99,6 +101,19 @@ export type Platform = {
     prepare(organization: string, agent: string, input: { action: { type: "agent_create"; role: "treasury"; owner: { type: "near"; account_id: string; public_key: string } }; signer: "wallet" }
       | { action: { type: "agent_create"; role: "treasury" }; signer: "dao" }): Promise<PreparedAnswer>;
     status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
+  };
+  /**
+   * The agent's owner reads under an Organization's consent (#61): its holdings and policy, its activity, payouts held
+   * for approval, operations whose outcome isn't proven, and the autopilot's recorded runs and one run's recording.
+   * Reads only: nothing here sends anything.
+   */
+  reads: {
+    overview(organization: string, agent: string): Promise<ReadAnswer<"overview">>;
+    activity(organization: string, agent: string): Promise<ReadAnswer<"activity">>;
+    held(organization: string, agent: string): Promise<ReadAnswer<"held">>;
+    unresolved(organization: string, agent: string): Promise<ReadAnswer<"unresolved">>;
+    runs(organization: string, agent: string): Promise<ReadAnswer<"autopilot/evidence">>;
+    recording(organization: string, agent: string, tickId: string): Promise<ReadAnswer<"autopilot/log">>;
   };
 };
 
@@ -186,6 +201,14 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     creation: {
       prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),
       status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
+    },
+    reads: {
+      overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
+      activity: async (organization, agent) => (await client()).agent(organization, agent).call("activity"),
+      held: async (organization, agent) => (await client()).agent(organization, agent).call("held"),
+      unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
+      runs: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/evidence", {}),
+      recording: async (organization, agent, tickId) => (await client()).agent(organization, agent).call("autopilot/log", { tickId }),
     },
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),

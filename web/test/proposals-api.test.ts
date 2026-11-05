@@ -137,3 +137,37 @@ test("setup: the account's treasuries, the setup text and the signed setup, a DA
   assert.throws(() => api.daoSetup("../agents"));
   assert.throws(() => agent.creation("../consent"));
 });
+
+test("the owner reads: each a GET of the agent's route, parsed by the server's contract, amounts kept as exact decimal strings", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const big = "123456789012345678901234567";
+  const policy = { wallet_id: "w", revision: 3, status: "APPLIED", provider_policy_synced: true, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null },
+    policy: null, usage: { budget: Object.fromEntries(["daily", "weekly", "monthly"].map(w => [w, { limit_usd: null, spent_usd: "0.000000", remaining_usd: null, resets_at: null }])),
+      timelock: { delay_ms: 0, scheduled_count: 0 } } };
+  const overview = { agentId: "id-portfolio", book: [{ asset: "nep141:wrap.near", symbol: "wNEAR", decimals: 24, public: "0", confidential: big, price: 2.5,
+    priceUpdatedAt: null, priceExpiresAt: null, usd: 308.64 }], unmanaged: [], target: {}, rebalance: { minLegUsd: 10, maxCostBps: 50 }, policy,
+    digest: null, notInForce: null, agreed: [], grants: [] };
+  const row = { at: "2026-11-05T00:00:00.000Z", kind: "swap", request: { amount: big }, correlationId: "c1", status: "SUCCESS" };
+  server.answer(`GET ${base}/overview`, ok(overview));
+  server.answer(`GET ${base}/activity`, ok([row]));
+  server.answer(`GET ${base}/held`, ok([]));
+  server.answer(`GET ${base}/unresolved`, ok([]));
+  server.answer(`GET ${base}/runs`, ok({ ticks: [], corrupt: [] }));
+  server.answer(`GET ${base}/requests/watch-7`, ok({ proposal: proposal() }));
+  server.answer(`GET ${base}/operations/c1`, ok({ correlationId: "c1", at: row.at, kind: "swap", status: null, refused: null }));
+
+  const read = await agent.overview();
+  assert.equal(read.ok && read.value.book[0]!.confidential, big, "a string, never a number");
+  assert.deepEqual(await agent.activity(), { ok: true, value: [row] });
+  assert.deepEqual(await agent.held(), { ok: true, value: [] });
+  assert.deepEqual(await agent.unresolved(), { ok: true, value: [] });
+  assert.deepEqual(await agent.runs(), { ok: true, value: { ticks: [], corrupt: [] } });
+  assert.equal((await agent.request("watch-7")).ok, true);
+  assert.deepEqual(await agent.operation("c1"), { ok: true, value: { correlationId: "c1", at: row.at, kind: "swap", status: null, refused: null } });
+  assert.ok(server.sent.every(request => request.method === "GET"));
+  // An amount sent as a number doesn't pass for one: the answer can't be read.
+  server.answer(`GET ${base}/overview`, ok({ ...overview, book: [{ ...overview.book[0], confidential: 1.2345678901234568e26 }] }));
+  assert.deepEqual(await agent.overview(), { ok: false, kind: "lost" });
+  assert.throws(() => agent.request("../consent"));
+  assert.throws(() => agent.recording("../consent"));
+});

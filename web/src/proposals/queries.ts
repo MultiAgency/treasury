@@ -32,6 +32,15 @@ export function agentReads(name: string) {
     /** The live consent, and for a DAO its consent request while one waits for the vote, read again every half minute. */
     consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()), retry: false,
       refetchInterval: query => query.state.data?.request ? 30_000 : false }),
+    /**
+     * The owner reads (#61), read when the page shows them and not again on their own: each is a call from the
+     * deployment's shared 1,200 an hour, so "Check again" reads them anew.
+     */
+    overview: queryOptions({ queryKey: [...key, "overview"], queryFn: async () => answered(await agent.overview()), retry: false }),
+    activity: queryOptions({ queryKey: [...key, "activity"], queryFn: async () => answered(await agent.activity()), retry: false }),
+    held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
+    unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
+    runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
     proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false,
       refetchInterval: 30_000 }),
     /** One proposal, and for a DAO the DAO's vote on it while one waits: read again while either may change on its own. */

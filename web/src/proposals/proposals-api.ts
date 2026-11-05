@@ -24,6 +24,8 @@ export type Signed = { accountId: string; publicKey: string; signature: string }
 const LOST: Lost = { ok: false, kind: "lost" };
 /** A creation's correlation ID, as the server takes it in a path. */
 const correlation = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
+/** A run's tick, a proposal's `requestId` or an operation's `correlationId`, as the server takes one in a path. */
+const readId = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/);
 /** Sign-out answers nothing but that it happened. */
 const nothing = z.strictObject({});
 
@@ -94,6 +96,17 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         create: () => call(contract.creation, `${base}/creation`, { method: "POST" }),
         /** Where a creation stands, by its correlation ID. */
         creation: (id: string) => call(contract.creationStatus, `${base}/creation/${correlation.parse(id)}`),
+        /** The owner reads (#61): holdings and policy, activity, payouts held, operations without a proven outcome, the autopilot's runs. */
+        overview: () => call(contract.overviewRead, `${base}/overview`),
+        activity: () => call(contract.activityRead, `${base}/activity`),
+        held: () => call(contract.heldRead, `${base}/held`),
+        unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
+        runs: () => call(contract.runsRead, `${base}/runs`),
+        recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
+        /** A proposal by the `requestId` it was proposed with; read only. */
+        request: (requestId: string) => call(contract.requestRead, `${base}/requests/${readId.parse(requestId)}`),
+        /** An operation's status by its `correlationId`, from its activity row: null until an outcome is recorded. */
+        operation: (correlationId: string) => call(contract.operationRead, `${base}/operations/${readId.parse(correlationId)}`),
         /** Asks for an approved proposal's execution, once. Never called again for an answer that was lost. */
         execute: (id: string) => call(contract.executeResult, `${proposal(id)}/execute`, { method: "POST" }),
       };
@@ -112,6 +125,9 @@ export type DaoSetup = z.output<typeof contract.daoSetup>;
 export type Creation = z.output<typeof contract.creation>;
 export type CreationStatus = z.output<typeof contract.creationStatus>;
 export type ProposalRead = z.output<typeof contract.proposalRead>;
+export type OverviewRead = z.output<typeof contract.overviewRead>;
+export type ActivityRead = z.output<typeof contract.activityRead>;
+export type RunsRead = z.output<typeof contract.runsRead>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

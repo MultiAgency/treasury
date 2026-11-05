@@ -11,7 +11,9 @@ import { randomBytes } from "node:crypto";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
 import { ETH, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
+import type { z } from "zod";
 import { fileAudit } from "../src/audit.ts";
+import * as contract from "../src/contract.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
 import { createDaoRequests } from "../src/dao-requests.ts";
@@ -224,4 +226,28 @@ test("watch proposes for the drifted agent under the owner's consent: the reques
   // Sent again under its requestId, the platform answers the same proposal and stores nothing new.
   const again = await platform.watch.create(organization, target.agent, requests.input(stored!));
   assert.ok(again.ok && again.value.id === event.proposed, JSON.stringify(again));
+});
+
+test("the owner's reads reach the stack's portfolio under their consent: overview, activity, held, unresolved and the autopilot's runs, amounts exact", async () => {
+  // Connected by the test before (watch's), or connected here.
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  const read = async <S extends z.ZodType>(path: string, schema: S) => {
+    const response = await get(`${agent}/${path}`, cookie);
+    const body = await response.json() as { ok: boolean; value: unknown };
+    assert.equal(response.status, 200, `${path}: ${JSON.stringify(body)}`);
+    return schema.parse(body.value);
+  };
+  const overview = await read("overview", contract.overviewRead);
+  assert.ok(overview.book.length > 0, "the portfolio holds its assets");
+  // The stack funds the portfolio with simulated USDC: its raw units arrive as a decimal string, read exactly.
+  const usdc = overview.book.find(holding => holding.symbol === "USDC")!;
+  assert.ok(BigInt(usdc.public) + BigInt(usdc.confidential) > 0n, JSON.stringify(usdc));
+  await read("activity", contract.activityRead);
+  await read("held", contract.heldRead);
+  await read("unresolved", contract.unresolvedRead);
+  const runs = await read("runs", contract.runsRead);
+  assert.ok(Array.isArray(runs.ticks));
 });
