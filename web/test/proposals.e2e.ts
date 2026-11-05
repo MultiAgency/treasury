@@ -314,3 +314,24 @@ test("the owner asks for a rebalance to the drifted strategy, and reviews the pr
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
   assert.deepEqual(unexpected, []);
 });
+
+test("the owner allows owner actions: told first that open proposals are withdrawn, then the connection is replaced by one with owner", { timeout: 90_000 }, async () => {
+  await setTargets(target, { [USDC]: 10_000, [WNEAR]: 0, [ETH]: 0 });
+  const open = await propose(`page-${Date.now()}-owner`);
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const connection = page.getByRole("region", { name: "Connection" });
+  await signInIfAsked(connection.getByRole("button", { name: "Allow owner actions" }));
+  await connection.getByRole("button", { name: "Allow owner actions" }).click();
+  const allow = dialog("Allow owner actions for this agent?");
+  await visible(allow);
+  await visible(allow.getByRole("alert").filter({ hasText: "This replaces your current connection. Proposals made under it are withdrawn" }));
+  assert.match(await allow.getByLabel("Text to sign").innerText(), /owner/);
+  assert.deepEqual(await axe(), [], "the owner consent dialog");
+  await allow.getByRole("button", { name: "Sign and allow" }).click();
+  await visible(connection.getByRole("status").filter({ hasText: /^Connected: owner, read and treasury, until / }));
+  assert.equal(await connection.getByRole("button", { name: "Allow owner actions" }).count(), 0, "not offered again");
+  // The platform answers a read of a proposal whose consent ended as withdrawn.
+  await page.goto(`${origin}/agents/${target.agent}/proposals/${open.id}`);
+  await visible(page.getByText("It was withdrawn: the consent it was made under has ended. Nothing was relayed."));
+  assert.deepEqual(unexpected, []);
+});

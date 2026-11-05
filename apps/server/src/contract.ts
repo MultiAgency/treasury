@@ -194,6 +194,8 @@ export const sweepRun = z.strictObject({
 /** A rebalance the owner asks for, under a `requestId` the page names (the platform's own format): answered as the proposal. */
 export const rebalanceRequest = z.strictObject({ requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) });
 export const rebalanceMade = z.strictObject({ proposal: proposalView });
+/** What a consent text is asked for with: `owner` too, at a wallet owner's explicit choice. */
+export const consentRequest = z.strictObject({ owner: z.literal(true).optional() });
 /** A proposal found by the `requestId` it was proposed with. */
 export const requestRead = z.strictObject({ proposal: proposalView });
 /**
