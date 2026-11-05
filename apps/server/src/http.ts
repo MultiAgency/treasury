@@ -195,7 +195,7 @@ const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unli
     const reply = answer.ok ? ok({}) : answer.kind === "forbidden" ? refused(409, "not_connected")
       : answer.kind === "refused" ? refused(409, "funding_refused") : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_funding_failed", { agent, action, ...failure(answer) });
-    await audit.append({ who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
+    await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
   },
 });
@@ -250,7 +250,7 @@ const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-o
     const reply = answer.ok ? ok(shown(answer.value)) : answer.kind === "forbidden" ? refused(409, "not_connected")
       : answer.kind === "refused" ? refused(409, "autopilot_refused") : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_autopilot_failed", { agent, action, ...failure(answer) });
-    await audit.append({ who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
+    await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
   },
 });
@@ -676,8 +676,9 @@ export const routes: Route[] = [
       if (!consentsToday(account!)) return refused(429, "rate_limited");
       const signedTextSha256 = sha256(submission.message);
       await audit.append({ who: account!, action: "consent", agent, signedTextSha256, stage: "attempt" });
-      let stored = await platform.consents.submit(submission);
-      if (!stored.ok && stored.kind === "unavailable") stored = await platform.consents.submit(submission);
+      const submit = () => relay(() => platform.consents.submit(submission), agent);
+      let stored = await submit();
+      if (!stored.ok && stored.kind === "unavailable") stored = await submit();
       if (!stored.ok) log("platform_consent_failed", { agent, ...failure(stored) });
       // 400: not accepted. 409: the agent changed since the text was built; read it again and ask for a new signature.
       // 403: the platform says the signer doesn't own the agent. Anything else, a 429 included, may work later as is.
@@ -716,7 +717,7 @@ export const routes: Route[] = [
           await audit.append({ who: account!, action: "autopilot-off", agent, stage: "attempt" });
           const stopped = await relay(() => platform.autopilot.stop(organization, agent), agent);
           const reply = stopped.ok ? ok({}) : refused(409, "autopilot_not_stopped");
-          await audit.append({ who: account!, action: "autopilot-off", agent, stage: "result", answer: audited(stopped, reply) });
+          await recordResult(audit, { who: account!, action: "autopilot-off", agent, stage: "result", answer: audited(stopped, reply) });
           if (!stopped.ok) { log("platform_autopilot_failed", { agent, action: "stop", ...failure(stopped) }); return reply; }
         }
       }
@@ -740,7 +741,7 @@ export const routes: Route[] = [
       const made = await relay(() => platform.proposals.create(organizationOf(owner), agent, { requestId: input.requestId, legs: "strategy",
         expiresAt: new Date(Date.now() + REBALANCE_HOURS * 3_600_000).toISOString(), note: "Asked for on the proposals page" }), agent);
       const reply = made.ok ? ok({ proposal: made.value }) : proposalFailure(made, agent);
-      await audit.append({ who: account!, action: "propose", agent, subject: made.ok ? made.value.id : undefined, stage: "result", answer: audited(made, reply) });
+      await recordResult(audit, { who: account!, action: "propose", agent, subject: made.ok ? made.value.id : undefined, stage: "result", answer: audited(made, reply) });
       return reply;
     },
   },
@@ -795,7 +796,7 @@ export const routes: Route[] = [
       await audit.append({ who: account!, action: "deposit", agent, stage: "attempt" });
       const answer = await relay(() => platform.funding.deposit(organizationOf(owner), agent, DEPOSIT_ASSETS[input.asset]), agent);
       const reply = answer.ok ? ok({ deposit: answer.value }) : readFailure(answer, agent, "deposit");
-      await audit.append({ who: account!, action: "deposit", agent, subject: answer.ok ? answer.value.correlationId : undefined, stage: "result", answer: audited(answer, reply) });
+      await recordResult(audit, { who: account!, action: "deposit", agent, subject: answer.ok ? answer.value.correlationId : undefined, stage: "result", answer: audited(answer, reply) });
       return reply;
     },
   },
@@ -827,7 +828,7 @@ export const routes: Route[] = [
         : ok({ events: sweepEvents(agent, run) });
       const ended = "events" in run ? run.ended : run;
       if (ended && ended.kind !== "forbidden") log("platform_sweep_ended", { agent, execute: input.execute, ...failure(ended) });
-      if (input.execute) await audit.append({ who: account!, action: "sweep", agent, stage: "result", answer: audited(ended ?? { ok: true }, reply) });
+      if (input.execute) await recordResult(audit, { who: account!, action: "sweep", agent, stage: "result", answer: audited(ended ?? { ok: true }, reply) });
       return reply;
     },
   },
@@ -863,7 +864,7 @@ export const routes: Route[] = [
         reply = now.ok && now.value.digest !== input.expectedDigest ? refused(409, "strategy_changed") : refused(409, "strategy_refused");
       } else reply = unavailable();
       if (!saved.ok && saved.kind !== "forbidden") log("platform_strategy_failed", { agent, ...failure(saved) });
-      await audit.append({ who: account!, action: "strategy-save", agent, stage: "result", answer: audited(saved, reply) });
+      await recordResult(audit, { who: account!, action: "strategy-save", agent, stage: "result", answer: audited(saved, reply) });
       return reply;
     },
   },
@@ -921,7 +922,7 @@ export const routes: Route[] = [
         reply = prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
           : prepared.kind === "refused" ? refused(409, "grant_refused") : unavailable();
       }
-      await audit.append({ who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
+      await recordResult(audit, { who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
       return reply;
     },
   },
@@ -942,7 +943,7 @@ export const routes: Route[] = [
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_grant")
         : submitted.kind === "refused" ? refused(409, "grant_refused") : unavailable();
       if (!submitted.ok) log("platform_grant_submit_failed", { agent, ...failure(submitted) });
-      await audit.append({ who: account!, action: "grant-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
+      await recordResult(audit, { who: account!, action: "grant-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
       return reply;
     },
   },
@@ -1094,10 +1095,10 @@ async function readBody(req: IncomingMessage): Promise<{ ok: true; body: unknown
 
 /**
  * Checks a call before its handler runs. A write must come from this server's own origin and carry JSON, unless it's a
- * DELETE without a body. A session
- * route needs a live session. An owner route also needs the session's account to be the agent's owner, as the
- * platform answers it (within the last minute, or anew for `owner-fresh`; see `Access`), because ownership can change:
- * the platform's own checks prove this server may act for the agent, not that the person in the browser owns it.
+ * DELETE without a body. A session route needs a live session. An owner route also needs the session's account to be
+ * the agent's owner, as the platform answers it (within the last minute, or anew for `owner-fresh`; see `Access`),
+ * because ownership can change: the platform's own checks prove this server may act for the agent, not that the person
+ * in the browser owns it.
  *
  * Each owner-route request counts against the account's `ownerRequestsPerMinute`. Only a successful identity is reused,
  * so a reused answer that refuses the account names another owner: it's read once more anew, counted too, so a new
