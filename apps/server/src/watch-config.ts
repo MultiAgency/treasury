@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
+import { ballastSettings } from "./ballast.ts";
 import { notifier } from "./notify.ts";
 import { WATCH, type WatchedAgent } from "./watch.ts";
 
@@ -19,6 +20,8 @@ const agentSettings = z.strictObject({
   proposalHours: z.number().int().min(1).max(168).default(WATCH.proposalHours),
   /** A command and its arguments, run without a shell for each notice: a proposal, or a change in what watch is doing (`notify.ts`). */
   notify: z.array(z.string().min(1)).min(1).optional(),
+  /** Ballast proposes for this agent instead of the drift rule (`ballast.ts`, #47). */
+  ballast: ballastSettings.optional(),
 });
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
 
@@ -53,6 +56,10 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
   for (const { organization, agent, intervalS, proposalHours } of parsed.agents) {
     if (intervalS >= proposalHours * 3600)
       throw new Error(`${path}: ${organization}/${agent} ticks every ${intervalS}s, but its proposals last ${proposalHours}h (${proposalHours * 3600}s): intervalS must be shorter than a proposal's life`);
+  }
+  // Ballast keeps one price an hour: an agent read less often leaves gaps its oracle freezes on.
+  for (const { organization, agent, intervalS, ballast } of parsed.agents) {
+    if (ballast && intervalS > 3600) throw new Error(`${path}: ${organization}/${agent} runs Ballast, which needs a reading at least hourly: intervalS must be at most 3600`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {
