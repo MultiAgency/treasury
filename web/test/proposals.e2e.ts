@@ -174,7 +174,9 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   const list = page.getByRole("list", { name: "Proposals" });
   await visible(list);
   assert.equal(await list.getByRole("link", { name: /^Review proposal / }).count(), 2);
-  await visible(list.getByText("Swap 1 USDC for at least 0.4995 wNEAR").first());
+  // The leg as the SDK's own proposal text names it, without its raw units, so the stack's prices don't fix the amounts.
+  const leg = proposalText(first, "approve").split("\n").find(line => line.startsWith("1. Swap "))!.slice("1. ".length).replace(/ \(\d+\)/g, "");
+  await visible(list.getByText(leg).first());
   await visible(list.getByText(/^Policy revision /).first());
   assert.deepEqual(await axe(), [], "the list");
 

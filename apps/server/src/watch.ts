@@ -214,8 +214,9 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       state.stopped = { reason: `refused by the gateway (${answer.httpStatus})`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
     }
-    // Rate-limited (a plain 429), or the provider couldn't quote: kept, and sent again unchanged after the backoff.
-    if ((answer.kind === "unknown" && answer.httpStatus === 429) || answer.kind === "provider") {
+    // Rate-limited (`rate_limited` since SDK 0.5.2, or a proxy's plain 429), or the provider couldn't quote: kept, and
+    // sent again unchanged after the backoff.
+    if (answer.kind === "rate_limited" || (answer.kind === "unknown" && answer.httpStatus === 429) || answer.kind === "provider") {
       backoff(watched);
       return event({ failed: "proposals/create", kind: answer.kind, requestId: request.requestId, backoffTicks: WATCH.backoffTicks, note: "sent again, unchanged, after the backoff" });
     }
@@ -265,7 +266,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       if (!overview.ok || !unresolved.ok || !autopilot.ok) {
         const failed = Object.entries({ overview, unresolved, "autopilot/get": autopilot }).flatMap(([name, result]) => result.ok ? [] : [{ name, kind: result.kind }]);
         if (failed.some(({ kind }) => kind === "forbidden")) return stop(watched, event);
-        const limited = [overview, unresolved, autopilot].some(result => !result.ok && "httpStatus" in result && result.httpStatus === 429);
+        const limited = [overview, unresolved, autopilot].some(result => !result.ok && (result.kind === "rate_limited" || ("httpStatus" in result && result.httpStatus === 429)));
         if (limited) backoff(watched);
         return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
       }

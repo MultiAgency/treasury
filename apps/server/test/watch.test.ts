@@ -208,7 +208,7 @@ test("not_proposable or nothing_to_propose: nothing was stored, so the request i
 });
 
 test("rate-limited or a provider failure on a create: the request is kept, the agent backs off, then it's sent again unchanged", async () => {
-  for (const answer of [failure("unknown", { httpStatus: 429 }), failure("provider")]) {
+  for (const answer of [failure("rate_limited", { status: 429, retryAfterSeconds: 60 }), failure("unknown", { httpStatus: 429 }), failure("provider")]) {
     const w = await world();
     w.answers.create.push(answer as ProposalAnswer);
     const first = await w.tick();
@@ -226,13 +226,15 @@ test("rate-limited or a provider failure on a create: the request is kept, the a
 });
 
 test("a rate-limited read backs the agent off", async () => {
-  const w = await world();
-  w.answers.overview = failure("unavailable", { httpStatus: 429 }) as never;
-  assert.equal((await w.tick()).backoffTicks, WATCH.backoffTicks);
-  w.answers.overview = { ok: true, value: overview(80) };
-  w.clock.now += 300_000;
-  assert.equal((await w.tick()).skipped, "backoff");
-  assert.deepEqual(w.calls, [], "nothing read during the backoff");
+  for (const limited of [failure("rate_limited", { status: 429, retryAfterSeconds: 60 }), failure("unavailable", { httpStatus: 429 })]) {
+    const w = await world();
+    w.answers.overview = limited as never;
+    assert.equal((await w.tick()).backoffTicks, WATCH.backoffTicks, limited.kind);
+    w.answers.overview = { ok: true, value: overview(80) };
+    w.clock.now += 300_000;
+    assert.equal((await w.tick()).skipped, "backoff", limited.kind);
+    assert.deepEqual(w.calls, [], "nothing read during the backoff");
+  }
 });
 
 test("too_many_proposals: dropped, and held for the backoff", async () => {
