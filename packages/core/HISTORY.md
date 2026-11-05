@@ -1,6 +1,6 @@
 # Backtest price history (A8.2)
 
-Until H5 names the price sources and supplies their data, the backtest runs on a **synthetic, seeded series**.
+H5 named the price sources and H9 calibrated on a year of real NEAR-USD (ADR 3, `scripts/calibrate.ts`). The synthetic, seeded series below stays for the tests and the demo.
 
 - `syntheticSeries(spec)` is a seeded random walk (`mulberry32`): each step multiplies the price by 1 + `driftPct`
   percent + a uniform draw in ±`stepVolPct` percent. The same spec always gives the same series; the seed is part of

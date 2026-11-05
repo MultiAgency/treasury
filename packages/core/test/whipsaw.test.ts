@@ -49,10 +49,10 @@ test("an action records its time, direction and zone", () => {
 
 test("a disarmed buy zone re-arms 2 points back inside its line, not before", () => {
   const hold: Intent = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
-  const state: WhipsawState = { lastActionAt: NOW, lastAction: "buy-volatile", disarmed: "dca-1" }; // line −15
-  assert.equal(nextState(state, hold, -15.5, NOW + HOUR).disarmed, "dca-1");
-  assert.equal(nextState(state, hold, -13.5, NOW + HOUR).disarmed, "dca-1");
-  assert.equal(nextState(state, hold, -13, NOW + HOUR).disarmed, undefined);
+  const state: WhipsawState = { lastActionAt: NOW, lastAction: "buy-volatile", disarmed: "dca-1" }; // line −20
+  assert.equal(nextState(state, hold, -20.5, NOW + HOUR).disarmed, "dca-1");
+  assert.equal(nextState(state, hold, -18.5, NOW + HOUR).disarmed, "dca-1");
+  assert.equal(nextState(state, hold, -18, NOW + HOUR).disarmed, undefined);
 });
 
 test("a partial, unreadable or inconsistent state holds instead of skipping the cooldown and reversal lock", () => {
@@ -84,11 +84,11 @@ test("after a trade, the less extreme zones on its side are disarmed too; a more
 });
 
 test("a price alternating across a line between two zones trades once, not on every crossing", () => {
-  // The review on #30: a TWAP of 125.1 / 124.9 against an EMA of 100, every 2 hours, gave 8 sells in 16 hours.
+  // The review on #30: a TWAP either side of the trim-2 line (then 125, now 130) every 2 hours gave 8 sells in 16 hours.
   let state: WhipsawState = none;
   const trades: string[] = [];
   for (let i = 0; i < 8; i++) {
-    const now = NOW + i * 2 * HOUR, twap = i % 2 === 0 ? 125.1 : 124.9, zone = classifyZone(twap, 100)!;
+    const now = NOW + i * 2 * HOUR, twap = i % 2 === 0 ? 130.1 : 129.9, zone = classifyZone(twap, 100)!;
     const proposed = gate(sell(zone), state, "normal", now);
     if (proposed.action !== "hold") trades.push(zone);
     state = nextState(state, proposed, (twap - 100) / 100 * 100, now);
@@ -98,11 +98,11 @@ test("a price alternating across a line between two zones trades once, not on ev
 
 test("a disarmed trim zone re-arms 2 points back below its line", () => {
   const hold: Intent = { ...sell(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
-  const state: WhipsawState = { lastActionAt: NOW, lastAction: "sell-volatile", disarmed: "trim-2" }; // line +25
-  assert.equal(nextState(state, hold, 24, NOW).disarmed, "trim-2");
-  assert.equal(nextState(state, hold, 23, NOW).disarmed, "trim-1", "back below trim-2's line: trim-1 is still disarmed");
-  assert.equal(nextState(state, hold, 13, NOW).disarmed, undefined, "back below trim-1's line too");
-  assert.equal(nextState(nextState(state, hold, 23, NOW), hold, 13, NOW).disarmed, undefined, "one line at a time");
+  const state: WhipsawState = { lastActionAt: NOW, lastAction: "sell-volatile", disarmed: "trim-2" }; // line +30
+  assert.equal(nextState(state, hold, 29, NOW).disarmed, "trim-2");
+  assert.equal(nextState(state, hold, 28, NOW).disarmed, "trim-1", "back below trim-2's line: trim-1 is still disarmed");
+  assert.equal(nextState(state, hold, 18, NOW).disarmed, undefined, "back below trim-1's line too");
+  assert.equal(nextState(nextState(state, hold, 28, NOW), hold, 18, NOW).disarmed, undefined, "one line at a time");
 });
 
 test("with no usable deviation a disarmed zone stays disarmed", () => {

@@ -13,7 +13,7 @@ const series = (days: number, flat = 100, dropTo = 70, dropDays = 10): Sample[] 
   return out;
 };
 const config: ReplayConfig = { ...REPLAY_DEFAULTS, policy: { ...REPLAY_DEFAULTS.policy, exposure: { ...REPLAY_DEFAULTS.policy.exposure, monthlySpendUsd: 10_000 } } };
-// 20% volatile: inside the 25% venue cap, with room above the 10% floor.
+// 20% volatile: inside the 50% venue cap, with room above the 10% floor.
 const start = { volatileUsd: 200_000, reserveUsd: 700_000, cashUsd: 100_000 };
 /** A replay that must run: fails the test if it was refused. */
 const ran = (...args: Parameters<typeof replay>) => {

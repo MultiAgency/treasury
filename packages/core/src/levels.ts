@@ -1,7 +1,7 @@
 // Policy engine, step 3 (A5.3): escalation-level gating. Pure; fails closed.
 // L0 acts within the mandate. L1 has reduced authority, L2 needs a human, L3 is stricter, L4 stops new sends.
-// The plan doesn't specify what L1 and L3 restrict (H11), so these are the most conservative readings, as named defaults:
-// L1 halves the per-order cap; L3 allows only risk-reducing sells, and they need approval too.
+// H11 (ADR 3) keeps the most conservative readings of L1 and L3: L1 halves the per-order cap; L3 allows only
+// risk-reducing sells, and they need approval too. L4 is "no new sends", which the platform's freeze enforces (A14).
 
 import type { Intent } from "./bands.ts";
 import type { PolicyResult } from "./policy.ts";

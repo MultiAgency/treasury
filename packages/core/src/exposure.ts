@@ -1,15 +1,16 @@
 // Policy engine, step 2 (A5.2): venue exposure and the protected operating cash. Pure; fails closed.
 // Like the limit rules, this only adds to the platform's signed owner policy. Per the review on #72: the monthly spend
 // rate is user-defined (set in the limits, no default), cash means stablecoins and every other asset is a risk asset.
-// What a "venue" is and any valuation haircut on the cash are still for H6 to define.
+// H6 (ADR 3): a venue is where the agent's assets are held and settle, which today is its one NEAR Intents account, so
+// the venue cap is the profile's volatile ceiling (`volatileMaxPct`) until a second venue exists. No haircut on cash.
 
 import type { Intent } from "./bands.ts";
 import type { PolicyResult, PolicyRule } from "./policy.ts";
 import { isNonNegative, isNum, isPct, isPositive, report } from "./validate.ts";
 
 export const EXPOSURE_DEFAULTS = {
-  /** One venue may hold at most this percent of the treasury. */
-  maxVenueExposurePct: 25,
+  /** One venue may hold at most this percent of the treasury in risk assets: the balanced profile's volatile ceiling (H6, ADR 3). */
+  maxVenueExposurePct: 50,
   /** Operating cash that is protected, in months of spend. The six-month floor wins over the three-month withdrawal buffer. */
   operatingCashMonths: 6,
 } as const;

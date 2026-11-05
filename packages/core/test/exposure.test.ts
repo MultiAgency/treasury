@@ -5,7 +5,7 @@ import type { Intent } from "../src/bands.ts";
 
 const order = (sizeUsd: number, action: Intent["action"] = "buy-volatile"): Intent =>
   ({ id: "p", zone: "dca-1", action, sizeUsd, dcaUnits: 1, reason: "", at: 1 });
-// 1,000,000 USD treasury; 25% venue cap = 250,000; spend 10,000/month → 6-month floor 60,000.
+// 1,000,000 USD treasury; 50% venue cap = 500,000; spend 10,000/month → 6-month floor 60,000.
 const ctx: ExposureContext = { treasuryValueUsd: 1_000_000, venueExposureUsd: 100_000, cashUsd: 100_000, spendsCashUsd: 0 };
 // The spend rate is user-defined, so it is part of the limits.
 const limits = { ...EXPOSURE_CONFIG_DEFAULTS, monthlySpendUsd: 10_000 };
@@ -16,9 +16,9 @@ test("a hold passes; a normal buy passes", () => {
   assert.deepEqual(checkExposure(order(10_000), ctx, limits), { ok: true });
 });
 
-test("venue exposure: reaching exactly 25% passes, over rejects", () => {
-  assert.deepEqual(checkExposure(order(150_000), ctx, limits), { ok: true });
-  assert.equal(rejected(checkExposure(order(150_000.01), ctx, limits)).rule, "VENUE_EXPOSURE");
+test("venue exposure: reaching exactly 50% passes, over rejects", () => {
+  assert.deepEqual(checkExposure(order(400_000), ctx, limits), { ok: true });
+  assert.equal(rejected(checkExposure(order(400_000.01), ctx, limits)).rule, "VENUE_EXPOSURE");
 });
 
 test("a sell doesn't add to the venue's exposure", () => {
@@ -47,7 +47,7 @@ test("the floor beats a DCA buy even when every other limit passes", () => {
 });
 
 test("both failures are listed, venue first", () => {
-  const r = rejected(checkExposure(order(200_000), { ...ctx, cashUsd: 10_000 }, limits));
+  const r = rejected(checkExposure(order(450_000), { ...ctx, cashUsd: 10_000 }, limits));
   assert.deepEqual(r.failed, ["VENUE_EXPOSURE", "CASH_FLOOR"]);
 });
 
@@ -58,8 +58,9 @@ test("an unknown spend rate or unusable numbers reject as invalid", () => {
 });
 
 test("the limits can be changed, and the result is deterministic", () => {
-  const wider = { ...limits, maxVenueExposurePct: 50 };
-  assert.deepEqual(checkExposure(order(300_000), ctx, wider), { ok: true });
+  const narrower = { ...limits, maxVenueExposurePct: 25 };
+  assert.equal(rejected(checkExposure(order(300_000), ctx, narrower)).rule, "VENUE_EXPOSURE");
+  assert.deepEqual(checkExposure(order(300_000), ctx, limits), { ok: true });
   assert.deepEqual(checkExposure(order(200_000), ctx, limits), checkExposure(order(200_000), ctx, limits));
 });
 
