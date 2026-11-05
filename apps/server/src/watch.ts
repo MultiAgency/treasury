@@ -36,6 +36,11 @@ type Eventer = ((detail: Record<string, unknown>) => WatchEvent) & { notices: { 
 const HOUR_MS = 3_600_000;
 /** An open proposal is expiring once it has less than this left, or `EXPIRING_SHARE` of its life if that is shorter. */
 const EXPIRING_SHARE = 0.1;
+/**
+ * How long before its expiry a proposal of `lifeMs` counts as expiring: an hour, or 10% of its life if that is shorter.
+ * A tick every `intervalS` can only catch it when `intervalS` is shorter than this, which `loadWatchConfig` checks.
+ */
+export const expiringWindowMs = (lifeMs: number) => Number.isFinite(lifeMs) && lifeMs > 0 ? Math.min(HOUR_MS, lifeMs * EXPIRING_SHARE) : HOUR_MS;
 /** An approved proposal not executed for this long is reported. */
 const APPROVED_WAIT_MS = HOUR_MS;
 /** What each hold means, for the builder reading the notice. */
@@ -117,25 +122,30 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       : { kind: "resumed", organization, agent, page: agentPage(agent) }, event);
   };
 
-  /** The notices a proposal of the agent's own is due, from the proposal as the tick just read it: nothing is read for them. */
+  /**
+   * The notices a proposal of the agent's own is due, from the proposal as the tick just read it: nothing is read for them.
+   * Open means `proposed` or `approved`: either can still be executed or decided until it expires, so both get `expiring`.
+   * `expired` is for a proposal nobody answered. One the owner approved that then lapsed unexecuted (the platform reads it
+   * as `expired`, `approvedAt` still set) is `approved_not_executed`, whatever the hour.
+   */
   const dueNotices = (view: { state: string; createdAt: string; expiresAt: string; approvedAt: string | null }): ProposalNotice[] => {
+    if (view.state === "expired") return [view.approvedAt === null ? "expired" : "approved_not_executed"];
+    if (view.state !== "proposed" && view.state !== "approved") return [];
     const expires = Date.parse(view.expiresAt), left = expires - now();
-    if (view.state === "expired") return ["expired"];
-    if (view.state === "approved") return view.approvedAt !== null && now() - Date.parse(view.approvedAt) >= APPROVED_WAIT_MS ? ["approved_not_executed"] : [];
-    if (view.state !== "proposed") return [];
-    const life = expires - Date.parse(view.createdAt);
-    const window = Number.isFinite(life) && life > 0 ? Math.min(HOUR_MS, life * EXPIRING_SHARE) : HOUR_MS;
-    return left > 0 && left < window ? ["expiring"] : [];
+    const due: ProposalNotice[] = [];
+    if (view.state === "approved" && view.approvedAt !== null && now() - Date.parse(view.approvedAt) >= APPROVED_WAIT_MS) due.push("approved_not_executed");
+    if (left > 0 && left < expiringWindowMs(expires - Date.parse(view.createdAt))) due.push("expiring");
+    return due;
   };
 
   /** Sends each notice due for `request` that wasn't sent before, recording it first. */
-  const noticeProposal = async (watched: WatchedAgent, request: StoredRequest, view: Parameters<typeof dueNotices>[0] & { expiresAt: string }, event: Eventer) => {
+  const noticeProposal = async (watched: WatchedAgent, request: StoredRequest, view: Parameters<typeof dueNotices>[0], event: Eventer) => {
     if (!watched.notify || request.proposalId === null) return;
     for (const kind of dueNotices(view)) {
       if (request.notified.includes(kind)) continue;
       await requests.mark(request, kind);
       await tell(watched, { kind, organization: watched.organization, agent: watched.agent, proposalId: request.proposalId, expiresAt: view.expiresAt,
-        page: proposalPage(watched.agent, request.proposalId) }, event);
+        ...(kind === "approved_not_executed" && { approvedAt: view.approvedAt }), page: proposalPage(watched.agent, request.proposalId) }, event);
     }
   };
 

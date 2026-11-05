@@ -630,3 +630,68 @@ test("a proposal's notice is for watch's own proposals only: one it never made i
   await w.tick(agent);
   assert.ok(!kinds(w).includes("expired"));
 });
+
+test("expired is for a proposal nobody answered: one the owner approved that lapsed unexecuted is approved_not_executed, with approvedAt", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  const first = await w.tick(agent);
+  const approvedAt = new Date(T0 + 2 * 60 * MIN).toISOString();
+  // The platform reads an approved, unexecuted proposal as `expired` once its expiry passes, `approvedAt` still set.
+  set(w, { state: "expired", approvedAt });
+  w.clock.now = T0 + 25 * 60 * MIN;
+  await w.tick(agent);
+  // The lapsed proposal's request is dropped and the agent proposes again in the same tick, which is a second `proposed`.
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed", "proposed"], "and no `expired`");
+  assert.deepEqual(w.notified[1], { kind: "approved_not_executed", organization: ORG, agent: AGENT, proposalId: first.proposed, expiresAt: "2026-11-06T12:00:00.000Z", approvedAt,
+    page: `https://treasury.test/agents/${AGENT}/proposals/${first.proposed}` });
+});
+
+test("an approved proposal that lapsed after its hour was already reported is not reported again", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent);
+  const approvedAt = new Date(T0).toISOString();
+  set(w, { state: "approved", approvedAt });
+  w.clock.now = T0 + 90 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"]);
+  set(w, { state: "expired", approvedAt });
+  w.clock.now = T0 + 25 * 60 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w).filter(kind => kind !== "proposed"), ["approved_not_executed"], "once, and not `expired` either");
+});
+
+test("an approved proposal is expiring too: it can still be executed until it expires", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent);
+  // Approved 30 minutes before it expires: too recent for approved_not_executed, but it is about to lapse.
+  const approvedAt = new Date(T0 + 23.5 * 60 * MIN).toISOString();
+  set(w, { state: "approved", approvedAt });
+  w.clock.now = T0 + 23.5 * 60 * MIN + 1;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "expiring"]);
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "expiring"], "once");
+  // An hour approved and expiring both: each is told once, approved_not_executed first.
+  const both = await world();
+  const watching = { ...WATCHED, notify: both.notify, proposalHours: 1 };
+  await both.tick(watching);
+  set(both, { state: "approved", approvedAt: new Date(T0 - 2 * 60 * MIN).toISOString() });
+  both.clock.now = T0 + 55 * MIN;
+  await both.tick(watching);
+  assert.deepEqual(kinds(both), ["proposed", "approved_not_executed", "expiring"]);
+});
+
+test("a proposal that is neither open nor expired raises nothing, whatever its dates", async () => {
+  for (const state of ["executed", "rejected", "withdrawn", "invalidated", "stopped"] as const) {
+    const w = await world();
+    const agent = { ...WATCHED, notify: w.notify };
+    await w.tick(agent);
+    set(w, { state, approvedAt: new Date(T0).toISOString() });
+    w.clock.now = T0 + 23 * 60 * MIN + 5 * MIN;
+    await w.tick(agent);
+    assert.ok(!kinds(w).some(kind => kind === "expiring" || kind === "expired" || kind === "approved_not_executed"), state);
+  }
+});

@@ -3,12 +3,12 @@ import { execFile } from "node:child_process";
 /** How long a notifier may run before it's killed. */
 export const NOTIFY_TIMEOUT_MS = 10_000;
 
-/** Hands one proposal to the builder's channel. Never throws: a failure is reported, and the loop goes on. */
+/** Hands one notice (a proposal, or a change in what `watch` is doing: `watch.ts`) to the builder's channel. Never throws: a failure is reported, and the loop goes on. */
 export type Notify = (payload: unknown) => Promise<{ ok: true } | { ok: false; error: string }>;
 
 /**
- * Runs `command` with `args` once per proposal: without a shell, so nothing in a proposal is read as shell syntax, and
- * with the proposal as JSON on stdin only. Its environment is built here, `PATH` only by default: the server runs with
+ * Runs `command` with `args` once per notice: without a shell, so nothing in a notice is read as shell syntax, and
+ * with the notice as JSON on stdin only. Its environment is built here, `PATH` only by default: the server runs with
  * `.env` loaded, so passing ours on would hand the notifier its settings and secrets (`FASTNEAR_API_KEY`), and the
  * credential file's path. Its stdout is discarded; its stderr's end is reported when it fails.
  */

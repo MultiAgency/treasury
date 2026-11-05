@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { notifier } from "./notify.ts";
-import { WATCH, type WatchedAgent } from "./watch.ts";
+import { expiringWindowMs, WATCH, type WatchedAgent } from "./watch.ts";
 
 /** The platform's calls an hour per app credential (`hourlyLimit(1_200)` in its `app-routes.ts`), shared by every owner. */
 export const APP_HOURLY_LIMIT = 1_200;
@@ -17,7 +17,7 @@ const agentSettings = z.strictObject({
   intervalS: z.number().int().min(WATCH.minIntervalS).default(WATCH.intervalS),
   // The platform allows a proposal at most 7 days.
   proposalHours: z.number().int().min(1).max(168).default(WATCH.proposalHours),
-  /** A command and its arguments, run without a shell for each proposal (`notify.ts`). */
+  /** A command and its arguments, run without a shell for each notice: a proposal, or a change in what watch is doing (`notify.ts`). */
   notify: z.array(z.string().min(1)).min(1).optional(),
 });
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
@@ -48,6 +48,12 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
     const key = `${organization}/${agent}`;
     if (seen.has(key)) throw new Error(`${path}: ${key} is named twice`);
     seen.add(key);
+  }
+  // An agent that notifies must tick often enough to land in the last stretch of a proposal's life, or `expiring` can be missed.
+  for (const { organization, agent, intervalS, proposalHours, notify } of parsed.agents) {
+    const window = expiringWindowMs(proposalHours * 3_600_000) / 1000;
+    if (notify && intervalS >= window)
+      throw new Error(`${path}: ${organization}/${agent} ticks every ${intervalS}s, but a proposal open ${proposalHours}h is expiring for its last ${window}s, so no tick is sure to land in it: set intervalS under ${window}, or proposalHours higher`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {
