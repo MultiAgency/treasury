@@ -1274,3 +1274,29 @@ test("why a consent request ended is shown whichever read saw it first: the back
   fake.daoRequests[1]!.signed = true;
   assert.equal((await json(await call("GET", "/api/agents/dao-treasury/consent", { cookie }))).body.value.ended, undefined);
 });
+
+test("after the consent is revoked, the platform's forbidden asks the owner to reconnect: not_connected on every proposal route, nothing retried", async t => {
+  t.mock.method(console, "error", () => {});
+  clean(); cleanProposals();
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  assert.equal((await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })).status, 200);
+  fake.proposals.push(mine({ state: "approved" }));
+  assert.deepEqual((await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie }))).body, { ok: true, value: { revoked: 1 } });
+  // The platform now refuses every call under the ended consent, as its app route does.
+  const forbidden = { ok: false as const, kind: "forbidden" as const, status: 403 as const, error: "No live owner consent covers this Organization and agent" };
+  const { list, get } = fake.platform.proposals;
+  fake.platform.proposals.list = async (organization, agent) => { fake.calls.push(`proposals.list ${organization} ${agent}`); return forbidden; };
+  fake.platform.proposals.get = async (organization, agent, id) => { fake.calls.push(`proposals.get ${organization} ${agent} ${id}`); return forbidden; };
+  t.after(() => { Object.assign(fake.platform.proposals, { list, get }); });
+  const id = "a".repeat(32);
+  for (const [method, path, body] of [["GET", "/api/agents/portfolio/proposals", undefined], ["GET", `/api/agents/portfolio/proposals/${id}`, undefined],
+    ["POST", `/api/agents/portfolio/proposals/${id}/execute`, {}], ["POST", `/api/agents/portfolio/proposals/${id}/approve`, signedVerdict(mine(), "approve")],
+    ["POST", `/api/agents/portfolio/proposals/${id}/reject`, signedVerdict(mine(), "reject")]] as const) {
+    fake.calls.length = 0;
+    assert.deepEqual(await json(await call(method, path, { cookie, ...(body && { body }) })), { status: 409, body: { ok: false, kind: "refused", code: "not_connected" } }, path);
+    assert.equal(fake.calls.filter(line => line.startsWith("proposals.")).length, 1, `${path}: one call, never retried`);
+  }
+  assert.equal(relayed("execute"), 0, "nothing was sent to execute");
+  assert.deepEqual((await json(await call("GET", "/api/agents/portfolio/consent", { cookie }))).body.value, { consent: null }, "the page shows Connect");
+});
