@@ -74,30 +74,30 @@ owner_approval_above_usd?: string   // a decimal string; with owner_approval fal
 - **`authorize`:** the approval purpose today accepts USDC transfers to agreed payees; it also accepts a withdrawal to an agreed withdrawal recipient.
 - **Refused** with `approval_unverifiable` (**new**) when the hash or `destination_asset` doesn't match.
 
-## 5. Asset share and a cash floor (platform, strategy)
+## 5. A cash floor and asset share (platform, strategy)
 
-**Need.** ADR 3's rules map has no platform enforcement for venue exposure or the six-month cash floor. Ballast refuses them, but the platform would send a swap they refuse: they hold back an honest app, not a mistaken or compromised one.
+**Need.** ADR 3's rules map has no platform enforcement for the six-month cash floor or venue exposure. Ballast refuses them, but the platform would send a swap they refuse: they hold back an honest app, not a mistaken or compromised one.
 
-**Owner: the platform, in the strategy.** Like contract 1, these are limits the platform can enforce alone, on its own valuation, without the provider.
+**Where it stands.** MultiAgency/platform#23 asked this for the cash floor, and the platform's planning answer is the strategy: `cashFloor: { usd, assets }`, checked in `authorize.ts` on every send path (scheduled autopilot, Run now, `executePlan`, any app's proposals), refused with `cash_floor_exceeded`, not built yet. The policy can't carry it: the provider's has no balance floor and rejects unknown fields. This contract takes #23's design and adds two things to it.
 
-**Contract.** Two optional strategy fields:
+**Contract.** #23's field, and one more beside it:
 
 ```ts
-shareMaxBps?: { [asset: string]: number }   // integer 0–10 000: the most of the book's USD value an asset may reach
-minBalanceUsd?: { [asset: string]: string } // a decimal string: the least USD value an asset may fall to
+cashFloor?: { usd: string; assets: string[] }   // #23: the least USD value the named stablecoins may fall to
+shareMaxBps?: { [asset: string]: number }       // integer 0–10 000: the most of the book's USD value an asset may reach
 ```
 
-- **Only against the limit, never against the way back,** as Ballast's own checks (`packages/core/src/exposure.ts`): a swap that raises an asset's share is refused if the share would end above its cap; a swap that lowers an asset's balance is refused if the balance would end under its floor. A swap that moves back toward a limit already passed, a trim sell after a rally or a buy of USDC under its floor, is never refused by these. ADR 3's L3 risk-reducing sells stay possible.
-- **Venue exposure** is `shareMaxBps` on the volatile asset: while the agent has one venue, ADR 3 sets the venue cap to the profile's volatile ceiling (30, 50 or 70%). **The cash floor** is `minBalanceUsd` on USDC.
-- **Refused** with `asset_share_exceeded` and `below_minimum_balance` (both **new**), or `valuation_unavailable` when the book can't be valued, so it fails closed.
-- **Swaps only** in this contract, autopilot, app plans and proposals alike. Whether the floor should also hold a payout is open below.
+- **Only against the limit, never against the way back.** #23's check keeps cash at or above the floor after the swap; read literally, that refuses a buy of USDC while cash is under the floor, the swap that restores it. As Ballast's own checks (`packages/core/src/exposure.ts`): a swap that lowers cash is refused if cash would end under the floor, and a swap that raises an asset's share is refused if the share would end above its cap. A swap back toward a limit already passed, a buy of USDC under the floor or a trim sell after a rally, is never refused by these, so ADR 3's L3 risk-reducing sells stay possible.
+- **Asset share is new to #23,** which left venue exposure until a venue was defined. ADR 3 now defines it: while the agent has one venue, the venue cap is the profile's volatile ceiling (30, 50 or 70%), so it's `shareMaxBps` on wNEAR.
+- **Refused** with #23's `cash_floor_exceeded` and `asset_share_exceeded` (**new**), or `valuation_unavailable` when the book can't be valued, so it fails closed.
+- **Swaps only,** as #23's check is. Whether the floor should also hold a payout is open below.
 - **Existing strategies are unchanged:** absent fields mean today's behaviour and leave the digest as it is.
 
 ## After agreement
 
-One issue for each agreed contract: in MultiAgency/platform for 1, 3, 4 and 5, and with the provider for 2, linked here and on #62. When one lands and is published, this app moves the matching check from "Ballast only" to "Ballast and the platform" in ADR 3's rules map, and `docs/sdk-report.md` marks it resolved.
+One issue for each agreed contract: in MultiAgency/platform for 1, 3 and 4, contract 5 on platform#23, and with the provider for 2, linked here and on #62. When one lands and is published, this app moves the matching check from "Ballast only" to "Ballast and the platform" in ADR 3's rules map, and `docs/sdk-report.md` marks it resolved.
 
 ## Open
 
-- **The cash floor and payouts:** whether `minBalanceUsd` should also hold a payout that would cross it. ADR 3 says "nothing may spend below the floor"; contract 5 binds swaps only until that's decided.
+- **The cash floor and payouts:** whether `cashFloor` should also hold a payout that would cross it. ADR 3 says "nothing may spend below the floor"; contract 5 binds swaps only until that's decided.
 - **Contract 3's window,** once platform#20 has an answer.
