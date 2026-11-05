@@ -4,19 +4,13 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { writeFileSync } from "node:fs";
-import { createServer as createHttpServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { createCredential } from "../src/credential.ts";
-import { createServer, routes } from "../src/http.ts";
+import { routes } from "../src/http.ts";
 import { loadPage } from "../src/page.ts";
 import { createPlatform } from "../src/platform.ts";
-import { createSessions } from "../src/sessions.ts";
-import { createSignIn } from "../src/signin.ts";
-import { createDaoRequests } from "../src/dao-requests.ts";
-import { standInDaos } from "../src/dao.ts";
-import { standInKeyLookup } from "../src/keys.ts";
-import { HOST, ORIGIN, wallet } from "./fakes.ts";
+import { ORIGIN, wallet } from "./fakes.ts";
+import { testServer } from "./test-server.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const secret = randomBytes(32).toString("base64url").slice(0, 43);
@@ -42,16 +36,9 @@ test("the browser never sees the credential: no tap_ value in any answer, header
   writeFileSync(join(dir, "app-credential"), tap, { mode: 0o600 });
   writeFileSync(join(dir, "index.html"), "<!doctype html><title>Treasury proposals</title>");
   const seen: { url: string; headers: Headers }[] = [];
-  const server = createHttpServer(createServer({
-    platform: createPlatform({ origin: "https://platform.test", credential: createCredential(join(dir, "app-credential")), timeoutMs: 1_000, fetch: platformFetch(seen) }),
-    signIn: createSignIn({ recipient: HOST, ttlMs: 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
-    sessions: createSessions({ idleMs: 60_000, maxMs: 120_000 }), publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0,
-    ownerRequestsPerMinute: 1_000, daoFilingsPerDay: 1_000, daos: standInDaos({}),
-    daoRequests: await createDaoRequests(join(dir, "dao-requests.json")), audit: { append: async () => {} }, consentsPerDay: 1_000, keyLookup: async () => "full", page: await loadPage(dir),
-  }));
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const { server, base } = await testServer({ wallets: [owner], page: await loadPage(dir),
+    platform: createPlatform({ origin: "https://platform.test", credential: createCredential(join(dir, "app-credential")), timeoutMs: 1_000, fetch: platformFetch(seen) }) });
   t.after(() => server.close());
-  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const write = { origin: ORIGIN, "content-type": "application/json" };
   const answers: string[] = [];
   const send = async (method: string, path: string, headers: Record<string, string>, body?: unknown) => {

@@ -1,18 +1,11 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer as createHttpServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import type { Server } from "node:http";
 import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
-import { createDaoRequests } from "../src/dao-requests.ts";
 import { standInDaos, type Policy } from "../src/dao.ts";
-import { createServer } from "../src/http.ts";
-import { standInKeyLookup } from "../src/keys.ts";
-import { createSessions } from "../src/sessions.ts";
-import { createSignIn } from "../src/signin.ts";
-import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
-import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { fakePlatform, ORIGIN, wallet } from "./fakes.ts";
+import { testServer } from "./test-server.ts";
 
 const DAO = "agentic.sputnik-dao.near", DIGEST = `sha256:${"a".repeat(64)}`;
 const owner = wallet("owner.near"), council = wallet("council.near");
@@ -27,22 +20,9 @@ const cookies: Record<string, string> = {};
 let server: Server, base: string;
 
 before(async () => {
-  server = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
-      keyLookup: standInKeyLookup(Object.fromEntries([owner, council].map(who => [who.accountId, [who.publicKey]]))) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
-    audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos: standInDaos({ [DAO]: policy }, { [DAO]: [] }), daoRequests: await createDaoRequests(join(tempDir("treasury-grant-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  for (const who of [owner, council]) {
-    const issued = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
-    cookies[who.accountId] = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(who.sign(issued.value)) }))
-      .headers.get("set-cookie")!.split(";")[0]!;
-  }
+  const started = await testServer({ platform: fake.platform, wallets: [owner, council], audited: audit, daos: standInDaos({ [DAO]: policy }, { [DAO]: [] }) });
+  ({ server, base } = started);
+  for (const who of [owner, council]) cookies[who.accountId] = await started.signIn(who);
 });
 after(() => server.close());
 

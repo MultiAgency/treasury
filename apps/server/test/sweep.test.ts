@@ -1,19 +1,11 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer as createHttpServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import type { Server } from "node:http";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
-import { createDaoRequests } from "../src/dao-requests.ts";
-import { standInDaos } from "../src/dao.ts";
-import { createServer } from "../src/http.ts";
-import { standInKeyLookup } from "../src/keys.ts";
-import { createSessions } from "../src/sessions.ts";
-import { createSignIn } from "../src/signin.ts";
-import { BIG, fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
-import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { BIG, fakePlatform, ORIGIN, wallet } from "./fakes.ts";
+import { testServer } from "./test-server.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
 const fake = fakePlatform({ portfolio: "owner.near", theirs: "intruder.near" });
@@ -21,20 +13,9 @@ const audit: AuditEntry[] = [];
 let server: Server, base: string, cookie: string;
 
 before(async () => {
-  server = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
-      keyLookup: standInKeyLookup(Object.fromEntries([owner, intruder].map(who => [who.accountId, [who.publicKey]]))) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
-    audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-sweep-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const issued = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
-  cookie = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(owner.sign(issued.value)) }))
-    .headers.get("set-cookie")!.split(";")[0]!;
+  const started = await testServer({ platform: fake.platform, wallets: [owner, intruder], audited: audit });
+  ({ server, base } = started);
+  cookie = await started.signIn(owner);
 });
 after(() => server.close());
 
