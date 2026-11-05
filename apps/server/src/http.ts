@@ -89,10 +89,10 @@ type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string }
  * signs (`owner/prepare`: the owner, or a DAO member who may file its proposals, which the DAO contract checks too);
  * `execute` asking for a proposal's execution.
  */
-export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep" | "propose" | "enable" | "stop" | "tick";
+export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep" | "propose" | "enable" | "stop" | "tick" | "save";
 const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute",
   deposit: "deposit", link: "treasury/link", sweep: "sweep", propose: "proposals/create",
-  enable: "autopilot/enable", stop: "autopilot/stop", tick: "autopilot/tick" };
+  enable: "autopilot/enable", stop: "autopilot/stop", tick: "autopilot/tick", save: "strategy/save" };
 type Route = { method: "GET" | "POST" | "DELETE"; path: string; handle(call: Call, context: Context): Promise<Reply> }
   & ({ access: "public" } | { access: "session" } | { access: "owner" | "owner-fresh"; needs: Need });
 
@@ -837,6 +837,33 @@ export const routes: Route[] = [
       const { agent, owner } = identity!;
       const answer = await relay(() => platform.autopilot.strategy(organizationOf(owner), agent), agent);
       return answer.ok ? ok(answer.value) : readFailure(answer, agent, "strategy/get");
+    },
+  },
+  {
+    /**
+     * Saves a strategy over the one the owner saw (`expectedDigest`), sent once and recorded before and after. The
+     * platform turns autopilot off and the held grant no longer binds it, so the owner authorizes it next. A strategy
+     * changed meanwhile is `strategy_changed`; any other refusal `strategy_refused` (its text logged); after a lost answer
+     * the page reads the strategy again before anything else.
+     */
+    method: "POST", path: "/api/agents/:agent/strategy", access: "owner-fresh", needs: "save",
+    async handle({ body, account, identity }, { platform, audit }) {
+      const { agent, owner } = identity!, organization = organizationOf(owner);
+      const input = parse(contract.strategySaveRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "strategy-save", agent, stage: "attempt" });
+      const saved = await relay(() => platform.autopilot.save(organization, agent, input), agent);
+      let reply: Reply;
+      if (saved.ok) reply = ok({ digest: saved.value.digest });
+      else if (saved.kind === "forbidden") reply = refused(409, "not_connected");
+      else if (saved.kind === "refused") {
+        // Told apart by reading the strategy anew, never by the platform's text: changed since the owner saw it, or refused.
+        const now = await relay(() => platform.autopilot.strategy(organization, agent), agent);
+        reply = now.ok && now.value.digest !== input.expectedDigest ? refused(409, "strategy_changed") : refused(409, "strategy_refused");
+      } else reply = unavailable();
+      if (!saved.ok && saved.kind !== "forbidden") log("platform_strategy_failed", { agent, ...failure(saved) });
+      await audit.append({ who: account!, action: "strategy-save", agent, stage: "result", answer: audited(saved, reply) });
+      return reply;
     },
   },
   {

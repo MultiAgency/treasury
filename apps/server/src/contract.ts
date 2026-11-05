@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission, ownerOutputs, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
+import { appConsentSubmission, ASSETS, ownerOutputs, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
 import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
 
@@ -205,6 +205,21 @@ export const enableRequest = z.strictObject({ expectedDigest: z.string().regex(/
 /** What a run now reported, in the agent's words: what it executed or why it didn't. */
 export const tickRead = z.strictObject({ summary: z.string() });
 export const autopilotChanged = z.strictObject({});
+/**
+ * A strategy as the platform takes one (its `Strategy`): every managed asset's target in basis points, adding up to
+ * 10 000; the smallest swap worth making and the most a swap may cost; and autopilot's interval and ceiling a run.
+ */
+export const strategyInput = z.strictObject({
+  targetBps: z.record(z.enum(Object.values(ASSETS) as [string, ...string[]]), z.number().int().min(0).max(10_000))
+    .refine(targets => Object.values(targets).reduce((sum, bps) => sum + bps, 0) === 10_000, "targets must add up to 10 000 bps"),
+  minLegUsd: z.number().int().min(1),
+  maxCostBps: z.number().int().min(1).max(1_000),
+  autopilot: z.strictObject({ everyMin: z.number().int().min(5).max(1_440), maxUsd: z.number().int().min(0).max(1_000_000) }),
+});
+/** A strategy saved over the one the owner saw, by its digest: refused if it has changed since. */
+export const strategySaveRequest = z.strictObject({ strategy: strategyInput, expectedDigest: enableRequest.shape.expectedDigest });
+/** The saved strategy's digest, which a grant then binds. */
+export const strategySaved = z.strictObject({ digest: z.string() });
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
 /** The NEP-413 intent a wallet owner signs in their wallet, exactly as the platform prepared it. */
@@ -242,7 +257,7 @@ export const operationRead = z.strictObject({ correlationId: z.string(), at: z.s
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, a funding code: `dao_funding_fixed`, `funding_refused`, an autopilot code: `autopilot_refused`, `autopilot_not_stopped`, or a grant code: `strategy_changed`, `autopilot_on`, `approve_only`, `grant_pending`, `owner_not_allowed`, `grant_refused`, `no_grant`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, a funding code: `dao_funding_fixed`, `funding_refused`, an autopilot code: `autopilot_refused`, `autopilot_not_stopped`, a strategy code: `strategy_refused`, or a grant code: `strategy_changed`, `autopilot_on`, `approve_only`, `grant_pending`, `owner_not_allowed`, `grant_refused`, `no_grant`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */

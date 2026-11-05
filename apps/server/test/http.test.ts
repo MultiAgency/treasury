@@ -872,6 +872,8 @@ test("each agent route asks for what it needs: a member who may only file is ref
     enable: { council: true, proposer: false, reader: false },
     stop: { council: true, proposer: false, reader: false },
     tick: { council: true, proposer: false, reader: false },
+    // Saving the strategy is a policy-level act for a DAO: only members who may file and vote on policy changes.
+    save: { council: false, proposer: false, reader: false },
   };
   for (const route of routes.filter(route => route.access === "owner" || route.access === "owner-fresh")) {
     const need = needs[`${route.method} ${route.path}`]!;

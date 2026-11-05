@@ -102,8 +102,10 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * Each agent's strategy and schedule, as the platform keeps them: autopilot off, the strategy bound by the held grant
    * unless `unbound` says otherwise. `autopilotAnswers` queues answers an autopilot call gives instead; an Error is thrown.
    */
-  const schedules: Record<string, { on: boolean; unbound?: boolean }> = {};
-  const autopilotAnswers: Partial<Record<"strategy" | "status" | "enable" | "stop" | "tick", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
+  const schedules: Record<string, { on: boolean; unbound?: boolean; digest?: string }> = {};
+  /** The strategy each agent's owner last saved; the default before any save. */
+  const savedStrategies: Record<string, { targetBps: Record<string, number>; minLegUsd: number; maxCostBps: number; autopilot: { everyMin: number; maxUsd: number } }> = {};
+  const autopilotAnswers: Partial<Record<"strategy" | "save" | "status" | "enable" | "stop" | "tick", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const DIGEST = `sha256:${"a".repeat(64)}`;
   const autopilotCall = <T,>(name: keyof typeof autopilotAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`autopilot.${name}`, organization, agent, ...rest].join(" "));
@@ -379,11 +381,19 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     },
     autopilot: {
       strategy: async (organization, agent) => autopilotCall("strategy", organization, agent, [], () => {
-        const { on, unbound } = schedule(agent);
-        return { strategy: { targetBps: { "nep141:wrap.near": 10_000 }, minLegUsd: 10, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 100 } },
-          digest: DIGEST, grantSuffix: "a".repeat(16), executor: true, on, grantMatches: !unbound, unresolved: 0, grant: null,
+        const { on, unbound, digest = DIGEST } = schedule(agent);
+        return { strategy: savedStrategies[agent] ?? { targetBps: { "nep141:wrap.near": 10_000 }, minLegUsd: 10, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 100 } },
+          digest, grantSuffix: "a".repeat(16), executor: true, on, grantMatches: !unbound, unresolved: 0, grant: null,
           readiness: unbound ? { state: "authorization-required", reasons: ["The owner must issue a matching grant before this strategy can act on its schedule."], canEnable: false }
             : { state: on ? "ready" : "off", reasons: [], canEnable: !on }, observedAt: new Date().toISOString() };
+      }),
+      save: async (organization, agent, input) => autopilotCall("save", organization, agent, [input.expectedDigest], () => {
+        const current = schedule(agent);
+        current.on = false;
+        current.unbound = true;
+        current.digest = `sha256:${String(Object.keys(savedStrategies).length + 1).padStart(64, "b")}`;
+        savedStrategies[agent] = input.strategy;
+        return { strategy: input.strategy, digest: current.digest, on: false };
       }),
       status: async (organization, agent) => autopilotCall("status", organization, agent, [], () =>
         ({ on: schedule(agent).on, everyMin: 60, maxUsd: 100, lastRun: null, nextRun: null })),

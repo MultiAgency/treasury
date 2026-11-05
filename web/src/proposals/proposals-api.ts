@@ -122,6 +122,9 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         grantStatus: (id: string) => call(contract.ownerActionStatus, `${base}/grant/${correlation.parse(id)}`),
         /** The saved strategy and whether the held grant binds it; the schedule. */
         strategy: () => call(contract.strategyRead, `${base}/strategy`),
+        /** Saves a strategy over the one the owner saw, once: autopilot turns off, and it needs authorizing again. */
+        saveStrategy: (strategy: z.input<typeof contract.strategyInput>, expectedDigest: string) =>
+          call(contract.strategySaved, `${base}/strategy`, { method: "POST", body: contract.strategySaveRequest.parse({ strategy, expectedDigest }) }),
         autopilot: () => call(contract.autopilotRead, `${base}/autopilot`),
         /** Autopilot on for the strategy digest the owner saw, off, or one run now: each sent once, never again for a lost answer. */
         enableAutopilot: (expectedDigest: string) =>
