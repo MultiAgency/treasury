@@ -49,6 +49,7 @@ const READS = [
   ["held", `${agent}/held`, contract.heldRead],
   ["unresolved", `${agent}/unresolved`, contract.unresolvedRead],
   ["runs", `${agent}/runs`, contract.runsRead],
+  ["account", `${agent}/account`, contract.accountRead],
 ] as const;
 
 test("the overview reaches the page under the owner's Organization, every amount an exact decimal string, a balance past 2^53 included", async () => {
@@ -64,7 +65,7 @@ test("the overview reaches the page under the owner's Organization, every amount
   assert.deepEqual(fake.calls.filter(made => made.startsWith("reads.")), ["reads.overview owner--near portfolio"]);
 });
 
-test("activity, held, unresolved and the autopilot's runs reach the page as the platform answers them, a bigint in a request included", async () => {
+test("activity, held, unresolved, the autopilot's runs and the account reach the page as the platform answers them, a bigint in a request included", async () => {
   const request = { amount: BIG, to: "payee.near" };
   fake.reads.activity = [{ at: "2026-11-05T00:00:00.000Z", kind: "swap", request, correlationId: "c1", status: "SUCCESS" }];
   fake.reads.held = [{ at: "2026-11-05T00:00:00.000Z", kind: "pay", request, correlationId: "c2", approvalId: "a2" }];
@@ -74,7 +75,7 @@ test("activity, held, unresolved and the autopilot's runs reach the page as the 
     const { status, body, text } = await get(path);
     assert.equal(status, 200, `${name}: ${text}`);
     schema.parse(body.value);
-    if (name !== "runs") assert.equal(body.value[0].request.amount, String(BIG), name);
+    if (name !== "runs" && name !== "account") assert.equal(body.value[0].request.amount, String(BIG), name);
   }
   assert.deepEqual((await get(`${agent}/runs`)).body.value, { ticks: [], corrupt: [3] });
 });

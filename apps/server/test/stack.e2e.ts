@@ -251,3 +251,32 @@ test("the owner's reads reach the stack's portfolio under their consent: overvie
   const runs = await read("runs", contract.runsRead);
   assert.ok(Array.isArray(runs.ticks));
 });
+
+test("the owner links their own account to fund the agent, reads it back, gets a USDC deposit address, and unlinks it", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  const treasury = async () => {
+    const response = await get(`${agent}/treasury`, cookie);
+    const body = await response.json() as { value: unknown };
+    assert.equal(response.status, 200, JSON.stringify(body));
+    return contract.treasuryRead.parse(body.value).treasury;
+  };
+  if (await treasury()) assert.equal((await post(`${agent}/treasury/unlink`, {}, cookie)).status, 200);
+  assert.equal(await treasury(), null);
+  const linked = await post(`${agent}/treasury/link`, { accountId: owner }, cookie);
+  assert.equal(linked.status, 200, await linked.clone().text());
+  assert.equal((await treasury())?.accountId, owner);
+  // The stack's simulated provider takes USDC deposits only, and answers the agent's own wallet as the address
+  // (platform 35683b2, test/e2e/provider.mjs): NEAR and a fresh address each time are the unit tests'.
+  const deposit = await post(`${agent}/deposit`, { asset: "USDC" }, cookie);
+  const body = await deposit.json() as { value: unknown };
+  assert.equal(deposit.status, 200, JSON.stringify(body));
+  contract.depositRead.parse(body.value);
+  assert.equal((await post(`${agent}/treasury/unlink`, {}, cookie)).status, 200);
+  assert.equal(await treasury(), null);
+  const account = await get(`${agent}/account`, cookie);
+  assert.equal(account.status, 200);
+  contract.accountRead.parse(((await account.json()) as { value: unknown }).value);
+});

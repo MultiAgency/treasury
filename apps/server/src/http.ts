@@ -86,8 +86,9 @@ type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string }
  * signs (`owner/prepare`: the owner, or a DAO member who may file its proposals, which the DAO contract checks too);
  * `execute` asking for a proposal's execution.
  */
-export type Need = "read" | "sign" | "file" | "execute";
-const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute" };
+export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link";
+const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute",
+  deposit: "deposit", link: "treasury/link" };
 type Route = { method: "GET" | "POST" | "DELETE"; path: string; handle(call: Call, context: Context): Promise<Reply> }
   & ({ access: "public" } | { access: "session" } | { access: "owner" | "owner-fresh"; needs: Need });
 
@@ -155,13 +156,41 @@ function readFailure(answer: { ok: false; kind: string }, agent: string, read: s
 /** An ID from the address for a read: a run's tick, a proposal's `requestId`, an operation's `correlationId`. */
 const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
 /** A route answering one of the agent's owner reads as the platform answers it (#61). */
-const readRoute = (path: string, read: "overview" | "activity" | "held" | "unresolved" | "runs"): Route => ({
+const readRoute = (path: string, read: "account" | "overview" | "activity" | "held" | "unresolved" | "runs"): Route => ({
   method: "GET", path, access: "owner", needs: "read",
   async handle({ identity }, { platform }) {
     const { agent, owner } = identity!;
     const call = platform.reads[read] as (organization: string, agent: string) => Promise<{ ok: true; value: unknown } | { ok: false; kind: string }>;
     const answer = await relay(() => call(organizationOf(owner), agent), agent);
     return answer.ok ? ok(answer.value) : readFailure(answer, agent, read);
+  },
+});
+
+/** What a deposit address is asked for by: the asset the page names, as the platform takes it. NEAR is wrapped, so it funds wNEAR. */
+const DEPOSIT_ASSETS = { USDC: "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", NEAR: "nep141:wrap.near" } as const;
+/**
+ * A wallet owner's change to the agent's funding account, relayed once and recorded before the platform is asked and
+ * after: link an account, unlink it, or say whether it's a confidential DAO. A DAO agent's funding account is the DAO,
+ * fixed at setup, and the platform refuses these under a DAO's consent: a member is refused here (`dao_funding_fixed`)
+ * whatever their roles, since one with every DAO permission passes `mayCall`. The platform's refusal is
+ * `funding_refused` (its text is logged, never forwarded); after a lost answer the page reads the account again before
+ * anything else.
+ */
+const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unlink" | "confidential", body: B,
+  change: (platform: Platform, organization: string, agent: string, input: z.output<B>) => Promise<{ ok: true } | { ok: false; kind: string; status?: number }>): Route => ({
+  method: "POST", path, access: "owner-fresh", needs: "link",
+  async handle({ body: sent, account, identity }, { platform, audit }) {
+    const { agent, owner, signer } = identity!;
+    if (signer === "dao") return refused(409, "dao_funding_fixed");
+    const input = parse(body, sent);
+    if (input === undefined) return refused(400, "bad_request");
+    await audit.append({ who: account!, action, agent, stage: "attempt" });
+    const answer = await relay(() => change(platform, organizationOf(owner), agent, input), agent);
+    const reply = answer.ok ? ok({}) : answer.kind === "forbidden" ? refused(409, "not_connected")
+      : answer.kind === "refused" ? refused(409, "funding_refused") : unavailable();
+    if (!answer.ok && answer.kind !== "forbidden") log("platform_funding_failed", { agent, action, ...failure(answer) });
+    await audit.append({ who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
+    return reply;
   },
 });
 
@@ -630,11 +659,44 @@ export const routes: Route[] = [
       return ok({ proposal: read.value, ...(identity!.signer === "dao" && { vote: waiting ? await daoView(waiting, identity!, context) : null }) });
     },
   },
+  readRoute("/api/agents/:agent/account", "account"),
   readRoute("/api/agents/:agent/overview", "overview"),
   readRoute("/api/agents/:agent/activity", "activity"),
   readRoute("/api/agents/:agent/held", "held"),
   readRoute("/api/agents/:agent/unresolved", "unresolved"),
   readRoute("/api/agents/:agent/runs", "runs"),
+  {
+    // The account linked to fund the agent, with its balances and, for a DAO, its members: null when none is linked.
+    method: "GET", path: "/api/agents/:agent/treasury", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.funding.treasury(organizationOf(owner), agent), agent);
+      return answer.ok ? ok({ treasury: answer.value }) : readFailure(answer, agent, "treasury/get");
+    },
+  },
+  {
+    /**
+     * A fresh one-time deposit address for USDC, or for NEAR (wrapped, so wNEAR). Asking again gives another address,
+     * so a lost answer is safe to ask again for; an address is never reused. Recorded before the platform is asked and after.
+     */
+    method: "POST", path: "/api/agents/:agent/deposit", access: "owner-fresh", needs: "deposit",
+    async handle({ body, account, identity }, { platform, audit }) {
+      const { agent, owner } = identity!;
+      const input = parse(contract.depositRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "deposit", agent, stage: "attempt" });
+      const answer = await relay(() => platform.funding.deposit(organizationOf(owner), agent, DEPOSIT_ASSETS[input.asset]), agent);
+      const reply = answer.ok ? ok({ deposit: answer.value }) : readFailure(answer, agent, "deposit");
+      await audit.append({ who: account!, action: "deposit", agent, subject: answer.ok ? answer.value.correlationId : undefined, stage: "result", answer: audited(answer, reply) });
+      return reply;
+    },
+  },
+  fundingChange("/api/agents/:agent/treasury/link", "link", contract.linkRequest,
+    (platform, organization, agent, { accountId }) => platform.funding.link(organization, agent, accountId)),
+  fundingChange("/api/agents/:agent/treasury/unlink", "unlink", contract.unlinkRequest,
+    (platform, organization, agent) => platform.funding.unlink(organization, agent)),
+  fundingChange("/api/agents/:agent/treasury/confidential", "confidential", contract.confidentialRequest,
+    (platform, organization, agent, { confidential }) => platform.funding.setConfidential(organization, agent, confidential)),
   {
     // One recorded run of the autopilot, by its tick ID (`runs` lists them).
     method: "GET", path: "/api/agents/:agent/runs/:id", access: "owner", needs: "read",

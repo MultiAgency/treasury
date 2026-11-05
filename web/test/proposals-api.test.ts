@@ -171,3 +171,29 @@ test("the owner reads: each a GET of the agent's route, parsed by the server's c
   assert.throws(() => agent.request("../consent"));
   assert.throws(() => agent.recording("../consent"));
 });
+
+test("funding: the account and the funding account as GETs, a deposit address and each change to the funding account as one JSON POST", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const linked = { accountId: "funds.near", dao: null, balances: { near: "1", usdc: "2" }, confidential: false, payees: [] };
+  const deposit = { correlationId: "d1", address: "a".repeat(64), memo: null, minAmount: null, expiresAt: null };
+  server.answer(`GET ${base}/account`, ok({ agentId: "id-portfolio", executor: true, wallet: "portfolio.near", grant: null, stagedGrant: null }));
+  server.answer(`GET ${base}/treasury`, ok({ treasury: linked }));
+  server.answer(`POST ${base}/deposit`, ok({ deposit }));
+  for (const path of ["link", "unlink", "confidential"]) server.answer(`POST ${base}/treasury/${path}`, ok({}));
+
+  const account = await agent.account();
+  assert.equal(account.ok && account.value.wallet, "portfolio.near");
+  assert.deepEqual(await agent.treasury(), { ok: true, value: { treasury: linked } });
+  assert.deepEqual(await agent.deposit("NEAR"), { ok: true, value: { deposit } });
+  assert.deepEqual(await agent.link("funds.near"), { ok: true, value: {} });
+  assert.deepEqual(await agent.unlink(), { ok: true, value: {} });
+  assert.deepEqual(await agent.setConfidential(true), { ok: true, value: {} });
+  assert.deepEqual(server.sent.filter(request => request.method === "POST").map(request => [request.path, JSON.parse(request.body)]), [
+    [`${base}/deposit`, { asset: "NEAR" }],
+    [`${base}/treasury/link`, { accountId: "funds.near" }],
+    [`${base}/treasury/unlink`, {}],
+    [`${base}/treasury/confidential`, { confidential: true }],
+  ]);
+  assert.throws(() => agent.link("Not An Account"), "held to the server's schema before anything is sent");
+  assert.throws(() => agent.deposit("ETH" as "USDC"));
+});

@@ -37,7 +37,8 @@ export function expiryProblem(expiresAt: string | null, now: number) {
 }
 
 /**
- * Reads the transaction `treasury/fund` prepared, and answers the transfer it makes, or why it must not be signed: it
+ * Reads a funding transaction (the one `treasury/fund` prepared, or the SDK's `fundingTransaction` for a `deposit`
+ * address), and answers the transfer it makes, or why it must not be signed: it
  * must pay exactly `amount` of `asset` into the deposit address it came with (wNEAR wrapped from the same NEAR amount),
  * with nothing else in it but one storage registration for that address. A deposit address that needs a memo, a
  * minimum above the amount, or that expires within the margin can't be paid by this transaction. A DAO pays only once
