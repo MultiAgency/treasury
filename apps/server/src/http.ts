@@ -43,8 +43,8 @@ export type Deps = {
   /** Where relayed owner actions are recorded: each attempt before the platform is asked, and its result. */
   audit: Audit;
   /**
-   * New consents a signed-in account may relay a day. The platform caps a deployment's unexpired consents, revoked ones
-   * included, across every owner, so one account reconnecting in a loop could otherwise fill it for all.
+   * New consents a signed-in account may relay a day. The platform caps a deployment's live consents at 1,024, every
+   * owner's together; this server revokes an agent's older consents once a new one is stored.
    */
   consentsPerDay: number;
   /** DAO requests (consents and votes) a signed-in member may file a day: the platform allows a deployment 256, shared. */

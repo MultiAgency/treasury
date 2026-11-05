@@ -58,7 +58,7 @@ const Settings = z.object({
   CHALLENGES_PER_MINUTE: z.coerce.number().int().positive().default(10),
   /** Owner-route requests per signed-in account a minute; each may cost a call against the platform's shared quota. */
   OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
-  /** New consents per signed-in account a day: the platform caps a deployment's unexpired consents, revoked ones included. */
+  /** New consents per signed-in account a day: the platform caps a deployment's live consents at 1,024, every owner's together. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
   /**
    * DAO requests (consents and votes) a signed-in member may file a day: the platform allows a deployment 256 a day,

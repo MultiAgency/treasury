@@ -483,7 +483,7 @@ test("a signed consent without owner, as an older page's, is still relayed", asy
   assert.deepEqual(stored.body.value.consent.scopes, ["read", "treasury"]);
 });
 
-test("new consents are limited per account a day, since even revoked ones count against the deployment's cap", async t => {
+test("new consents are limited per account a day", async t => {
   const counted = fakePlatform({ portfolio: "owner.near" });
   const limited = await testServer({ platform: counted.platform, wallets: [owner], consentsPerDay: 1 });
   t.after(() => limited.server.close());

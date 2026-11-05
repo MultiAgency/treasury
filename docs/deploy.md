@@ -33,7 +33,7 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 | `FASTNEAR_API_KEY` | FastNEAR's key (secret): sign-in's key lookups and DAO policy reads, at its keyed rate |
 
 `PORT` is Railway's. `TREASURY_PAGE_DIR` is set by the image. `watch` runs only with `TREASURY_WATCH_FILE` and
-`TREASURY_REQUESTS_FILE` (on `/data`); the README lists the rest, each with a default.
+`TREASURY_REQUESTS_FILE` (on `/data`); `.env.example` lists the rest, each with a default.
 
 ## The credential
 
