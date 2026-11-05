@@ -173,6 +173,13 @@ test("credentials are refused by their exact names, in any case or separator, an
     await assert.rejects(audit.append({ ...entry(1), [key]: "x" }), /no field for a credential/, key);
 });
 
+test("any name ending in token is refused but token itself, the asset: authToken, apiToken, csrfToken and the rest", async () => {
+  const audit = open(fresh(), () => T0);
+  await audit.check();
+  for (const key of ["authToken", "apiToken", "csrfToken", "auth_token", "API-TOKEN", "nextPageToken"])
+    await assert.rejects(audit.append({ ...entry(1), [key]: "x" }), /no field for a credential/, key);
+});
+
 test("an append whose line reached the disk before it failed doesn't reuse its sequence number (#90)", async () => {
   const file = fresh();
   let failNext = false;

@@ -53,15 +53,15 @@ export function recordHash(record: Omit<ChainRecord, "hash">): string {
 
 /**
  * Field names that must never appear in an entry: credentials named exactly, compared without case, `_` or `-`, and any
- * name ending in one (`ownerSignature`). Not `token` or `seed` alone: here a token is an asset (`tokenIn`, the SDK's
- * `PROPOSAL_TOKENS`) and a seed is a PRNG's (`ReplayConfig.seed`). A wallet's seed is `mnemonic` or `seedPhrase`.
+ * name ending in one (`ownerSignature`), and any name ending in `token` (`accessToken`, `authToken`, `csrfToken`). Not
+ * `token` alone, nor `seed`: here a token is an asset (`token`, `tokens`, `tokenIn`, the SDK's `PROPOSAL_TOKENS`) and a
+ * seed is a PRNG's (`ReplayConfig.seed`). A wallet's seed is `mnemonic` or `seedPhrase`.
  */
 const SECRET_NAMES = ["signature", "signatures", "credential", "credentials", "secret", "secrets", "password", "passphrase",
-  "privatekey", "secretkey", "cookie", "cookies", "authorization", "mnemonic", "seedphrase", "apikey", "accesstoken",
-  "sessiontoken", "refreshtoken", "bearertoken", "idtoken"];
+  "privatekey", "secretkey", "cookie", "cookies", "authorization", "mnemonic", "seedphrase", "apikey"];
 const isSecretKey = (key: string) => {
   const name = key.toLowerCase().replace(/[_-]/g, "");
-  return SECRET_NAMES.some(secret => name === secret || name.endsWith(secret));
+  return SECRET_NAMES.some(secret => name === secret || name.endsWith(secret)) || (name.endsWith("token") && name !== "token");
 };
 /** The shape of this deployment's credentials and of a full key. An entry holds hashes, not secrets. */
 const SECRET_VALUE = /\b(?:tap_|tmc_)[A-Za-z0-9_-]{8,}|ed25519:[1-9A-HJ-NP-Za-km-z]{60,}/;
