@@ -6,9 +6,10 @@ import type { ConsentRecord } from "./platform.ts";
 /** What this server asks an owner to consent to: reads and Treasury proposals the owner approves one by one. Never `treasury-execute`. */
 export const CONSENT_SCOPES = ["read", "treasury"] as const;
 /**
- * With a wallet owner's explicit opt-in, also `owner`: the app may prepare owner actions (a strategy grant) and relay
- * the owner's own signature over each, which alone makes one take effect. A DAO's consent never carries it: the
- * platform files a DAO's owner actions for its vote under `treasury`.
+ * A wallet owner's consent also carries `owner` by default (#135): the app may prepare owner actions (a strategy grant)
+ * and relay the owner's own signature over each, which alone makes one take effect. A DAO's consent never carries it: the
+ * platform files a DAO's owner actions for its vote under `treasury`. `CONSENT_SCOPES` stays accepted, since live
+ * consents without `owner` exist.
  */
 export const OWNER_CONSENT_SCOPES = ["read", "treasury", "owner"] as const;
 /** Whether a consent carries `owner`. */
@@ -28,8 +29,9 @@ export const organizationOf = (account: string) => account.replaceAll(".", "--")
 
 /**
  * The consent this server asks for, as its canonical text: the owner's Organization, the agent's current identity
- * (so an agent created anew needs a new one), `CONSENT_SCOPES` (or `OWNER_CONSENT_SCOPES` when the owner opts in), for
- * `CONSENT_DAYS`. A wallet owner signs it; a DAO votes on it.
+ * (so an agent created anew needs a new one), `OWNER_CONSENT_SCOPES` when `owner` is set (the wallet path always sets it,
+ * #135) and `CONSENT_SCOPES` otherwise (a DAO's consent, which never carries `owner`), for `CONSENT_DAYS`. A wallet owner
+ * signs it; a DAO votes on it.
  */
 export const consentFor = ({ identity, deployment, owner = false, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }) =>
   consentMessage({

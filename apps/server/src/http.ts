@@ -637,8 +637,9 @@ export const routes: Route[] = [
   {
     /**
      * The text the owner's wallet signs to connect the agent, built here from the agent's identity as the platform
-     * answers it now, never from the browser, with `owner` only when the owner asks for it (`{ owner: true }`). An agent
-     * already connected isn't offered another signature, except to add `owner` to a connection without it: the new
+     * answers it now, never from the browser. A wallet owner's text always carries `owner` (#135), whether or not the body asks
+     * for it; `{ owner: true }` is still accepted, from an older page and for the upgrade. An agent already connected isn't
+     * offered another signature, except to add `owner` to a connection without it (asked with `{ owner: true }`): the new
      * consent replaces the old once stored. For a DAO-owned agent, the consent is filed for the DAO's vote instead
      * (`fileDaoConsent`), once per agent at a time, and never with `owner`.
      */
@@ -652,7 +653,7 @@ export const routes: Route[] = [
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
       const live = liveConsents(listed.value.consents, identity!);
       if (live.length && !(asked.owner && !live.some(consent => withOwner(consent.scopes)))) return refused(409, "already_connected");
-      if (identity!.signer === "wallet") return ok(consentText({ identity: { ...identity!, agentId }, deployment: context.deployment, owner: asked.owner === true }));
+      if (identity!.signer === "wallet") return ok(consentText({ identity: { ...identity!, agentId }, deployment: context.deployment, owner: true }));
       return fileDao({ kind: "consent" }, account!, { ...identity!, agentId }, context);
     },
   },

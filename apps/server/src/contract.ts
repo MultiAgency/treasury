@@ -194,7 +194,10 @@ export const sweepRun = z.strictObject({
 /** A rebalance the owner asks for, under a `requestId` the page names (the platform's own format): answered as the proposal. */
 export const rebalanceRequest = z.strictObject({ requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) });
 export const rebalanceMade = z.strictObject({ proposal: proposalView });
-/** What a consent text is asked for with: `owner` too, at a wallet owner's explicit choice. */
+/**
+ * What a consent text is asked for with. A wallet owner's text carries `owner` whatever the body says (#135); `{ owner: true }`
+ * is what an older page sent at connect, and still how a connection without `owner` is asked to add it.
+ */
 export const consentRequest = z.strictObject({ owner: z.literal(true).optional() });
 /** The saved strategy, its digest, whether the held grant binds it, and whether the schedule may be turned on (and why not). */
 export const strategyRead = ownerOutputs["strategy/get"];

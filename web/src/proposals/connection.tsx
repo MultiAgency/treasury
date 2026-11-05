@@ -6,11 +6,11 @@ import type { ConsentText, Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, SignedText, when } from "./ui";
 import { sign } from "./wallet";
-import { failureText } from "./words";
+import { failureText, scopeList } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
-/** A consent text under review: `owner` when it adds owner actions, `upgrade` when it replaces a live connection. */
-type Asked = { owner: boolean; upgrade: boolean };
+/** A consent text under review: `upgrade` when it replaces a live connection that lacks `owner`. */
+type Asked = { upgrade: boolean };
 type Review = { phase: "reading" } | ({ phase: "review"; text: ConsentText; notice?: string } & Asked) | ({ phase: "signing"; text: ConsentText } & Asked);
 
 /**
@@ -27,8 +27,6 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
   const [disconnecting, setDisconnecting] = useState<"review" | "busy">();
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
-  /** The owner's choice, before connecting, to let the app relay owner actions they sign. */
-  const [ownerActions, setOwnerActions] = useState(false);
   const refresh = () => client.invalidateQueries({ queryKey: reads.consent.queryKey });
 
   /**
@@ -38,7 +36,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
   const prepare = async (asked: Asked, notice?: string) => {
     setError(undefined);
     if (!notice) setReview({ phase: "reading" });
-    const text = await reads.agent.consentText({ owner: asked.owner });
+    const text = await reads.agent.consentText({ owner: asked.upgrade });
     if (text.ok) return setReview({ phase: "review", text: text.value, notice, ...asked });
     setReview(undefined);
     setError(failureText(text, "consent"));
@@ -129,9 +127,9 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
       {consent.isPending ? <Loading label="Reading the connection…" />
         : consent.isError ? <QueryError error={consent.error} retry={() => consent.refetch()} />
         : live ? <div className="flex flex-col gap-3">
-          <p role="status">Connected: {live.scopes.join(", ").replace(/, ([^,]*)$/, " and $1")}, until {when(new Date(live.expiresAt).toISOString())}.</p>
+          <p role="status">Connected: {scopeList(live.scopes)}, until {when(new Date(live.expiresAt).toISOString())}.</p>
           <div className="flex flex-wrap gap-3">
-            {!live.scopes.includes("owner") && <Button variant="outline" disabled={review !== undefined} onClick={() => prepare({ owner: true, upgrade: true })}>
+            {!live.scopes.includes("owner") && <Button variant="outline" disabled={review !== undefined} onClick={() => prepare({ upgrade: true })}>
               {review?.phase === "reading" ? "Preparing…" : "Allow owner actions"}</Button>}
             <Button variant="outline" disabled={disconnecting === "busy"} onClick={() => setDisconnecting("review")}>
               {disconnecting === "busy" ? "Disconnecting…" : "Disconnect"}
@@ -140,11 +138,8 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
         </div>
         : <div className="flex flex-col items-start gap-3">
           <p role="status">Not connected. The app can't read or act on this agent's proposals until you connect it.</p>
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" className="mt-1" checked={ownerActions} onChange={event => setOwnerActions(event.target.checked)} />
-            <span>Also let this app relay owner actions you sign, such as a strategy grant. Each takes effect only with your own signature.</span>
-          </label>
-          <Button disabled={review !== undefined} onClick={() => prepare({ owner: ownerActions, upgrade: false })}>{review?.phase === "reading" ? "Preparing…" : "Connect"}</Button>
+          <p className="text-sm">Connecting lets this app read the agent, work with its Treasury proposals and relay owner actions you sign, such as a strategy grant. Each takes effect only with your own signature.</p>
+          <Button disabled={review !== undefined} onClick={() => prepare({ upgrade: false })}>{review?.phase === "reading" ? "Preparing…" : "Connect"}</Button>
         </div>}
       <p role="status" aria-atomic="true" className={notice ? "text-sm" : "sr-only"}>{notice}</p>
       <ErrorBox error={error} />
@@ -152,7 +147,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
 
     <ReviewDialog open={review?.phase === "review" || review?.phase === "signing"} busy={review?.phase === "signing"} onClose={() => setReview(undefined)}
       title={review && review.phase !== "reading" && review.upgrade ? "Allow owner actions for this agent?" : "Connect this agent to the Treasury app?"}
-      description="Your wallet signs the platform's consent text below, for the platform's host. It lets this app read the agent and use its Treasury procedures for the time it names."
+      description="Your wallet signs the platform's consent text below, for the platform's host. It lets this app read the agent, use its Treasury procedures and relay owner actions you sign, such as a strategy grant, for the time it names."
       actions={review && review.phase !== "reading" && <Button disabled={review.phase === "signing"} onClick={() => connect(review.text, review)}>
         {review.phase === "signing" ? "Waiting for the wallet…" : review.upgrade ? "Sign and allow" : "Sign and connect"}
       </Button>}>
@@ -165,10 +160,8 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
           <p className="font-medium">What the treasury scope allows the app</p>
           <Note>Read the agent; list, read, propose and withdraw its Treasury proposals; ask for an approved proposal's execution; save strategy settings (which act only once you sign a grant for them); turn autopilot on or off; link its funding account and get deposit addresses; and sweep public balances into confidential ones.</Note>
           <Note>This server proposes rebalances, executes proposals you approved, gets deposit addresses, links the funding account and sweeps when you ask on this page, and relays your own signed approvals and rejections. Nothing moves out until you approve a proposal's exact terms with your own signature.</Note>
-          {review.owner && <>
-            <p className="font-medium">What the owner scope allows the app</p>
-            <Note>Prepare owner actions for you, such as a grant for your saved strategy, and relay your wallet's signature over each. None takes effect without your own signature.</Note>
-          </>}
+          <p className="font-medium">What the owner scope allows the app</p>
+          <Note>Prepare owner actions for you, such as a grant for your saved strategy, and relay your wallet's signature over each. None takes effect without your own signature.</Note>
         </div>
       </>}
     </ReviewDialog>

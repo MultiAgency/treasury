@@ -132,7 +132,7 @@ async function connect() {
 
 test("the owner connects the agent with a consent their wallet signs, the platform stores it, and disconnecting revokes it", async () => {
   const { cookie, agent, consent, signature } = await connect();
-  assert.deepEqual(consent.scopes, ["read", "treasury"]);
+  assert.deepEqual(consent.scopes, ["owner", "read", "treasury"], "a wallet owner connects with owner by default (#135)");
   assert.deepEqual(await (await get(`${agent}/consent`, cookie)).json(), { ok: true, value: { consent } }, "the platform's own record");
   const revoked = await post(`${agent}/consent/revoke`, {}, cookie);
   assert.deepEqual(await revoked.json(), { ok: true, value: { revoked: 1 } });
