@@ -1,6 +1,6 @@
 # Contributing
 
-This repository holds the Treasury app: the owner UI (`web/`), the app server (`apps/server/`) and, as they land from the stack that starts at #30, the strategy engines (`packages/core/`). It moves money, so the rules below are about not losing track of it.
+This repository holds the Treasury app: its pages (`web/`: the proposals page the app server serves, and the owner-session UI until it's retired), the app server (`apps/server/`) and the strategy engines (`packages/core/`), which nothing calls yet. It moves money, so the rules below are about not losing track of it.
 
 ## How changes land
 
