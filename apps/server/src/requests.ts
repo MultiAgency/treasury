@@ -29,6 +29,9 @@ const storedRequest = z.strictObject({
   notified: z.array(z.enum(PROPOSAL_NOTICES)).default([]),
 });
 
+/** A new `requestId` for one of `agent`'s requests: its name, then 24 random hex digits. */
+export const newRequestId = (agent: string) => `${agent}_${randomBytes(12).toString("hex")}`;
+
 /**
  * The proposal requests `watch` has made and not yet seen end, kept in one owner-only file (`createRecords`): a request
  * is sent only once it's stored. At most `max` are kept.
@@ -40,9 +43,12 @@ export async function createRequests(path: string, { max = 256 } = {}) {
     /** The agent's stored requests under the Organization. */
     of: (organization: string, agent: string): readonly StoredRequest[] =>
       all().filter(record => record.organization === organization && record.agent === agent),
-    /** Stores a new request under a new `requestId` that names the agent; null, storing nothing, when `max` are kept. */
-    async add(organization: string, agent: string, body: Body): Promise<StoredRequest | null> {
-      const record: StoredRequest = { organization, agent, requestId: `${agent}_${randomBytes(12).toString("hex")}`, body: JSON.stringify(body), proposalId: null, notified: [] };
+    /**
+     * Stores a new request under a new `requestId` that names the agent (`newRequestId`), or under one made for it
+     * beforehand; null, storing nothing, when `max` are kept.
+     */
+    async add(organization: string, agent: string, body: Body, requestId = newRequestId(agent)): Promise<StoredRequest | null> {
+      const record: StoredRequest = { organization, agent, requestId, body: JSON.stringify(body), proposalId: null, notified: [] };
       return await commit(current => current.length >= max ? null : [...current, record]) ? record : null;
     },
     /** Records the proposal `request` made. */

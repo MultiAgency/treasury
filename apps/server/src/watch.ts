@@ -1,8 +1,9 @@
 import type { OwnerOutput } from "@multiagency/sdk";
+import type { Ballast, BallastSettings } from "./ballast.ts";
 import { liveConsents } from "./consent.ts";
 import type { Notify } from "./notify.ts";
 import type { ProposalAnswer, WatchPlatform } from "./platform.ts";
-import { memoryHolds, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
+import { memoryHolds, newRequestId, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
 
 /**
  * How `watch` paces itself. A tick reads 3 times (overview, unresolved, autopilot), or once while a proposal of its own
@@ -27,6 +28,8 @@ export type WatchedAgent = {
    * names its `kind`. Without one, nothing is sent or recorded.
    */
   notify?: Notify;
+  /** Ballast proposes for this agent instead of the drift rule (#47): the owner's profile and mandate answers. */
+  ballast?: BallastSettings;
 };
 /** What a tick did, for the log: one line per agent per tick, with the notices it sent. */
 export type WatchEvent = { organization: string; agent: string; [detail: string]: unknown };
@@ -85,8 +88,10 @@ type Stop = { reason: string; resumable: boolean };
  * is still `proposed` or `approved` holds the agent. Otherwise it reads the agent, and proposes when it has drifted.
  * Every request is stored before it's sent (`Requests`), so a lost answer never becomes a second proposal.
  */
-export function createWatch({ platform, requests, publicOrigin, now = Date.now, holds = memoryHolds() }: {
+export function createWatch({ platform, requests, publicOrigin, now = Date.now, holds = memoryHolds(), ballast }: {
   platform: WatchPlatform; requests: Requests;
+  /** Decides for the agents configured with `ballast`; needed when any is. */
+  ballast?: Ballast;
   /** This server's origin, where the owner opens a proposal. */
   publicOrigin: string;
   now?: () => number;
@@ -248,7 +253,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
         const read = await platform.get(organization, agent, request.proposalId);
         if (!read.ok) {
           if (read.kind === "forbidden") return stop(watched, event);
-          if (read.kind === "refused" && read.code === "not_found") { await requests.drop(request); continue; }
+          if (read.kind === "refused" && read.code === "not_found") { await ballast?.settled(organization, agent, request.requestId, "not_found"); await requests.drop(request); continue; }
           return event({ failed: "proposals/get", kind: read.kind, proposalId: request.proposalId });
         }
         const { state: proposalState } = read.value;
@@ -257,7 +262,8 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
         // Open, or claimed and not final: `executing` can read while `unresolved` is still empty (claimed before its first
         // swap is journaled), and `unknown` is read later, never proposed over.
         if (["proposed", "approved", "executing", "unknown"].includes(proposalState)) return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
-        // Final: no longer ours to hold for.
+        // Final: no longer ours to hold for. Ballast learns how it ended first, so an executed buy spends its DCA units.
+        await ballast?.settled(organization, agent, request.requestId, proposalState);
         await requests.drop(request);
       }
 
@@ -276,6 +282,18 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       if (overview.value.notInForce) { await settleHold(watched, "policy-not-in-force", event); return event({ held: "policy not in force", notInForce: overview.value.notInForce }); }
       // Past every hold: one that was reported has ended.
       await settleHold(watched, null, event);
+      if (watched.ballast) {
+        if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
+        const decided = await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours);
+        if ("skipped" in decided) return event(decided);
+        // Ballast records the proposal before its request is stored: a crash between the two, or a full store, counts a
+        // proposal never made, which only holds back more; never one made and not counted.
+        const requestId = newRequestId(agent);
+        await ballast.proposed(organization, agent, requestId, decided.intent);
+        const request = await requests.add(organization, agent, decided.body, requestId);
+        if (!request) return event({ held: "stored requests full" });
+        return send(watched, request, event).then(sent => ({ ...sent, ballast: decided.detail }));
+      }
       const trigger = drift(overview.value, watched.driftPoints);
       if ("skipped" in trigger) return event(trigger);
 

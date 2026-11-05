@@ -8,6 +8,7 @@ import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
 import { createDaoReader, runDaoReader } from "./dao-reader.ts";
+import { createBallast, createEngineState, createPriceHistory } from "./ballast.ts";
 import { createDaoRequests } from "./dao-requests.ts";
 import { createSettle } from "./dao-settle.ts";
 import { chainDaos } from "./dao.ts";
@@ -54,6 +55,11 @@ const watched = settings.TREASURY_WATCH_FILE ? {
   // Why each agent was last reported held, beside the requests (`<TREASURY_REQUESTS_FILE>.holds`): a restart doesn't announce it again.
   holds: await createHolds(`${settings.TREASURY_REQUESTS_FILE!}.holds`),
 } : undefined;
+// Ballast's price history and engine state, beside the requests (`.history`, `.engine`), when any agent runs it (#47).
+const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
+  history: await createPriceHistory(`${settings.TREASURY_REQUESTS_FILE!}.history`),
+  states: await createEngineState(`${settings.TREASURY_REQUESTS_FILE!}.engine`),
+}) : undefined;
 
 // Refuse to start with the DAO requests unreadable.
 const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE);
@@ -95,7 +101,7 @@ const server = createHttpServer(handler).listen(settings.PORT, () => {
 const shutdown = new AbortController();
 const watching = watched
   ? runWatch({
-    watch: createWatch({ platform: platform.watch, requests: watched.requests, holds: watched.holds, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN }),
+    watch: createWatch({ platform: platform.watch, requests: watched.requests, holds: watched.holds, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN, ...(ballast && { ballast }) }),
     agents: watched.agents,
     log: event => console.log(JSON.stringify({ event: "watch", ...event })),
     sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),
