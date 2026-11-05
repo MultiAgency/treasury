@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { chmod, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { writeAtomic } from "../src/files.ts";
+import { appendLine, writeAtomic } from "../src/files.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const scratch = async () => tempDir("treasury-files-");
@@ -43,4 +43,17 @@ test("a write that can't replace the file throws, keeps what was there, and leav
   await assert.rejects(writeAtomic(file, "whole"));
   assert.deepEqual(await readdir(dir), ["requests.json"]);
   assert.ok((await stat(file)).isDirectory());
+});
+
+test("a line with a newline in it is refused, so a record is always exactly one line", async () => {
+  await assert.rejects(appendLine(join(await scratch(), "f"), "a\nb"), /no newline/);
+});
+
+test("after a crash left a torn last line, the next record still starts a line of its own", async () => {
+  const file = join(await scratch(), "audit.jsonl");
+  await writeFile(file, '{"whole":1}\n{"torn":', { mode: 0o600 });
+  await appendLine(file, '{"next":2}');
+  const lines = (await readFile(file, "utf8")).split("\n");
+  assert.deepEqual(lines, ['{"whole":1}', '{"torn":', '{"next":2}', ""]);
+  assert.deepEqual(JSON.parse(lines[2]!), { next: 2 }, "the new record is readable; only the torn one isn't");
 });

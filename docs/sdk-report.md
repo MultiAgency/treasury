@@ -141,7 +141,7 @@ Issue status and acceptance evidence belong on the issues, rather than in a snap
 
 - #60 is the pure conversion from an engine intent to exact raw-unit proposal legs. #61 adds owner reads and request recovery. Neither alone wires the Ballast engine into watch.
 - Engine integration still needs decisions about oracle sources and history, persistent band/whipsaw/DCA state, policy context, and where the owner selects Ballast.
-- The audit store exists, but the running server still uses plain `fileAudit`. Decision recording/replay (#54) and anchoring (#55) are held work. Anchoring needs a recorded mechanism, key threat model, and independent anchor verification.
+- The running server records through the hash-chained audit store, and anchors its head hourly on FastData KV (#55), with the decision and the key's threat model on #55. Decision recording/replay (#54) is held work.
 - Owner-UI additions from #104 remain held while the app-route decision is settled. Creation (#12) should use the existing app setup API, with Treasury support added to the stack for end-to-end coverage.
 - History examples remain synthetic until H5 supplies data; mandate defaults and sleeve labels remain unapproved pending H8/H6.
 

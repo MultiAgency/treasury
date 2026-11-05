@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { appClient, type ProposalView } from "@multiagency/sdk";
 import { daoVote, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
-import { fileAudit } from "../src/audit.ts";
+import { chainedFileAudit } from "../src/chain.ts";
 import * as contract from "../src/contract.ts";
 import { createCredential } from "../src/credential.ts";
 import { chainDaos } from "../src/dao.ts";
@@ -25,12 +25,14 @@ import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
 import { HOST, ORIGIN, wallet } from "./fakes.ts";
 
-const audit = fileAudit(join(tempDir("treasury-dao-stack-"), "audit.jsonl"));
+// The store the server records through (`main.ts`): a hash chain, checked before the first append.
+const audit = chainedFileAudit(join(tempDir("treasury-dao-stack-"), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, server: Server, base: string;
 let council: ReturnType<typeof wallet>, member: ReturnType<typeof wallet>, dao: string;
 let daoRequests: DaoRequests, settle: ReturnType<typeof createSettle>;
 
 before(async () => {
+  await audit.check();
   stack = await startStack({ owner: "dao", args: ["--no-browser", "--app", "treasury-test"] });
   target = stack.target;
   const state = stack.state();

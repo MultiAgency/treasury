@@ -75,6 +75,21 @@ const Settings = z.object({
    * of the credential's 1,200 calls an hour, which every owner's page shares.
    */
   DAO_READS_PER_PASS: z.coerce.number().int().positive().default(5),
+  /**
+   * The NEAR account that anchors the audit log's head hash (A7.3, #55), with `TREASURY_ANCHOR_KEY_FILE`; unset, the log
+   * isn't anchored. It writes to itself through FastData's `__fastdata_kv`, under `audit/<TREASURY_DEPLOYMENT>`:
+   * `contextual.near`, or `contextual.testnet` on testnet.
+   */
+  TREASURY_ANCHOR_ACCOUNT: z.string().regex(/^(?=.{2,64}$)([a-z\d]+[-_])*[a-z\d]+(\.([a-z\d]+[-_])*[a-z\d]+)*$/).optional(),
+  /** A 0600 file holding the anchor account's function-call key, limited to that account and `__fastdata_kv`. */
+  TREASURY_ANCHOR_KEY_FILE: z.string().min(1).optional(),
+  /** How often the head is anchored, in seconds: hourly by default, and at most daily, the heartbeat's period. */
+  TREASURY_ANCHOR_INTERVAL_S: z.coerce.number().int().min(60).max(86_400).default(3600),
+  /**
+   * The NEAR network the anchor is sent on. Mainnet uses the server's RPC (`NEAR_RPC_URL` or FastNEAR's); testnet uses
+   * FastNEAR's testnet RPC. Sign-in and DAO reads stay on mainnet either way.
+   */
+  TREASURY_ANCHOR_NETWORK: z.enum(["mainnet", "testnet"]).default("mainnet"),
   PLATFORM_TIMEOUT_MS: duration(15_000),
   CHAIN_TIMEOUT_MS: duration(10_000),
 });
@@ -100,6 +115,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map(issue => `${issue.path.join(".")}: ${issue.message}`);
   if (problems.length || !settings.success || !secrets.success) throw new Error(`Invalid configuration:\n${problems.join("\n")}`);
   if (settings.data.SESSION_IDLE_MS > settings.data.SESSION_MAX_MS) throw new Error("Invalid configuration:\nSESSION_IDLE_MS: longer than SESSION_MAX_MS");
+  if (!settings.data.TREASURY_ANCHOR_ACCOUNT !== !settings.data.TREASURY_ANCHOR_KEY_FILE) throw new Error("Invalid configuration:\nTREASURY_ANCHOR_ACCOUNT and TREASURY_ANCHOR_KEY_FILE: set both or neither");
+  if (settings.data.TREASURY_ANCHOR_ACCOUNT && settings.data.TREASURY_ANCHOR_ACCOUNT.endsWith(".testnet") !== (settings.data.TREASURY_ANCHOR_NETWORK === "testnet"))
+    throw new Error("Invalid configuration:\nTREASURY_ANCHOR_ACCOUNT: not an account on TREASURY_ANCHOR_NETWORK");
   if (settings.data.TREASURY_WATCH_FILE && !settings.data.TREASURY_REQUESTS_FILE) throw new Error("Invalid configuration:\nTREASURY_REQUESTS_FILE: required with TREASURY_WATCH_FILE");
   return { settings: settings.data, secrets: secrets.data };
 }

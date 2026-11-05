@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, recordHash, verifyChain } from "../src/chain.ts";
-import { fileAudit, type Audit } from "../src/audit.ts";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, movePlainLogAside, recordHash, verifyChain } from "../src/chain.ts";
+import type { Audit } from "../src/audit.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const open = (file: string, now?: () => number) => chainedFileAudit<Record<string, unknown>>(file, now);
@@ -208,11 +208,15 @@ test("a newline in a value can't break the one-line-per-record format", async ()
   assert.equal(JSON.parse(lines(file)[0]!).entry.agent, "port\nfolio");
 });
 
+/** A log in the old plain format, as the server wrote it before the chained store: one JSON line per record, 0600. */
+const writePlainLog = (file: string, ...entries: object[]) => {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, entries.map(e => `${JSON.stringify({ at: new Date(T0).toISOString(), ...e })}\n`).join(""), { mode: 0o600 });
+};
+
 test("a log in the old plain format is refused at startup, not silently chained over", async () => {
   const file = fresh();
-  const plain = fileAudit(file, () => T0);
-  await plain.check();
-  await plain.append({ who: "owner.near", action: "consent", agent: "portfolio", stage: "attempt" });
+  writePlainLog(file, { who: "owner.near", action: "consent", agent: "portfolio", stage: "attempt" });
   await assert.rejects(open(file).check(), /broken at line 1: not a chained record/);
 });
 
@@ -234,11 +238,52 @@ test("the kinds of record include consent and revocation, as asked on #53", () =
   assert.equal(new Set(AUDIT_KINDS).size, AUDIT_KINDS.length);
 });
 
-test("the chained store can stand in for fileAudit where the server takes an Audit", async () => {
+test("the chained store is the Audit the server writes through", async () => {
   const file = fresh();
   const store = chainedFileAudit(file, () => T0);
   await store.check();
   const audit: Audit = store; // the same interface the server writes through
   await audit.append({ who: "owner.near", action: "revoke", agent: "portfolio", subject: "c1", stage: "result", answer: { ok: true } });
   assert.equal(lines(file).length, 1);
+});
+
+test("switching to the chained store moves an old plain log aside, keeping it, and leaves a chained log in place (#90)", async () => {
+  const file = fresh();
+  writePlainLog(file, entry(1));
+  const before = readFileSync(file, "utf8");
+  const aside = await movePlainLogAside(file, () => T0);
+  assert.ok(aside?.startsWith(`${file}.plain-2026-11-03T12-00-00`));
+  assert.equal(readFileSync(aside!, "utf8"), before, "the old log is kept as it was");
+  assert.equal(existsSync(file), false);
+  const chained = open(file, () => T0);
+  await chained.check();
+  await chained.append(entry(2));
+  assert.equal(await movePlainLogAside(file), undefined, "a chained log stays");
+  assert.equal(await movePlainLogAside(join(tempDir("chain-"), "none.jsonl")), undefined, "no log, nothing to move");
+});
+
+test("a chained log that was edited isn't moved aside: the server refuses it instead (#90)", async () => {
+  const file = fresh();
+  const audit = open(file, () => T0);
+  await audit.check();
+  await audit.append(entry(1));
+  await audit.append(entry(2));
+  const [first, second] = lines(file);
+  writeFileSync(file, `${first}\n${second!.replace("c2", "cX")}\n`, { mode: 0o600 });
+  assert.equal(await movePlainLogAside(file), undefined);
+  await assert.rejects(open(file).check(), /broken at line 2/);
+});
+
+test("a chained log whose first record was broken isn't taken for a plain log: it stays, and the server refuses it", async () => {
+  const file = fresh();
+  const audit = open(file, () => T0);
+  await audit.check();
+  await audit.append(entry(1));
+  await audit.append(entry(2));
+  const [first, second] = lines(file);
+  const { prev: _, ...stripped } = JSON.parse(first!);
+  writeFileSync(file, `${JSON.stringify(stripped)}\n${second}\n`, { mode: 0o600 });
+  assert.equal(await movePlainLogAside(file), undefined);
+  assert.ok(existsSync(file));
+  await assert.rejects(open(file).check(), /broken at line 1/);
 });
