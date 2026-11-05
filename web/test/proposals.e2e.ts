@@ -148,6 +148,12 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(connection.getByRole("status").filter({ hasText: "Not connected" }));
   await visible(nav("Home").and(page.locator("[aria-current=page]")));
   assert.deepEqual(await axe(), [], "signed in, not connected");
+  // Proposals, like Strategy and Funding, says what's missing and where to get it, rather than failing its read.
+  await nav("Proposals").click();
+  await visible(page.getByRole("status").filter({ hasText: "This agent isn't connected to the app." }));
+  assert.equal(await page.getByText(/No live consent/).count(), 0, "not a failed read");
+  await nav("Home").click();
+  await visible(connection.getByRole("status").filter({ hasText: "Not connected" }));
 
   assert.equal(await connection.getByRole("checkbox").count(), 0, "no choice to make: owner actions come with the connection");
   await connection.getByRole("button", { name: "Connect" }).click();
@@ -170,7 +176,11 @@ test("the owner signs in with their wallet, connects the agent with a consent th
 
 test("the owner approves a proposal by its exact text, executes it once to executed, and rejects another", { timeout: 180_000 }, async () => {
   const first = await propose(`page-${Date.now()}-1`), second = await propose(`page-${Date.now()}-2`);
-  await page.goto(here("/proposals"));
+  // The portfolio is read first, so coming back to it after the execute below shows whether it's read again.
+  await page.goto(here());
+  const portfolio = page.getByRole("region", { name: "Portfolio" });
+  await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
+  await nav("Proposals").click();
   const list = page.getByRole("list", { name: "Proposals" });
   await visible(list);
   assert.equal(await list.getByRole("link", { name: /^Review proposal / }).count(), 2);
@@ -204,6 +214,15 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   await visible(state.getByRole("list", { name: "Operations" }).getByText("success"));
   assert.equal(await state.getByRole("button", { name: "Execute" }).count(), 0, "it ran once; nothing to execute again");
   assert.deepEqual(await axe(), [], "an executed proposal");
+  // What the swap changed is read again when the portfolio is next shown: never the book from before it.
+  const reread: string[] = [];
+  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
+  page.on("request", read);
+  await nav("Home").click();
+  await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
+  page.off("request", read);
+  for (const changed of ["overview", "activity", "held", "unresolved", "books"])
+    assert.ok(reread.includes(`/api/agents/${target.agent}/${changed}`), `${changed} read again, not shown from before the swap: ${reread.join(", ")}`);
 
   await page.goto(`${origin}/agents/${target.agent}/proposals/${second.id}`);
   await state.getByRole("button", { name: "Reject" }).click();
@@ -349,14 +368,35 @@ test("the owner asks for a rebalance to the drifted strategy, and reviews the pr
   assert.deepEqual(unexpected, []);
 });
 
+test("a page returned to shows what it read, without reading the platform again", { timeout: 60_000 }, async () => {
+  await page.goto(here());
+  const portfolio = page.getByRole("region", { name: "Portfolio" }), autopilot = page.getByRole("region", { name: "Autopilot" });
+  await signInIfAsked(portfolio.getByRole("button", { name: "Check again", disabled: false }));
+  await nav("Strategy").click();
+  await visible(autopilot.getByRole("list", { name: "From strategy to autopilot" }));
+  const reads: string[] = [];
+  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin && url.pathname.startsWith("/api/")) reads.push(url.pathname); };
+  page.on("request", read);
+  await nav("Home").click();
+  await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
+  await nav("Strategy").click();
+  await visible(autopilot.getByRole("list", { name: "From strategy to autopilot" }));
+  await page.waitForTimeout(500);
+  page.off("request", read);
+  assert.deepEqual(reads, [], "each read counts against the deployment's shared calls an hour");
+});
+
 test("the owner allows owner actions: told first that open proposals are withdrawn, then the connection is replaced by one with owner", { timeout: 90_000 }, async () => {
   await setTargets(target, { [USDC]: 10_000, [WNEAR]: 0, [ETH]: 0 });
-  const open = await propose(`page-${Date.now()}-owner`);
   await page.goto(`${origin}/agents/${target.agent}`);
   const connection = page.getByRole("region", { name: "Connection" });
   await signInIfAsked(connection.getByRole("status").filter({ hasText: /^Connected: / }));
   await connectWithoutOwner();
-  await page.reload();
+  // Made under the connection without owner, and open until the upgrade replaces that connection.
+  const open = await propose(`page-${Date.now()}-owner`);
+  await page.goto(here(`/proposals/${open.id}`));
+  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+  await page.goto(here());
   await visible(connection.getByRole("status").filter({ hasText: /^Connected: read and treasury, until / }));
   await signInIfAsked(connection.getByRole("button", { name: "Allow owner actions" }));
   await connection.getByRole("button", { name: "Allow owner actions" }).click();

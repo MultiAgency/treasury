@@ -1,12 +1,12 @@
 import type { ProposalView } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ago } from "../shared/format";
 import { Button, Card, Details, errorMessage, Loading, QueryError, StatusBadge } from "../shared/ui";
 import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, type Execution } from "./proposal-flow";
 import { DaoRequestView } from "./dao-request";
 import type { Failure, Identity, Verdict } from "./proposals-api";
-import type { agentReads } from "./queries";
+import { refreshPortfolio, type agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";
 import { failureText, NOT_EXECUTABLE, outcomeText, PENDING, STATE_WORDS } from "./words";
@@ -18,6 +18,9 @@ type Reads = ReturnType<typeof agentReads>;
 type VerdictReview = { verdict: Verdict; phase: "reading" } | { verdict: Verdict; phase: "review" | "signing"; text: string; notice?: ReactNode };
 /** What the page says about the owner's last action here, and how. */
 type Notice = { tone: "status" | "alert"; body: ReactNode };
+
+/** The states a proposal reaches once an execute is sent: from then on, its swaps may have changed the book. */
+const EXECUTION_STATES = new Set(["executing", "executed", "stopped", "unknown"]);
 
 const VERDICT_WORDS = { approve: { title: "Approve this proposal?", confirm: "Sign and approve", done: "You approved this proposal." },
   reject: { title: "Reject this proposal?", confirm: "Sign and reject", done: "You rejected this proposal." } } as const;
@@ -39,6 +42,13 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   /** Held after an execute whose outcome is unknown and no read has answered since. */
   const [held, setHeld] = useState(false);
   const [notice, setNotice] = useState<Notice>();
+  // Once the proposal is seen moving into its execution (here, or by a later read), what its swaps change is read anew.
+  const state = proposal.data?.proposal.state;
+  const seen = useRef(state);
+  useEffect(() => {
+    if (seen.current !== undefined && state !== seen.current && state !== undefined && EXECUTION_STATES.has(state)) refreshPortfolio(client, reads);
+    seen.current = state;
+  }, [state, client, reads]);
 
   /** Shows `view` as the proposal's current state, here and in the list; the DAO's vote shown with it is kept. */
   const show = (view: ProposalView) => {

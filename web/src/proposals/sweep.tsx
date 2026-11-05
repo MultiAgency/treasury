@@ -5,7 +5,7 @@ import { fromUnits } from "../shared/format";
 import { Button, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
 import { blockShield, useShieldBlock } from "./kept-outcomes";
 import type { Identity } from "./proposals-api";
-import type { agentReads } from "./queries";
+import { refreshPortfolio, type agentReads } from "./queries";
 import { sweepOutcome } from "./sweep-run";
 import { ReviewDialog } from "./ui";
 import { failureText } from "./words";
@@ -49,6 +49,8 @@ export function Sweep({ reads, identity }: { reads: Reads; identity: Identity })
     setError(undefined);
     const answer = await reads.agent.sweep(execute);
     setBusy(undefined);
+    // A shield may have moved funds whatever its answer, so the portfolio (Activity included) is read anew.
+    if (execute) refreshPortfolio(client, reads);
     if (!answer.ok) {
       // A shield's lost answer may have sent one: never offered again from here.
       if (execute && answer.kind === "lost") blockShield(reads.name);
@@ -59,7 +61,6 @@ export function Sweep({ reads, identity }: { reads: Reads; identity: Identity })
     setRead({ ...decided, execute });
     if (!decided.offerAgain) blockShield(reads.name);
     if (!decided.outcome.ok) setError(FAILED[decided.outcome.kind] ?? `The sweep failed (${decided.outcome.kind}).`);
-    if (execute) void client.invalidateQueries({ queryKey: reads.overview.queryKey });
   };
 
   if (account.isPending) return <Loading label="Reading the agent's account…" />;

@@ -2,7 +2,7 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ago, describeRequest, usd } from "../shared/format";
 import { Button, Card, Loading, QueryError } from "../shared/ui";
 import { holdingsOf, recentActivity, recentRuns } from "./portfolio-view";
-import type { agentReads } from "./queries";
+import { refreshPortfolio, type agentReads } from "./queries";
 import { amountText, when } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
@@ -16,9 +16,8 @@ export function Portfolio({ reads }: { reads: Reads }) {
   const client = useQueryClient();
   const overview = useQuery(reads.overview);
   const [activity, held, unresolved, runs, books] = useQueries({ queries: [reads.activity, reads.held, reads.unresolved, reads.runs, reads.books] });
-  const keys = [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books].map(read => read.queryKey);
   const fetching = [overview, activity, held, unresolved, runs, books].some(read => read.isFetching);
-  const refresh = () => keys.forEach(queryKey => void client.invalidateQueries({ queryKey }));
+  const refresh = () => refreshPortfolio(client, reads);
   const book = overview.data?.book ?? [];
 
   return <section id="portfolio" aria-labelledby="portfolio-title" className="flex flex-col gap-4">
