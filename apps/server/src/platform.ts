@@ -13,6 +13,12 @@ type Signed = { message: string; nonce: string; publicKey: string; signature: st
 export type ConsentRecord = Extract<Awaited<ReturnType<App["consents"]["list"]>>, { ok: true }>["value"]["consents"][number];
 /** A DAO consent request as the platform answers its filing: the request, and the transactions a member may file. */
 export type DaoConsentFiled = Extract<Awaited<ReturnType<App["daoConsents"]["file"]>>, { ok: true }>["value"];
+/** A wallet owner's setup as the platform answers it: the reserved agent, and the setup consent that may relay its creation. */
+export type SetupAnswer = Awaited<ReturnType<App["setup"]>>;
+/** An owner action prepared for the owner to sign (on the platform's confirm page) or for the DAO's vote. */
+export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
+/** Where an owner action stands: submitted, still voting, expired or failed. */
+export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
 export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
 
@@ -34,6 +40,8 @@ export type WatchPlatform = {
 
 /** What the server asks the platform. Every call goes through here; tests replace it with a fake. */
 export type Platform = {
+  /** The platform's host: what an owner signs a setup for, before any agent names it. */
+  host: string;
   /**
    * The agent's owner and identity, as a consent must name them. Needs only the credential, no consent. A successful
    * answer is reused for up to a minute unless `fresh` is asked for. A failure is never reused, a 404 included: an agent
@@ -72,6 +80,25 @@ export type Platform = {
   daoVotes: {
     file(input: { organization: string; agent: string; proposal: string; verdict: "approve" | "reject" }): ReturnType<App["daoVotes"]["file"]>;
     state(id: string): ReturnType<App["daoVotes"]["state"]>;
+  };
+  /** A wallet owner's signed setup text: reserves the Organization's Treasury agent and stores its setup consent. */
+  setup(submission: Parameters<App["setup"]>[0]): Promise<SetupAnswer>;
+  /**
+   * A DAO's setup, signed by its own vote: the canonical setup text filed for the DAO to vote on, and the request read
+   * by its ID. Reading it after the vote passed is what reserves the agent.
+   */
+  daoSetups: {
+    file(message: string): ReturnType<App["daoSetups"]["file"]>;
+    state(id: string): ReturnType<App["daoSetups"]["state"]>;
+  };
+  /**
+   * An agent's creation, under its setup consent: prepared for the owner (a wallet owner signs it on the platform's
+   * confirm page; a DAO votes on it), and followed by its correlation ID. No other owner action.
+   */
+  creation: {
+    prepare(organization: string, agent: string, input: { action: { type: "agent_create"; role: "treasury"; owner: { type: "near"; account_id: string; public_key: string } }; signer: "wallet" }
+      | { action: { type: "agent_create"; role: "treasury" }; signer: "dao" }): Promise<PreparedAnswer>;
+    status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };
 };
 
@@ -145,11 +172,21 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     state: async id => (await client()).daoVotes.state(id),
   };
   return {
+    host: new URL(origin).host,
     identity,
     proposals,
     consents,
     daoConsents,
     daoVotes,
+    setup: async submission => (await client()).setup(submission),
+    daoSetups: {
+      file: async message => (await client()).daoSetups.file(message),
+      state: async id => (await client()).daoSetups.state(id),
+    },
+    creation: {
+      prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),
+      status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
+    },
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),

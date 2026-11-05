@@ -108,6 +108,37 @@ export const consent = z.strictObject({
   ended: z.enum(["expired", "stopped", "rejected", "changed"]).optional(),
 });
 
+/** The signed-in account, and its own Treasury agents: set up or created under its Organization (`agentsOf`). */
+export const setups = z.strictObject({ account: z.string(), agents: z.array(agentName) });
+/**
+ * A DAO's Treasury setup, for a member: the member's access by the DAO's roles, the agents its consents name (set up
+ * or created), its setup request while one waits for the vote, and, when one just ended without an agent, why (`ended`).
+ */
+export const daoSetup = z.strictObject({
+  account: z.string(),
+  access,
+  agents: z.array(agentName),
+  request: daoRequest.nullable(),
+  ended: z.enum(["expired", "rejected", "refused"]).optional(),
+});
+/** A setup the platform stored: the Organization's Treasury agent, reserved and waiting for its creation. */
+export const setupDone = z.strictObject({ agent: agentName });
+/**
+ * An agent's creation, prepared under its setup consent and followed by `correlationId` until `expiresAt`: a wallet
+ * owner signs it on the platform's confirm page (`confirm.url`); for a DAO, a member files `dao.transaction`, the
+ * proposal (with a vote on it, for a member whose role votes), and the DAO's vote must pass before it expires.
+ */
+export const creation = z.strictObject({
+  correlationId: z.string(), expiresAt: z.string(),
+  confirm: z.strictObject({ url: z.string(), expiresAt: z.string() }).optional(),
+  dao: z.strictObject({ transaction: memberTransaction }).optional(),
+});
+/** Where a creation stands, as the platform's `owner/status` answers it. */
+export const creationStatus = z.strictObject({
+  stage: z.enum(["submitted", "submitting", "expired", "failed", "voting", "unknown"]),
+  failureCode: z.string().nullable().optional(),
+});
+
 /**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
  * - `not_signed_in` (401): no live session;
@@ -115,7 +146,8 @@ export const consent = z.strictObject({
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
- *   `consent_refused`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
+ *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
+ *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
  *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.

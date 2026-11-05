@@ -40,6 +40,13 @@ export function agentReads(name: string) {
   };
 }
 
+/** The setup reads: the signed-in account's own treasuries, and a DAO's setup, read again every half minute while it waits for the vote. */
+export const setupReads = {
+  mine: queryOptions({ queryKey: ["setup"], queryFn: async () => answered(await api.setups()), retry: false }),
+  dao: (dao: string) => queryOptions({ queryKey: ["setup", "dao", dao], queryFn: async () => answered(await api.daoSetup(dao)), retry: false,
+    refetchInterval: query => query.state.data?.request ? 30_000 : false }),
+};
+
 /** After a session ends anywhere, every read is answered `not_signed_in`: the identity is read again, so the page signs in. */
 export function onSessionEnded(client: QueryClient, error: unknown, failed: readonly unknown[]) {
   if (failed[2] !== "identity" && failureOf(error)?.kind === "not_signed_in")

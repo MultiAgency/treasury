@@ -22,6 +22,8 @@ export type SignRequest = { message: string; recipient: string; nonce: string };
 export type Signed = { accountId: string; publicKey: string; signature: string };
 
 const LOST: Lost = { ok: false, kind: "lost" };
+/** A creation's correlation ID, as the server takes it in a path. */
+const correlation = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 /** Sign-out answers nothing but that it happened. */
 const nothing = z.strictObject({});
 
@@ -47,6 +49,17 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
     challenge: () => call(contract.challenge, "/api/session/challenge", { method: "POST" }),
     signIn: (signed: z.input<typeof contract.signIn>) => call(contract.session, "/api/session", { method: "POST", body: contract.signIn.parse(signed) }),
     signOut: () => call(nothing, "/api/session", { method: "DELETE" }),
+    /** The signed-in account's own Treasury agents, set up or created. */
+    setups: () => call(contract.setups, "/api/setup"),
+    /** The setup text for the owner's wallet: a Treasury agent for their own Organization, built by the server. */
+    setupText: () => call(contract.consentText, "/api/setup/text", { method: "POST" }),
+    /** The owner's signed setup: the platform reserves their Treasury agent. Never sent again for an answer that was lost. */
+    setup: (submission: z.input<typeof contract.consentSubmission>) =>
+      call(contract.setupDone, "/api/setup", { method: "POST", body: contract.consentSubmission.parse(submission) }),
+    /** A DAO's Treasury setup, for one of its members: its agents, and its setup while one waits for the vote. */
+    daoSetup: (dao: string) => call(contract.daoSetup, `/api/setup/dao/${contract.accountId.parse(dao)}`),
+    /** Files a DAO's Treasury setup for its vote, or answers the one already open. */
+    fileDaoSetup: (dao: string) => call(contract.daoFiled, `/api/setup/dao/${contract.accountId.parse(dao)}`, { method: "POST" }),
     /** One agent's routes; each needs the signed-in account to be its owner. */
     agent(name: string) {
       const base = `/api/agents/${contract.agentName.parse(name)}`;
@@ -74,6 +87,13 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
          * vote already open on it, which may carry the other verdict.
          */
         fileVote: (id: string, verdict: Verdict) => call(contract.daoFiled, `${proposal(id)}/${verdict}`, { method: "POST" }),
+        /**
+         * Prepares the agent's creation under its setup consent: a link to the platform's confirm page for a wallet
+         * owner, the proposal a DAO's member files for a DAO. Each call prepares a new one.
+         */
+        create: () => call(contract.creation, `${base}/creation`, { method: "POST" }),
+        /** Where a creation stands, by its correlation ID. */
+        creation: (id: string) => call(contract.creationStatus, `${base}/creation/${correlation.parse(id)}`),
         /** Asks for an approved proposal's execution, once. Never called again for an answer that was lost. */
         execute: (id: string) => call(contract.executeResult, `${proposal(id)}/execute`, { method: "POST" }),
       };
@@ -88,6 +108,9 @@ export type ConsentText = z.output<typeof contract.consentText>;
 export type Identity = z.output<typeof contract.agent>;
 export type Connection = z.output<typeof contract.consent>;
 export type DaoRequest = z.output<typeof contract.daoRequest>;
+export type DaoSetup = z.output<typeof contract.daoSetup>;
+export type Creation = z.output<typeof contract.creation>;
+export type CreationStatus = z.output<typeof contract.creationStatus>;
 export type ProposalRead = z.output<typeof contract.proposalRead>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */

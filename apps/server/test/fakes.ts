@@ -1,7 +1,7 @@
 // Fakes for the server's outside services: the platform and the chain. Tests run the server in-process against these.
-import { parseConsentMessage, type ProposalView } from "@multiagency/sdk";
+import { parseConsentMessage, parseSetupMessage, type ProposalView } from "@multiagency/sdk";
 import { generateKey } from "near-kit";
-import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer } from "../src/platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, SetupAnswer, StatusAnswer } from "../src/platform.ts";
 import type { Challenge } from "../src/signin.ts";
 
 export const HOST = "treasury.test";
@@ -36,6 +36,38 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    */
   const daoVotes: { id: string; organization: string; agent: string; proposal: string; verdict: "approve" | "reject"; passed: boolean; relayed?: string; ended?: 409 | 410 }[] = [];
   const voteAnswers: Awaited<ReturnType<Platform["daoVotes"]["file"]>>[] = [];
+  /**
+   * Setups as the platform keeps them: each owner's reserved Treasury agent, named `treasury-<n>`, reserved once and
+   * found again by a later setup until it's created (`created`). `setupAnswers` queues answers `setup` gives instead.
+   */
+  const reservations: Record<string, string> = {};
+  const setupAnswers: SetupAnswer[] = [];
+  /**
+   * DAO setups as the platform keeps them: `signed` once the DAO's vote passes, which reserves its agent on the next
+   * read, or `ended` (410 past its deadline, 409 refused after the vote). `daoSetupAnswers` queues answers `file` gives.
+   */
+  const daoSetups: { id: string; dao: string; organization: string; expiresAt: number; signed: boolean; ended?: 409 | 410; agent?: string; consent?: string }[] = [];
+  const daoSetupAnswers: Awaited<ReturnType<Platform["daoSetups"]["file"]>>[] = [];
+  /** Reserves the owner's Treasury agent, or finds it again: as `setup` and a DAO setup's read do. */
+  const reserve = (owner: string, organization: string, deployment: string, host: string, expiresAt: number, publicKey: string, signer?: "dao") => {
+    const agent = reservations[owner] ?? `treasury-${Object.keys(reservations).length + 1}`;
+    reservations[owner] = agent;
+    owners[agent] = owner;
+    if (!unborn.includes(agent)) unborn.push(agent);
+    if (signer === "dao" && !daos.includes(agent)) daos.push(agent);
+    const consent = { id: `s${consents.length + 1}`.padEnd(64, "0"), deployment, host, organization, owner, agent, agentId: "unborn", scopes: ["owner" as const],
+      expiresAt, createdAt: 0, publicKey, revoked: false, revokedAt: null, ...(signer && { signer }) };
+    consents.push(consent);
+    return { agent, consent };
+  };
+  /**
+   * Creations prepared under a setup consent, by correlation ID: `stage` is what `owner/status` answers, `voting`
+   * until a test moves it. `creationAnswers` and `statusAnswers` queue answers given instead; an Error is thrown.
+   */
+  const creations: { correlationId: string; organization: string; agent: string; signer: "wallet" | "dao"; publicKey?: string; stage: "voting" | "submitted" | "expired" | "failed" }[] = [];
+  const creationAnswers: (PreparedAnswer | Error)[] = [];
+  const statusAnswers: (StatusAnswer | Error)[] = [];
+  const thrown = <A>(queued: A | Error | undefined) => { if (queued instanceof Error) throw queued; return queued; };
   /** Proposals as the platform keeps them, under the Organization that made them. */
   const proposals: (ProposalView & { agent: string })[] = [];
   /** Answers the next proposal actions give instead of their own, by action; an Error is thrown, as a broken call would. */
@@ -55,6 +87,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       deployment: foreign.includes(agent) ? "elsewhere" : "treasury", ...(daos.includes(agent) && { signer: "dao" as const }) } }
     : { ok: false, kind: "refused", status: 404, error: "No such agent" });
   const platform: Platform = {
+    host: "platform.test",
     async identity(agent, { fresh = false } = {}) {
       if (!fresh && stale[agent]) return { answer: answer(agent, stale[agent]), cached: true };
       if (!fresh && recreated[agent]) {
@@ -172,7 +205,65 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         return { ok: true, value: { state: "relayed" as const, request, proposalState: vote.relayed } };
       },
     },
+    async setup(submission) {
+      calls.push("setup");
+      const queued = setupAnswers.shift();
+      if (queued) return queued;
+      const text = parseSetupMessage(submission.message)!;
+      const found = reservations[text.owner];
+      if (found && !unborn.includes(found)) return { ok: false, kind: "refused", status: 409, error: "This owner's agent for that area is already created." };
+      return { ok: true, value: reserve(text.owner, text.organization, text.deployment, text.host, Date.parse(text.expiresAt), submission.publicKey) };
+    },
+    daoSetups: {
+      async file(message) {
+        calls.push("daoSetups.file");
+        const queued = daoSetupAnswers.shift();
+        if (queued) return queued;
+        const text = parseSetupMessage(message)!;
+        const id = String(daoSetups.length + 1).padStart(64, "e");
+        daoSetups.push({ id, dao: text.owner, organization: text.organization, expiresAt: Date.parse(text.expiresAt), signed: false });
+        const request = { id, dao: text.owner, organization: text.organization, area: text.area, expiresAt: Date.parse(text.expiresAt),
+          votingUntil: Date.parse(text.expiresAt), hash: id, description: `* Signs: NEP-413 hash ${id}` };
+        return { ok: true, value: { request, transactions: { proposal: daoTransaction(text.owner, id), proposalAndVote: daoTransaction(text.owner, id, daoNext(text.owner)) } } };
+      },
+      async state(id) {
+        calls.push(`daoSetups.state ${id}`);
+        const found = daoSetups.find(setup => setup.id === id);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such DAO setup request" };
+        if (found.ended) return { ok: false, kind: "refused", status: found.ended, error: "Ended" };
+        if (!found.signed) return { ok: true, value: { state: "pending" as const, request: { id, dao: found.dao, organization: found.organization, area: "treasury",
+          expiresAt: found.expiresAt, votingUntil: found.expiresAt, hash: id, description: "" } } } as never;
+        if (!found.agent) {
+          const reserved = reserve(found.dao, found.organization, "treasury", "platform.test", found.expiresAt, "ed25519:dao", "dao");
+          Object.assign(found, { agent: reserved.agent, consent: reserved.consent.id });
+        }
+        return { ok: true, value: { state: "reserved" as const, agent: found.agent!, consent: consents.find(consent => consent.id === found.consent)! } } as never;
+      },
+    },
+    creation: {
+      async prepare(organization, agent, input) {
+        calls.push(`creation.prepare ${agent} ${input.signer}`);
+        const queued = thrown(creationAnswers.shift());
+        if (queued) return queued;
+        const correlationId = `create-${creations.length + 1}`, expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+        creations.push({ correlationId, organization, agent, signer: input.signer, ...(input.signer === "wallet" && { publicKey: input.action.owner.public_key }), stage: "voting" });
+        const common = { correlationId, expiresAt, digest: null, preview: { summary: "Create a Treasury agent" } };
+        if (input.signer === "wallet") return { ok: true, value: { ...common, confirm: { url: `https://platform.test/confirm/${correlationId}`, expiresAt } } } as PreparedAnswer;
+        const dao = owners[agent]!, hash = correlationId.padStart(64, "c");
+        return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
+      },
+      async status(_organization, agent, correlationId) {
+        calls.push(`creation.status ${agent} ${correlationId}`);
+        const queued = thrown(statusAnswers.shift());
+        if (queued) return queued;
+        const found = creations.find(item => item.correlationId === correlationId && item.agent === agent);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as StatusAnswer;
+        return { ok: true, value: { stage: found.stage } } as StatusAnswer;
+      },
+    },
   };
+  /** The agent's creation completes: it has an ID from now on. */
+  const create = (agent: string) => { unborn.splice(unborn.indexOf(agent), 1); };
   async function decide(verdict: "approve" | "reject", organization: string, agent: string, id: string): Promise<ProposalAnswer> {
     calls.push(`proposals.${verdict} ${organization} ${agent} ${id}`);
     const queued = next(verdict);
@@ -182,7 +273,8 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers };
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers,
+    reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create };
 }
 
 /**

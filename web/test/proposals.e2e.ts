@@ -90,6 +90,13 @@ const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ st
 const axe = async () => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations
   .map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
 const dialog = (name: string) => page.getByRole("dialog", { name });
+/** Signs in when the page asks (a test before may have signed out), then waits for `shown`. */
+async function signInIfAsked(shown: ReturnType<Page["getByRole"]>) {
+  const signIn = page.getByRole("button", { name: "Sign in with wallet" });
+  await signIn.or(shown).first().waitFor({ timeout: 20_000 });
+  if (await signIn.isVisible()) await signIn.click();
+  await visible(shown);
+}
 
 /** The stack's portfolio proposes a swap through the app route, as the app's proposer does (#20 PR 4). */
 async function propose(requestId: string): Promise<ProposalView> {
@@ -193,4 +200,20 @@ test("signing out ends the server's session: the page asks to sign in again, and
   await page.reload();
   await visible(page.getByRole("heading", { level: 2, name: "Sign in" }));
   assert.equal(await page.getByRole("region", { name: "Connection" }).count(), 0, "nothing of the owner's is shown");
+});
+
+test("the root lists the signed-in owner's treasuries, linked to each agent's page, and checks a DAO's account before opening its setup", { timeout: 60_000 }, async () => {
+  await page.goto(`${origin}/`);
+  const treasuries = page.getByRole("list", { name: "Your treasuries" });
+  await signInIfAsked(treasuries);
+  await visible(treasuries);
+  await treasuries.getByRole("link", { name: target.agent }).waitFor();
+  assert.equal(await treasuries.getByRole("link", { name: target.agent }).getAttribute("href"), `/agents/${target.agent}`);
+  assert.equal(await page.getByRole("heading", { name: "Set up your Treasury" }).count(), 0, "an owner with a Treasury isn't offered another");
+  await page.getByLabel("DAO account").fill("Not A DAO");
+  await page.getByRole("button", { name: "Open the DAO's Treasury" }).click();
+  await visible(page.getByRole("alert").filter({ hasText: "Enter the DAO's NEAR account" }));
+  assert.equal(new URL(page.url()).pathname, "/");
+  assert.deepEqual(await axe(), []);
+  assert.deepEqual(unexpected, []);
 });

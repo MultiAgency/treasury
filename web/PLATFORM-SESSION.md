@@ -190,10 +190,19 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 
 | Name | Role | Where |
 | --- | --- | --- |
-| Treasury proposals | page title; heading (level 1) on `/` and `/agents/<agent>` | |
+| Treasury proposals | page title; heading (level 1) on `/agents/<agent>` | |
+| Your treasuries | heading (level 1) on `/`; list of links, one per agent | `/`, signed in |
+| Set up your Treasury, Set up a Treasury | heading (level 2), button | `/`, an account with no Treasury |
+| Set up a Treasury for your account?, Text to sign, Cancel, Sign and set up | dialog, the signed text (labelled), buttons | `/` |
+| A DAO's Treasury, DAO account, Open the DAO's Treasury | heading (level 2), textbox, button | `/` |
+| Open an agent | heading (level 2) | `/` |
+| A DAO's Treasury | heading (level 1) on `/setup/dao/<dao>` | |
+| Setup; Ask the DAO to set up its Treasury; Waiting for the vote of `<dao>` to set up its Treasury.; The DAO's treasuries | region and heading (level 2); button; status; list | `/setup/dao/<dao>` |
+| Create the agent | region and heading (level 2); button | an agent set up but not created |
+| open the confirm page; Create it again | link (the platform's confirm page); button | Create the agent |
 | Proposal | heading (level 1) on `/agents/<agent>/proposals/<id>` | |
 | Skip to main content | link | every page |
-| Agent name, Open proposals | textbox, button | `/` |
+| Agent name, Open proposals | textbox, button | `/`, Open an agent |
 | Sign in, Sign in with wallet | heading (level 2), button | signed out |
 | Signed in as `<owner>`, Sign out | text, button | signed in |
 | Connection | region, heading (level 2) | an agent's pages |
@@ -221,8 +230,9 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | File the DAO proposal or File and vote; Vote on it in Trezu; Check the exact text and hash the DAO signs | button; links | a waiting DAO request |
 
 How it departs from the brief, or decides what the brief leaves open:
-- **The agent comes from the address** (`/agents/<agent>`): the server has no route listing an owner's agents. `/` asks for the agent's name.
-- **Signed in or not** is read from `GET /api/agents/:agent`: the server has no session route. `not_signed_in` there shows Sign in; another read answering `not_signed_in` later reads the identity again, so the page returns to Sign in.
+- **The agent comes from the address** (`/agents/<agent>`). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.
+- **Setup (#12) is the app server's**, through `/apps/v1/setup` and `/apps/v1/dao-setups`, not the owner session's `/gw/agents`. An account with no Treasury signs the server's setup text; the agent's page then offers its creation (`agent_create` under the setup consent), signed on the platform's confirm page, or for a DAO filed for its vote. The setup consent lasts an hour; after that, creating asks for the setup again. The stack sets up Payables agents only (`hostedAreas: ['payables']` at `6ba0831`), so setup and creation are covered by the server's unit tests, not a stack test.
+- **Signed in or not** is read from `GET /api/agents/:agent` on an agent's pages, and from `GET /api/setup` or `GET /api/setup/dao/:dao` on the others: the server has no session route. `not_signed_in` there shows Sign in; another read answering `not_signed_in` later reads the identity again, so the page returns to Sign in.
 - **The wallet's account is checked before relaying.** A consent or verdict signed by another account than the agent's owner is not sent: "Your wallet signed as `<account>`, but this agent's owner is `<owner>`. Nothing was sent." The server would refuse it anyway (`not_owner`, `signature_invalid`).
 - **A verdict whose answer was lost** (or `unavailable`) reads the proposal: if it now reads approved (rejected), it says "You approved this proposal." (rejected), as the server's own recovery decides it; otherwise the read is shown and nothing is signed again without a new review.
 - **`not_executable` carries no code or reason** from the server (`executeResult` is the result and the proposal only), so the page says the platform's causes ("a price below a signed floor, a provider warning, a short balance, no live treasury grant, or the policy not in force"), with the proposal's `reason` when it has one. Execute stays offered.

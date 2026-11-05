@@ -1,6 +1,6 @@
 import type { Audit } from "./audit.ts";
 import { liveConsents } from "./consent.ts";
-import type { DaoRequests, StoredDaoRequest, StoredDaoVote } from "./dao-requests.ts";
+import type { DaoRequests, StoredAgentRequest, StoredDaoRequest, StoredDaoSetup, StoredDaoVote } from "./dao-requests.ts";
 import { failure, log } from "./log.ts";
 import type { ConsentRecord, Platform } from "./platform.ts";
 import { recordResult, revokeAll } from "./revoke.ts";
@@ -9,16 +9,18 @@ import { recordResult, revokeAll } from "./revoke.ts";
  * What one read of an open DAO request found:
  * - `stored`: the DAO's consent passed and is stored; the request is closed;
  * - `relayed`: the DAO's vote passed and was relayed to its proposal (`proposalState`); the request is closed;
+ * - `reserved`: the DAO's setup passed and the platform reserved its Treasury agent (`agent`); the request is closed;
  * - `pending`: no vote has passed yet, or the platform couldn't complete it now; the request stays open;
  * - `ended`: it can't complete any more (`expired`: past its deadline, `stopped`: a DAO stop ended it, `changed`: the
- *   agent isn't the DAO's with the identity its consent names any more, `gone`: the platform no longer keeps it); the
- *   request is closed.
+ *   agent isn't the DAO's with the identity its consent names any more, `refused`: the platform wouldn't set up the
+ *   agent the DAO voted for, `gone`: the platform no longer keeps it); the request is closed.
  */
 export type Settled =
   | { result: "stored"; consent: ConsentRecord }
   | { result: "relayed"; proposalState: string }
+  | { result: "reserved"; agent: string }
   | { result: "pending" }
-  | { result: "ended"; why: "expired" | "stopped" | "changed" | "gone" };
+  | { result: "ended"; why: "expired" | "stopped" | "changed" | "refused" | "gone" };
 
 type SettleDeps = { platform: Platform; daoRequests: DaoRequests; audit: Audit };
 /** Reads an open DAO request once, and completes it if its vote passed (`createSettle`). */
@@ -48,7 +50,36 @@ export function createSettle(deps: SettleDeps): Settle {
  * 409 isn't final: the platform answers it both for a relay the agent refused for now (read again relays the same
  * signature) and for a consent that ended. So a vote stays open until it's relayed or its deadline passes (410).
  */
-async function settleOnce(open: StoredDaoRequest, { platform, daoRequests, audit }: SettleDeps): Promise<Settled> {
+async function settleOnce(open: StoredDaoRequest, deps: SettleDeps): Promise<Settled> {
+  return open.kind === "setup" ? settleSetup(open, deps) : settleAgent(open, deps);
+}
+
+/**
+ * Reads a DAO's setup once, and records the agent it reserved if its vote passed. A 409 is final: the platform found
+ * the DAO's Treasury agent already created, or the DAO's key changed, after the vote. Ended as a consent request ends
+ * otherwise.
+ */
+async function settleSetup(open: StoredDaoSetup, { platform, daoRequests, audit }: SettleDeps): Promise<Settled> {
+  const dao = open.filed.dao;
+  const read = await platform.daoSetups.state(open.id);
+  if (read.ok) {
+    if (read.value.state === "pending") return { result: "pending" };
+    const { agent, consent } = read.value as { agent: string; consent: ConsentRecord };
+    await daoRequests.close(open.id);
+    await recordResult(audit, { who: dao, action: "dao-setup-reserved", agent, subject: consent.id, request: open.id, stage: "result", answer: { ok: true } });
+    return { result: "reserved", agent };
+  }
+  const status = read.kind === "refused" ? read.status : undefined;
+  const ended = status === 410 ? "expired" : status === 404 ? "gone" : status === 409 ? "refused" : undefined;
+  if (ended) {
+    await daoRequests.close(open.id, ended === "gone" ? undefined : ended);
+    return { result: "ended", why: ended };
+  }
+  log("platform_dao_setup_state_failed", { dao, request: open.id, ...failure(read) });
+  return { result: "pending" };
+}
+
+async function settleAgent(open: StoredAgentRequest, { platform, daoRequests, audit }: SettleDeps): Promise<Settled> {
   const dao = open.filed.dao, { agent } = open;
   const read = open.kind === "consent" ? await platform.daoConsents.state(open.id) : await platform.daoVotes.state(open.id);
   if (read.ok) {
