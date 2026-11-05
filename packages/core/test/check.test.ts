@@ -21,7 +21,7 @@ test("each family of rules can reject, with its name", () => {
   const rule = (o: Intent, c: FullContext) => { const r = checkPolicy(o, c, config); return r.ok === false ? r.rule : String(r.ok); };
   assert.equal(rule(order(30_000), ctx), "ORDER_SIZE");
   assert.equal(rule(order(10_000), { ...ctx, quotedSlippageBps: 80 }), "SLIPPAGE");
-  assert.equal(rule(order(10_000), { ...ctx, venueExposureUsd: 249_000 }), "VENUE_EXPOSURE");
+  assert.equal(rule(order(10_000), { ...ctx, venueExposureUsd: 499_000 }), "VENUE_EXPOSURE");
   assert.equal(rule(order(10_000), { ...ctx, cashUsd: 1 }), "CASH_FLOOR");
   assert.equal(rule(order(10_000), { ...ctx, level: 4 }), "LEVEL");
 });

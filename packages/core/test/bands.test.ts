@@ -9,19 +9,19 @@ const reading = (twap15m: number, ema30d = 100): OracleReading =>
 
 test("every zone, exactly on its threshold, just inside, and just past", () => {
   const cases: [number, BandZone][] = [
-    [100, "hold"], [114.99, "hold"], [85.01, "hold"],
-    [115, "trim-1"], [124.99, "trim-1"], [125, "trim-2"], [139.99, "trim-2"], [140, "trim-3"], [500, "trim-3"],
-    [85, "dca-1"], [75.01, "dca-1"], [75, "dca-2"], [65.01, "dca-2"], [65, "dca-3"], [55.01, "dca-3"],
-    [55, "buy-halt"], [10, "buy-halt"],
+    [100, "hold"], [119.99, "hold"], [80.01, "hold"],
+    [120, "trim-1"], [129.99, "trim-1"], [130, "trim-2"], [144.99, "trim-2"], [145, "trim-3"], [500, "trim-3"],
+    [80, "dca-1"], [70.01, "dca-1"], [70, "dca-2"], [60.01, "dca-2"], [60, "dca-3"], [50.01, "dca-3"],
+    [50, "buy-halt"], [10, "buy-halt"],
   ];
   for (const [price, zone] of cases) assert.equal(classifyZone(price, 100), zone, `price ${price}`);
 });
 
 test("thresholds are exact for prices exact in binary, at any scale", () => {
-  assert.equal(classifyZone(11_500, 10_000), "trim-1");
-  assert.equal(classifyZone(1_150_000, 1_000_000), "trim-1");
-  assert.equal(classifyZone(8_500, 10_000), "dca-1");
-  assert.equal(classifyZone(5_500, 10_000), "buy-halt");
+  assert.equal(classifyZone(12_000, 10_000), "trim-1");
+  assert.equal(classifyZone(1_200_000, 1_000_000), "trim-1");
+  assert.equal(classifyZone(8_000, 10_000), "dca-1");
+  assert.equal(classifyZone(5_000, 10_000), "buy-halt");
 });
 
 test("unusable prices have no zone", () => {

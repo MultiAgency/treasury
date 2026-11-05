@@ -1,17 +1,17 @@
 // Band zones (A4.1): where the TWAP sits relative to the EMA reference decides trim, hold, DCA or buy halt.
 // Pure. This step only classifies and names a direction; sizes are 0 until sizing.ts (A4.2) sets them, and
-// whipsaw.ts (A4.3) can still turn an intent into a hold. Thresholds are the plan's defaults, awaiting H9.
+// whipsaw.ts (A4.3) can still turn an intent into a hold. Thresholds are H9's, calibrated on a year of NEAR-USD (ADR 3).
 
 import type { OracleReading } from "./oracle.ts";
 import { guarded, isNum, report } from "./validate.ts";
 
 export const BAND_DEFAULTS = {
-  /** Percent above the reference where each trim starts. */
-  trim: [15, 25, 40],
+  /** Percent above the reference where each trim starts. The plan's ±15% was left 43% of the time on NEAR (ADR 3). */
+  trim: [20, 30, 45],
   /** Percent below the reference where each DCA buy starts (negative). */
-  dca: [-15, -25, -35],
+  dca: [-20, -30, -40],
   /** At or below this percent, buying halts. */
-  buyHalt: -45,
+  buyHalt: -50,
 } as const;
 
 export type Bands = { trim: readonly [number, number, number]; dca: readonly [number, number, number]; buyHalt: number };

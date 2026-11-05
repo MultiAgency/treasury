@@ -1,0 +1,122 @@
+# 3. The engine's parameters: price sources, rules map, profiles, calibration and escalation
+
+**Status:** proposed by Harjaap (owner of H5, H6, H8, H9 and H11), 2026-11-06, for review in this PR. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95.
+
+Every value below is either changed in this PR (marked **changed**) or kept as it already is in code (marked **kept**), so the code and this page agree. Anything not decided here is listed under [Open](#open).
+
+## A14: what the red hand must do (#95)
+
+A14's wording, from the plan and its task card: at L4, **no new sends**. One action freezes the agent, Ballast's queued proposals stop, the state is snapshotted and the roster is told; release takes two approvals.
+
+- **Freeze is the answer.** A frozen agent is refused every send at the platform and at the provider, so approved proposals, Run now, other apps' `executePlan` and autopilot all stop. A stop of every app's access without a signature is **not** required, so no new platform request is raised.
+- **The owner's signature is acceptable.** The freeze takes effect once the owner signs on the platform's confirm page. H16's under-60-second target is measured from that signature to the platform confirming the freeze, not from the alert.
+- **Gaps we accept and track:** a wallet owner needs the app to offer Freeze (#133). A DAO owner's vote must pass within the intent's minutes, which most DAOs can't do (MultiAgency/platform#20). Until that's fixed, a DAO-owned agent's red hand is `autopilot/stop` plus Ballast proposing nothing at L4. That stops Ballast, not other apps, and the README says so.
+- **Revoking grants** isn't needed for "no new sends" once frozen; it stays the owner's choice.
+- **The two-approval release** is Ballast's: lowering from L4 needs two distinct approvers from the mandate's `governance.approvers` (A15). Unfreezing itself is the owner's platform action, under the platform's `unfreeze_available_at` cooldown.
+
+## H5: assets and price sources
+
+- **Volatile asset: wNEAR** (`nep141:wrap.near`). **Reserve and operating cash: USDC**, the reserve held confidential (`treasury/setConfidential`). There's no tokenized T-bill among the platform's proposal assets, so the "risk-free yield" profile is dropped.
+- **The three price sources**, each public, keyless and quoted in USD rather than USDT, and each independent of the platform's own price (the NEAR Intents token list, `price_updated_at`):
+
+| Source | Read | History |
+| --- | --- | --- |
+| Coinbase Exchange `NEAR-USD` | `GET api.exchange.coinbase.com/products/NEAR-USD/ticker` (`price`, `time`) | Hourly candles, `…/candles?granularity=3600` (300 a request) |
+| Kraken `NEARUSD` | `GET api.kraken.com/0/public/Ticker?pair=NEARUSD` (last trade `c[0]`); it carries no timestamp, so the read time is used and the skew limit covers it | `…/OHLC?pair=NEARUSD&interval=60` (last 720 hours) |
+| Pyth `Crypto.NEAR/USD` | `GET hermes.pyth.network/v2/updates/price/latest?ids[]=c415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750` (`price × 10^expo`, `publish_time`) | Not needed: the history comes from Coinbase |
+
+- **History:** the oracle stores **one median an hour** (the first reading in each UTC hour). The EMA warm-up is seeded from Coinbase's hourly candles. The chop detector and H9's calibration both assume hourly samples.
+- **Until the fetchers land:** `watch` reads prices from the platform's `overview` (#47). One source can't meet the oracle's three, so `watch` uses an explicit single-source setting that is named, logged and removed when the fetchers ship. That holds back nothing the owner doesn't see: every Ballast trade is still a proposal the owner signs.
+
+### Threat-model entries (to add to #20's table)
+
+| What can go wrong | What stops it |
+| --- | --- |
+| One price source is wrong, manipulated or compromised | The median of three ignores one outlier. A spread over 2% between fresh sources freezes the reading (L2, `source-disagreement`), and so does a source older than 5 minutes or dated more than 5 seconds ahead. Residual: two sources wrong in the same direction within 2% move the median. A proposal's `minAmountOut` then sits off the market, and the platform refuses it when it's above the quote. It's never a worse swap than the owner signed. |
+| A source is down, rate-limits or changes its format | Fewer than three fresh, parseable quotes freezes the reading: hold, never trade. The response is parsed against a strict schema; anything else counts as no quote. Each source is read at most once a tick, under its documented public limits. |
+| A source is reached over a spoofed network | HTTPS only, with certificate checks left on. No redirect is followed to another host. |
+| A leaked price-source credential | None exists: all three are public and keyless. If one later needs a key, it gets its own entry first (CONTRIBUTING). |
+| The stored hourly history is edited or corrupted | It's an owner-only file written atomically, like the request store. An unreadable file, a gap over an hour inside the TWAP window, or a span under 30 days freezes the reading (`warming-up`) until it's re-seeded from Coinbase. |
+
+## H6: rules-to-policy map
+
+Each rule is enforced in one or more places. The platform's signed policy always has the last word. Ballast's checks only hold back (CONTRIBUTING).
+
+| Rule | Ballast check (`packages/core`) | Signed platform policy | Human |
+| --- | --- | --- | --- |
+| One order ≤ 2% of the treasury | `ORDER_SIZE` | `limits.per_transaction` per asset, set at signing from the treasury's value | — |
+| Daily turnover ≤ 10% | `DAILY_TURNOVER`, gross over a rolling 24 hours | `budget.daily_usd`, set at signing to 10% of the value | — |
+| ≤ 10 orders an hour | `ORDER_RATE` | `max_actions_per_hour: 10` | — |
+| Slippage ≤ 50 bps | `SLIPPAGE`, quote against the oracle median | The proposal's `minAmountOut` (`legsFor`), enforced at execution | — |
+| Venue exposure | `VENUE_EXPOSURE` (see below) | — | — |
+| Six-month cash floor | `CASH_FLOOR` | — | — |
+| Assets and actions | Mandate `assets` | `assets: [wNEAR, USDC]`, `actions: ["swap"]` for trading (payroll adds `transfer`) | — |
+| Destinations | Mandate `destinations` | `destinations.mode: "only"` with the mandate's list | — |
+| Levels L1–L3 | `LEVEL` | — | L2 and L3 trades are proposals the owner approves |
+| L4 | `LEVEL` refuses everything | `frozen` (A14) | The owner signs the freeze |
+| Every Ballast trade | — | — | Every trade is a proposal the owner signs (`proposalText`) |
+
+- **Venue (changed):** a venue is where the agent's assets are held and settle. Today that's one place, the agent's NEAR Intents account. So the venue cap is the profile's volatile ceiling (`bounds.volatileMaxPct`): conservative 30%, balanced 50%, growth 70%. The default is 50%. With a 25% cap, the backtest's 581 rejections were all this rule: buying stopped once wNEAR passed a quarter of the treasury, whatever the profile allowed.
+- **Cash (kept):** stablecoins only, with no valuation haircut on USDC. The depeg detector (L2 at 1%, L3 at 3%) covers USDC losing its peg.
+- **Six-month floor against the three-month buffer (kept):** the six-month floor wins. The three-month withdrawal buffer isn't a separate rule, and nothing may spend below the floor.
+- **Spend rate (kept):** the owner's answer to question 1, with no default. An unset rate rejects every buy.
+
+## H8: questionnaire, profiles and sleeves
+
+- **The seven questions (kept),** in order: monthly operating spend (USD); months of operating cash to protect; treasury value today (USD); volatile assets the engine may trade; stablecoins that count as cash; NEAR accounts funds may be sent to; and NEAR accounts that approve orders.
+- **Sleeves:** volatile = wNEAR, reserve = USDC the DCA buys draw on, operating cash = USDC protected by the floor. The DCA never draws on operating cash. These labels are confirmed. The weights become an approved allocation only when an owner signs a mandate on them, so `weightsApproved` stays false in code.
+- **Profiles (kept, plus the venue cap above):**
+
+| Profile | Volatile / reserve / cash | Volatile bounds | Order / turnover / orders an hour / slippage | Min months | Approvals | Starts at |
+| --- | --- | --- | --- | --- | --- | --- |
+| Conservative | 20 / 30 / 50 | 5–30% | 1% / 5% / 5 / 30 bps | 9 | 2 | L2 |
+| Balanced | 40 / 35 / 25 | 10–50% | 2% / 10% / 10 / 50 bps | 6 | 1 | L0 |
+| Growth | 60 / 25 / 15 | 20–70% | 2% / 15% / 10 / 50 bps | 6 | 1 | L0 |
+
+## H9: calibration
+
+**Method.** `node scripts/calibrate.ts fetch near-usd-1h.csv`, then `… run near-usd-1h.csv`.
+
+- **Data:** Coinbase's hourly NEAR-USD closes from 2025-09-25 to 2026-11-05, 9,735 rows with a longest gap of 6 hours. CSV SHA-256 `aee22540964679dc6857105c50e9e8301320655825a8651356d63ebea54ea4b2`.
+- **Run:** the first 35 days warm the EMA up, and the replay runs on the remaining 8,900 hours. The setup is the balanced profile at 100,000 USD (40/35/25), spending 2,000 a month, with the replay's simulated 5–15 bps fills.
+- **Checks:** each candidate was also run on each half-year, to see whether a result held in both or was luck in one.
+
+| Run (year, then each half) | End value | Max drawdown | Trades |
+| --- | --- | --- | --- |
+| Buy-and-hold | 129.6k (82.6k / 183.2k) | 33.0% (33.0% / 30.2%) | — |
+| Plan bands (±15/25/40, halt −45), venue 25%, chop 6/2 | 110.7k | 28.6% | 7 buys, 41 sells; every later buy rejected by the venue cap |
+| Plan bands, venue 50%, chop 14/1 | 105.1k (86.4k / 135.9k) | 30.1% (30.1% / 15.9%) | 6 buys, 41 sells |
+| **Chosen: trim 20/30/45, DCA −20/−30/−40, halt −50, venue 50%, chop 14/1** | **110.9k (86.5k / 135.8k)** | **30.1% (30.1% / 14.0%)** | **9 buys, 35 sells** |
+| Trim 20/35/50, same DCA | 111.5k (86.5k / 139.3k) | 30.1% (30.1% / 13.9%) | 9 buys, 33 sells |
+
+- **Bands (changed):** trim at +20/+30/+45%, DCA at −20/−30/−40%, buying halts at −50%. On NEAR, the TWAP sat outside the plan's ±15% for 43% of the year, so the bands acted on ordinary moves. With ±20%, it's 33%. The wider bands made more buys and ended higher in both halves. Trim 20/35/50 did slightly better again, but the difference is within one year's noise, so the middle setting was chosen.
+- **Chop (changed):** 14 reversals with at most 1% net move in a day, on hourly samples. The plan-era 6 and 2% fired in 37% of hours and held trading for a third of the year; 14/1 fires in 4.7%.
+- **Kept as they are**, each checked in the same run:
+  - **Oracle:** 3 sources, 2% disagreement, 5 minutes stale, 5 seconds future skew. These are plan values, and the backtest's single series can't test them, so they're revisited once the fetchers have a week of live quotes.
+  - **Smoothing:** 30-day EMA, 15-minute TWAP, a 1-hour largest gap.
+  - **Whipsaw:** 1-hour cooldown, 24-hour reversal lock, 2-point hysteresis. A 6-hour cooldown changed nothing; 24 hours with a 72-hour reversal lock made 8 fewer trades and a higher drawdown (29.5% against 28.6%).
+  - **Sizing:** DCA budget 20% of the reserve in 10 units. A 40% budget traded 10% more USD for the same end value and drawdown.
+  - **Fast move** at 10% and 20% an hour, **crash** at 30% and **parabolic** at 40%. The parabolic detector fired twice in the year; crash and the fast-move detectors never fired.
+- **What this calibration is not:** one asset and one year, which rose 74% end to end. The strategy trails buy-and-hold in the rising half (135.8k against 183.2k) and halves its drawdown there (14.0% against 30.2%), which is the trade it exists to make. It isn't evidence of returns.
+
+## H11: escalation and alerting
+
+**Levels (kept):** L1 halves the per-order cap. L2 asks a human for every order. L3 allows only risk-reducing sells, each approved. L4 is no new sends.
+
+| Level | Who is told | Acknowledge within | If not acknowledged |
+| --- | --- | --- | --- |
+| L0 Normal | Nobody (the log) | — | — |
+| L1 Watch | The builder channel (`notify`) | — | — |
+| L2 Caution | The owner and the operators | 60 minutes | Rises to L3 |
+| L3 Critical | The owner and the operators, paged | 15 minutes | Rises to L4: Ballast proposes nothing and asks the owner to freeze |
+| L4 Red hand | Everyone on the roster | — | Stays until two approvers lower it, one step at a time |
+
+- **Roster:** the owner, from the mandate's `governance.approvers`, and the operators, Harjaap and Ayush. A15 builds this on `watch`'s existing `notify` command.
+- **Telegram:** if A15 sends through a Telegram bot, the bot token is a new credential and gets its #20 threat-model entry first.
+- **Levels only rise on their own.** A human lowers them one step at a time, and from L4 that takes two distinct approvers (A14).
+
+## Open
+
+- **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
+- **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
+- **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.

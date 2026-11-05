@@ -1,10 +1,10 @@
 // Mandate (A9.1): the owner's signed rules as one versioned object, and a compiler from the seven questionnaire answers
 // plus a profile. Pure; fails closed: any answer that is the wrong type, out of range or inconsistent rejects the whole
-// compile with every reason, and nothing is guessed. The questions, the profiles and the sleeve labels are NOT confirmed
-// (H8, H6): every number below is a placeholder default, and the weights must not be presented as an approved allocation
-// (`weightsApproved` stays false until the owner and Harjaap confirm them).
+// compile with every reason, and nothing is guessed. H8 (ADR 3) confirms the seven questions, the three profiles and the
+// sleeve labels (volatile wNEAR, a USDC reserve the DCA draws on, USDC operating cash). The weights are still not an
+// approved allocation for any one owner: `weightsApproved` stays false until that owner signs the mandate built on them.
 
-import { EXPOSURE_DEFAULTS, type ExposureLimits } from "./exposure.ts";
+import type { ExposureLimits } from "./exposure.ts";
 import { LEVEL_DEFAULTS, levelProblems, type Level } from "./levels.ts";
 import { POLICY_DEFAULTS, policyLimitProblems, type PolicyLimits } from "./policy.ts";
 import type { PolicyConfig } from "./check.ts";
@@ -30,7 +30,7 @@ export type Profile = {
   startLevel: Level;
 };
 
-/** Placeholder profiles, awaiting H8. */
+/** The three profiles (H8, ADR 3). Each profile's venue cap is its `bounds.volatileMaxPct` (H6). */
 export const PROFILE_DEFAULTS: Readonly<Record<ProfileName, Profile>> = {
   conservative: {
     weights: { volatilePct: 20, reservePct: 30, cashPct: 50 }, bounds: { volatileMinPct: 5, volatileMaxPct: 30 },
@@ -48,7 +48,7 @@ export const PROFILE_DEFAULTS: Readonly<Record<ProfileName, Profile>> = {
   },
 };
 
-/** The seven answers. Placeholder questions, awaiting H8. */
+/** The seven answers (H8, ADR 3). */
 export type Answers = {
   /** 1. Monthly operating spend, USD. */
   monthlySpendUsd: number;
@@ -75,7 +75,7 @@ export type Mandate = {
   governance: { approvers: string[]; approvalsRequired: number; startLevel: Level };
   weights: Weights;
   bounds: WeightBounds;
-  /** Always false here: the sleeve labels and weights are unconfirmed (H5/H6/H8). */
+  /** Always false here: the owner hasn't yet signed these weights (H8). */
   weightsApproved: false;
 };
 
@@ -134,7 +134,7 @@ export function mandateProblems(m: unknown): string[] {
   const spend = own(exposure, "monthlySpendUsd"), months = own(exposure, "operatingCashMonths");
   r.need(isPositive(spend), "the spend rate must be above zero (a zero spend would switch the cash floor off)");
   r.need(isPositive(months) && months <= MAX_CASH_MONTHS, `operatingCashMonths must be above 0 and at most ${MAX_CASH_MONTHS}`);
-  r.need(sameAs(exposure, { maxVenueExposurePct: EXPOSURE_DEFAULTS.maxVenueExposurePct, operatingCashMonths: months, monthlySpendUsd: spend }), "the venue exposure limit must be the default");
+  r.need(sameAs(exposure, { maxVenueExposurePct: profile?.bounds.volatileMaxPct, operatingCashMonths: months, monthlySpendUsd: spend }), "the venue exposure limit must be the profile's volatile ceiling");
   r.need(own(limits, "l1OrderCapFactor") === LEVEL_DEFAULTS.l1OrderCapFactor, "the L1 order cap factor must be the default");
   r.need(own(m, "weightsApproved") === false, "weights are unconfirmed and cannot be marked approved");
   if (!profile) return r.problems;
@@ -190,7 +190,7 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
   }
   if (r.problems.length > 0 || !profile || !isNum(spend) || !isNum(months)) return { ok: false, problems: r.problems };
 
-  const exposure: ExposureLimits = { maxVenueExposurePct: EXPOSURE_DEFAULTS.maxVenueExposurePct, operatingCashMonths: months, monthlySpendUsd: spend };
+  const exposure: ExposureLimits = { maxVenueExposurePct: profile.bounds.volatileMaxPct, operatingCashMonths: months, monthlySpendUsd: spend };
   const mandate: Mandate = {
     version: MANDATE_VERSION, profile: profileName as ProfileName,
     assets: { volatile, stablecoins }, destinations,

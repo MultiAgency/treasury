@@ -1,7 +1,7 @@
 // Edge-case detectors, market moves (A6.1): fast rise, fast drop, crash, parabolic move and sideways chop, over the
 // oracle's sample history. Pure: the history and the clock are passed in. Each detection names an escalation level;
-// the highest decides. All thresholds, windows and levels are named defaults, awaiting H6/H9/H11 (the plan lists
-// the cases but gives no numbers). A history too short to judge is itself a conservative detection, never silence.
+// the highest decides. The levels are H11's and the chop rule is H9's (ADR 3); the other thresholds are named defaults
+// that ADR 3 keeps as they are. A history too short to judge is itself a conservative detection, never silence.
 
 import type { Level } from "./levels.ts";
 import { cleanSamples, historySpan, type Sample } from "./smoothing.ts";
@@ -16,11 +16,14 @@ export const DETECTOR_DEFAULTS = {
   crashPct: 30,
   /** A rise from a low to a later high within the day, at or beyond this, is parabolic (L2), even if it fell back. */
   parabolicPct: 40,
-  /** Many direction reversals with almost no net move over the last day is chop (L1). */
-  chop: { minReversals: 6, maxNetMovePct: 2 },
+  /**
+   * Many direction reversals with almost no net move over the last day is chop (L1). Counted per sample, so it assumes
+   * hourly samples: 6 reversals and 2% fired in 37% of a year's hours on NEAR, these in 4.7% (H9, ADR 3).
+   */
+  chop: { minReversals: 14, maxNetMovePct: 1 },
   /** Less history than this can't be judged. */
   minHistoryMs: 86_400_000,
-  /** A newest sample older than this leaves the last stretch unseen, so it can't be judged either (awaiting H9/H11). */
+  /** A newest sample older than this leaves the last stretch unseen, so it can't be judged either. */
   maxSampleAgeMs: 15 * 60_000,
 } as const;
 

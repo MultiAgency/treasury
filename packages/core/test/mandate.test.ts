@@ -23,10 +23,20 @@ test("each profile compiles to its weights, bounds, limits and governance from t
     assert.deepEqual([m.governance.approvalsRequired, m.governance.startLevel], [profile.approvalsRequired, profile.startLevel]);
     assert.equal(m.limits.exposure.monthlySpendUsd, 10_000);
     assert.equal(m.limits.exposure.operatingCashMonths, 9);
+    assert.equal(m.limits.exposure.maxVenueExposurePct, profile.bounds.volatileMaxPct, "H6: one venue, so its cap is the volatile ceiling");
     assert.equal(m.weightsApproved, false);
     assert.equal(r.cashFloorUsd, 90_000);
     assert.deepEqual(mandateProblems(m), []);
     assert.equal(profile.weights.volatilePct + profile.weights.reservePct + profile.weights.cashPct, 100);
+  }
+});
+
+test("a venue cap other than the profile's volatile ceiling is refused (H6, ADR 3)", () => {
+  const r = compile(answers);
+  assert.ok(r.ok);
+  for (const maxVenueExposurePct of [25, 70, 50.0001]) {
+    const m = { ...r.mandate, limits: { ...r.mandate.limits, exposure: { ...r.mandate.limits.exposure, maxVenueExposurePct } } };
+    assert.match(mandateProblems(m).join("; "), /volatile ceiling/, String(maxVenueExposurePct));
   }
 });
 
