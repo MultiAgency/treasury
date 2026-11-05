@@ -1,0 +1,47 @@
+name: Audit anchor check
+
+# The outside check A7.3 needs (#55), away from the server: every anchor FastData KV lists under the key, each confirmed
+# on chain by its transaction, the sequence never going back, and the newest anchor no older than a heartbeat and two
+# intervals. A failed run is the alert. Which anchors it checks comes from repository variables, so moving from testnet
+# to mainnet changes no code.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anchor-check
+  cancel-in-progress: false
+
+# Actions are pinned by commit, with the release they are in a comment.
+jobs:
+  check:
+    name: Anchors under ${{ vars.ANCHOR_KEY || 'audit/multiagency-treasury' }} on ${{ vars.ANCHOR_NETWORK || 'testnet' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # pnpm's version comes from package.json's packageManager.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: The key's history, confirmed on chain
+        run: pnpm --filter @treasury/server check:anchors
+        env:
+          ANCHOR_NETWORK: ${{ vars.ANCHOR_NETWORK || 'testnet' }}
+          ANCHOR_ACCOUNT: ${{ vars.ANCHOR_ACCOUNT }}
+          ANCHOR_KEY: ${{ vars.ANCHOR_KEY || 'audit/multiagency-treasury' }}
+          ANCHOR_INTERVAL_S: ${{ vars.ANCHOR_INTERVAL_S }}
+          # When this deployment began anchoring (ISO date). Until a day and two intervals after it, no anchor yet passes;
+          # unset, it fails, since an empty history then can't be told from a broken anchorer or a wrong key.
+          ANCHOR_SINCE: ${{ vars.ANCHOR_SINCE }}
+          # Optional: FastNEAR's archival RPC with the key, rather than its free rate.
+          FASTNEAR_API_KEY: ${{ secrets.FASTNEAR_API_KEY }}
