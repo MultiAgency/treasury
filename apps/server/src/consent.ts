@@ -3,8 +3,16 @@ import { consentMessage, parseConsentMessage } from "@multiagency/sdk";
 import type { Identity } from "./contract.ts";
 import type { ConsentRecord } from "./platform.ts";
 
-/** What this server asks an owner to consent to: reads and Treasury proposals the owner approves one by one. Never `treasury-execute` or `owner`. */
+/** What this server asks an owner to consent to: reads and Treasury proposals the owner approves one by one. Never `treasury-execute`. */
 export const CONSENT_SCOPES = ["read", "treasury"] as const;
+/**
+ * With a wallet owner's explicit opt-in, also `owner`: the app may prepare owner actions (a strategy grant) and relay
+ * the owner's own signature over each, which alone makes one take effect. A DAO's consent never carries it: the
+ * platform files a DAO's owner actions for its vote under `treasury`.
+ */
+export const OWNER_CONSENT_SCOPES = ["read", "treasury", "owner"] as const;
+/** Whether a consent carries `owner`. */
+export const withOwner = (scopes: readonly string[]) => scopes.includes("owner");
 /** How long a consent this server asks for lasts. The platform allows up to 366 days. */
 export const CONSENT_DAYS = 90;
 const DAY = 86_400_000;
@@ -20,35 +28,35 @@ export const organizationOf = (account: string) => account.replaceAll(".", "--")
 
 /**
  * The consent this server asks for, as its canonical text: the owner's Organization, the agent's current identity
- * (so an agent created anew needs a new one), `CONSENT_SCOPES`, for `CONSENT_DAYS`. A wallet owner signs it; a DAO
- * votes on it.
+ * (so an agent created anew needs a new one), `CONSENT_SCOPES` (or `OWNER_CONSENT_SCOPES` when the owner opts in), for
+ * `CONSENT_DAYS`. A wallet owner signs it; a DAO votes on it.
  */
-export const consentFor = ({ identity, deployment, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; now?: number }) =>
+export const consentFor = ({ identity, deployment, owner = false, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }) =>
   consentMessage({
     host: identity.host, deployment, organization: organizationOf(identity.owner), owner: identity.owner, agent: identity.agent,
-    agentId: identity.agentId, scopes: [...CONSENT_SCOPES], expiresAt: new Date(now + CONSENT_DAYS * DAY).toISOString(),
+    agentId: identity.agentId, scopes: [...(owner ? OWNER_CONSENT_SCOPES : CONSENT_SCOPES)], expiresAt: new Date(now + CONSENT_DAYS * DAY).toISOString(),
   });
 
 /**
  * The consent text for the owner's wallet to sign, with a fresh 32-byte nonce, and the recipient to sign it for: the
  * platform's host, never this server's.
  */
-export function consentText(expected: { identity: Identity & { agentId: string }; deployment: string; now?: number }) {
+export function consentText(expected: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }) {
   return { message: consentFor(expected), nonce: randomBytes(32).toString("base64"), recipient: expected.identity.host };
 }
 
 /**
  * Whether a signed text is exactly a consent this server would ask for now: the canonical text naming this host,
- * deployment, Organization, owner, agent and identity, with `read` and `treasury` only, unexpired and no longer than
- * `CONSENT_DAYS`. Anything else is refused before the platform sees it, so the server never relays a wider consent
- * than it asked for.
+ * deployment, Organization, owner, agent and identity, with `read` and `treasury` only, or with `owner` as well,
+ * unexpired and no longer than `CONSENT_DAYS`. Anything else is refused before the platform sees it, so the server never
+ * relays a wider consent than it asks for.
  */
 export function checkConsent(message: string, { identity, deployment, now = Date.now() }: Expected): { ok: true } | { ok: false; code: "not_this_consent" } {
   const text = parseConsentMessage(message);
   const expiresAt = text ? Date.parse(text.expiresAt) : NaN;
   const matches = text !== null && text.host === identity.host && text.deployment === deployment
     && text.organization === organizationOf(identity.owner) && text.owner === identity.owner && text.agent === identity.agent
-    && text.agentId === identity.agentId && text.scopes.join() === [...CONSENT_SCOPES].sort().join()
+    && text.agentId === identity.agentId && [CONSENT_SCOPES, OWNER_CONSENT_SCOPES].some(scopes => text.scopes.join() === [...scopes].sort().join())
     && expiresAt > now && expiresAt <= now + CONSENT_DAYS * DAY;
   return matches ? { ok: true } : { ok: false, code: "not_this_consent" };
 }

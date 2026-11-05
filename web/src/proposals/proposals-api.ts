@@ -71,7 +71,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         identity: () => call(contract.agent, base),
         consent: () => call(contract.consent, `${base}/consent`),
         /** The consent text for the owner's wallet, built by the server from the agent as the platform answers it now. */
-        consentText: () => call(contract.consentText, `${base}/consent/text`, { method: "POST" }),
+        consentText: ({ owner = false }: { owner?: boolean } = {}) =>
+          call(contract.consentText, `${base}/consent/text`, { method: "POST", body: contract.consentRequest.parse(owner ? { owner: true } : {}) }),
         /**
          * For a DAO-owned agent: files its consent for the DAO's vote, or answers the request already open. The server
          * builds the text, and the platform the proposal a member files.

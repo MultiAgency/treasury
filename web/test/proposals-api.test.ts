@@ -205,3 +205,12 @@ test("asking for a rebalance is one JSON POST naming the request; its proposal p
   assert.deepEqual(server.sent.map(request => [request.method, request.path, JSON.parse(request.body)]), [["POST", `${base}/proposals`, { requestId: "page-1" }]]);
   assert.throws(() => agent.proposeRebalance("has space"), "held to the server's schema before anything is sent");
 });
+
+test("the consent text is asked for with owner only at the owner's choice", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const text = { message: "m", nonce: NONCE, recipient: "platform.test" };
+  server.answer(`POST ${base}/consent/text`, ok(text));
+  await agent.consentText();
+  await agent.consentText({ owner: true });
+  assert.deepEqual(server.sent.map(request => JSON.parse(request.body)), [{}, { owner: true }]);
+});

@@ -6,7 +6,7 @@ import { accessOf, mayCall, proposalId, type ProposalView } from "@multiagency/s
 import { verifyNep413Signature } from "near-kit";
 import type { z } from "zod";
 import { sha256, type Audit } from "./audit.ts";
-import { checkConsent, consentFor, consentText, liveConsents, organizationOf } from "./consent.ts";
+import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
 import { offerFor } from "./dao-offer.ts";
 import type { DaoRequests, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
@@ -607,17 +607,22 @@ export const routes: Route[] = [
   {
     /**
      * The text the owner's wallet signs to connect the agent, built here from the agent's identity as the platform
-     * answers it now, never from the browser. An agent already connected isn't offered another signature. For a
-     * DAO-owned agent, the consent is filed for the DAO's vote instead (`fileDaoConsent`), once per agent at a time.
+     * answers it now, never from the browser, with `owner` only when the owner asks for it (`{ owner: true }`). An agent
+     * already connected isn't offered another signature, except to add `owner` to a connection without it: the new
+     * consent replaces the old once stored. For a DAO-owned agent, the consent is filed for the DAO's vote instead
+     * (`fileDaoConsent`), once per agent at a time, and never with `owner`.
      */
     method: "POST", path: "/api/agents/:agent/consent/text", access: "owner-fresh", needs: "file",
-    async handle({ account, identity }, context) {
+    async handle({ body, account, identity }, context) {
       const { agentId } = identity!;
+      const asked = parse(contract.consentRequest, body ?? {});
+      if (asked === undefined || (asked.owner && identity!.signer === "dao")) return refused(400, "bad_request");
       if (agentId === null) return refused(409, "not_created");
       const listed = await context.platform.consents.list(organizationOf(identity!.owner));
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
-      if (liveConsents(listed.value.consents, identity!).length) return refused(409, "already_connected");
-      if (identity!.signer === "wallet") return ok(consentText({ identity: { ...identity!, agentId }, deployment: context.deployment }));
+      const live = liveConsents(listed.value.consents, identity!);
+      if (live.length && !(asked.owner && !live.some(consent => withOwner(consent.scopes)))) return refused(409, "already_connected");
+      if (identity!.signer === "wallet") return ok(consentText({ identity: { ...identity!, agentId }, deployment: context.deployment, owner: asked.owner === true }));
       return fileDao({ kind: "consent" }, account!, { ...identity!, agentId }, context);
     },
   },

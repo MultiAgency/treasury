@@ -476,6 +476,26 @@ test("an agent already connected isn't offered a new signature, and a reconnect 
   assert.ok(results().some(entry => entry.action === "revoke" && entry.subject === kept.id && entry.answer.ok), "and recorded");
 });
 
+test("owner is asked for only at the owner's choice: at connect, or to add it to a connection without it, which the new consent then replaces", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const textFor = async (body: unknown) => json(await call("POST", "/api/agents/portfolio/consent/text", { cookie, body }));
+  const scopesOf = (text: { message: string }) => parseConsentMessage(text.message)!.scopes;
+  assert.deepEqual(scopesOf((await textFor({})).body.value), ["read", "treasury"], "never by default");
+  assert.deepEqual(scopesOf((await textFor({ owner: true })).body.value), ["owner", "read", "treasury"]);
+  assert.equal((await textFor({ owner: false })).status, 400, "only true asks for it");
+  const kept = (await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: (await signedConsent(cookie)).submission }))).body.value.consent;
+  const upgrade = await textFor({ owner: true });
+  assert.equal(upgrade.status, 200, "a connection without owner may add it");
+  const signed = owner.sign(upgrade.body.value);
+  const stored = await json(await call("POST", "/api/agents/portfolio/consent", { cookie,
+    body: { message: upgrade.body.value.message, nonce: upgrade.body.value.nonce, publicKey: signed.publicKey, signature: signed.signature } }));
+  assert.deepEqual(stored.body.value.consent.scopes, ["owner", "read", "treasury"]);
+  assert.equal(fake.consents.find(consent => consent.id === kept.id)?.revoked, true, "the one without owner is replaced");
+  for (const body of [{}, { owner: true }])
+    assert.deepEqual(await textFor(body), { status: 409, body: { ok: false, kind: "refused", code: "already_connected" } }, JSON.stringify(body));
+});
+
 test("new consents are limited per account a day, since even revoked ones count against the deployment's cap", async t => {
   const counted = fakePlatform({ portfolio: "owner.near" });
   const limited = createHttpServer(createServer({
@@ -879,6 +899,9 @@ test("a member who may file connects a DAO's agent: the consent filed once for t
   await freshDao(t);
   const cookie = await signIn(council);
   fake.calls.length = 0;
+  assert.deepEqual(await json(await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: { owner: true } })),
+    { status: 400, body: { ok: false, kind: "refused", code: "bad_request" } }, "a DAO's consent never carries owner");
+  assert.deepEqual(fake.calls.filter(made => made.startsWith("daoConsents")), [], "nothing filed for it");
   const { status, body } = await json(await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} }));
   assert.equal(status, 200, JSON.stringify(body));
   const { request } = contract.daoFiled.parse(body.value);

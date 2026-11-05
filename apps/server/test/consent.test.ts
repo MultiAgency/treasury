@@ -35,10 +35,11 @@ test("the consent text names this deployment, the owner's Organization, the agen
   assert.deepEqual(checkConsent(text.message, expected), { ok: true });
 });
 
-test("a signed text is relayed only if it's exactly the consent this server would ask for now", () => {
+test("a signed text is relayed only if it's exactly a consent this server would ask for now: read and treasury, or with owner too", () => {
   const base = { host: "platform.test", deployment: "treasury", organization: "owner--near", owner: "owner.near", agent: "portfolio",
     agentId: "id-portfolio", scopes: ["read", "treasury"] as ("read" | "treasury" | "treasury-execute" | "owner")[], expiresAt: new Date(now + 30 * DAY).toISOString() };
   assert.deepEqual(checkConsent(consentMessage(base), expected), { ok: true });
+  assert.deepEqual(checkConsent(consentMessage({ ...base, scopes: ["owner", "read", "treasury"] }), expected), { ok: true }, "owner actions, opted into");
   const cases: [string, Partial<typeof base>][] = [
     ["another host", { host: "elsewhere.test" }],
     ["another deployment", { deployment: "other" }],
@@ -47,7 +48,8 @@ test("a signed text is relayed only if it's exactly the consent this server woul
     ["another agent", { agent: "other" }],
     ["another agent identity", { agentId: "id-old" }],
     ["unattended execution", { scopes: ["read", "treasury", "treasury-execute"] }],
-    ["owner actions", { scopes: ["owner", "read", "treasury"] }],
+    ["owner actions without treasury", { scopes: ["owner", "read"] }],
+    ["owner actions and unattended execution", { scopes: ["owner", "read", "treasury", "treasury-execute"] }],
     ["read only", { scopes: ["read"] }],
     ["already expired", { expiresAt: new Date(now - 1).toISOString() }],
     ["longer than this server asks", { expiresAt: new Date(now + CONSENT_DAYS * DAY + 1).toISOString() }],
