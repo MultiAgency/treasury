@@ -598,6 +598,34 @@ test("a result the audit trail can't record is logged, and the action's answer a
   assert.ok(logged.mock.calls.filter(call => String(call.arguments[0]).includes("audit_failed")).length >= 3);
 });
 
+test("a consent submission that throws is a lost answer: sent once more, then unavailable, with its result on record", async t => {
+  clean();
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const { submission } = await signedConsent(cookie);
+  const submit = fake.platform.consents.submit;
+  let sent = 0;
+  fake.platform.consents.submit = async () => { sent++; throw new Error("socket hang up"); };
+  try {
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: submission })), { status: 503, body: { ok: false, kind: "unavailable" } });
+  } finally { fake.platform.consents.submit = submit; }
+  assert.equal(sent, 2);
+  assert.deepEqual(audited.filter(entry => entry.action === "consent").map(entry => entry.stage === "result" ? entry.answer : entry.stage),
+    ["attempt", { ok: false, kind: "unavailable" }]);
+});
+
+test("every other relayed action answers what the platform did when its result can't be recorded, and logs the record", async t => {
+  clean();
+  const logged = t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const actions: [string, unknown][] = [["deposit", { asset: "USDC" }], ["treasury/confidential", { confidential: true }], ["treasury/unlink", {}],
+    ["autopilot/stop", {}], ["autopilot/tick", {}], ["proposals", { requestId: "audit-result" }], ["sweep", { execute: true }]];
+  auditFails.stage = "result";
+  for (const [path, body] of actions)
+    assert.equal((await call("POST", `/api/agents/portfolio/${path}`, { cookie, body })).status, 200, path);
+  assert.equal(logged.mock.calls.filter(call => String(call.arguments[0]).includes("audit_failed")).length, actions.length);
+});
+
 test("the consent routes answer unavailable when the platform's consent list doesn't answer", async () => {
   clean();
   const cookie = await signIn(owner);

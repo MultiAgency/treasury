@@ -1,12 +1,12 @@
 import { mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { symbolOf } from "../shared/format";
 import { Button, Card, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
 import type { Identity } from "./proposals-api";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
+import { StrategyTerms } from "./strategy-terms";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
 import { forgetGrant } from "./kept-outcomes";
@@ -88,12 +88,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
         : <ol aria-label="From strategy to autopilot" className="flex flex-col gap-5 text-sm">
           <li className="flex flex-col gap-3">
             <h3 className="text-base font-semibold">1. Configure the strategy</h3>
-            <ul aria-label="Strategy targets" className="flex flex-col gap-1">
-              {Object.entries(s!.strategy.targetBps).filter(([, bps]) => bps > 0).map(([asset, bps]) =>
-                <li key={asset}>{symbolOf(asset, [])}: {bps / 100}%</li>)}
-            </ul>
-            <p>Swaps of at least ${s!.strategy.minLegUsd}, costing at most {s!.strategy.maxCostBps / 100}%. On autopilot: every {s!.strategy.autopilot.everyMin} minutes,
-              up to ${s!.strategy.autopilot.maxUsd} a run.</p>
+            <StrategyTerms strategy={s!.strategy} label="Strategy targets" />
             {s!.strategy.autopilot.maxUsd === 0 && <p>With a $0 ceiling, autopilot makes no swaps on its own: swaps are proposed for your approval
               instead. <PageLink to={agentAddress(identity.agent, "proposals")} className="underline">Propose a rebalance</PageLink>.</p>}
             {canSave ? <Button ref={editButton} variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>

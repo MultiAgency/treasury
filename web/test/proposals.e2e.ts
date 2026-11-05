@@ -414,6 +414,37 @@ test("the owner allows owner actions: told first that open proposals are withdra
   assert.deepEqual(unexpected, []);
 });
 
+test("a strategy changed while the owner edits it is shown to them, and their draft saved over it only once they've reviewed it", { timeout: 90_000 }, async () => {
+  await page.goto(here("/strategy"));
+  const autopilot = page.getByRole("region", { name: "Autopilot" });
+  await signInIfAsked(autopilot.getByRole("button", { name: "Edit strategy" }));
+  await autopilot.getByRole("button", { name: "Edit strategy" }).click();
+  const editor = autopilot.getByRole("form", { name: "Edit strategy" });
+  await visible(editor);
+  await editor.getByLabel("Run every (minutes)").fill("90");
+  // Leaving for another of the agent's pages asks first; staying keeps the draft.
+  const asked: string[] = [];
+  page.once("dialog", dialog => { asked.push(dialog.message()); void dialog.dismiss(); });
+  await page.getByRole("navigation", { name: "Agent pages" }).getByRole("link", { name: "Funding" }).click();
+  await editor.waitFor({ state: "visible" });
+  assert.deepEqual(asked, ["Discard your unsaved changes?"]);
+  assert.equal(page.url(), here("/strategy"), "still on Strategy");
+  assert.equal(await editor.getByLabel("Run every (minutes)").inputValue(), "90", "the draft is kept");
+  // Saved elsewhere meanwhile: this save is refused, and the strategy it was refused for is read and shown.
+  await setTargets(target, { [USDC]: 6000, [WNEAR]: 4000, [ETH]: 0 });
+  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
+  const changed = autopilot.getByRole("alert").filter({ hasText: "Your draft is kept" });
+  await visible(changed.getByRole("list", { name: "Current strategy targets" }).getByText("USDC: 60%"));
+  assert.equal(await editor.getByLabel("Run every (minutes)").inputValue(), "90", "the draft is kept");
+  assert.equal(await editor.getByRole("button", { name: "Save with autopilot off" }).isDisabled(), true, "not saved over a strategy not reviewed");
+  assert.deepEqual(await axe(), [], "the editor, its strategy changed");
+  await changed.getByRole("button", { name: "Review against the current strategy" }).click();
+  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
+  await visible(autopilot.getByRole("status").filter({ hasText: "Strategy saved. Authorize it next." }));
+  await visible(autopilot.getByText(/every 90 minutes/));
+  assert.deepEqual(unexpected, []);
+});
+
 test("the owner edits the strategy, authorizes it in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
   await page.goto(here("/strategy"));
   const autopilot = page.getByRole("region", { name: "Autopilot" });
