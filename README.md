@@ -58,6 +58,8 @@ pnpm --filter @treasury/server test:sandbox  # the on-chain key check against ne
 
 To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN`, `TREASURY_AUDIT_FILE` and `TREASURY_DAO_REQUESTS_FILE` (and optionally `TREASURY_PAGE_DIR`, `TREASURY_WATCH_FILE` with `TREASURY_REQUESTS_FILE`, `FASTNEAR_API_KEY`, `NEAR_RPC_URL`, `TREASURY_TRUSTED_PROXY_HOPS`, `OWNER_REQUESTS_PER_MINUTE` or `CONSENTS_PER_DAY`), then `pnpm --filter @treasury/server start`.
 
+On Railway it runs from the `Dockerfile`, with secrets as variables written to their 0600 files at startup: see [docs/deploy.md](docs/deploy.md).
+
 ## The owner UI
 
 The app-access migration's target architecture, contract gaps and acceptance steps are in [ADR 2](docs/adr/0002-owner-ui-app-access.md). Run `pnpm --filter @treasury/web audit:app-access` to compare current owner UI calls with the installed SDK's consent scopes. The owner-session build below remains the simulated-stack reference until that migration is complete.
