@@ -50,7 +50,7 @@ test("a signed text is relayed only if it's exactly a consent this server would 
   const base = { host: "platform.test", deployment: "treasury", organization: "owner--near", owner: "owner.near", agent: "portfolio",
     agentId: "id-portfolio", scopes: ["read", "treasury"] as ("read" | "treasury" | "treasury-execute" | "owner")[], expiresAt: new Date(now + 30 * DAY).toISOString() };
   assert.deepEqual(checkConsent(consentMessage(base), expected), { ok: true });
-  assert.deepEqual(checkConsent(consentMessage({ ...base, scopes: ["owner", "read", "treasury"] }), expected), { ok: true }, "owner actions, opted into");
+  assert.deepEqual(checkConsent(consentMessage({ ...base, scopes: ["owner", "read", "treasury"] }), expected), { ok: true }, "owner actions, the default for a wallet owner");
   const cases: [string, Partial<typeof base>][] = [
     ["another host", { host: "elsewhere.test" }],
     ["another deployment", { deployment: "other" }],

@@ -29,8 +29,9 @@ export const organizationOf = (account: string) => account.replaceAll(".", "--")
 
 /**
  * The consent this server asks for, as its canonical text: the owner's Organization, the agent's current identity
- * (so an agent created anew needs a new one), `CONSENT_SCOPES` (or `OWNER_CONSENT_SCOPES` when the owner opts in), for
- * `CONSENT_DAYS`. A wallet owner signs it; a DAO votes on it.
+ * (so an agent created anew needs a new one), `OWNER_CONSENT_SCOPES` when `owner` is set (the wallet path always sets it,
+ * #135) and `CONSENT_SCOPES` otherwise (a DAO's consent, which never carries `owner`), for `CONSENT_DAYS`. A wallet owner
+ * signs it; a DAO votes on it.
  */
 export const consentFor = ({ identity, deployment, owner = false, now = Date.now() }: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }) =>
   consentMessage({

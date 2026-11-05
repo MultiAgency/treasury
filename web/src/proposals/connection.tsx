@@ -147,7 +147,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
 
     <ReviewDialog open={review?.phase === "review" || review?.phase === "signing"} busy={review?.phase === "signing"} onClose={() => setReview(undefined)}
       title={review && review.phase !== "reading" && review.upgrade ? "Allow owner actions for this agent?" : "Connect this agent to the Treasury app?"}
-      description="Your wallet signs the platform's consent text below, for the platform's host. It lets this app read the agent and use its Treasury procedures for the time it names."
+      description="Your wallet signs the platform's consent text below, for the platform's host. It lets this app read the agent, use its Treasury procedures and relay owner actions you sign, such as a strategy grant, for the time it names."
       actions={review && review.phase !== "reading" && <Button disabled={review.phase === "signing"} onClick={() => connect(review.text, review)}>
         {review.phase === "signing" ? "Waiting for the wallet…" : review.upgrade ? "Sign and allow" : "Sign and connect"}
       </Button>}>

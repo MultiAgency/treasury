@@ -206,7 +206,7 @@ test("asking for a rebalance is one JSON POST naming the request; its proposal p
   assert.throws(() => agent.proposeRebalance("has space"), "held to the server's schema before anything is sent");
 });
 
-test("the consent text is asked for with owner only at the owner's choice", async () => {
+test("the consent text is asked for with an empty body, or { owner: true } to add owner to a connection without it", async () => {
   const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
   const text = { message: "m", nonce: NONCE, recipient: "platform.test" };
   server.answer(`POST ${base}/consent/text`, ok(text));
