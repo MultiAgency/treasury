@@ -60,17 +60,12 @@ test("the agents' reads are budgeted: past half the platform's hourly limit, the
   await assert.rejects(loadWatchConfig(await file(agents(4, 60))), /720 calls an hour/);
 });
 
-test("an agent that notifies must tick often enough to land in a proposal's expiring window, or the server won't start", async () => {
-  const agent = (change: Record<string, unknown>) => file({ agents: [{ organization: "o", agent: "a", notify: ["true"], ...change }] });
-  // A 24-hour proposal is expiring for its last hour: the default 5-minute tick lands in it.
-  assert.equal((await loadWatchConfig(await agent({}))).length, 1);
-  // A 1-hour proposal is expiring for its last 6 minutes (10% of its life).
-  assert.equal((await loadWatchConfig(await agent({ proposalHours: 1, intervalS: 359 }))).length, 1, "just under 360 seconds");
-  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 360 })), /ticks every 360s.*expiring for its last 360s/);
-  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 600 })), /o\/a ticks every 600s/);
-  await assert.rejects(loadWatchConfig(await agent({ intervalS: 3600 })), /ticks every 3600s.*last 3600s/);
-  assert.equal((await loadWatchConfig(await agent({ intervalS: 3599 }))).length, 1);
-  // An agent with no notifier sends nothing, so nothing can be missed.
-  const quiet = await file({ agents: [{ organization: "o", agent: "a", proposalHours: 1, intervalS: 3600 }] });
-  assert.equal((await loadWatchConfig(quiet)).length, 1);
+test("an interval must be shorter than a proposal's life, with or without a notifier, or the server won't start", async () => {
+  const agent = (change: Record<string, unknown>) => file({ agents: [{ organization: "o", agent: "a", ...change }] });
+  assert.equal((await loadWatchConfig(await agent({}))).length, 1, "the defaults");
+  assert.equal((await loadWatchConfig(await agent({ proposalHours: 1, intervalS: 3599 }))).length, 1, "just under an hour");
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 3600 })), /o\/a ticks every 3600s.*last 1h \(3600s\).*shorter than a proposal's life/);
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 7200, notify: ["true"] })), /ticks every 7200s/);
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_400 })), /ticks every 86400s/);
+  assert.equal((await loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_399 }))).length, 1);
 });

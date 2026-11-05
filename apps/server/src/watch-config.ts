@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { notifier } from "./notify.ts";
-import { expiringWindowMs, WATCH, type WatchedAgent } from "./watch.ts";
+import { WATCH, type WatchedAgent } from "./watch.ts";
 
 /** The platform's calls an hour per app credential (`hourlyLimit(1_200)` in its `app-routes.ts`), shared by every owner. */
 export const APP_HOURLY_LIMIT = 1_200;
@@ -49,11 +49,10 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
     if (seen.has(key)) throw new Error(`${path}: ${key} is named twice`);
     seen.add(key);
   }
-  // An agent that notifies must tick often enough to land in the last stretch of a proposal's life, or `expiring` can be missed.
-  for (const { organization, agent, intervalS, proposalHours, notify } of parsed.agents) {
-    const window = expiringWindowMs(proposalHours * 3_600_000) / 1000;
-    if (notify && intervalS >= window)
-      throw new Error(`${path}: ${organization}/${agent} ticks every ${intervalS}s, but a proposal open ${proposalHours}h is expiring for its last ${window}s, so no tick is sure to land in it: set intervalS under ${window}, or proposalHours higher`);
+  // A proposal that lasts less than one interval can't be followed: no tick would land in its life.
+  for (const { organization, agent, intervalS, proposalHours } of parsed.agents) {
+    if (intervalS >= proposalHours * 3600)
+      throw new Error(`${path}: ${organization}/${agent} ticks every ${intervalS}s, but its proposals last ${proposalHours}h (${proposalHours * 3600}s): intervalS must be shorter than a proposal's life`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {
