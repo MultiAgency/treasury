@@ -1,15 +1,15 @@
 # treasury
 
-The Treasury app's owner UI, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.1: the owner's Treasury pages, replacing the prototype's, in the session the owner signs in to with their wallet (`/a/<agent>/`, `ownerClient` same-origin). It lives in `web/` ([below](#the-owner-ui)). Beside it, `apps/server/` is the app's own server on the app route ([below](#the-app-server), #20): the only way to reach Treasury proposals.
+The Treasury app's owner UI, built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.2: the owner's Treasury pages, replacing the prototype's, in the session the owner signs in to with their wallet (`/a/<agent>/`, `ownerClient` same-origin). It lives in `web/` ([below](#the-owner-ui)). Beside it, `apps/server/` is the app's own server on the app route ([below](#the-app-server), #20): the only way to reach Treasury proposals.
 
 The owner UI moves to the app's own routes on the platform (`/apps/v1`): the owner session gets no production host ([MultiAgency/platform#14](https://github.com/MultiAgency/platform/issues/14)). Most of its calls move by changing its one platform module, `web/src/platform.ts`. SDK 0.5.1 answers which of the rest reach app access ([MultiAgency/platform#17](https://github.com/MultiAgency/platform/issues/17)); [ADR 2](docs/adr/0002-owner-ui-app-access.md) gives the replacement for each one that doesn't. The hosts serve them once the platform deploys that code.
 
-This repository had a CLI on Treasury's machine route (`/machine/v1`). It was removed in favour of the app route: the SDK's [getting-started](https://github.com/MultiAgency/platform/blob/sdk-v0.5.1/src/contract/skills/getting-started/SKILL.md) skill says the machine route isn't extended and is retired once Treasury moves to app access, and that a new app uses `appClient`. `watch` (#2) comes back as the app server's proposer (#20).
+This repository had a CLI on Treasury's machine route (`/machine/v1`). It was removed in favour of the app route: the SDK's [getting-started](https://github.com/MultiAgency/platform/blob/sdk-v0.5.2/src/contract/skills/getting-started/SKILL.md) skill says the machine route isn't extended and is retired once Treasury moves to app access, and that a new app uses `appClient`. `watch` (#2) comes back as the app server's proposer (#20).
 
-Both run against the platform's simulated stack at [`c671872`](https://github.com/MultiAgency/platform/commit/c671872) (after the commit SDK 0.5.1 was published from, `2223d11`: the stack's simulated DAO, and proposals stored at a market price). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
+Both run against the platform's simulated stack at [`ce5fec6`](https://github.com/MultiAgency/platform/commit/ce5fec6) (the commit SDK 0.5.2 was published from, tag `sdk-v0.5.2`: the stack's simulated DAO, proposals stored at a market price, and the `signOwnerDelegate` control). Its provider, chain, signatures and settlement are simulated. Pointing at a hosted platform is a separate decision. Requires Node ≥ 24.22 and pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout c671872
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout ce5fec6
 (cd ../platform && pnpm install --frozen-lockfile)
 pnpm install
 ```
@@ -20,7 +20,7 @@ SDK and platform feedback goes to [MultiAgency/platform](https://github.com/Mult
 
 ## The app server
 
-`apps/server/` is its own package in the pnpm workspace: Node running TypeScript directly, `node:http`, `@multiagency/sdk` 0.5.1 and `near-kit` 0.20.2. It holds the deployment's `tap_` credential and calls the platform with `appClient`. Its design, rules and plan are in #20. The first version so far:
+`apps/server/` is its own package in the pnpm workspace: Node running TypeScript directly, `node:http`, `@multiagency/sdk` 0.5.2 and `near-kit` 0.20.2. It holds the deployment's `tap_` credential and calls the platform with `appClient`. Its design, rules and plan are in #20. The first version so far:
 
 - **Owner sign-in:** a NEP-413 challenge addressed to this server, verified with `near-kit` before any chain call, then a full-access key of the signing account on chain (FastNEAR's RPC, configured as the platform's `src/chain.ts`). Challenges are stateless (the nonce carries its issue time and an HMAC under a per-process key), so issuing one stores nothing and a flood can't crowd out an owner's; each is single-use once validly signed (only its canonical base64 text is accepted) and expires in 5 minutes. Challenges and sign-in attempts are each rate-limited per client (an IPv4 address, or an IPv6 /64).
 - **Sessions:** a `Secure`, httpOnly, `SameSite=Strict` cookie, ended after 30 minutes idle, 12 hours or sign-out, and swept when abandoned; in memory, so a restart signs everyone out. Signing in again ends the previous session, and sign-out always clears the cookie, with or without a body. Every write checks `Origin` and requires JSON.
@@ -66,7 +66,7 @@ On Railway it runs from the `Dockerfile`, with secrets as variables written to t
 
 The app-access migration's target architecture, contract gaps and acceptance steps are in [ADR 2](docs/adr/0002-owner-ui-app-access.md). Run `pnpm --filter @treasury/web audit:app-access` to compare current owner UI calls with the installed SDK's consent scopes. The owner-session build below remains the simulated-stack reference until that migration is complete.
 
-`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.5.1 only. Nothing is imported from the platform's or the prototype's source.
+`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.5.2 only. Nothing is imported from the platform's or the prototype's source.
 
 - **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.
 - **Features port one at a time** from MultiAgency/treasury-prototype's `web/src`, each in its own issue. A page not ported yet shows a placeholder where its feature will land.
@@ -83,4 +83,4 @@ pnpm --filter @treasury/web test:stack  # builds, then drives the owner UI on a 
 
 The stack test starts the platform's stack with its browser, whose owner page starts signed in, and attaches to it over CDP. It covers sign-in and out across tabs, the redirects, an outage of the agent's provider (setup unavailable, then recovered), the keyboard paths, and an axe scan (WCAG A and AA) of every page it opens.
 
-CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at c671872. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at c671872 with its dependencies installed.
+CI (`.github/workflows/ci.yml`) runs the app server's typecheck and unit tests and the owner UI's typecheck, unit tests and build on every pull request and push to `main`, then both stack tests on a stack from the platform at ce5fec6. Locally, the stack tests need `../platform` (or `TREASURY_PLATFORM`) at ce5fec6 with its dependencies installed.

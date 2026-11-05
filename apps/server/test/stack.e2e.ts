@@ -273,7 +273,7 @@ test("the owner links their own account to fund the agent, reads it back, gets a
   assert.equal(linked.status, 200, await linked.clone().text());
   assert.equal((await treasury())?.accountId, owner);
   // The stack's simulated provider takes USDC deposits only, and answers the agent's own wallet as the address
-  // (platform c671872, test/e2e/provider.mjs): NEAR and a fresh address each time are the unit tests'.
+  // (platform ce5fec6, test/e2e/provider.mjs): NEAR and a fresh address each time are the unit tests'.
   const deposit = await post(`${agent}/deposit`, { asset: "USDC" }, cookie);
   const body = await deposit.json() as { value: unknown };
   assert.equal(deposit.status, 200, JSON.stringify(body));

@@ -47,8 +47,8 @@ jobs:
         with:
           persist-credentials: false
           repository: MultiAgency/platform
-          # After the commit @multiagency/sdk 0.5.1 was published from (tag sdk-v0.5.1): the stack's simulated DAO, and market-price proposals stored; startStack checks it.
-          ref: c67187288f33aec9af568cf780235b05159026f9
+          # The commit @multiagency/sdk 0.5.2 was published from (tag sdk-v0.5.2): the stack's simulated DAO, market-price proposals stored, and the signOwnerDelegate control; startStack checks it.
+          ref: ce5fec62afac448b7ac067a41240bae4fdaa633e
           path: platform
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
