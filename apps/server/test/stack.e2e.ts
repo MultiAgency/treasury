@@ -377,3 +377,21 @@ test("with owner actions allowed, the owner signs a grant for the saved strategy
     await new Promise(resolve => setTimeout(resolve, 1_000));
   }
 });
+
+test("the owner saves a strategy through the server over the one they saw: autopilot off, the grant no longer binding it, a stale save refused", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  const strategyNow = async () => contract.strategyRead.parse(((await (await get(`${agent}/strategy`, cookie)).json()) as { value: unknown }).value);
+  const before = await strategyNow();
+  const next = { ...before.strategy, targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, autopilot: { everyMin: 30, maxUsd: 50 } };
+  const saved = await post(`${agent}/strategy`, { strategy: next, expectedDigest: before.digest }, cookie);
+  const body = await saved.json() as { value: unknown };
+  assert.equal(saved.status, 200, JSON.stringify(body));
+  const after = await strategyNow();
+  assert.equal(after.digest, contract.strategySaved.parse(body.value).digest);
+  assert.deepEqual([after.on, after.grantMatches, after.strategy.targetBps], [false, false, next.targetBps]);
+  const stale = await post(`${agent}/strategy`, { strategy: before.strategy, expectedDigest: before.digest }, cookie);
+  assert.deepEqual(await stale.json(), { ok: false, kind: "refused", code: "strategy_changed" }, "saved over the strategy the owner saw, never another");
+});

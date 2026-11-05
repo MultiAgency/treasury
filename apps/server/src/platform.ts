@@ -27,7 +27,7 @@ export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "ac
  */
 export type SweepRun = { events: OwnerOutput<"sweep">[]; ended: OwnerFailure | null };
 /** A read or action of the agent's strategy and autopilot, as the SDK answers it. */
-export type AutopilotAnswer<P extends "strategy/get" | "autopilot/get" | "autopilot/enable" | "autopilot/stop" | "autopilot/tick"> = OwnerResult<OwnerOutput<P>>;
+export type AutopilotAnswer<P extends "strategy/get" | "strategy/save" | "autopilot/get" | "autopilot/enable" | "autopilot/stop" | "autopilot/tick"> = OwnerResult<OwnerOutput<P>>;
 /** A call that funds the agent, or changes its funding account, as the SDK answers it. */
 export type FundingAnswer<P extends "treasury/get" | "deposit" | "treasury/link" | "treasury/unlink" | "treasury/setConfidential"> = OwnerResult<OwnerOutput<P>>;
 /** The assets a deposit address takes: USDC, or wNEAR, which NEAR is wrapped into to fund it. */
@@ -168,6 +168,8 @@ export type Platform = {
   autopilot: {
     strategy(organization: string, agent: string): Promise<AutopilotAnswer<"strategy/get">>;
     status(organization: string, agent: string): Promise<AutopilotAnswer<"autopilot/get">>;
+    /** Saves a strategy over the one the owner saw (`expectedDigest`): autopilot turns off, and the grant no longer binds it. */
+    save(organization: string, agent: string, input: AppInputs["strategy/save"]): Promise<AutopilotAnswer<"strategy/save">>;
     enable(organization: string, agent: string, expectedDigest: string): Promise<AutopilotAnswer<"autopilot/enable">>;
     stop(organization: string, agent: string): Promise<AutopilotAnswer<"autopilot/stop">>;
     tick(organization: string, agent: string): Promise<AutopilotAnswer<"autopilot/tick">>;
@@ -300,6 +302,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     autopilot: {
       strategy: async (organization, agent) => (await client()).agent(organization, agent).call("strategy/get"),
       status: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/get"),
+      save: async (organization, agent, input) => (await client()).agent(organization, agent).call("strategy/save", input),
       enable: async (organization, agent, expectedDigest) => (await client()).agent(organization, agent).call("autopilot/enable", { expectedDigest }),
       stop: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/stop"),
       tick: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/tick"),

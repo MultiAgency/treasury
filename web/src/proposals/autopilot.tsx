@@ -6,6 +6,7 @@ import { Button, Card, ErrorBox, Loading, QueryError, Spinner } from "../shared/
 import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { Grant } from "./grant";
+import { StrategyEditor } from "./strategy-editor";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
 
@@ -25,6 +26,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const consent = useQuery(reads.consent);
   const ownerAllowed = consent.data?.consent?.scopes.includes("owner") === true;
   const [confirm, setConfirm] = useState<Confirm>();
+  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<"enable" | "stop" | "tick">();
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
@@ -53,6 +55,12 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
 
   const s = strategy.data, on = schedule.data?.on === true;
   const canControl = mayCall(identity.access, "autopilot/enable");
+  const canSave = mayCall(identity.access, "strategy/save");
+  const doneEditing = (saved: boolean) => {
+    setEditing(false);
+    refresh();
+    if (saved) { setError(undefined); setNotice("Strategy saved, with autopilot off. Authorize it next."); }
+  };
   return <section id="autopilot" aria-labelledby="autopilot-title" className="flex flex-col gap-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <h2 id="autopilot-title" className="text-xl font-semibold">Autopilot</h2>
@@ -62,6 +70,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
       {strategy.isPending || schedule.isPending ? <Loading label="Reading the strategy and the schedule…" />
         : strategy.isError ? <QueryError error={strategy.error} retry={() => strategy.refetch()} />
         : schedule.isError ? <QueryError error={schedule.error} retry={() => schedule.refetch()} />
+        : editing ? <StrategyEditor reads={reads} strategy={s!} onDone={doneEditing} />
         : <div className="flex flex-col gap-3 text-sm">
           <h3 className="text-base font-semibold">Saved strategy</h3>
           <ul aria-label="Strategy targets" className="flex flex-col gap-1">
@@ -86,6 +95,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             {s!.grantMatches && s!.executor && <Button variant="outline" disabled={busy !== undefined} onClick={() => setConfirm("tick")}>{busy === "tick" && <Spinner />} Run now</Button>}
           </div>}
           {!canControl && <p>Autopilot and Run now need a member who may both file and vote on proposals.</p>}
+          {canSave ? <Button variant="outline" className="self-start" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}>Edit strategy</Button>
+            : identity.signer === "dao" && <p>Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
         </div>}
       <p role="status" className="text-sm">{notice}</p>
       <ErrorBox error={error} />

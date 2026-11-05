@@ -336,11 +336,22 @@ test("the owner allows owner actions: told first that open proposals are withdra
   assert.deepEqual(unexpected, []);
 });
 
-test("the owner authorizes the saved strategy in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
-  await setTargets(target, { [USDC]: 5_000, [WNEAR]: 5_000, [ETH]: 0 });
+test("the owner edits the strategy, authorizes it in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
   await page.goto(`${origin}/agents/${target.agent}`);
   const autopilot = page.getByRole("region", { name: "Autopilot" });
   await signInIfAsked(autopilot);
+  await autopilot.getByRole("button", { name: "Edit strategy" }).click();
+  const editor = autopilot.getByRole("form", { name: "Edit strategy" });
+  await visible(editor);
+  await editor.getByLabel("USDC (%)").fill("50");
+  await editor.getByLabel("wNEAR (%)").fill("40");
+  await editor.getByLabel("ETH (%)").fill("0");
+  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
+  await visible(editor.getByText("Target allocations must add up to 100%.").first());
+  assert.deepEqual(await axe(), [], "the editor, refusing a total under 100%");
+  await editor.getByLabel("wNEAR (%)").fill("50");
+  await editor.getByRole("button", { name: "Save with autopilot off" }).click();
+  await visible(autopilot.getByRole("status").filter({ hasText: "Strategy saved, with autopilot off. Authorize it next." }));
   await visible(autopilot.getByRole("list", { name: "Strategy targets" }).getByText("USDC: 50%"));
   await visible(autopilot.getByRole("status").filter({ hasText: "Autopilot is off." }));
   // Saving the strategy unbound the grant: the owner signs a new one here, their connection allowing owner actions.

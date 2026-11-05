@@ -244,3 +244,14 @@ test("a grant is asked for by digest, its signed intent submitted once to its ow
   ]);
   assert.throws(() => agent.grantStatus("../consent"));
 });
+
+test("a strategy is saved by one JSON POST naming the digest it replaces, held to the platform's rules before it's sent", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const digest = `sha256:${"a".repeat(64)}`;
+  const strategy = { targetBps: { "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1": 5_000, "nep141:wrap.near": 2_500, "nep141:eth.omft.near": 2_500 },
+    minLegUsd: 2, maxCostBps: 250, autopilot: { everyMin: 60, maxUsd: 0 } };
+  server.answer(`POST ${base}/strategy`, ok({ digest: `sha256:${"b".repeat(64)}` }));
+  assert.equal((await agent.saveStrategy(strategy, digest)).ok, true);
+  assert.deepEqual(server.sent.map(request => JSON.parse(request.body)), [{ strategy, expectedDigest: digest }]);
+  assert.throws(() => agent.saveStrategy({ ...strategy, maxCostBps: 2_000 }, digest));
+});
