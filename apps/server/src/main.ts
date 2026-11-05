@@ -12,7 +12,7 @@ import { chainDaos } from "./dao.ts";
 import { chainKeyLookup, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
-import { createRequests } from "./requests.ts";
+import { createHolds, createRequests } from "./requests.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
 import { loadWatchConfig } from "./watch-config.ts";
@@ -35,6 +35,8 @@ const daos = chainDaos({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: se
 const watched = settings.TREASURY_WATCH_FILE ? {
   agents: await loadWatchConfig(settings.TREASURY_WATCH_FILE),
   requests: await createRequests(settings.TREASURY_REQUESTS_FILE!),
+  // Why each agent was last reported held, beside the requests (`<TREASURY_REQUESTS_FILE>.holds`): a restart doesn't announce it again.
+  holds: await createHolds(`${settings.TREASURY_REQUESTS_FILE!}.holds`),
 } : undefined;
 
 // Refuse to start with the DAO requests unreadable.
@@ -77,7 +79,7 @@ const server = createHttpServer(handler).listen(settings.PORT, () => {
 const shutdown = new AbortController();
 const watching = watched
   ? runWatch({
-    watch: createWatch({ platform: platform.watch, requests: watched.requests, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN }),
+    watch: createWatch({ platform: platform.watch, requests: watched.requests, holds: watched.holds, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN }),
     agents: watched.agents,
     log: event => console.log(JSON.stringify({ event: "watch", ...event })),
     sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),

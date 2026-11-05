@@ -2,7 +2,7 @@ import type { OwnerOutput } from "@multiagency/sdk";
 import { liveConsents } from "./consent.ts";
 import type { Notify } from "./notify.ts";
 import type { ProposalAnswer, WatchPlatform } from "./platform.ts";
-import type { Requests, StoredRequest } from "./requests.ts";
+import { memoryHolds, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
 
 /**
  * How `watch` paces itself. A tick reads 3 times (overview, unresolved, autopilot), or once while a proposal of its own
@@ -21,11 +21,30 @@ export type WatchedAgent = {
   intervalS: number;
   /** How long a proposal stays open for the owner. */
   proposalHours: number;
-  /** Hears of each proposal once its answer arrives. */
+  /**
+   * Hears of each proposal once its answer arrives, and of each change after it (#131): `watch` starts or stops holding, a
+   * proposal of its own is about to expire, expired unanswered, or sat approved without being executed. Every payload
+   * names its `kind`. Without one, nothing is sent or recorded.
+   */
   notify?: Notify;
 };
-/** What a tick did, for the log: one line per agent per tick. */
+/** What a tick did, for the log: one line per agent per tick, with the notices it sent. */
 export type WatchEvent = { organization: string; agent: string; [detail: string]: unknown };
+/** One tick's event builder, which also collects the notices the tick sent, for its log line. */
+type Eventer = ((detail: Record<string, unknown>) => WatchEvent) & { notices: { kind: NoticeKind; ok: boolean; error?: string }[] };
+
+const HOUR_MS = 3_600_000;
+/** An open proposal is expiring once it has less than this left, or `EXPIRING_SHARE` of its life if that is shorter. */
+const EXPIRING_SHARE = 0.1;
+/** An approved proposal not executed for this long is reported. */
+const APPROVED_WAIT_MS = HOUR_MS;
+/** What each hold means, for the builder reading the notice. */
+const HOLD_DETAIL: Record<HoldReason, string> = {
+  "unresolved-operations": "the agent has unresolved operations: nothing is proposed until they are resolved",
+  "autopilot-on": "autopilot is on: two proposers on one agent would race, so watch waits",
+  "policy-not-in-force": "the policy isn't in force: nothing is proposed until it is",
+  "consent-ended": "the owner's consent for this app has ended: they connect again on the proposals page",
+};
 
 /** Drift a rebalance can act on: the largest gap in points of the total, and the first leg it would move. */
 export type Trigger = { points: number; firstLegUsd: number };
@@ -59,17 +78,65 @@ type Stop = { reason: string; resumable: boolean };
  * is still `proposed` or `approved` holds the agent. Otherwise it reads the agent, and proposes when it has drifted.
  * Every request is stored before it's sent (`Requests`), so a lost answer never becomes a second proposal.
  */
-export function createWatch({ platform, requests, publicOrigin, now = Date.now }: {
+export function createWatch({ platform, requests, publicOrigin, now = Date.now, holds = memoryHolds() }: {
   platform: WatchPlatform; requests: Requests;
   /** This server's origin, where the owner opens a proposal. */
   publicOrigin: string;
   now?: () => number;
+  /** Why each agent was last reported held, kept across restarts so a hold isn't announced twice. */
+  holds?: Holds;
 }) {
   const agents = new Map<string, { backoffUntil: number; stopped?: Stop }>();
   const stateOf = ({ organization, agent }: WatchedAgent) => {
     const key = `${organization}/${agent}`;
     if (!agents.has(key)) agents.set(key, { backoffUntil: 0 });
     return agents.get(key)!;
+  };
+
+  const agentPage = (agent: string) => `${publicOrigin}/agents/${agent}`;
+  const proposalPage = (agent: string, id: string) => `${publicOrigin}/agents/${agent}/proposals/${id}`;
+
+  /** Tells the builder's channel, and keeps what it answered for the tick's log line. A failure is reported, never retried. */
+  const tell = async ({ notify }: WatchedAgent, payload: { kind: NoticeKind } & Record<string, unknown>, event: Eventer) => {
+    if (!notify) return;
+    const sent = await notify(payload);
+    event.notices.push({ kind: payload.kind, ok: sent.ok, ...(!sent.ok && { error: sent.error }) });
+  };
+
+  /**
+   * Reports a change in why the agent is held, once: \`holding\` when a hold starts or its reason changes, \`resumed\` when it
+   * ends. What was last reported is recorded first, so a restart doesn't send it again. An agent with no notifier records nothing.
+   */
+  const settleHold = async (watched: WatchedAgent, reason: HoldReason | null, event: Eventer) => {
+    if (!watched.notify) return;
+    const { organization, agent } = watched;
+    if (holds.get(organization, agent) === reason) return;
+    await holds.set(organization, agent, reason);
+    await tell(watched, reason
+      ? { kind: "holding", organization, agent, reason, detail: HOLD_DETAIL[reason], page: agentPage(agent) }
+      : { kind: "resumed", organization, agent, page: agentPage(agent) }, event);
+  };
+
+  /** The notices a proposal of the agent's own is due, from the proposal as the tick just read it: nothing is read for them. */
+  const dueNotices = (view: { state: string; createdAt: string; expiresAt: string; approvedAt: string | null }): ProposalNotice[] => {
+    const expires = Date.parse(view.expiresAt), left = expires - now();
+    if (view.state === "expired") return ["expired"];
+    if (view.state === "approved") return view.approvedAt !== null && now() - Date.parse(view.approvedAt) >= APPROVED_WAIT_MS ? ["approved_not_executed"] : [];
+    if (view.state !== "proposed") return [];
+    const life = expires - Date.parse(view.createdAt);
+    const window = Number.isFinite(life) && life > 0 ? Math.min(HOUR_MS, life * EXPIRING_SHARE) : HOUR_MS;
+    return left > 0 && left < window ? ["expiring"] : [];
+  };
+
+  /** Sends each notice due for `request` that wasn't sent before, recording it first. */
+  const noticeProposal = async (watched: WatchedAgent, request: StoredRequest, view: Parameters<typeof dueNotices>[0] & { expiresAt: string }, event: Eventer) => {
+    if (!watched.notify || request.proposalId === null) return;
+    for (const kind of dueNotices(view)) {
+      if (request.notified.includes(kind)) continue;
+      await requests.mark(request, kind);
+      await tell(watched, { kind, organization: watched.organization, agent: watched.agent, proposalId: request.proposalId, expiresAt: view.expiresAt,
+        page: proposalPage(watched.agent, request.proposalId) }, event);
+    }
   };
 
   /** No calls for `backoffTicks` intervals: after a refused quote, a rate limit, a provider failure, or a live consent's refusal. */
@@ -85,7 +152,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
    * agent is held for the backoff and then reads again: the platform also answers so while it stops (`app-routes.ts`,
    * "Access ended before forwarding"), so a live consent's refusal is reported but doesn't strand the agent.
    */
-  const stop = async (watched: WatchedAgent, event: (detail: Record<string, unknown>) => WatchEvent) => {
+  const stop = async (watched: WatchedAgent, event: Eventer) => {
     const state = stateOf(watched);
     if (await connected(watched)) {
       backoff(watched);
@@ -93,11 +160,12 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
         note: "the platform refused a call this app's consent covers: reported, and read again after the backoff" });
     }
     state.stopped = { reason: "not connected", resumable: true };
+    await settleHold(watched, "consent-ended", event);
     return event({ stopped: state.stopped.reason, note: "the owner's consent for this app has ended: they connect again on the proposals page" });
   };
 
   /** Sends `request` and records what its answer says. A lost answer keeps it, to be sent again unchanged. */
-  const send = async (watched: WatchedAgent, request: StoredRequest, event: (detail: Record<string, unknown>) => WatchEvent, points?: number) => {
+  const send = async (watched: WatchedAgent, request: StoredRequest, event: Eventer, points?: number) => {
     const { organization, agent } = watched, state = stateOf(watched);
     const answer: ProposalAnswer = await platform.create(organization, agent, requests.input(request));
     if (answer.ok) {
@@ -106,8 +174,8 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
       const proposed = event({ proposed: id, requestId: request.requestId, expiresAt, ...(points !== undefined && { points }) });
       if (!watched.notify) return proposed;
       const secondsLeft = Math.max(0, Math.floor((Date.parse(expiresAt) - now()) / 1000));
-      const notified = await watched.notify({ organization, agent, proposalId: id, expiresAt, secondsLeft, ...(points !== undefined && { points }),
-        page: `${publicOrigin}/agents/${agent}/proposals/${id}` });
+      const notified = await watched.notify({ kind: "proposed", organization, agent, proposalId: id, expiresAt, secondsLeft, ...(points !== undefined && { points }),
+        page: proposalPage(agent, id) });
       return { ...proposed, notified };
     }
     if (answer.kind === "refused") {
@@ -144,7 +212,9 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
     /** One tick for `watched`: at most one proposal, and one event describing what happened. */
     async tick(watched: WatchedAgent): Promise<WatchEvent> {
       const { organization, agent } = watched, state = stateOf(watched);
-      const event = (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail });
+      const event: Eventer = Object.assign(
+        (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail, ...(event.notices.length > 0 && { notices: event.notices }) }),
+        { notices: [] as Eventer["notices"] });
 
       if (state.stopped) {
         if (!state.stopped.resumable) return event({ skipped: "stopped", stopped: state.stopped.reason });
@@ -167,6 +237,8 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
           return event({ failed: "proposals/get", kind: read.kind, proposalId: request.proposalId });
         }
         const { state: proposalState } = read.value;
+        // Told before the request is dropped or the tick ends: from the proposal just read, so these cost no platform call.
+        await noticeProposal(watched, request, read.value, event);
         // Open, or claimed and not final: `executing` can read while `unresolved` is still empty (claimed before its first
         // swap is journaled), and `unknown` is read later, never proposed over.
         if (["proposed", "approved", "executing", "unknown"].includes(proposalState)) return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
@@ -183,10 +255,12 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now }
         if (limited) backoff(watched);
         return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
       }
-      if (unresolved.value.length) return event({ held: "unresolved", operations: unresolved.value.length });
+      if (unresolved.value.length) { await settleHold(watched, "unresolved-operations", event); return event({ held: "unresolved", operations: unresolved.value.length }); }
       // Two proposers on one agent would race; turning autopilot off is the owner's call.
-      if (autopilot.value.on) return event({ held: "autopilot" });
-      if (overview.value.notInForce) return event({ held: "policy not in force", notInForce: overview.value.notInForce });
+      if (autopilot.value.on) { await settleHold(watched, "autopilot-on", event); return event({ held: "autopilot" }); }
+      if (overview.value.notInForce) { await settleHold(watched, "policy-not-in-force", event); return event({ held: "policy not in force", notInForce: overview.value.notInForce }); }
+      // Past every hold: one that was reported has ended.
+      await settleHold(watched, null, event);
       const trigger = drift(overview.value, watched.driftPoints);
       if ("skipped" in trigger) return event(trigger);
 
