@@ -81,6 +81,11 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
           call(contract.consent, `${base}/consent`, { method: "POST", body: contract.consentSubmission.parse(submission) }),
         disconnect: () => call(contract.revoked, `${base}/consent/revoke`, { method: "POST" }),
         proposals: () => call(proposalList, `${base}/proposals`),
+        /**
+         * Asks for a rebalance to the saved strategy, proposed for approval under `requestId`. Never asked again for a lost
+         * answer: the proposal is found by its `requestId` (`request`).
+         */
+        proposeRebalance: (requestId: string) => call(contract.rebalanceMade, `${base}/proposals`, { method: "POST", body: contract.rebalanceRequest.parse({ requestId }) }),
         proposal: (id: string) => call(contract.proposalRead, proposal(id)),
         verdict: (id: string, verdict: Verdict, signed: z.input<typeof contract.verdictSubmission>) =>
           call(contract.proposalRead, `${proposal(id)}/${verdict}`, { method: "POST", body: contract.verdictSubmission.parse(signed) }),

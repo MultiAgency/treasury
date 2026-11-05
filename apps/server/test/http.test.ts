@@ -846,6 +846,8 @@ test("each agent route asks for what it needs: a member who may only file is ref
     link: { council: false, proposer: false, reader: false },
     // Shielding executes, as a proposal's execution does.
     sweep: { council: true, proposer: false, reader: false },
+    // A rebalance to approve, as filing: anyone who may file a proposal.
+    propose: { council: true, proposer: true, reader: false },
   };
   for (const route of routes.filter(route => route.access === "owner" || route.access === "owner-fresh")) {
     const need = needs[`${route.method} ${route.path}`]!;

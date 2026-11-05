@@ -45,6 +45,10 @@ const PROPOSAL: Record<string, string> = {
   withdrawn: "It was withdrawn: the consent it was made under has ended. Nothing was relayed.",
   policy_not_in_force: "The policy this proposal was quoted under isn't in force. Nothing was relayed. Fix the policy first.",
   rate_limited: "Too many requests from this account. Wait a minute, then try again.",
+  nothing_to_propose: "The strategy picks no swap worth its cost now. Nothing was proposed.",
+  too_many_proposals: "This agent already has as many open proposals as it may. Approve, reject or wait for some, then ask again.",
+  not_proposable: "The platform can't propose a rebalance for this agent now: check its strategy and policy. Nothing was proposed.",
+  request_conflict: "That request was already used for another proposal. Nothing was proposed. Ask again.",
 };
 
 const FUNDING: Record<string, string> = {

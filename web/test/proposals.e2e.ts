@@ -22,7 +22,7 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { fundPublic, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -296,5 +296,21 @@ test("the owner previews a public wNEAR balance, shields it once after reviewing
   await visible(funding.getByRole("status").filter({ hasText: "Shielded." }));
   await visible(balances.getByText(/^1 wNEAR public · shield success$/));
   assert.equal(await funding.getByRole("button", { name: "Shield", exact: true }).isDisabled(), true, "shielded once; a new preview comes first");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the owner asks for a rebalance to the drifted strategy, and reviews the proposal it made, awaiting their decision", { timeout: 90_000 }, async () => {
+  await setTargets(target, { [USDC]: 0, [WNEAR]: 0, [ETH]: 10_000 });
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const proposals = page.getByRole("region", { name: "Proposals" });
+  const ask = proposals.getByRole("button", { name: "Propose a rebalance" });
+  await signInIfAsked(ask);
+  assert.deepEqual(await axe(), [], "offered");
+  await ask.click();
+  await visible(proposals.getByRole("status").filter({ hasText: "Proposed. Review it below: nothing is sent until it's approved." }));
+  assert.deepEqual(await axe(), [], "proposed");
+  await proposals.getByRole("link", { name: "Review the proposal" }).click();
+  await visible(page.getByRole("heading", { level: 1, name: "Proposal" }));
+  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
   assert.deepEqual(unexpected, []);
 });

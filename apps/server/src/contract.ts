@@ -191,6 +191,9 @@ export const SWEEP_ACTIVITY = "treasury.sweep";
 export const sweepRun = z.strictObject({
   events: z.array(z.discriminatedUnion("type", [RunStartedEventSchema, ActivitySnapshotEventSchema, RunFinishedEventSchema, RunErrorEventSchema])),
 });
+/** A rebalance the owner asks for, under a `requestId` the page names (the platform's own format): answered as the proposal. */
+export const rebalanceRequest = z.strictObject({ requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) });
+export const rebalanceMade = z.strictObject({ proposal: proposalView });
 /** A proposal found by the `requestId` it was proposed with. */
 export const requestRead = z.strictObject({ proposal: proposalView });
 /**
@@ -208,7 +211,7 @@ export const operationRead = z.strictObject({ correlationId: z.string(), at: z.s
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a read's `not_found`, or a funding code: `dao_funding_fixed`, `funding_refused`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, or a funding code: `dao_funding_fixed`, `funding_refused`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */
