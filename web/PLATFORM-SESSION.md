@@ -257,3 +257,8 @@ What the stack (platform 6ba0831) can't show for `/policy`, so `web/test/stack.e
 - **Revoking a grant.** The simulated provider (`test/e2e/provider.mjs`) has no `grant_revoke`: `owner/prepare` answers 500, an unknown outcome to the SDK. The test reviews the revoke in its dialog, prepares it once, and checks the unknown outcome is shown and the grants are unchanged. A signed revoke needs a `grant_revoke` branch in the simulator.
 - **Issuing a grant.** `portfolio` accepts only the strategy-bound grant (`label: "treasury"` with the saved strategy's digest), which the Strategy page signs (#7 PR 2). The test issues it through the `authorizeStrategy` control and checks `/policy` lists it under its label as the current grant.
 - **A NEP-366 policy edit.** `onChainPolicyEdits` is off for `portfolio` (`test/e2e/environment.mjs` starts its provider without it), so every policy edit there is NEP-413. The test drafts, reviews, signs and applies one; the NEP-366 path and the confirm page are covered by `test/owner.test.ts` only.
+
+## Overview review follow-up (#18)
+
+- Future-dated price observations become eligible for display at their `priceUpdatedAt`, even when a refetch returns unchanged data. Freshness rules remain strict. Long waits re-arm at the browser's maximum timer delay, and prices become stale at expiry.
+- `Your account cannot stop the schedule.` is plain explanatory text while identity is pending, rather than a loading `status`. `Checking executor identity…` keeps its loading status when identity is the actual blocker. The control's names and authorization are unchanged.
