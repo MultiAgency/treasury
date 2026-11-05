@@ -44,6 +44,8 @@ To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CRED
 
 ## The owner UI
 
+The app-access migration's target architecture, contract gaps and acceptance steps are in [ADR 2](docs/adr/0002-owner-ui-app-access.md). Run `pnpm --filter @treasury/web audit:app-access` to compare current owner UI calls with the installed SDK's consent scopes. The owner-session build below remains the simulated-stack reference until that migration is complete.
+
 `web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.5.0 only. Nothing is imported from the platform's or the prototype's source.
 
 - **One platform module.** `web/src/platform.ts` makes every call: the gateway's session routes, and each agent's reads, actions and streams. Reads are cached and may retry (`reads`). An action or stream returns its result, decided by `kind`, and is never sent again. Screens import only from it.

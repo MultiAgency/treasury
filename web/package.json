@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "audit:app-access": "node scripts/app-access-audit.ts",
     "dev": "rsbuild dev",
     "build": "rsbuild build",
     "typecheck": "tsc",
