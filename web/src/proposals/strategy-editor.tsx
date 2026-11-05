@@ -1,44 +1,41 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { parseStrategyDraft, strategyDraft } from "../features/portfolio/strategy-form";
-import { confirmDiscard } from "../shared/dirty-draft";
+import { confirmDiscard, useDirtyDraft } from "../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../shared/form";
 import { symbolOf } from "../shared/format";
 import { Button, Details, ErrorBox, Spinner } from "../shared/ui";
 import type { StrategyRead } from "./proposals-api";
 import type { agentReads } from "./queries";
+import { StrategyTerms } from "./strategy-terms";
 import { failureText } from "./words";
 
 /**
- * Warns before leaving the page with unsaved changes. The proposals page has no router: every navigation is a page
- * load, so the browser's own prompt covers it (the owner UI's `useDirtyDraft` needs TanStack Router).
- */
-function useUnsavedDraft(dirty: boolean) {
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
-}
-
-/**
  * Editing the saved strategy (the owner UI's form and its checks): targets adding up to 100%, the swap limits, and
- * autopilot's interval and ceiling. It's saved over the strategy shown, by its digest, so a strategy changed meanwhile
- * isn't overwritten; the draft is kept for review. Saving turns autopilot off, and the strategy then needs authorizing
- * again. After a lost answer the draft is kept: saving again is safe, since a strategy the first save already changed is
- * refused (`strategy_changed`) rather than saved twice.
+ * autopilot's interval and ceiling. It's saved over the strategy the draft was reviewed against, by its digest, so a
+ * strategy changed meanwhile isn't overwritten. A save refused as `strategy_changed`, or whose answer was lost, reads the
+ * strategy again; while the strategy read differs from the reviewed one, the current one is shown and the draft is kept,
+ * saved over it only once the owner has reviewed it. Saving turns autopilot off, and the strategy then needs authorizing
+ * again.
  */
 export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<typeof agentReads>; strategy: StrategyRead; onDone: (saved: boolean) => void }) {
+  const client = useQueryClient();
+  /** The strategy the draft is saved over: the one shown when editing began, or the current one once reviewed. */
+  const [base, setBase] = useState(strategy);
   const [draft, setDraft] = useState(() => strategyDraft(strategy.strategy));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(strategyDraft(strategy.strategy));
+  /** Set after a save whose answer was lost: a changed strategy may then be this draft's own save. */
+  const [maybeSaved, setMaybeSaved] = useState(false);
+  const stale = !busy && strategy.digest !== base.digest;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(strategyDraft(base.strategy));
   // Focus moves to the editor's heading when it opens, so a keyboard or screen-reader user starts at the form.
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus(); }, []);
-  useUnsavedDraft(dirty && !busy);
+  // Leaving for another page, or unloading this one, asks before an unsaved draft is discarded.
+  useDirtyDraft(dirty && !busy);
   const field = (key: "everyMin" | "maxUsd" | "minLegUsd" | "maxCost", label: string) => <Field label={label}
     inputMode={key === "maxCost" ? "decimal" : "numeric"} value={draft[key]} error={errors[key]} disabled={busy}
     onChange={event => setDraft({ ...draft, [key]: event.target.value })} />;
@@ -46,11 +43,19 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
   const save = async (next: NonNullable<ReturnType<typeof parseStrategyDraft>["strategy"]>) => {
     setBusy(true);
     setError(undefined);
-    const saved = await reads.agent.saveStrategy(next, strategy.digest);
+    const saved = await reads.agent.saveStrategy(next, base.digest);
     setBusy(false);
     if (saved.ok) return onDone(true);
-    setError(saved.kind === "lost" || saved.kind === "unavailable"
-      ? "The answer was lost: it may have saved. Saving again is safe: if it did, the strategy has changed and this save is refused." : failureText(saved, "autopilot"));
+    const lost = saved.kind === "lost" || saved.kind === "unavailable";
+    setMaybeSaved(lost);
+    if (lost || (saved.kind === "refused" && saved.code === "strategy_changed")) void client.invalidateQueries({ queryKey: reads.strategy.queryKey });
+    setError(lost ? "The answer was lost: it may have saved. Saving again is safe: if it did, the changed strategy is shown here instead." : failureText(saved, "autopilot"));
+  };
+  const review = () => {
+    setBase(strategy);
+    setError(undefined);
+    setMaybeSaved(false);
+    heading.current?.focus();
   };
 
   return <form noValidate className="flex flex-col gap-4" aria-label="Edit strategy" onSubmit={event => {
@@ -78,10 +83,16 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
       <p className="text-sm text-muted-foreground">The cost limit applies at the minimum received shown in each swap's quote.</p>
     </Details>
     <p className="text-sm">Saving turns autopilot off, and the new strategy needs authorizing before autopilot or Run now can act on it. It doesn't change the signed policy.</p>
+    {stale && <div role="alert" className="flex flex-col gap-3 rounded-md border p-4 text-sm">
+      <p>{maybeSaved ? "The saved strategy changed, and your save's answer was lost: this may be your own save. Your draft is kept. Review the current strategy before saving again."
+        : "The saved strategy changed since you began editing. Your draft is kept. Review the current strategy before saving over it."}</p>
+      <StrategyTerms strategy={strategy.strategy} label="Current strategy targets" />
+      <Button type="button" variant="outline" className="self-start" onClick={review}>Review against the current strategy</Button>
+    </div>}
     <div className="flex flex-wrap justify-end gap-3">
       <Button type="button" variant="ghost" disabled={busy} onClick={() => { if (!dirty || confirmDiscard()) onDone(false); }}>Cancel</Button>
-      <Button type="submit" disabled={busy}>{busy && <Spinner />} Save with autopilot off</Button>
+      <Button type="submit" disabled={busy || stale}>{busy && <Spinner />} Save with autopilot off</Button>
     </div>
-    <ErrorBox error={error} />
+    <ErrorBox error={stale ? undefined : error} />
   </form>;
 }
