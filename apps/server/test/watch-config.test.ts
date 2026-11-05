@@ -59,3 +59,13 @@ test("the agents' reads are budgeted: past half the platform's hourly limit, the
   assert.equal(readsPerHour(await loadWatchConfig(await file(agents(3, 60)))), 540);
   await assert.rejects(loadWatchConfig(await file(agents(4, 60))), /720 calls an hour/);
 });
+
+test("an interval must be shorter than a proposal's life, with or without a notifier, or the server won't start", async () => {
+  const agent = (change: Record<string, unknown>) => file({ agents: [{ organization: "o", agent: "a", ...change }] });
+  assert.equal((await loadWatchConfig(await agent({}))).length, 1, "the defaults");
+  assert.equal((await loadWatchConfig(await agent({ proposalHours: 1, intervalS: 3599 }))).length, 1, "just under an hour");
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 3600 })), /o\/a ticks every 3600s.*last 1h \(3600s\).*shorter than a proposal's life/);
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 1, intervalS: 7200, notify: ["true"] })), /ticks every 7200s/);
+  await assert.rejects(loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_400 })), /ticks every 86400s/);
+  assert.equal((await loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_399 }))).length, 1);
+});

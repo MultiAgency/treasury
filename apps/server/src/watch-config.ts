@@ -17,7 +17,7 @@ const agentSettings = z.strictObject({
   intervalS: z.number().int().min(WATCH.minIntervalS).default(WATCH.intervalS),
   // The platform allows a proposal at most 7 days.
   proposalHours: z.number().int().min(1).max(168).default(WATCH.proposalHours),
-  /** A command and its arguments, run without a shell for each proposal (`notify.ts`). */
+  /** A command and its arguments, run without a shell for each notice: a proposal, or a change in what watch is doing (`notify.ts`). */
   notify: z.array(z.string().min(1)).min(1).optional(),
 });
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
@@ -48,6 +48,11 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
     const key = `${organization}/${agent}`;
     if (seen.has(key)) throw new Error(`${path}: ${key} is named twice`);
     seen.add(key);
+  }
+  // A proposal that lasts less than one interval can't be followed: no tick would land in its life.
+  for (const { organization, agent, intervalS, proposalHours } of parsed.agents) {
+    if (intervalS >= proposalHours * 3600)
+      throw new Error(`${path}: ${organization}/${agent} ticks every ${intervalS}s, but its proposals last ${proposalHours}h (${proposalHours * 3600}s): intervalS must be shorter than a proposal's life`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {

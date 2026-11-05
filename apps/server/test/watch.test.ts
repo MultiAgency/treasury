@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { OwnerFailure, OwnerOutput, ProposalView } from "@multiagency/sdk";
 import type { ConsentRecord, ProposalAnswer, WatchPlatform } from "../src/platform.ts";
-import { createRequests } from "../src/requests.ts";
+import { createHolds, createRequests } from "../src/requests.ts";
 import { createWatch, drift, runWatch, WATCH, type WatchedAgent, type WatchEvent } from "../src/watch.ts";
 import { proposal } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
@@ -30,7 +30,9 @@ const refused = (code: string) => ({ ok: false, kind: "refused", status: 409, co
 /** The platform as `watch` sees it, for one agent: answers set per test, and every call recorded. */
 async function world({ max }: { max?: number } = {}) {
   const dir = tempDir("treasury-watch-");
-  const requests = await createRequests(join(dir, "requests.json"), max === undefined ? {} : { max });
+  const requestsFile = join(dir, "requests.json"), holdsFile = join(dir, "requests.json.holds");
+  let requests = await createRequests(requestsFile, max === undefined ? {} : { max });
+  let holds = await createHolds(holdsFile);
   const clock = { now: T0 };
   const calls: string[] = [];
   const answers = {
@@ -73,10 +75,17 @@ async function world({ max }: { max?: number } = {}) {
   };
   const notified: unknown[] = [];
   const notifyAnswers: ({ ok: true } | { ok: false; error: string })[] = [];
-  const watch = createWatch({ platform, requests, publicOrigin: "https://treasury.test", now: () => clock.now });
+  const build = () => createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now });
+  let watch = build();
   const tick = (agent: WatchedAgent = WATCHED) => { calls.length = 0; return watch.tick(agent); };
+  /** A restart: the server reads its stored requests and holds from their files again, and the watch starts afresh. */
+  const restart = async () => {
+    requests = await createRequests(requestsFile, max === undefined ? {} : { max });
+    holds = await createHolds(holdsFile);
+    watch = build();
+  };
   const notify = async (payload: unknown) => { notified.push(payload); return notifyAnswers.shift() ?? { ok: true as const }; };
-  return { requests, clock, calls, answers, stored, sent, heldAtCreate, tick, notify, notified, notifyAnswers };
+  return { get requests() { return requests; }, get holds() { return holds; }, restart, clock, calls, answers, stored, sent, heldAtCreate, tick, notify, notified, notifyAnswers };
 }
 
 test("the drift rule: the largest gap in points of the total, and the first leg a rebalance toward the targets moves", () => {
@@ -325,7 +334,7 @@ test("each proposal is notified once, with a link to it on the proposals page; a
   w.notifyAnswers.push({ ok: false, error: "exited with 3: channel down" });
   const event = await w.tick(agent);
   const id = event.proposed as string;
-  assert.deepEqual(w.notified, [{ organization: ORG, agent: AGENT, proposalId: id, expiresAt: "2026-11-06T12:00:00.000Z", secondsLeft: 86_400,
+  assert.deepEqual(w.notified, [{ kind: "proposed", organization: ORG, agent: AGENT, proposalId: id, expiresAt: "2026-11-06T12:00:00.000Z", secondsLeft: 86_400,
     points: 30, page: `https://treasury.test/agents/${AGENT}/proposals/${id}` }]);
   assert.deepEqual(event.notified, { ok: false, error: "exited with 3: channel down" });
   assert.equal(w.requests.of(ORG, AGENT)[0]!.proposalId, id, "recorded whatever the notifier did");
@@ -409,4 +418,317 @@ test("a tick that throws is logged, without its stack, and the agent goes on at 
   assert.equal(calls, 2);
   stop.abort();
   await done;
+});
+
+// --- notices beyond a new proposal (#131) ---
+
+const MIN = 60_000;
+/** The agent with a notifier, and the kinds it was sent, in order. */
+const kinds = (w: Awaited<ReturnType<typeof world>>) => w.notified.map(payload => (payload as { kind: string }).kind);
+/** Sets the proposal `watch` made to a state, with its creation fixed to the test clock so its life is known. */
+const set = (w: Awaited<ReturnType<typeof world>>, change: Partial<ProposalView>) => w.stored.forEach(view => Object.assign(view, { createdAt: new Date(T0).toISOString() }, change));
+
+test("holding: each reason is sent once when the hold starts, and not on the next tick", async () => {
+  const cases: [string, (w: Awaited<ReturnType<typeof world>>) => void][] = [
+    ["unresolved-operations", w => { w.answers.unresolved = { ok: true, value: [{ id: "op" }] } as never; }],
+    ["autopilot-on", w => { w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never; }],
+    ["policy-not-in-force", w => { w.answers.overview = { ok: true, value: overview(80, { notInForce: "expired" } as never) }; }],
+    ["consent-ended", w => { w.answers.overview = failure("forbidden") as never; w.answers.consents = [consent({ revoked: true } as never)]; }],
+  ];
+  for (const [reason, hold] of cases) {
+    const w = await world();
+    const agent = { ...WATCHED, notify: w.notify };
+    hold(w);
+    const event = await w.tick(agent);
+    assert.equal(w.notified.length, 1, reason);
+    const { detail, ...rest } = w.notified[0] as { detail: string };
+    assert.deepEqual(rest, { kind: "holding", organization: ORG, agent: AGENT, reason, page: `https://treasury.test/agents/${AGENT}` }, reason);
+    assert.ok(typeof detail === "string" && detail.length > 20, "and says what the reason means");
+    assert.deepEqual(event.notices, [{ kind: "holding", ok: true }], "and the tick's log line says it was sent");
+    w.clock.now += 5 * MIN;
+    await w.tick(agent);
+    assert.equal(w.notified.length, 1, `${reason}: not again on the next tick`);
+  }
+});
+
+test("resumed: when the hold ends, once; a changed reason is a new holding, not a resumed", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  await w.tick(agent);
+  w.clock.now += 5 * MIN;
+  w.answers.unresolved = { ok: true, value: [{ id: "op" }] } as never;
+  await w.tick(agent);
+  assert.deepEqual(w.notified.map(p => (p as { reason?: string }).reason), ["autopilot-on", "unresolved-operations"], "still held, for another reason");
+  w.clock.now += 5 * MIN;
+  w.answers.unresolved = { ok: true, value: [] };
+  w.answers.autopilot = { ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["holding", "holding", "resumed", "proposed"], "the hold ends and, drift being past the threshold, it proposes in the same tick");
+  assert.deepEqual(w.notified.filter(p => (p as { kind: string }).kind === "resumed"), [{ kind: "resumed", organization: ORG, agent: AGENT, page: `https://treasury.test/agents/${AGENT}` }]);
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.equal(kinds(w).filter(kind => kind === "resumed").length, 1, "once");
+});
+
+test("a hold that ends when the owner connects again sends resumed, then the proposal", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.answers.overview = failure("forbidden") as never;
+  w.answers.consents = [consent({ revoked: true } as never)];
+  await w.tick(agent);
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["holding"], "still waiting: nothing more to say");
+  w.answers.consents = [consent()];
+  w.answers.overview = { ok: true, value: overview(80) };
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["holding", "resumed", "proposed"]);
+});
+
+test("a failed read neither starts nor ends a hold: it says nothing about why the agent is held", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  await w.tick(agent);
+  w.answers.overview = failure("unavailable") as never;
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["holding"], "a failed read says nothing about the hold");
+});
+
+test("expiring: once, when a proposal of its own has under an hour left, or under 10% of its life if that is shorter", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent); // proposed, open 24 hours
+  set(w, {});
+  w.clock.now = T0 + 23 * 60 * MIN; // exactly an hour left
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed"], "an hour left is not under an hour");
+  w.clock.now = T0 + 23 * 60 * MIN + 1;
+  await w.tick(agent);
+  assert.deepEqual(w.calls, ["proposals/get"], "read from the proposal the tick already reads: no extra platform call");
+  const expiring = w.notified[1] as { kind: string; proposalId: string; expiresAt: string; page: string; organization: string; agent: string };
+  assert.deepEqual(expiring, { kind: "expiring", organization: ORG, agent: AGENT, proposalId: [...w.stored.values()][0]!.id, expiresAt: "2026-11-06T12:00:00.000Z",
+    page: `https://treasury.test/agents/${AGENT}/proposals/${[...w.stored.values()][0]!.id}` });
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "expiring"], "not again");
+
+  // A one-hour proposal: 10% of its life is 6 minutes, shorter than an hour.
+  const short = await world();
+  const brief = { ...WATCHED, notify: short.notify, proposalHours: 1 };
+  await short.tick(brief);
+  set(short, {});
+  short.clock.now = T0 + 53 * MIN; // 7 minutes left
+  await short.tick(brief);
+  assert.deepEqual(kinds(short), ["proposed"], "7 minutes is over 10% of an hour");
+  short.clock.now = T0 + 55 * MIN; // 5 minutes left
+  await short.tick(brief);
+  assert.deepEqual(kinds(short), ["proposed", "expiring"]);
+});
+
+test("expired: told once, before the request is dropped, and the agent goes on to propose again", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  const first = await w.tick(agent);
+  set(w, { state: "expired" });
+  w.clock.now = T0 + 25 * 60 * MIN;
+  const next = await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "expired", "proposed"]);
+  const expired = w.notified[1] as { proposalId: string; expiresAt: string };
+  assert.equal(expired.proposalId, first.proposed);
+  assert.deepEqual(w.requests.of(ORG, AGENT).map(record => record.proposalId), [next.proposed], "and the request was dropped");
+  assert.deepEqual(w.calls, ["proposals/get", "overview", "unresolved", "autopilot/get", "proposals/create"], "no read beyond the tick's own");
+});
+
+test("approved_not_executed: once, after an hour approved and not executed; not while it is executing", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent);
+  set(w, { state: "approved", approvedAt: new Date(T0).toISOString() });
+  w.clock.now = T0 + 59 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed"], "not yet an hour");
+  w.clock.now = T0 + 60 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"], "an hour counts");
+  w.clock.now = T0 + 90 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"], "not again");
+  const other = await world();
+  const watching = { ...WATCHED, notify: other.notify };
+  await other.tick(watching);
+  set(other, { state: "executing", approvedAt: new Date(T0).toISOString() });
+  other.clock.now = T0 + 120 * MIN;
+  await other.tick(watching);
+  assert.deepEqual(kinds(other), ["proposed"], "an execution under way is not a stall");
+});
+
+test("a restart sends nothing already sent: holds and each proposal notice are recorded first", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  await w.tick(agent);
+  assert.equal(w.holds.get(ORG, AGENT), "autopilot-on");
+  await w.restart();
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["holding"], "the hold isn't announced again");
+
+  const p = await world();
+  const proposing = { ...WATCHED, notify: p.notify };
+  await p.tick(proposing);
+  set(p, {});
+  p.clock.now = T0 + 23 * 60 * MIN + MIN;
+  await p.tick(proposing);
+  assert.deepEqual(p.requests.of(ORG, AGENT)[0]!.notified, ["expiring"], "recorded on the request");
+  await p.restart();
+  p.clock.now += 5 * MIN;
+  await p.tick(proposing);
+  assert.deepEqual(kinds(p), ["proposed", "expiring"]);
+  // and the end of the hold after a restart is still told once
+  w.answers.autopilot = { ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w).slice(0, 2), ["holding", "resumed"]);
+  assert.equal(w.holds.get(ORG, AGENT), null);
+});
+
+test("a notice is recorded before it is sent: a failed notifier is reported, not retried", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  w.notifyAnswers.push({ ok: false, error: "exited with 3: channel down" });
+  const event = await w.tick(agent);
+  assert.deepEqual(event.notices, [{ kind: "holding", ok: false, error: "exited with 3: channel down" }]);
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.equal(w.notified.length, 1, "not retried");
+});
+
+test("an agent with no notifier sends and records nothing, and its hold is still logged", async () => {
+  const w = await world();
+  w.answers.autopilot = { ok: true, value: { on: true, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  assert.deepEqual(await w.tick(), { organization: ORG, agent: AGENT, held: "autopilot" });
+  assert.equal(w.holds.get(ORG, AGENT), null, "no hold recorded");
+  w.answers.autopilot = { ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } } as never;
+  w.clock.now += 5 * MIN;
+  await w.tick();
+  set(w, { state: "expired" });
+  w.clock.now += 25 * 60 * MIN;
+  await w.tick();
+  assert.deepEqual(w.notified, []);
+  assert.deepEqual(w.requests.of(ORG, AGENT).flatMap(record => record.notified), []);
+});
+
+test("a proposal's notice is for watch's own proposals only: one it never made is not reported", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  w.stored.set("someone-else", proposal({ id: "e".repeat(32), requestId: "someone-else", state: "expired", expiresAt: new Date(T0 - 1000).toISOString() }));
+  await w.tick(agent);
+  assert.ok(!kinds(w).includes("expired"));
+});
+
+test("expired is sent for a proposal nobody answered and for one approved and never executed, carrying approvedAt (null when unanswered)", async () => {
+  const unanswered = await world();
+  const agent = { ...WATCHED, notify: unanswered.notify };
+  const first = await unanswered.tick(agent);
+  set(unanswered, { state: "expired" });
+  unanswered.clock.now = T0 + 25 * 60 * MIN;
+  await unanswered.tick(agent);
+  const gone = unanswered.notified.find(p => (p as { kind: string }).kind === "expired");
+  assert.deepEqual(gone, { kind: "expired", organization: ORG, agent: AGENT, proposalId: first.proposed, expiresAt: "2026-11-06T12:00:00.000Z", approvedAt: null,
+    page: `https://treasury.test/agents/${AGENT}/proposals/${first.proposed}` });
+
+  // The platform reads an approved, unexecuted proposal as `expired` once its expiry passes, `approvedAt` still set.
+  const approved = await world();
+  const watching = { ...WATCHED, notify: approved.notify };
+  await approved.tick(watching);
+  const approvedAt = new Date(T0 + 2 * 60 * MIN).toISOString();
+  set(approved, { state: "expired", approvedAt });
+  approved.clock.now = T0 + 25 * 60 * MIN;
+  await approved.tick(watching);
+  const lapsed = approved.notified.find(p => (p as { kind: string }).kind === "expired") as { approvedAt: string };
+  assert.equal(lapsed.approvedAt, approvedAt, "told as expired, with when it was approved");
+});
+
+test("an approved proposal is reported at the hour, and again as expired when it lapses: each once", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent);
+  const approvedAt = new Date(T0).toISOString();
+  set(w, { state: "approved", approvedAt });
+  w.clock.now = T0 + 90 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"]);
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"], "once");
+  set(w, { state: "expired", approvedAt });
+  w.clock.now = T0 + 25 * 60 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w).filter(kind => kind !== "proposed"), ["approved_not_executed", "expired"]);
+});
+
+test("expiring is for a proposal still awaiting the owner; an approved one is reported when it enters the window, if that is before the hour", async () => {
+  const w = await world();
+  const agent = { ...WATCHED, notify: w.notify };
+  await w.tick(agent);
+  // Approved 30 minutes before it expires: under the window, long before an hour of waiting.
+  const approvedAt = new Date(T0 + 23.5 * 60 * MIN).toISOString();
+  set(w, { state: "approved", approvedAt });
+  w.clock.now = T0 + 23.5 * 60 * MIN + 1;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"], "no `expiring` for an approved proposal");
+  w.clock.now += 5 * MIN;
+  await w.tick(agent);
+  assert.deepEqual(kinds(w), ["proposed", "approved_not_executed"], "once");
+  // Both the hour and the window: one report, not two.
+  const both = await world();
+  const watching = { ...WATCHED, notify: both.notify, proposalHours: 1 };
+  await both.tick(watching);
+  set(both, { state: "approved", approvedAt: new Date(T0 - 2 * 60 * MIN).toISOString() });
+  both.clock.now = T0 + 55 * MIN;
+  await both.tick(watching);
+  assert.deepEqual(kinds(both), ["proposed", "approved_not_executed"]);
+  // Still awaiting the owner: `expiring`, as before.
+  const open = await world();
+  const waiting = { ...WATCHED, notify: open.notify };
+  await open.tick(waiting);
+  set(open, {});
+  open.clock.now = T0 + 23 * 60 * MIN + MIN;
+  await open.tick(waiting);
+  assert.deepEqual(kinds(open), ["proposed", "expiring"]);
+});
+
+test("the expiring window is at least one interval, so a tick always lands in it", async () => {
+  // A 1-hour proposal's window is 6 minutes (10% of its life): a 10-minute interval widens it to 10.
+  const slow = await world();
+  const wide = { ...WATCHED, notify: slow.notify, proposalHours: 1, intervalS: 600 };
+  await slow.tick(wide);
+  set(slow, {});
+  slow.clock.now = T0 + 51 * MIN; // 9 minutes left
+  await slow.tick(wide);
+  assert.deepEqual(kinds(slow), ["proposed", "expiring"], "inside the 10-minute window");
+  const fast = await world();
+  const narrow = { ...WATCHED, notify: fast.notify, proposalHours: 1, intervalS: 300 };
+  await fast.tick(narrow);
+  set(fast, {});
+  fast.clock.now = T0 + 51 * MIN;
+  await fast.tick(narrow);
+  assert.deepEqual(kinds(fast), ["proposed"], "outside the 6-minute window of a 5-minute interval");
+});
+
+test("a proposal that is neither open nor expired raises nothing, whatever its dates", async () => {
+  for (const state of ["executed", "rejected", "withdrawn", "invalidated", "stopped"] as const) {
+    const w = await world();
+    const agent = { ...WATCHED, notify: w.notify };
+    await w.tick(agent);
+    set(w, { state, approvedAt: new Date(T0).toISOString() });
+    w.clock.now = T0 + 23 * 60 * MIN + 5 * MIN;
+    await w.tick(agent);
+    assert.ok(!kinds(w).some(kind => kind === "expiring" || kind === "expired" || kind === "approved_not_executed"), state);
+  }
 });
