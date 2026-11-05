@@ -1,20 +1,13 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer as createHttpServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { join } from "node:path";
+import type { Server } from "node:http";
 import { parseSetupMessage } from "@multiagency/sdk";
 import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
-import { createDaoRequests } from "../src/dao-requests.ts";
 import { standInDaos, type DaoProposal, type Policy } from "../src/dao.ts";
-import { createServer } from "../src/http.ts";
-import { standInKeyLookup } from "../src/keys.ts";
-import { createSessions } from "../src/sessions.ts";
-import { createSignIn } from "../src/signin.ts";
 import { setupConsents } from "../src/setup.ts";
-import { daoTransaction, fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
-import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { daoTransaction, fakePlatform, ORIGIN, wallet } from "./fakes.ts";
+import { testServer } from "./test-server.ts";
 
 const owner = wallet("owner.near"), other = wallet("other.near");
 const council = wallet("council.near"), proposer = wallet("proposer.near"), reader = wallet("reader.near");
@@ -32,22 +25,11 @@ const policies: Record<string, Policy> = {
   },
 };
 const chainProposals: Record<string, DaoProposal[]> = { [DAO]: [] };
-let server: Server, base: string;
+let server: Server, base: string, signIn: Awaited<ReturnType<typeof testServer>>["signIn"];
 
 before(async () => {
-  server = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
-      keyLookup: standInKeyLookup(Object.fromEntries([owner, other, council, proposer, reader].map(who => [who.accountId, [who.publicKey]]))) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
-    audit: { append: async entry => { audited.push(entry); } },
-    consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos: standInDaos(policies, chainProposals),
-    daoRequests: await createDaoRequests(join(tempDir("treasury-setup-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  ({ server, base, signIn } = await testServer({ platform: fake.platform, wallets: [owner, other, council, proposer, reader], audited,
+    daos: standInDaos(policies, chainProposals) }));
 });
 after(() => server.close());
 
@@ -55,11 +37,6 @@ const write = { origin: ORIGIN, "content-type": "application/json" };
 const call = (method: string, path: string, { body, cookie }: { body?: unknown; cookie?: string } = {}) =>
   fetch(`${base}${path}`, { method, headers: { ...(method === "GET" ? {} : write), ...(cookie && { cookie }) }, ...(body !== undefined && { body: JSON.stringify(body) }) });
 const json = async (response: Response) => ({ status: response.status, body: await response.json() as any });
-async function signIn(who: ReturnType<typeof wallet>) {
-  const { body: issued } = await json(await call("POST", "/api/session/challenge"));
-  const response = await call("POST", "/api/session", { body: who.sign(issued.value) });
-  return response.headers.get("set-cookie")!.split(";")[0]!;
-}
 /** The setup text the server gives `who`, signed by their wallet for the platform's host. */
 async function signedSetup(who: ReturnType<typeof wallet>, cookie: string, message?: (text: string) => string) {
   const { status, body } = await json(await call("POST", "/api/setup/text", { cookie, body: {} }));
@@ -302,26 +279,16 @@ test("a thrown DAO setup filing is recorded and answers unavailable, storing not
 test("the setup routes count against the account's requests a minute, as the owner routes do", async () => {
   const routes = [["GET", "/api/setup"], ["POST", "/api/setup"], ["GET", `/api/setup/dao/${DAO}`], ["POST", `/api/setup/dao/${DAO}`]] as const;
   const accounts = routes.map((_, i) => wallet(`limited-${i}.near`));
-  const limited = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup(Object.fromEntries(accounts.map(who => [who.accountId, [who.publicKey]]))) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 2,
-    audit: { append: async () => {} }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos: standInDaos(policies, chainProposals), daoRequests: await createDaoRequests(join(tempDir("treasury-setup-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
+  const limited = await testServer({ platform: fake.platform, wallets: accounts, ownerRequestsPerMinute: 2, daos: standInDaos(policies, chainProposals) });
   try {
-    const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
     const send = (method: string, path: string, { cookie, body = {} }: { cookie?: string; body?: unknown } = {}) =>
-      fetch(`${at}${path}`, { method, headers: { ...(method === "GET" ? {} : write), ...(cookie && { cookie }) }, ...(method !== "GET" && { body: JSON.stringify(body) }) });
+      fetch(`${limited.base}${path}`, { method, headers: { ...(method === "GET" ? {} : write), ...(cookie && { cookie }) }, ...(method !== "GET" && { body: JSON.stringify(body) }) });
     for (const [i, [method, path]] of routes.entries()) {
-      const issued = (await (await send("POST", "/api/session/challenge")).json() as any).value;
-      const cookie = (await send("POST", "/api/session", { body: accounts[i]!.sign(issued) })).headers.get("set-cookie")!.split(";")[0]!;
+      const cookie = await limited.signIn(accounts[i]!);
       const statuses = [];
       for (let n = 0; n < 3; n++) statuses.push((await send(method, path, { cookie })).status);
       assert.notEqual(statuses[1], 429, `${method} ${path}: ${statuses}`);
       assert.equal(statuses[2], 429, `${method} ${path}: ${statuses}`);
     }
-  } finally { limited.close(); }
+  } finally { limited.server.close(); }
 });

@@ -1,7 +1,6 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { createServer as createHttpServer, type Server } from "node:http";
-import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { parseConsentMessage, proposalList, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AuditEntry } from "../src/audit.ts";
@@ -16,11 +15,12 @@ import { createDaoReader } from "../src/dao-reader.ts";
 import { createSettle } from "../src/dao-settle.ts";
 import { standInDaos, type DaoProposal, type Policy } from "../src/dao.ts";
 import { consentText } from "../src/consent.ts";
-import { clientAddress, COOKIE, createServer, routes } from "../src/http.ts";
+import { clientAddress, COOKIE, routes } from "../src/http.ts";
 import { standInKeyLookup, type KeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
 import { daoKind, daoTransaction, fakePlatform, HOST, ORIGIN, proposal, wallet } from "./fakes.ts";
+import { testServer } from "./test-server.ts";
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");
 /** A DAO's members: one who may file and vote on its proposals, one who may only file, and one with no rights. */
@@ -72,22 +72,10 @@ const auditFails: { stage?: AuditEntry["stage"] } = {};
 let server: Server, base: string;
 
 before(async () => {
-  server = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
-      keyLookup: standInKeyLookup(Object.fromEntries([owner, intruder, council, proposer, reader].map(who => [who.accountId, [who.publicKey]]))) }),
+  ({ server, base } = await testServer({ platform: fake.platform, wallets: [owner, intruder, council, proposer, reader],
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000, now: () => clock.now }),
-    publicOrigin: ORIGIN,
-    deployment: "treasury",
-    trustedProxyHops: 0,
-    ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { if (entry.stage === auditFails.stage) throw new Error("disk full"); audited.push(entry); } },
-    consentsPerDay: 1_000, daoFilingsPerDay: 1_000,
-    keyLookup: async (account, key) => keys.lookup(account, key),
-    daos: standInDaos(policies, chainProposals), daoRequests,
-  }));
-  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    keyLookup: async (account, key) => keys.lookup(account, key), daos: standInDaos(policies, chainProposals), daoRequests }));
 });
 after(() => server.close());
 
@@ -221,15 +209,10 @@ test("a captured sign-in replayed with another encoding of its nonce doesn't sig
 });
 
 test("sign-in attempts are limited per client, by the address the trusted proxy saw, and answered 429", async t => {
-  const limited = createHttpServer(createServer({
-    platform: fake.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 2, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 1, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full", daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
+  const limited = await testServer({ platform: fake.platform, trustedProxyHops: 1,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 2, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }) });
+  t.after(() => limited.server.close());
+  const at = limited.base;
   const post = async (path: string, client: string, body: unknown = {}) => json(await fetch(`${at}${path}`, {
     method: "POST", headers: { ...write, "x-forwarded-for": client }, body: JSON.stringify(body) }));
   const { body: issued } = await post("/api/session/challenge", "203.0.113.1");
@@ -241,19 +224,9 @@ test("sign-in attempts are limited per client, by the address the trusted proxy 
 
 /** A second server with its own platform fake and a low owner-request limit, and a sign-in helper for it. */
 async function limitedServer(t: { after(fn: () => void): void }, platform: ReturnType<typeof fakePlatform>["platform"], ownerRequestsPerMinute: number) {
-  const limited = createHttpServer(createServer({
-    platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "intruder.near": [intruder.publicKey], "owner.near": [owner.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute, audit: { append: async () => {} }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full", daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
-  const session = async (who: ReturnType<typeof wallet>) => {
-    const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
-    return (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(who.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
-  };
+  const limited = await testServer({ platform, wallets: [intruder, owner], ownerRequestsPerMinute });
+  t.after(() => limited.server.close());
+  const at = limited.base, session = limited.signIn;
   const read = async (cookie: string, agent: string) => json(await fetch(`${at}/api/agents/${agent}`, { headers: { cookie } }));
   return { session, read };
 }
@@ -512,17 +485,9 @@ test("a signed consent without owner, as an older page's, is still relayed", asy
 
 test("new consents are limited per account a day, since even revoked ones count against the deployment's cap", async t => {
   const counted = fakePlatform({ portfolio: "owner.near" });
-  const limited = createHttpServer(createServer({
-    platform: counted.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "owner.near": [owner.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1, daoFilingsPerDay: 1_000, keyLookup: async () => "full", daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
-  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
-  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(owner.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const limited = await testServer({ platform: counted.platform, wallets: [owner], consentsPerDay: 1 });
+  t.after(() => limited.server.close());
+  const at = limited.base, cookie = await limited.signIn(owner);
   const post = async (path: string, body: unknown) => json(await fetch(`${at}${path}`, { method: "POST", headers: { ...write, cookie }, body: JSON.stringify(body) }));
   const texts = [(await post("/api/agents/portfolio/consent/text", {})).body.value, (await post("/api/agents/portfolio/consent/text", {})).body.value];
   const submit = (text: { message: string; nonce: string }) => { const signed = owner.sign(text as never); return post("/api/agents/portfolio/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }); };
@@ -1227,19 +1192,9 @@ test("the platform's refusals of a vote map to the browser's codes: not open, no
 
 test("DAO filings are limited per member a day, consents and votes together, since the deployment's 256 are shared", async t => {
   const counted = fakePlatform({ "dao-treasury": DAO }, { daos: ["dao-treasury"] });
-  const limited = createHttpServer(createServer({
-    platform: counted.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "council.near": [council.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
-    daoFilingsPerDay: 1, keyLookup: async () => "full", daos: standInDaos({ [DAO]: DAO_POLICY }, { [DAO]: [] }),
-    daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
-  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
-  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(council.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const limited = await testServer({ platform: counted.platform, wallets: [council], daoFilingsPerDay: 1, daos: standInDaos({ [DAO]: DAO_POLICY }, { [DAO]: [] }) });
+  t.after(() => limited.server.close());
+  const at = limited.base, cookie = await limited.signIn(council);
   const post = async (path: string) => json(await fetch(`${at}${path}`, { method: "POST", headers: { ...write, cookie }, body: "{}" }));
   counted.proposals.push({ ...proposal({ id: "1".repeat(32), organization: DAO_ORG, agentId: "id-dao-treasury" }), agent: "dao-treasury" });
   assert.equal((await post("/api/agents/dao-treasury/consent/text")).status, 200);
@@ -1251,19 +1206,9 @@ test("a filing that never reaches the platform doesn't spend the member's allowa
   t.mock.method(console, "error", () => {});
   const counted = fakePlatform({ "dao-treasury": DAO }, { daos: ["dao-treasury"] });
   const chain: Record<string, DaoProposal[]> = {};
-  const limited = createHttpServer(createServer({
-    platform: counted.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "council.near": [council.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
-    daoFilingsPerDay: 1, keyLookup: async () => "full", daos: standInDaos({ [DAO]: DAO_POLICY }, chain),
-    daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
-  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
-  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(council.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const limited = await testServer({ platform: counted.platform, wallets: [council], daoFilingsPerDay: 1, daos: standInDaos({ [DAO]: DAO_POLICY }, chain) });
+  t.after(() => limited.server.close());
+  const at = limited.base, cookie = await limited.signIn(council);
   const post = async (path: string) => json(await fetch(`${at}${path}`, { method: "POST", headers: { ...write, cookie }, body: "{}" }));
   // The DAO's next proposal number can't be read, so nothing is filed.
   assert.equal((await post("/api/agents/dao-treasury/consent/text")).status, 503);
@@ -1308,19 +1253,11 @@ test("when the server can't keep another DAO request, nothing is filed: the plat
   const full = await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json"), { max: 1 });
   await full.add({ kind: "consent", organization: "other", agent: "other", agentId: "id-other", id: "e".repeat(64), description: "", votingUntil: Date.now() + 1,
     filed: { dao: DAO, next: 0, transactions: { proposal: daoTransaction(DAO, "e".repeat(64)), proposalAndVote: null } } });
-  const limited = createHttpServer(createServer({
-    platform: counted.platform,
-    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({ "council.near": [council.publicKey] }) }),
-    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit: { append: async () => {} }, consentsPerDay: 1_000,
-    daoFilingsPerDay: 1_000, keyLookup: async () => "full", daos: standInDaos({ [DAO]: DAO_POLICY }, { [DAO]: [] }), daoRequests: full,
-  }));
-  await new Promise<void>(resolve => limited.listen(0, "127.0.0.1", resolve));
-  t.after(() => limited.close());
+  const limited = await testServer({ platform: counted.platform, wallets: [council], daos: standInDaos({ [DAO]: DAO_POLICY }, { [DAO]: [] }), daoRequests: full });
+  t.after(() => limited.server.close());
   const logged = t.mock.method(console, "error", () => {});
-  const at = `http://127.0.0.1:${(limited.address() as AddressInfo).port}`;
-  const { body: issued } = await json(await fetch(`${at}/api/session/challenge`, { method: "POST", headers: write }));
-  const cookie = (await fetch(`${at}/api/session`, { method: "POST", headers: write, body: JSON.stringify(council.sign(issued.value)) })).headers.get("set-cookie")!.split(";")[0]!;
+  const at = limited.base;
+  const cookie = await limited.signIn(council);
   const reply = await json(await fetch(`${at}/api/agents/dao-treasury/consent/text`, { method: "POST", headers: { ...write, cookie }, body: "{}" }));
   assert.deepEqual(reply, { status: 503, body: { ok: false, kind: "unavailable" } });
   assert.equal(counted.calls.filter(made => made.startsWith("daoConsents.file")).length, 0, "the platform wasn't asked");
