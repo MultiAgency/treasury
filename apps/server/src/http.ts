@@ -459,6 +459,12 @@ async function daoConnection(identity: Admitted, live: ConsentRecord | undefined
 /** Every route the server answers. Tests walk this table, so a new route is covered by the access tests as it's added. */
 export const routes: Route[] = [
   {
+    // For the host's health check: the server answers only after its configuration, credential file and audit trail were
+    // checked at startup, so a 200 means it's up and listening. It reads nothing and says nothing more.
+    method: "GET", path: "/api/health", access: "public",
+    async handle() { return ok({ status: "up" }); },
+  },
+  {
     method: "POST", path: "/api/session/challenge", access: "public",
     async handle({ req }, { signIn, trustedProxyHops }) {
       const issued = signIn.challenge(clientAddress(req, trustedProxyHops));

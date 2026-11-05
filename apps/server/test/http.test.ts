@@ -1350,3 +1350,7 @@ test("after the consent is revoked, the platform's forbidden asks the owner to r
   assert.equal(relayed("execute"), 0, "nothing was sent to execute");
   assert.deepEqual((await json(await call("GET", "/api/agents/portfolio/consent", { cookie }))).body.value, { consent: null }, "the page shows Connect");
 });
+
+test("the health check answers without a session or an Origin, and says nothing but that the server is up", async () => {
+  assert.deepEqual(await json(await call("GET", "/api/health")), { status: 200, body: { ok: true, value: { status: "up" } } });
+});

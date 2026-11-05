@@ -1,0 +1,12 @@
+# Only the repository's own files go into the image: no dependencies built here, no local secrets or settings, no
+# review notes or patches kept beside the checkout.
+**/node_modules
+**/dist
+**/dist-proposals
+.env
+.env.*
+!.env.example
+.git
+.claude
+review-handoff-*
+**/.test-artifacts
