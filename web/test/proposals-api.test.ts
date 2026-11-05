@@ -214,3 +214,16 @@ test("the consent text is asked for with owner only at the owner's choice", asyn
   await agent.consentText({ owner: true });
   assert.deepEqual(server.sent.map(request => JSON.parse(request.body)), [{}, { owner: true }]);
 });
+
+test("autopilot: the strategy and schedule as GETs; on (naming the digest), off and run now as JSON POSTs", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const digest = `sha256:${"a".repeat(64)}`;
+  for (const path of ["enable", "stop"]) server.answer(`POST ${base}/autopilot/${path}`, ok({}));
+  server.answer(`POST ${base}/autopilot/tick`, ok({ summary: "Ran." }));
+  await agent.enableAutopilot(digest);
+  await agent.stopAutopilot();
+  assert.deepEqual(await agent.runNow(), { ok: true, value: { summary: "Ran." } });
+  assert.deepEqual(server.sent.map(request => [request.path, JSON.parse(request.body)]),
+    [[`${base}/autopilot/enable`, { expectedDigest: digest }], [`${base}/autopilot/stop`, {}], [`${base}/autopilot/tick`, {}]]);
+  assert.throws(() => agent.enableAutopilot("abc"), "held to the server's schema before anything is sent");
+});

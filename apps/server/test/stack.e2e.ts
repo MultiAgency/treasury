@@ -10,7 +10,7 @@ import { createServer as createHttpServer, type Server } from "node:http";
 import { randomBytes } from "node:crypto";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import type { AddressInfo } from "node:net";
-import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
+import { authorizeStrategy, ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../../scripts/stack.ts";
 import type { z } from "zod";
 import { fileAudit } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
@@ -322,4 +322,28 @@ test("the owner asks for a rebalance to a drifted strategy: proposed under their
   assert.ok(proposal.legs.length > 0, "the strategy's legs, quoted now");
   const found = await (await get(`${agent}/requests/${requestId}`, cookie)).json() as { value: { proposal: { id: string } } };
   assert.equal(found.value.proposal.id, proposal.id);
+});
+
+test("autopilot is turned on for the bound strategy, run now and left on; disconnecting turns it off before revoking", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  await setTargets(target, { [USDC]: 5_000, [WNEAR]: 5_000, [ETH]: 0 });
+  await authorizeStrategy(target);
+  const read = async <S extends z.ZodType>(path: string, schema: S) => schema.parse(((await (await get(`${agent}/${path}`, cookie)).json()) as { value: unknown }).value);
+  const strategy = await read("strategy", contract.strategyRead);
+  assert.deepEqual([strategy.grantMatches, strategy.readiness.canEnable], [true, true], JSON.stringify(strategy.readiness));
+  const on = await post(`${agent}/autopilot/enable`, { expectedDigest: strategy.digest }, cookie);
+  assert.equal(on.status, 200, await on.clone().text());
+  assert.equal((await read("autopilot", contract.autopilotRead)).on, true);
+  const ran = await post(`${agent}/autopilot/tick`, {}, cookie);
+  assert.equal(ran.status, 200, await ran.clone().text());
+  contract.tickRead.parse(((await ran.json()) as { value: unknown }).value);
+  const revoked = await post(`${agent}/consent/revoke`, {}, cookie);
+  assert.equal(revoked.status, 200, await revoked.clone().text());
+  // Read again under a new consent: the schedule was turned off before the old one was revoked.
+  const again = await connect();
+  const schedule = contract.autopilotRead.parse(((await (await get(`${again.agent}/autopilot`, again.cookie)).json()) as { value: unknown }).value);
+  assert.equal(schedule.on, false);
 });

@@ -41,6 +41,8 @@ export function agentReads(name: string) {
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
+    strategy: queryOptions({ queryKey: [...key, "strategy"], queryFn: async () => answered(await agent.strategy()), retry: false }),
+    autopilot: queryOptions({ queryKey: [...key, "autopilot"], queryFn: async () => answered(await agent.autopilot()), retry: false }),
     books: queryOptions({ queryKey: [...key, "books"], queryFn: async () => answered(await agent.books()), retry: false }),
     /** The funding account and the agent's own account, read as the owner reads above. */
     treasury: queryOptions({ queryKey: [...key, "treasury"], queryFn: async () => answered(await agent.treasury()).treasury, retry: false }),

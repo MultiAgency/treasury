@@ -4,7 +4,7 @@ import { EventType } from "@ag-ui/core";
 import { PROTOCOL_VERSION } from "@ag-ui/core/schemas";
 import { accessOf, mayCall, proposalId, type ProposalView } from "@multiagency/sdk";
 import { verifyNep413Signature } from "near-kit";
-import type { z } from "zod";
+import { z } from "zod";
 import { sha256, type Audit } from "./audit.ts";
 import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
 import { offerFor } from "./dao-offer.ts";
@@ -89,9 +89,10 @@ type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string }
  * signs (`owner/prepare`: the owner, or a DAO member who may file its proposals, which the DAO contract checks too);
  * `execute` asking for a proposal's execution.
  */
-export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep" | "propose";
+export type Need = "read" | "sign" | "file" | "execute" | "deposit" | "link" | "sweep" | "propose" | "enable" | "stop" | "tick";
 const NEEDS: Record<Need, string> = { read: "proposals/get", sign: "owner/submit", file: "owner/prepare", execute: "proposals/execute",
-  deposit: "deposit", link: "treasury/link", sweep: "sweep", propose: "proposals/create" };
+  deposit: "deposit", link: "treasury/link", sweep: "sweep", propose: "proposals/create",
+  enable: "autopilot/enable", stop: "autopilot/stop", tick: "autopilot/tick" };
 type Route = { method: "GET" | "POST" | "DELETE"; path: string; handle(call: Call, context: Context): Promise<Reply> }
   & ({ access: "public" } | { access: "session" } | { access: "owner" | "owner-fresh"; needs: Need });
 
@@ -230,6 +231,29 @@ function sweepEvents(agent: string, { events, ended }: SweepRun) {
     : [{ type: EventType.RUN_ERROR, message: SWEEP_FAILED[ended.kind] ?? "The sweep failed.", code: ended.kind }];
   return [{ type: EventType.RUN_STARTED, threadId, runId, protocolVersion: PROTOCOL_VERSION }, ...activity, ...end];
 }
+
+/**
+ * An autopilot action, sent once and recorded before the platform is asked and after: turned on for the digest the
+ * owner saw, turned off, or run once now. The platform's refusal is `autopilot_refused` (its text logged); a lost answer
+ * is `unavailable`, and the page reads the schedule again before anything else, since a run now may have run.
+ */
+const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-on" | "autopilot-off" | "run-now", needs: Need, body: B,
+  send: (platform: Platform, organization: string, agent: string, input: z.output<B>) => Promise<{ ok: true; value: unknown } | { ok: false; kind: string; status?: number }>,
+  shown: (value: unknown) => unknown): Route => ({
+  method: "POST", path, access: "owner-fresh", needs,
+  async handle({ body: sent, account, identity }, { platform, audit }) {
+    const { agent, owner } = identity!;
+    const input = parse(body, sent ?? {});
+    if (input === undefined) return refused(400, "bad_request");
+    await audit.append({ who: account!, action, agent, stage: "attempt" });
+    const answer = await relay(() => send(platform, organizationOf(owner), agent, input), agent);
+    const reply = answer.ok ? ok(shown(answer.value)) : answer.kind === "forbidden" ? refused(409, "not_connected")
+      : answer.kind === "refused" ? refused(409, "autopilot_refused") : unavailable();
+    if (!answer.ok && answer.kind !== "forbidden") log("platform_autopilot_failed", { agent, action, ...failure(answer) });
+    await audit.append({ who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
+    return reply;
+  },
+});
 
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
@@ -666,15 +690,30 @@ export const routes: Route[] = [
   },
   {
     /**
-     * Disconnects the agent: revokes the owner's live consents for it, found in the platform's list. A consent ID from
-     * the browser is never used, since the platform revokes any of the deployment's consents by ID. At most
+     * Disconnects the agent: turns its autopilot off first, then revokes the owner's live consents for it, found in the
+     * platform's list. Once disconnected, the owner has no page here to turn autopilot off, so a schedule that can't be
+     * read, or isn't confirmed off, revokes nothing (`unavailable`, or `autopilot_not_stopped`). A consent ID from the
+     * browser is never used, since the platform revokes any of the deployment's consents by ID. At most
      * `REVOKES_PER_REQUEST` a request; if any is left or fails, the answer is `unavailable` and trying again is safe.
      */
     method: "POST", path: "/api/agents/:agent/consent/revoke", access: "owner-fresh", needs: "sign",
     async handle({ account, identity }, context) {
-      const listed = await context.platform.consents.list(organizationOf(identity!.owner));
-      if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
-      const { revoked, complete } = await revokeAll(liveConsents(listed.value.consents, identity!), account!, identity!.agent, context);
+      const { platform, audit } = context, { agent, owner } = identity!, organization = organizationOf(owner);
+      const listed = await platform.consents.list(organization);
+      if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return unavailable(); }
+      const live = liveConsents(listed.value.consents, identity!);
+      if (live.length) {
+        const schedule = await relay(() => platform.autopilot.status(organization, agent), agent);
+        if (!schedule.ok) { log("platform_autopilot_failed", { agent, action: "status", ...failure(schedule) }); return unavailable(); }
+        if (schedule.value.on) {
+          await audit.append({ who: account!, action: "autopilot-off", agent, stage: "attempt" });
+          const stopped = await relay(() => platform.autopilot.stop(organization, agent), agent);
+          const reply = stopped.ok ? ok({}) : refused(409, "autopilot_not_stopped");
+          await audit.append({ who: account!, action: "autopilot-off", agent, stage: "result", answer: audited(stopped, reply) });
+          if (!stopped.ok) { log("platform_autopilot_failed", { agent, action: "stop", ...failure(stopped) }); return reply; }
+        }
+      }
+      const { revoked, complete } = await revokeAll(live, account!, agent, context);
       return complete ? ok({ revoked }) : unavailable();
     },
   },
@@ -785,6 +824,30 @@ export const routes: Route[] = [
       return reply;
     },
   },
+  {
+    // The saved strategy, whether the held grant binds it, and whether the schedule may be turned on.
+    method: "GET", path: "/api/agents/:agent/strategy", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.autopilot.strategy(organizationOf(owner), agent), agent);
+      return answer.ok ? ok(answer.value) : readFailure(answer, agent, "strategy/get");
+    },
+  },
+  {
+    // The schedule: on or off, its interval and ceiling, its last and next runs.
+    method: "GET", path: "/api/agents/:agent/autopilot", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.autopilot.status(organizationOf(owner), agent), agent);
+      return answer.ok ? ok(answer.value) : readFailure(answer, agent, "autopilot/get");
+    },
+  },
+  autopilotAction("/api/agents/:agent/autopilot/enable", "autopilot-on", "enable", contract.enableRequest,
+    (platform, organization, agent, { expectedDigest }) => platform.autopilot.enable(organization, agent, expectedDigest), () => ({})),
+  autopilotAction("/api/agents/:agent/autopilot/stop", "autopilot-off", "stop", z.strictObject({}),
+    (platform, organization, agent) => platform.autopilot.stop(organization, agent), () => ({})),
+  autopilotAction("/api/agents/:agent/autopilot/tick", "run-now", "tick", z.strictObject({}),
+    (platform, organization, agent) => platform.autopilot.tick(organization, agent), value => ({ summary: value })),
   fundingChange("/api/agents/:agent/treasury/link", "link", contract.linkRequest,
     (platform, organization, agent, { accountId }) => platform.funding.link(organization, agent, accountId)),
   fundingChange("/api/agents/:agent/treasury/unlink", "unlink", contract.unlinkRequest,

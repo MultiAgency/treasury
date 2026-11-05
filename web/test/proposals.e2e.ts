@@ -22,7 +22,7 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { authorizeStrategy, ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -333,5 +333,33 @@ test("the owner allows owner actions: told first that open proposals are withdra
   // The platform answers a read of a proposal whose consent ended as withdrawn.
   await page.goto(`${origin}/agents/${target.agent}/proposals/${open.id}`);
   await visible(page.getByText("It was withdrawn: the consent it was made under has ended. Nothing was relayed."));
+  assert.deepEqual(unexpected, []);
+});
+
+test("the owner turns autopilot on for the bound strategy, runs it once, and disconnecting turns it off first", { timeout: 90_000 }, async () => {
+  await setTargets(target, { [USDC]: 5_000, [WNEAR]: 5_000, [ETH]: 0 });
+  await authorizeStrategy(target);
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const autopilot = page.getByRole("region", { name: "Autopilot" });
+  await signInIfAsked(autopilot);
+  await visible(autopilot.getByRole("list", { name: "Strategy targets" }).getByText("USDC: 50%"));
+  await visible(autopilot.getByRole("status").filter({ hasText: "Autopilot is off." }));
+  assert.deepEqual(await axe(), [], "off");
+  await autopilot.getByRole("button", { name: "Turn on", disabled: false }).click();
+  const turnOn = dialog("Let the agent act on its own?");
+  await visible(turnOn);
+  await turnOn.getByRole("button", { name: "Turn on" }).click();
+  await visible(autopilot.getByRole("status").filter({ hasText: /^Autopilot is on/ }).first());
+  await autopilot.getByRole("button", { name: "Run now" }).click();
+  await dialog("Run the strategy once now?").getByRole("button", { name: "Run now" }).click();
+  await visible(autopilot.getByRole("status").filter({ hasText: /^Run now: / }));
+  assert.deepEqual(await axe(), [], "on, after a run");
+
+  const connection = page.getByRole("region", { name: "Connection" });
+  await connection.getByRole("button", { name: "Disconnect" }).click();
+  const disconnect = dialog("Disconnect this agent?");
+  await visible(disconnect.getByText(/^Autopilot is turned off first/));
+  await disconnect.getByRole("button", { name: "Disconnect" }).click();
+  await visible(connection.getByRole("status").filter({ hasText: "Not connected." }));
   assert.deepEqual(unexpected, []);
 });

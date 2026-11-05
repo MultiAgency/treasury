@@ -3,7 +3,7 @@ import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
-export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding";
+export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding" | "autopilot";
 
 const SIGN_IN: Record<string, string> = {
   rate_limited: "Too many sign-in attempts from this address. Wait a minute, then sign in again.",
@@ -30,6 +30,7 @@ const CONSENT: Record<string, string> = {
   agent_changed: "The agent changed since this text was prepared. Nothing was stored. Review the new text and sign again.",
   not_this_consent: "The signed text isn't the consent this server asks for now. Nothing was stored. Connect again.",
   consent_refused: "The platform didn't accept the consent. Nothing was stored.",
+  autopilot_not_stopped: "Autopilot couldn't be turned off, so nothing was disconnected: once disconnected, this page couldn't turn it off. Try again.",
   // The same code for the owner routes' per-minute limit and the daily limit on new consents.
   rate_limited: "Too many requests from this account. Wait a minute and try again; if it has connected agents several times today, connecting again waits until tomorrow.",
 };
@@ -51,6 +52,10 @@ const PROPOSAL: Record<string, string> = {
   request_conflict: "That request was already used for another proposal. Nothing was proposed. Ask again.",
 };
 
+const AUTOPILOT: Record<string, string> = {
+  autopilot_refused: "The agent refused: read the strategy's readiness below. If the saved strategy changed since you saw it, review it again.",
+  not_permitted: "Your roles don't allow this: autopilot and Run now need a member who may both file and vote on proposals.",
+};
 const FUNDING: Record<string, string> = {
   funding_refused: "The platform didn't accept that change to the funding account. Nothing changed. Check the account exists, then try again.",
   not_permitted: "Your roles don't allow this. A DAO agent's funding account is the DAO itself, and a deposit address is asked for by a member who may file proposals.",
@@ -68,7 +73,7 @@ export function failureText(failure: Failure, context: Context): string {
       ? "The answer was lost or couldn't be read. Reading again is safe."
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
-      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : {};
+      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : context === "autopilot" ? AUTOPILOT : {};
       return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }
