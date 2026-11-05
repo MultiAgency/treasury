@@ -22,7 +22,7 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { authorizeStrategy, ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -336,15 +336,23 @@ test("the owner allows owner actions: told first that open proposals are withdra
   assert.deepEqual(unexpected, []);
 });
 
-test("the owner turns autopilot on for the bound strategy, runs it once, and disconnecting turns it off first", { timeout: 90_000 }, async () => {
+test("the owner authorizes the saved strategy in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
   await setTargets(target, { [USDC]: 5_000, [WNEAR]: 5_000, [ETH]: 0 });
-  await authorizeStrategy(target);
   await page.goto(`${origin}/agents/${target.agent}`);
   const autopilot = page.getByRole("region", { name: "Autopilot" });
   await signInIfAsked(autopilot);
   await visible(autopilot.getByRole("list", { name: "Strategy targets" }).getByText("USDC: 50%"));
   await visible(autopilot.getByRole("status").filter({ hasText: "Autopilot is off." }));
-  assert.deepEqual(await axe(), [], "off");
+  // Saving the strategy unbound the grant: the owner signs a new one here, their connection allowing owner actions.
+  await autopilot.getByRole("button", { name: "Authorize this strategy" }).click();
+  const authorize = dialog("Authorize this saved strategy?");
+  await visible(authorize);
+  assert.deepEqual(await axe(), [], "the authorization review");
+  await authorize.getByRole("button", { name: "Sign in wallet" }).click();
+  // Once submitted and taken up, the strategy reads bound: the grant step gives way to Turn on.
+  await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
+  assert.equal(await autopilot.getByRole("button", { name: "Authorize this strategy" }).count(), 0, "authorized once");
+  assert.deepEqual(await axe(), [], "authorized, off");
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).click();
   const turnOn = dialog("Let the agent act on its own?");
   await visible(turnOn);

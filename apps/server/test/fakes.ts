@@ -112,6 +112,12 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     return (queued ?? { ok: true, value: value() }) as never;
   };
   const schedule = (agent: string) => schedules[agent] ??= { on: false };
+  /**
+   * Grants as the platform keeps them, by correlation ID: `prepared` until signed (or, for a DAO, voted), `submitted`
+   * after. A submitted grant binds the strategy. `grantAnswers` queues answers a grant call gives instead; an Error is thrown.
+   */
+  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown }[] = [];
+  const grantAnswers: Partial<Record<"prepare" | "submit", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
@@ -333,6 +339,44 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       runs: (organization, agent) => read("runs", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
+    grant: {
+      async prepare(organization, agent, input) {
+        calls.push(`grant.prepare ${organization} ${agent} ${input.signer} ${input.action.expectedStrategyDigest}`);
+        const queued = grantAnswers.prepare?.shift();
+        if (queued instanceof Error) throw queued;
+        if (queued) return queued as PreparedAnswer;
+        const correlationId = `grant-${grants.length + 1}`, expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+        grants.push({ correlationId, agent, signer: input.signer, digest: input.action.expectedStrategyDigest, stage: "prepared", expiresAt });
+        const common = { correlationId, expiresAt, digest: null, preview: { summary: "Issue a treasury grant" } };
+        if (input.signer === "wallet") return { ok: true, value: { ...common,
+          intent: { standard: "nep413", payload: { message: `grant ${correlationId}`, recipient: "provider.test", nonce: Buffer.alloc(32, 1).toString("base64") } } } } as PreparedAnswer;
+        const dao = owners[agent]!, hash = correlationId.padStart(64, "c");
+        return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
+      },
+      async submit(organization, agent, input) {
+        calls.push(`grant.submit ${organization} ${agent} ${input.correlationId}`);
+        const queued = grantAnswers.submit?.shift();
+        if (queued instanceof Error) throw queued;
+        if (queued) return queued as never;
+        const found = grants.find(item => item.correlationId === input.correlationId && item.agent === agent);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as never;
+        found.stage = "submitted";
+        found.signedData = input.signedData;
+        schedule(agent).unbound = false;
+        return { ok: true, value: { status: "SUCCESS", failureCode: null } } as never;
+      },
+      async actions(organization, agent) {
+        calls.push(`grant.actions ${organization} ${agent}`);
+        return { ok: true, value: grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: "grant_issue", expiresAt: item.expiresAt,
+          signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null })) } as never;
+      },
+      async status(_organization, agent, correlationId) {
+        calls.push(`grant.status ${agent} ${correlationId}`);
+        const found = grants.find(item => item.correlationId === correlationId && item.agent === agent);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as StatusAnswer;
+        return { ok: true, value: { stage: found.stage === "submitted" ? "submitted" : found.signer === "dao" ? "voting" : "submitting" } } as StatusAnswer;
+      },
+    },
     autopilot: {
       strategy: async (organization, agent) => autopilotCall("strategy", organization, agent, [], () => {
         const { on, unbound } = schedule(agent);
@@ -386,7 +430,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns, schedules, autopilotAnswers,
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns, schedules, autopilotAnswers, grants, grantAnswers,
     reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 

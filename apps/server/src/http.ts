@@ -255,6 +255,19 @@ const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-o
   },
 });
 
+/**
+ * Where an owner action stands (a creation, or a grant), by the correlation ID its preparation answered: the platform's
+ * 404 is `missing`, its 403 `forbidden`, anything else `unavailable`, logged.
+ */
+async function ownerStatus(identity: Admitted, id: string | undefined, status: Platform["creation"]["status"], codes: { missing: string; forbidden: string }): Promise<Reply> {
+  const { agent, owner } = identity;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id ?? "")) return refused(400, "bad_request");
+  const read = await relay(() => status(organizationOf(owner), agent, id!), agent);
+  if (read.ok) return ok({ stage: read.value.stage, ...(read.value.failureCode !== undefined && { failureCode: read.value.failureCode }) });
+  log("platform_owner_status_failed", { agent, ...failure(read) });
+  return read.kind === "refused" && read.status === 404 ? refused(404, codes.missing) : read.kind === "forbidden" ? refused(409, codes.forbidden) : unavailable();
+}
+
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
@@ -601,14 +614,7 @@ export const routes: Route[] = [
   {
     // Where the agent's creation stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/creation/:id", access: "owner", needs: "read",
-    async handle({ identity, params }, { platform }) {
-      const { agent, owner } = identity!;
-      if (!/^[A-Za-z0-9_-]{1,128}$/.test(params.id!)) return refused(400, "bad_request");
-      const read = await relay(() => platform.creation.status(organizationOf(owner), agent, params.id!), agent);
-      if (read.ok) return ok({ stage: read.value.stage, ...(read.value.failureCode !== undefined && { failureCode: read.value.failureCode }) });
-      log("platform_creation_status_failed", { agent, ...failure(read) });
-      return read.kind === "refused" && read.status === 404 ? refused(404, "no_creation") : read.kind === "forbidden" ? refused(409, "not_set_up") : unavailable();
-    },
+    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.creation.status, { missing: "no_creation", forbidden: "not_set_up" }),
   },
   {
     method: "GET", path: "/api/agents/:agent", access: "owner", needs: "read",
@@ -841,6 +847,81 @@ export const routes: Route[] = [
       const answer = await relay(() => platform.autopilot.status(organizationOf(owner), agent), agent);
       return answer.ok ? ok(answer.value) : readFailure(answer, agent, "autopilot/get");
     },
+  },
+  {
+    /**
+     * Prepares a grant binding the saved strategy the owner saw, once it's read again: refused, with nothing prepared,
+     * if the strategy changed (`strategy_changed`), autopilot is on (`autopilot_on`, as the owner turns it off first),
+     * the host only approves (`approve_only`), or a grant is already waiting for its signature, vote or outcome
+     * (`grant_pending`, followed rather than signed twice). A wallet owner's connection must allow owner actions
+     * (`owner_not_allowed`); a DAO's grant is filed for its vote, which must pass before it expires, in minutes.
+     * Recorded before the platform is asked and after.
+     */
+    method: "POST", path: "/api/agents/:agent/grant", access: "owner-fresh", needs: "file",
+    async handle({ body, account, identity }, { platform, audit }) {
+      const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
+      const input = parse(contract.grantRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      const strategy = await relay(() => platform.autopilot.strategy(organization, agent), agent);
+      if (!strategy.ok) return readFailure(strategy, agent, "strategy/get");
+      if (strategy.value.digest !== input.expectedDigest) return refused(409, "strategy_changed");
+      if (strategy.value.on) return refused(409, "autopilot_on");
+      if (!strategy.value.executor) return refused(409, "approve_only");
+      const actions = await relay(() => platform.grant.actions(organization, agent), agent);
+      if (!actions.ok) return readFailure(actions, agent, "owner/actions");
+      const now = Date.now();
+      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted" || (action.stage === "prepared" && Date.parse(action.expiresAt) > now))))
+        return refused(409, "grant_pending");
+      if (signer === "wallet") {
+        const listed = await platform.consents.list(organization);
+        if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return unavailable(); }
+        if (!liveConsents(listed.value.consents, identity!).some(consent => withOwner(consent.scopes))) return refused(409, "owner_not_allowed");
+      }
+      await audit.append({ who: account!, action: "grant", agent, stage: "attempt" });
+      const prepared = await relay(() => platform.grant.prepare(organization, agent,
+        { action: { type: "grant_issue", label: "treasury", expectedStrategyDigest: input.expectedDigest }, signer }), agent);
+      let reply: Reply;
+      if (prepared.ok) {
+        const { correlationId, expiresAt, intent, confirm, dao } = prepared.value;
+        const transaction = dao && parse(contract.memberTransaction, access.canVote && dao.proposalAndVote ? dao.proposalAndVote : dao.proposal);
+        reply = signer === "wallet" && intent?.standard === "nep413" ? ok({ correlationId, expiresAt, intent })
+          : signer === "wallet" && confirm ? ok({ correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } })
+          : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction } }) : unavailable();
+        if (reply.status !== 200) log("platform_grant_unreadable", { agent, correlationId });
+      } else {
+        log("platform_grant_failed", { agent, ...failure(prepared) });
+        reply = prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
+          : prepared.kind === "refused" ? refused(409, "grant_refused") : unavailable();
+      }
+      await audit.append({ who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
+      return reply;
+    },
+  },
+  {
+    /**
+     * A wallet owner's signature over the grant's intent, relayed once and recorded before and after. After a lost
+     * answer the page follows the grant's status rather than sending it again.
+     */
+    method: "POST", path: "/api/agents/:agent/grant/:id/submit", access: "owner-fresh", needs: "sign",
+    async handle({ body, account, identity, params }, { platform, audit }) {
+      const { agent, owner } = identity!;
+      const input = parse(contract.grantSubmission, body);
+      if (input === undefined || !/^[A-Za-z0-9_-]{1,128}$/.test(params.id ?? "")) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "grant-submit", agent, subject: params.id, stage: "attempt" });
+      const submitted = await relay(() => platform.grant.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
+      const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
+        : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
+        : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_grant")
+        : submitted.kind === "refused" ? refused(409, "grant_refused") : unavailable();
+      if (!submitted.ok) log("platform_grant_submit_failed", { agent, ...failure(submitted) });
+      await audit.append({ who: account!, action: "grant-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
+      return reply;
+    },
+  },
+  {
+    // Where a grant stands, by the correlation ID its preparation answered.
+    method: "GET", path: "/api/agents/:agent/grant/:id", access: "owner", needs: "read",
+    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_grant", forbidden: "not_connected" }),
   },
   autopilotAction("/api/agents/:agent/autopilot/enable", "autopilot-on", "enable", contract.enableRequest,
     (platform, organization, agent, { expectedDigest }) => platform.autopilot.enable(organization, agent, expectedDigest), () => ({})),

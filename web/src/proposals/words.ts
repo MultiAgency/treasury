@@ -53,6 +53,13 @@ const PROPOSAL: Record<string, string> = {
 };
 
 const AUTOPILOT: Record<string, string> = {
+  strategy_changed: "The saved strategy changed since you saw it. Nothing was prepared. Review it again.",
+  autopilot_on: "Turn autopilot off before authorizing a strategy. Nothing was prepared.",
+  approve_only: "This host only approves: strategies are authorized on the agent's executor. Nothing was prepared.",
+  grant_pending: "A grant is already waiting for its signature, vote or outcome. Follow it rather than signing another.",
+  owner_not_allowed: "Your connection doesn't allow owner actions. Allow them in Connection first, then authorize the strategy.",
+  grant_refused: "The platform refused the grant. Nothing took effect.",
+  no_grant: "The platform has no record of that grant. Authorize the strategy again.",
   autopilot_refused: "The agent refused: read the strategy's readiness below. If the saved strategy changed since you saw it, review it again.",
   not_permitted: "Your roles don't allow this: autopilot and Run now need a member who may both file and vote on proposals.",
 };

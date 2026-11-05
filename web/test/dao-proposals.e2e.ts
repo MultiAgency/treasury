@@ -118,6 +118,7 @@ after(async () => {
 const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ state: "visible", timeout: 20_000 });
 const axe = async () => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations
   .map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
+const dialog = (name: string) => page.getByRole("dialog", { name });
 const fileButton = (scope: ReturnType<Page["getByRole"]>) => scope.getByRole("button", { name: /^File (the DAO proposal|and vote)$/ });
 
 test("a council member asks the DAO to connect the agent, files its proposal from their wallet, and the page shows it connected once the vote passes", { timeout: 120_000 }, async () => {
@@ -185,4 +186,22 @@ test("the DAO funds its agent from its own account: no link controls, and Trezu 
   assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "2000000"]);
   assert.deepEqual(await axe(), [], "filed");
   assert.deepEqual(unexpected, []);
+});
+
+test("a council member asks the DAO to authorize the saved strategy: filed from their wallet, voted, and the strategy reads bound", { timeout: 120_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const autopilot = page.getByRole("region", { name: "Autopilot" });
+  await visible(autopilot);
+  const ask = autopilot.getByRole("button", { name: "Ask the DAO to authorize this strategy" });
+  await ask.waitFor({ timeout: 20_000 });
+  assert.deepEqual(await axe(), [], "unbound");
+  const filedBefore = sent.length;
+  await ask.click();
+  const authorize = dialog("Authorize this saved strategy?");
+  await visible(authorize);
+  await authorize.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
+  assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
+  assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
+  assert.deepEqual(await axe(), [], "authorized");
 });

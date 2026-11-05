@@ -5,6 +5,7 @@ import { symbolOf } from "../shared/format";
 import { Button, Card, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
 import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
+import { Grant } from "./grant";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
 
@@ -21,6 +22,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const client = useQueryClient();
   const strategy = useQuery(reads.strategy);
   const schedule = useQuery(reads.autopilot);
+  const consent = useQuery(reads.consent);
+  const ownerAllowed = consent.data?.consent?.scopes.includes("owner") === true;
   const [confirm, setConfirm] = useState<Confirm>();
   const [busy, setBusy] = useState<"enable" | "stop" | "tick">();
   const [notice, setNotice] = useState<string>();
@@ -69,8 +72,11 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             up to ${s!.strategy.autopilot.maxUsd} a run.</p>
           <p role="status">{on ? `Autopilot is on${schedule.data!.nextRun ? `; next run ${when(schedule.data!.nextRun)}` : ""}.` : "Autopilot is off."}
             {schedule.data!.lastRun && ` Last run ${when(schedule.data!.lastRun)}.`}</p>
-          {s!.grantMatches === false && <p role="status">The agent's grant doesn't bind this saved strategy, so autopilot can't run it, and Run now would swap nothing.
-            The owner signs a grant for it first.</p>}
+          {s!.grantMatches === false && <>
+            <p role="status">The agent's grant doesn't bind this saved strategy, so autopilot can't run it, and Run now would swap nothing.
+              {on ? " Turn autopilot off to authorize it." : " Authorize it first."}</p>
+            {!on && s!.executor && <Grant reads={reads} identity={identity} strategy={s!} ownerAllowed={ownerAllowed} />}
+          </>}
           {!on && s!.readiness.reasons.length > 0 && <ul aria-label="Why autopilot can't be turned on" className="flex flex-col gap-1">
             {s!.readiness.reasons.map(reason => <li key={reason}>{reason}</li>)}
           </ul>}

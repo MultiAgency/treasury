@@ -227,3 +227,20 @@ test("autopilot: the strategy and schedule as GETs; on (naming the digest), off 
     [[`${base}/autopilot/enable`, { expectedDigest: digest }], [`${base}/autopilot/stop`, {}], [`${base}/autopilot/tick`, {}]]);
   assert.throws(() => agent.enableAutopilot("abc"), "held to the server's schema before anything is sent");
 });
+
+test("a grant is asked for by digest, its signed intent submitted once to its own route, and its status read by correlation ID", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const digest = `sha256:${"a".repeat(64)}`;
+  const intent = { standard: "nep413" as const, payload: { message: "grant", recipient: "provider.test", nonce: NONCE } };
+  server.answer(`POST ${base}/grant`, ok({ correlationId: "grant-1", expiresAt: "2026-11-05T00:10:00.000Z", intent }));
+  server.answer(`POST ${base}/grant/grant-1/submit`, ok({ status: "SUCCESS", failureCode: null }));
+  server.answer(`GET ${base}/grant/grant-1`, ok({ stage: "submitted" }));
+  assert.equal((await agent.grant(digest)).ok, true);
+  assert.deepEqual(await agent.submitGrant("grant-1", { ...intent, public_key: KEY, signature: "ed25519:s" }), { ok: true, value: { status: "SUCCESS", failureCode: null } });
+  assert.deepEqual(await agent.grantStatus("grant-1"), { ok: true, value: { stage: "submitted" } });
+  assert.deepEqual(server.sent.filter(request => request.method === "POST").map(request => [request.path, JSON.parse(request.body)]), [
+    [`${base}/grant`, { expectedDigest: digest }],
+    [`${base}/grant/grant-1/submit`, { signedData: { ...intent, public_key: KEY, signature: "ed25519:s" } }],
+  ]);
+  assert.throws(() => agent.grantStatus("../consent"));
+});
