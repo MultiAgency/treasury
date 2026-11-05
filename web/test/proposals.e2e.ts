@@ -214,6 +214,20 @@ test("the root lists the signed-in owner's treasuries, linked to each agent's pa
   await page.getByRole("button", { name: "Open the DAO's Treasury" }).click();
   await visible(page.getByRole("alert").filter({ hasText: "Enter the DAO's NEAR account" }));
   assert.equal(new URL(page.url()).pathname, "/");
+});
+
+test("a connected agent's page shows its portfolio from the owner reads: holdings exactly, what needs attention, activity and runs", { timeout: 60_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const portfolio = page.getByRole("region", { name: "Portfolio" });
+  await signInIfAsked(portfolio);
+  await visible(portfolio);
+  const holdings = portfolio.getByRole("table", { name: "Holdings" });
+  await holdings.waitFor({ timeout: 20_000 });
+  const usdc = holdings.getByRole("row").filter({ has: page.getByRole("rowheader", { name: "USDC" }) });
+  await usdc.waitFor();
+  // The amount is the raw balance at 6 decimals, exactly: digits and at most one point, never a rounded or exponent form.
+  assert.match((await usdc.getByRole("cell").first().textContent())!, /^\d+(\.\d{1,6})?$/);
+  for (const name of ["Needs attention", "Activity", "Autopilot runs"]) await portfolio.getByRole("heading", { name }).waitFor();
   assert.deepEqual(await axe(), []);
   assert.deepEqual(unexpected, []);
 });

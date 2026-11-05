@@ -143,6 +143,28 @@ function proposalFailure(answer: Exclude<ProposalAnswer | ProposalListAnswer, { 
   log("platform_proposal_failed", { agent, ...failure(answer as { kind: string }), ..."code" in answer && answer.code !== undefined && { code: answer.code } });
   return unavailable();
 }
+/**
+ * A failed owner read as the browser gets it: `not_connected` when no live consent covers the agent (the platform's
+ * 403), and `unavailable` for anything else, logged. The platform's text is never forwarded.
+ */
+function readFailure(answer: { ok: false; kind: string }, agent: string, read: string): Reply {
+  if (answer.kind === "forbidden") return refused(409, "not_connected");
+  log("platform_read_failed", { agent, read, ...failure(answer) });
+  return unavailable();
+}
+/** An ID from the address for a read: a run's tick, a proposal's `requestId`, an operation's `correlationId`. */
+const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
+/** A route answering one of the agent's owner reads as the platform answers it (#61). */
+const readRoute = (path: string, read: "overview" | "activity" | "held" | "unresolved" | "runs"): Route => ({
+  method: "GET", path, access: "owner", needs: "read",
+  async handle({ identity }, { platform }) {
+    const { agent, owner } = identity!;
+    const call = platform.reads[read] as (organization: string, agent: string) => Promise<{ ok: true; value: unknown } | { ok: false; kind: string }>;
+    const answer = await relay(() => call(organizationOf(owner), agent), agent);
+    return answer.ok ? ok(answer.value) : readFailure(answer, agent, read);
+  },
+});
+
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
@@ -608,6 +630,52 @@ export const routes: Route[] = [
       return ok({ proposal: read.value, ...(identity!.signer === "dao" && { vote: waiting ? await daoView(waiting, identity!, context) : null }) });
     },
   },
+  readRoute("/api/agents/:agent/overview", "overview"),
+  readRoute("/api/agents/:agent/activity", "activity"),
+  readRoute("/api/agents/:agent/held", "held"),
+  readRoute("/api/agents/:agent/unresolved", "unresolved"),
+  readRoute("/api/agents/:agent/runs", "runs"),
+  {
+    // One recorded run of the autopilot, by its tick ID (`runs` lists them).
+    method: "GET", path: "/api/agents/:agent/runs/:id", access: "owner", needs: "read",
+    async handle({ identity, params }, { platform }) {
+      const { agent, owner } = identity!, tick = readId(params.id);
+      if (!tick) return refused(400, "bad_request");
+      const answer = await relay(() => platform.reads.recording(organizationOf(owner), agent, tick), agent);
+      if (answer.ok) return ok(answer.value);
+      return answer.kind === "refused" && answer.status === 404 ? refused(404, "not_found") : readFailure(answer, agent, "recording");
+    },
+  },
+  {
+    /**
+     * A proposal by the `requestId` it was proposed with, found among the agent's proposals: the platform has no lookup
+     * by `requestId`. Read only: after a lost answer, a proposal is found here, never created again.
+     */
+    method: "GET", path: "/api/agents/:agent/requests/:id", access: "owner", needs: "read",
+    async handle({ identity, params }, { platform }) {
+      const { agent, owner } = identity!, requestId = readId(params.id);
+      if (!requestId) return refused(400, "bad_request");
+      const listed = await relay(() => platform.proposals.list(organizationOf(owner), agent), agent);
+      if (!listed.ok) return proposalFailure(listed, agent);
+      const found = listed.value.proposals.find(proposal => proposal.requestId === requestId);
+      return found ? ok({ proposal: found }) : refused(404, "no_proposal");
+    },
+  },
+  {
+    /**
+     * An operation's status by its `correlationId`, from its `activity` row: null until an outcome is recorded. Not
+     * `owner/status`, which reports owner actions and answers `unknown` for any swap, which reads like an outcome in doubt.
+     */
+    method: "GET", path: "/api/agents/:agent/operations/:id", access: "owner", needs: "read",
+    async handle({ identity, params }, { platform }) {
+      const { agent, owner } = identity!, correlationId = readId(params.id);
+      if (!correlationId) return refused(400, "bad_request");
+      const answer = await relay(() => platform.reads.activity(organizationOf(owner), agent), agent);
+      if (!answer.ok) return readFailure(answer, agent, "activity");
+      const row = answer.value.find(item => item.correlationId === correlationId);
+      return row ? ok({ correlationId, at: row.at, kind: row.kind, status: row.status ?? null, refused: row.refused ?? null }) : refused(404, "not_found");
+    },
+  },
   verdictRoute("approve"),
   verdictRoute("reject"),
   {
@@ -770,7 +838,8 @@ export function createServer(deps: Deps) {
         "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff",
         ...(cookie && { "set-cookie": cookie }),
       });
-      res.end(JSON.stringify(body));
+      // A `bigint` (the SDK's amounts) goes out as its exact decimal string: `JSON.stringify` would throw on one.
+      res.end(JSON.stringify(body, (_key, value) => typeof value === "bigint" ? value.toString() : value));
     };
     try {
       const { pathname } = new URL(req.url ?? "/", "http://server");

@@ -6,6 +6,7 @@ import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
 import { Connection } from "./connection";
 import { ProposalDetail } from "./proposal-detail";
+import { Portfolio } from "./portfolio";
 import { ProposalList } from "./proposal-list";
 import { agentReads, failureOf } from "./queries";
 import { SignedIn, SignIn } from "./session";
@@ -63,6 +64,7 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
     {heading}
     {signedIn}
     <Connection reads={reads} identity={identity.data} />
+    {id === undefined && <ConnectedPortfolio reads={reads} />}
     {id === undefined ? <ProposalList reads={reads} />
       : proposalId.safeParse(id).success ? <ProposalDetail reads={reads} id={id} identity={identity.data} />
       : <div className="flex flex-col items-start gap-4">
@@ -70,4 +72,10 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
         <p role="alert">This address doesn't name a proposal: a proposal's ID is 32 lowercase hexadecimal characters.</p>
       </div>}
   </>;
+}
+
+/** The portfolio, once a live consent connects the agent: every owner read needs it. */
+function ConnectedPortfolio({ reads }: { reads: ReturnType<typeof agentReads> }) {
+  const consent = useQuery(reads.consent);
+  return consent.data?.consent ? <Portfolio reads={reads} /> : null;
 }

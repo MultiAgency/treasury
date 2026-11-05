@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission, proposalSignature, proposalView } from "@multiagency/sdk";
+import { appConsentSubmission, ownerOutputs, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
 import { z } from "zod";
 
 export const agentName = z.string().regex(/^[a-z0-9-]{1,32}$/);
@@ -140,6 +140,32 @@ export const creationStatus = z.strictObject({
 });
 
 /**
+ * The owner reads (#61), as the page parses them: the SDK's own output schemas, except that an amount the SDK reads as
+ * `bigint` crosses the wire as its exact decimal string (`send` writes every `bigint` so). A float or `Number()` would
+ * lose a wNEAR balance past 2^53 raw units, about 0.000000009 wNEAR. A request's fields (`record`) may hold such
+ * strings too.
+ */
+const rawAmount = z.string().regex(/^-?\d+$/);
+const overviewShape = ownerOutputs.overview.shape;
+export const overviewRead = ownerOutputs.overview.extend({
+  book: z.array(overviewShape.book.element.extend({ public: rawAmount, confidential: rawAmount })),
+  unmanaged: z.array(overviewShape.unmanaged.element.extend({ amount: rawAmount })),
+});
+export const activityRead = ownerOutputs.activity;
+export const heldRead = ownerOutputs.held;
+export const unresolvedRead = ownerOutputs.unresolved;
+/** The autopilot's recorded runs, and one run's recording (the platform's strict recording format). */
+export const runsRead = ownerOutputs["autopilot/evidence"];
+export const recordingRead = RecordingSchema;
+/** A proposal found by the `requestId` it was proposed with. */
+export const requestRead = z.strictObject({ proposal: proposalView });
+/**
+ * An operation by its `correlationId`, from its `activity` row: `status` is null until an outcome is recorded, and
+ * `refused` names a refusal. Never `owner/status`, which answers `unknown` for any swap.
+ */
+export const operationRead = z.strictObject({ correlationId: z.string(), at: z.string(), kind: z.string(), status: z.string().nullable(), refused: z.string().nullable() });
+
+/**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
  * - `not_signed_in` (401): no live session;
  * - `not_owner` (403): the session's account doesn't own this agent, or no such agent exists: the same answer for both,
@@ -148,7 +174,7 @@ export const creationStatus = z.strictObject({
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, or a read's `not_found`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */

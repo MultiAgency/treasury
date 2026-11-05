@@ -221,6 +221,9 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Approve this proposal? or Reject this proposal?, Text to sign, Cancel, Sign and approve or Sign and reject | dialog, the signed text (labelled), buttons | proposal |
 | Execute this proposal?, Cancel, Execute now | dialog, buttons | proposal |
 | You approved this proposal., You rejected this proposal., Executed. Every swap succeeded. | status | proposal, State |
+| Portfolio, Check again | region and heading (level 2), button | `/agents/<agent>`, once connected |
+| Holdings | table (Asset, Amount exactly, Value) | Portfolio |
+| Needs attention, Activity, Autopilot runs | headings (level 3); lists | Portfolio |
 | Signed in as `<member>`, a member of `<dao>`, which owns this agent | text | signed in, a DAO-owned agent |
 | Ask the DAO to connect it; Connected by the vote of `<dao>`: … or Waiting for the vote of `<dao>` to connect this agent. | button; status | Connection, a DAO-owned agent |
 | stop this agent | link (the platform's DAO stop page), in place of Disconnect | Connection, a DAO-owned agent |
@@ -232,6 +235,7 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 How it departs from the brief, or decides what the brief leaves open:
 - **The agent comes from the address** (`/agents/<agent>`). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.
 - **Setup (#12) is the app server's**, through `/apps/v1/setup` and `/apps/v1/dao-setups`, not the owner session's `/gw/agents`. An account with no Treasury signs the server's setup text; the agent's page then offers its creation (`agent_create` under the setup consent), signed on the platform's confirm page, or for a DAO filed for its vote. The setup consent lasts an hour; after that, creating asks for the setup again. The stack sets up Payables agents only (`hostedAreas: ['payables']` at `6ba0831`), so setup and creation are covered by the server's unit tests, not a stack test.
+- **The portfolio is read-only (#7 on `/apps/v1`).** It shows the owner reads (#61) once the agent is connected: holdings with exact amounts, what needs attention, the latest 20 activity rows and 10 autopilot runs. Rebalancing, plans, the steward and the inbox aren't here: they need `treasury-execute` (which this app never asks for) or procedures no app scope covers yet (platform#17). Each read is a call from the deployment's shared 1,200 an hour, so the page reads them once and again only on "Check again".
 - **Signed in or not** is read from `GET /api/agents/:agent` on an agent's pages, and from `GET /api/setup` or `GET /api/setup/dao/:dao` on the others: the server has no session route. `not_signed_in` there shows Sign in; another read answering `not_signed_in` later reads the identity again, so the page returns to Sign in.
 - **The wallet's account is checked before relaying.** A consent or verdict signed by another account than the agent's owner is not sent: "Your wallet signed as `<account>`, but this agent's owner is `<owner>`. Nothing was sent." The server would refuse it anyway (`not_owner`, `signature_invalid`).
 - **A verdict whose answer was lost** (or `unavailable`) reads the proposal: if it now reads approved (rejected), it says "You approved this proposal." (rejected), as the server's own recovery decides it; otherwise the read is shown and nothing is signed again without a new review.
