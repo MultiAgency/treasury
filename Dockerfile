@@ -21,6 +21,7 @@ COPY packages/core/package.json packages/core/
 COPY web/package.json web/
 RUN mkdir -p .claude/skills && pnpm install --frozen-lockfile --prod --filter @treasury/server && npm uninstall --global pnpm && rm -rf .claude
 COPY apps/server/src apps/server/src
+COPY packages/core/src packages/core/src
 COPY --from=build /app/web/dist-proposals web/dist-proposals
 ENV NODE_ENV=production TREASURY_PAGE_DIR=/app/web/dist-proposals
 # Root, as the platform's image runs: Railway mounts the volume owned by root. Every file the server writes is 0600.
