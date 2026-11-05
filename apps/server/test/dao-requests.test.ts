@@ -9,7 +9,7 @@ import { tempDir } from "../../../scripts/temp-dirs.ts";
 const scratch = () => join(tempDir("treasury-dao-requests-"), "dao-requests.json");
 const DAO = "agentic.sputnik-dao.near";
 const request = (agent: string, id = "ab".repeat(32)): StoredDaoRequest => ({
-  kind: "consent", organization: "agentic--sputnik-dao--near", agent, id, description: "* Signs", votingUntil: 1,
+  kind: "consent", organization: "agentic--sputnik-dao--near", agent, agentId: `id-${agent}`, id, description: "* Signs", votingUntil: 1,
   filed: { dao: DAO, next: 59, transactions: { proposal: daoTransaction(DAO, id), proposalAndVote: daoTransaction(DAO, id, 59) } },
 });
 
@@ -29,7 +29,10 @@ test("one consent request is open per agent: a second for the same agent stores 
   assert.equal(requests.open().length, 2);
 });
 
-const vote = (proposal: string, id: string, verdict: "approve" | "reject" = "approve"): StoredDaoRequest => ({ ...request("dao-treasury", id), kind: "vote", proposal, verdict });
+const vote = (proposal: string, id: string, verdict: "approve" | "reject" = "approve"): StoredDaoRequest => {
+  const { agentId: _agentId, ...common } = request("dao-treasury", id) as Extract<StoredDaoRequest, { kind: "consent" }>;
+  return { ...common, kind: "vote", proposal, verdict };
+};
 
 test("one vote is open per proposal, whatever its verdict, beside the agent's consent request", async () => {
   const file = scratch(), requests = await createDaoRequests(file);

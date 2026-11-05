@@ -884,6 +884,8 @@ test("a member who may file connects a DAO's agent: the consent filed once for t
   assert.deepEqual([text.owner, text.organization, text.agent, text.scopes], [DAO, "agentic--sputnik-dao--near", "dao-treasury", ["read", "treasury"]]);
   assert.deepEqual(fake.calls.filter(made => made.startsWith("dao")), ["daoConsents.file"]);
   assert.equal(daoRequests.consent("agentic--sputnik-dao--near", "dao-treasury")?.id, filed.id, "stored before it's shown");
+  const stored = daoRequests.consent("agentic--sputnik-dao--near", "dao-treasury");
+  assert.equal(stored?.kind === "consent" && stored.agentId, "id-dao-treasury", "with the identity its consent names");
   // The request is named by its own field, the hash the DAO's vote signs: a consent has no subject until it's stored.
   assert.deepEqual(audited.map(entry => [entry.action, entry.stage, entry.who, entry.subject, entry.request]),
     [["dao-consent", "attempt", "council.near", undefined, undefined], ["dao-consent", "result", "council.near", undefined, filed.id]]);
@@ -1045,6 +1047,28 @@ function daoProposal(id: string) {
   return made;
 }
 
+test("a filing call that throws answers unavailable, records its result, and stores nothing; the next click files again", async t => {
+  await freshDao(t);
+  daoProposal("1".repeat(32));
+  const cookie = await signIn(council);
+  const subjects = [
+    ["dao-consent", "/api/agents/dao-treasury/consent/text", fake.platform.daoConsents],
+    ["dao-vote", `/api/agents/dao-treasury/proposals/${"1".repeat(32)}/approve`, fake.platform.daoVotes],
+  ] as const;
+  for (const [action, path, calls] of subjects) {
+    audited.length = 0;
+    const thrown = t.mock.method(calls, "file", async () => { throw new Error("socket hang up"); });
+    const { status, body } = await json(await call("POST", path, { cookie, body: {} }));
+    assert.deepEqual([status, body], [503, { ok: false, kind: "unavailable" }], action);
+    assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [[action, "attempt"], [action, "result"]], action);
+    const result = audited[1]!;
+    assert.deepEqual(result.stage === "result" && result.answer, { ok: false, kind: "unavailable" }, action);
+    thrown.mock.restore();
+    const again = await json(await call("POST", path, { cookie, body: {} }));
+    assert.equal(again.status, 200, `${action}: ${JSON.stringify(again.body)}`);
+  }
+});
+
 test("a member who may file asks for the DAO's verdict on a proposal: its vote filed once, from the platform's text, stored and recorded", async t => {
   await freshDao(t);
   daoProposal("1".repeat(32));
@@ -1204,7 +1228,7 @@ test("once the DAO's vote is relayed, a member who may execute runs the proposal
 test("when the server can't keep another DAO request, nothing is filed: the platform isn't asked, so no request is left unfollowed", async t => {
   const counted = fakePlatform({ "dao-treasury": DAO }, { daos: ["dao-treasury"] });
   const full = await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json"), { max: 1 });
-  await full.add({ kind: "consent", organization: "other", agent: "other", id: "e".repeat(64), description: "", votingUntil: Date.now() + 1,
+  await full.add({ kind: "consent", organization: "other", agent: "other", agentId: "id-other", id: "e".repeat(64), description: "", votingUntil: Date.now() + 1,
     filed: { dao: DAO, next: 0, transactions: { proposal: daoTransaction(DAO, "e".repeat(64)), proposalAndVote: null } } });
   const limited = createHttpServer(createServer({
     platform: counted.platform,

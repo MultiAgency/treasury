@@ -105,7 +105,7 @@ export const proposalRead = z.object({ proposal: proposalView, vote: daoRequest.
 export const consent = z.strictObject({
   consent: z.strictObject({ id: z.string(), scopes: z.array(z.string()), expiresAt: z.number() }).nullable(),
   request: daoRequest.nullable().optional(),
-  ended: z.enum(["expired", "stopped", "rejected"]).optional(),
+  ended: z.enum(["expired", "stopped", "rejected", "changed"]).optional(),
 });
 
 /**

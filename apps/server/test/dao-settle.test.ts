@@ -29,3 +29,42 @@ test("reads of the same request at once share one: the vote is relayed and recor
   await settle(open);
   assert.equal(fake.calls.filter(made => made.startsWith("daoVotes.state")).length, 2);
 });
+
+test("a consent request's 409 is a stop only while the agent is still the DAO's with the identity it named; otherwise the agent changed; unread, it stays open", async () => {
+  const owners: Record<string, string> = { "dao-treasury": DAO };
+  const failing: Record<string, { ok: false; kind: "unavailable" }> = {};
+  const fake = fakePlatform(owners, { daos: ["dao-treasury"], failing });
+  const daoRequests = await createDaoRequests(join(tempDir("treasury-dao-settle-"), "dao-requests.json"));
+  const settle = createSettle({ platform: fake.platform, daoRequests, audit: { append: async () => {} } });
+  const consentText = JSON.stringify({ type: "multiagency.app-consent", version: 1, host: "platform.test", deployment: "treasury", organization: ORG,
+    owner: DAO, agent: "dao-treasury", agentId: "id-dao-treasury", scopes: ["read", "treasury"], expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
+  const open = async (agentId = "id-dao-treasury") => {
+    const filed = await fake.platform.daoConsents.file(consentText);
+    assert.ok(filed.ok);
+    fake.daoRequests.at(-1)!.ended = 409;
+    const request = { kind: "consent" as const, organization: ORG, agent: "dao-treasury", agentId, id: filed.value.request.id, description: "", votingUntil: Date.now() + 60_000,
+      filed: { dao: DAO, next: 0, transactions: { proposal: daoTransaction(DAO, filed.value.request.id), proposalAndVote: null } } };
+    await daoRequests.add(request);
+    return request;
+  };
+  const cases: [string, () => void, string, Awaited<ReturnType<typeof settle>>][] = [
+    ["the same DAO and identity", () => {}, "id-dao-treasury", { result: "ended", why: "stopped" }],
+    ["created again with another identity", () => {}, "id-before", { result: "ended", why: "changed" }],
+    ["owned by someone else now", () => { owners["dao-treasury"] = "someone.near"; }, "id-dao-treasury", { result: "ended", why: "changed" }],
+    ["gone", () => { delete owners["dao-treasury"]; }, "id-dao-treasury", { result: "ended", why: "changed" }],
+  ];
+  for (const [name, change, agentId, expected] of cases) {
+    owners["dao-treasury"] = DAO;
+    const request = await open(agentId);
+    change();
+    assert.deepEqual(await settle(request), expected, name);
+    assert.equal(daoRequests.consent(ORG, "dao-treasury"), undefined, name);
+    assert.equal(daoRequests.ended(ORG, "dao-treasury"), expected.result === "ended" ? expected.why : undefined, name);
+  }
+  // The agent can't be read now: nothing tells the two apart, so the request stays open and is read again.
+  owners["dao-treasury"] = DAO;
+  failing["dao-treasury"] = { ok: false, kind: "unavailable" };
+  const unread = await open();
+  assert.deepEqual(await settle(unread), { result: "pending" });
+  assert.equal(daoRequests.consent(ORG, "dao-treasury")?.id, unread.id);
+});

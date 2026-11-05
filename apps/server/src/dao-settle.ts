@@ -10,14 +10,15 @@ import { recordResult, revokeAll } from "./revoke.ts";
  * - `stored`: the DAO's consent passed and is stored; the request is closed;
  * - `relayed`: the DAO's vote passed and was relayed to its proposal (`proposalState`); the request is closed;
  * - `pending`: no vote has passed yet, or the platform couldn't complete it now; the request stays open;
- * - `ended`: it can't complete any more (`expired`: past its deadline, `stopped`: a DAO stop ended it, `gone`: the
- *   platform no longer keeps it); the request is closed.
+ * - `ended`: it can't complete any more (`expired`: past its deadline, `stopped`: a DAO stop ended it, `changed`: the
+ *   agent isn't the DAO's with the identity its consent names any more, `gone`: the platform no longer keeps it); the
+ *   request is closed.
  */
 export type Settled =
   | { result: "stored"; consent: ConsentRecord }
   | { result: "relayed"; proposalState: string }
   | { result: "pending" }
-  | { result: "ended"; why: "expired" | "stopped" | "gone" };
+  | { result: "ended"; why: "expired" | "stopped" | "changed" | "gone" };
 
 type SettleDeps = { platform: Platform; daoRequests: DaoRequests; audit: Audit };
 /** Reads an open DAO request once, and completes it if its vote passed (`createSettle`). */
@@ -42,9 +43,10 @@ export function createSettle(deps: SettleDeps): Settle {
  * the background reader call this. What the vote did is recorded for the DAO (`who`), whoever's read found it; a
  * stored consent also revokes the DAO's older consents for the agent, since it voted for this one.
  *
- * A consent request a stop ended (409) is closed. A vote's 409 isn't final: the platform answers it both for a relay
- * the agent refused for now (read again relays the same signature) and for a consent that ended, and only its message
- * tells them apart. So a vote stays open until it's relayed or its deadline passes (410).
+ * A consent request's 409 is final, for one of two reasons the platform tells apart only in its message: a DAO stop
+ * ended it, or the agent isn't the DAO's with the identity the consent names any more (`whyConsentEnded`). A vote's
+ * 409 isn't final: the platform answers it both for a relay the agent refused for now (read again relays the same
+ * signature) and for a consent that ended. So a vote stays open until it's relayed or its deadline passes (410).
  */
 async function settleOnce(open: StoredDaoRequest, { platform, daoRequests, audit }: SettleDeps): Promise<Settled> {
   const dao = open.filed.dao, { agent } = open;
@@ -65,11 +67,25 @@ async function settleOnce(open: StoredDaoRequest, { platform, daoRequests, audit
     return { result: "stored", consent };
   }
   const status = read.kind === "refused" ? read.status : undefined;
-  const ended = status === 410 ? "expired" : status === 404 ? "gone" : status === 409 && open.kind === "consent" ? "stopped" : undefined;
+  const ended = status === 410 ? "expired" : status === 404 ? "gone"
+    : status === 409 && open.kind === "consent" ? await whyConsentEnded(open, platform) : undefined;
   if (ended) {
     await daoRequests.close(open.id, ended === "gone" ? undefined : ended);
     return { result: "ended", why: ended };
   }
   log(`platform_dao_${open.kind}_state_failed`, { agent, request: open.id, ...failure(read) });
   return { result: "pending" };
+}
+
+/**
+ * Why the platform refused a consent request with 409: `changed` if the agent, read anew, isn't the DAO's with the
+ * identity the consent names (or no longer exists); otherwise a DAO stop ended it. Undefined while the agent can't be
+ * read, so the request stays open and is read again.
+ */
+async function whyConsentEnded(open: Extract<StoredDaoRequest, { kind: "consent" }>, platform: Platform) {
+  const { answer } = await platform.identity(open.agent, { fresh: true });
+  if (answer.ok) return answer.value.owner === open.filed.dao && answer.value.agentId === open.agentId ? "stopped" as const : "changed" as const;
+  if (answer.kind === "refused" && answer.status === 404) return "changed" as const;
+  log("platform_identity_failed", { agent: open.agent, request: open.id, ...failure(answer) });
+  return undefined;
 }
