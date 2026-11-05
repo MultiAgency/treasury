@@ -196,6 +196,15 @@ export const rebalanceRequest = z.strictObject({ requestId: z.string().regex(/^[
 export const rebalanceMade = z.strictObject({ proposal: proposalView });
 /** What a consent text is asked for with: `owner` too, at a wallet owner's explicit choice. */
 export const consentRequest = z.strictObject({ owner: z.literal(true).optional() });
+/** The saved strategy, its digest, whether the held grant binds it, and whether the schedule may be turned on (and why not). */
+export const strategyRead = ownerOutputs["strategy/get"];
+/** The schedule: on or off, every how many minutes, its ceiling a run, and its last and next runs. */
+export const autopilotRead = ownerOutputs["autopilot/get"];
+/** The schedule is turned on for the strategy the owner saw, by its digest: refused if it has changed since. */
+export const enableRequest = z.strictObject({ expectedDigest: z.string().regex(/^sha256:[0-9a-f]{64}$/) });
+/** What a run now reported, in the agent's words: what it executed or why it didn't. */
+export const tickRead = z.strictObject({ summary: z.string() });
+export const autopilotChanged = z.strictObject({});
 /** A proposal found by the `requestId` it was proposed with. */
 export const requestRead = z.strictObject({ proposal: proposalView });
 /**
@@ -213,7 +222,7 @@ export const operationRead = z.strictObject({ correlationId: z.string(), at: z.s
  *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
- *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, or a funding code: `dao_funding_fixed`, `funding_refused`);
+ *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, a funding code: `dao_funding_fixed`, `funding_refused`, or an autopilot code: `autopilot_refused`, `autopilot_not_stopped`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.
  */

@@ -16,7 +16,7 @@ export type AuditEntry = {
    * result, for the DAO (`who`).
    */
   action: "setup" | "create" | "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-setup" | "dao-setup-reserved" | "dao-consent"
-    | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose";
+    | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose" | "autopilot-on" | "autopilot-off" | "run-now";
   /**
    * The agent the action concerns. A setup's attempt has none: the platform names the agent it reserves in its answer.
    * `setup`: a wallet owner's signed setup text relayed (`subject`: the setup consent); `create`: an agent's creation

@@ -5,6 +5,7 @@ import { accountId, agentName } from "../../../apps/server/src/contract.ts";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
 import { Connection } from "./connection";
+import { Autopilot } from "./autopilot";
 import { Funding } from "./funding";
 import { ProposalDetail } from "./proposal-detail";
 import { Portfolio } from "./portfolio";
@@ -76,8 +77,8 @@ function Agent({ name, id }: { name: string; id: string | undefined }) {
   </>;
 }
 
-/** The portfolio and funding, once a live consent connects the agent: every owner read and funding call needs it. */
+/** The portfolio, autopilot and funding, once a live consent connects the agent: every owner read and call needs it. */
 function Connected({ reads, identity }: { reads: ReturnType<typeof agentReads>; identity: Identity }) {
   const consent = useQuery(reads.consent);
-  return consent.data?.consent ? <><Portfolio reads={reads} /><Funding reads={reads} identity={identity} /></> : null;
+  return consent.data?.consent ? <><Portfolio reads={reads} /><Autopilot reads={reads} identity={identity} /><Funding reads={reads} identity={identity} /></> : null;
 }

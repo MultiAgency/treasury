@@ -111,6 +111,14 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
+        /** The saved strategy and whether the held grant binds it; the schedule. */
+        strategy: () => call(contract.strategyRead, `${base}/strategy`),
+        autopilot: () => call(contract.autopilotRead, `${base}/autopilot`),
+        /** Autopilot on for the strategy digest the owner saw, off, or one run now: each sent once, never again for a lost answer. */
+        enableAutopilot: (expectedDigest: string) =>
+          call(contract.autopilotChanged, `${base}/autopilot/enable`, { method: "POST", body: contract.enableRequest.parse({ expectedDigest }) }),
+        stopAutopilot: () => call(contract.autopilotChanged, `${base}/autopilot/stop`, { method: "POST" }),
+        runNow: () => call(contract.tickRead, `${base}/autopilot/tick`, { method: "POST" }),
         /** Per asset, the provider's balances against the chain and against recorded executions. */
         books: () => call(contract.booksRead, `${base}/books`),
         /** A sweep, sent once, answered as its AG-UI run: a preview, or the shielding of the public balances. Never sent again for a lost answer. */
@@ -153,6 +161,7 @@ export type TreasuryRead = z.output<typeof contract.treasuryRead>["treasury"];
 export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
 export type SweepRun = z.output<typeof contract.sweepRun>;
 export type BooksRead = z.output<typeof contract.booksRead>;
+export type StrategyRead = z.output<typeof contract.strategyRead>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));

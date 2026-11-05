@@ -175,7 +175,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
 
     <ReviewDialog open={disconnecting === "review"} onClose={() => setDisconnecting(prev => prev === "busy" ? prev : undefined)}
       title="Disconnect this agent?"
-      description="Every live consent for this agent is revoked. Its open proposals can't be approved or executed through this app until you connect again."
+      description="Autopilot is turned off first, since this page can't reach it once disconnected. Then every live consent for this agent is revoked. Its open proposals can't be approved or executed through this app until you connect again."
       actions={<Button variant="destructive" onClick={disconnect}>Disconnect</Button>} />
   </section>;
 }

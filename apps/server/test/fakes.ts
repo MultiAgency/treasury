@@ -98,6 +98,20 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * otherwise a preview finds one public wNEAR balance past 2^53 raw units, and a shield sends it, succeeding.
    */
   const sweepRuns: (SweepRun | Error)[] = [];
+  /**
+   * Each agent's strategy and schedule, as the platform keeps them: autopilot off, the strategy bound by the held grant
+   * unless `unbound` says otherwise. `autopilotAnswers` queues answers an autopilot call gives instead; an Error is thrown.
+   */
+  const schedules: Record<string, { on: boolean; unbound?: boolean }> = {};
+  const autopilotAnswers: Partial<Record<"strategy" | "status" | "enable" | "stop" | "tick", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
+  const DIGEST = `sha256:${"a".repeat(64)}`;
+  const autopilotCall = <T,>(name: keyof typeof autopilotAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
+    calls.push([`autopilot.${name}`, organization, agent, ...rest].join(" "));
+    const queued = autopilotAnswers[name]?.shift();
+    if (queued instanceof Error) throw queued;
+    return (queued ?? { ok: true, value: value() }) as never;
+  };
+  const schedule = (agent: string) => schedules[agent] ??= { on: false };
   const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
@@ -319,6 +333,23 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       runs: (organization, agent) => read("runs", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
+    autopilot: {
+      strategy: async (organization, agent) => autopilotCall("strategy", organization, agent, [], () => {
+        const { on, unbound } = schedule(agent);
+        return { strategy: { targetBps: { "nep141:wrap.near": 10_000 }, minLegUsd: 10, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 100 } },
+          digest: DIGEST, grantSuffix: "a".repeat(16), executor: true, on, grantMatches: !unbound, unresolved: 0, grant: null,
+          readiness: unbound ? { state: "authorization-required", reasons: ["The owner must issue a matching grant before this strategy can act on its schedule."], canEnable: false }
+            : { state: on ? "ready" : "off", reasons: [], canEnable: !on }, observedAt: new Date().toISOString() };
+      }),
+      status: async (organization, agent) => autopilotCall("status", organization, agent, [], () =>
+        ({ on: schedule(agent).on, everyMin: 60, maxUsd: 100, lastRun: null, nextRun: null })),
+      enable: async (organization, agent, expectedDigest) => autopilotCall("enable", organization, agent, [expectedDigest], () => {
+        schedule(agent).on = true;
+        return { strategy: { targetBps: {}, minLegUsd: 10, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 100 } }, digest: expectedDigest, on: true };
+      }),
+      stop: async (organization, agent) => autopilotCall("stop", organization, agent, [], () => { schedule(agent).on = false; return { on: false as const }; }),
+      tick: async (organization, agent) => autopilotCall("tick", organization, agent, [], () => "Ran: nothing to rebalance."),
+    },
     funding: {
       treasury: async (organization, agent) => funding("treasury", organization, agent, [], () => {
         const linked = treasuries[agent];
@@ -355,7 +386,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns,
+  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns, schedules, autopilotAnswers,
     reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 
