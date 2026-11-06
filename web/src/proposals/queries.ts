@@ -40,6 +40,7 @@ export function agentReads(name: string) {
     activity: queryOptions({ queryKey: [...key, "activity"], queryFn: async () => answered(await agent.activity()), retry: false }),
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
+    policyHistory: queryOptions({ queryKey: [...key, "policy-history"], queryFn: async () => answered(await agent.policyHistory()), retry: false, staleTime: 60_000 }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
     ownerActions: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false }),
     /**

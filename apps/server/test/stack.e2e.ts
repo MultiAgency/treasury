@@ -498,3 +498,35 @@ test("the owner saves a strategy through the server over the one they saw: autop
 // prepared against it: the route is covered with the fake platform (owner-actions.test.ts), and this joins the suite when
 // the stack prepares one (#142), signed through the confirm page where the platform chooses that form (#140).
 test.todo("grant revocation (#142): prepared in the form the platform chooses, signed, and the grant reads revoked (needs the stack to prepare grant_revoke, and #140 for the confirm page)");
+
+test("a policy edit (#134): prepared in the form the platform chooses, an intent signed here and relayed once, the overview reads the new revision; a no-op edit is refused", { timeout: 120_000 }, async () => {
+  const { cookie, agent } = await freezing();
+  const overview = async () => ((await (await get(`${agent}/overview`, cookie)).json()) as { value: { policy: { revision: number | null; policy: { max_actions_per_hour: number | null } | null }; digest: string } }).value;
+  const before = await overview();
+  const rate = before.policy.policy!.max_actions_per_hour === 3 ? 4 : 3;
+  const expectedPolicy = { revision: before.policy.revision!, digest: before.digest };
+  const prepared = await post(`${agent}/policy`, { expectedPolicy, changes: { max_actions_per_hour: rate } }, cookie);
+  const body = await prepared.json() as { value: unknown };
+  assert.equal(prepared.status, 200, JSON.stringify(body));
+  const made = contract.ownerActionPrepared.parse(body.value);
+  assert.equal([made.intent, made.confirm, made.dao].filter(Boolean).length, 1, `exactly one form: ${JSON.stringify(made)}`);
+  if (!made.intent) return void console.log("the edit answered a confirm page: its signed path waits for #140");
+  const signed = await signOwner(target, made.intent.payload);
+  const submitted = await post(`${agent}/owner/actions/${made.correlationId}/submit`, { signedData: { ...made.intent, public_key: signed.publicKey, signature: signed.signature } }, cookie);
+  assert.equal(submitted.status, 200, await submitted.clone().text());
+  for (let waited = 0; (await overview()).policy.revision === before.policy.revision; waited += 1_000) {
+    assert.ok(waited < 45_000, "the new revision never read");
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+  const after = await overview();
+  assert.equal(after.policy.revision, before.policy.revision! + 1);
+  assert.equal(after.policy.policy!.max_actions_per_hour, rate);
+  // An edit that changes nothing is refused by the platform, with nothing prepared.
+  const nothing = await post(`${agent}/policy`, { expectedPolicy: { revision: after.policy.revision!, digest: after.digest }, changes: { max_actions_per_hour: rate } }, cookie);
+  assert.deepEqual(await nothing.json(), { ok: false, kind: "refused", code: "no_change" }, "an edit that changes nothing is refused by the server");
+});
+
+// A policy edit the provider enforces itself comes back as a confirm page, signed with the helper of #140 (web/test/confirm-page.ts).
+// The pinned stack never holds an edit for the confirm page (its provider turns that on only in the platform's own harness), so the
+// signed path joins this file when the stack can produce one.
+test.todo("a policy edit held for the confirm page is signed through its helper, and the overview reads the new revision (needs #140 and a stack that holds edits for the confirm page)");

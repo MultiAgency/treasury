@@ -10,6 +10,7 @@ import { checkConsent, consentFor, consentText, liveConsents, organizationOf, wi
 import { offerFor } from "./dao-offer.ts";
 import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
+import { changesNothing } from "./policy-edit.ts";
 import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
 import type { Page } from "./page.ts";
@@ -171,24 +172,30 @@ const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-
  * freeze or unfreeze is awaiting its outcome (they hold each other), and for a wallet owner only under a connection that
  * allows owner actions. Which form comes back (intent, confirm page, DAO transaction) is the platform's choice.
  */
-type OwnerActionType = "agent_freeze" | "agent_unfreeze" | "grant_revoke";
-const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant-revoke", type: OwnerActionType): Route => ({
+type OwnerActionInput = Parameters<Platform["owner"]["prepare"]>[2]["action"];
+/** Which owner actions hold each other while one's outcome is unknown: a freeze and an unfreeze do, the rest only their own kind. */
+const holdsEach = (type: string, other: string) => type === "agent_freeze" || type === "agent_unfreeze" ? other === "agent_freeze" || other === "agent_unfreeze" : other === type;
+const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant-revoke" | "policy-update", action: (body: unknown) => OwnerActionInput | undefined): Route => ({
   method: "POST", path, access: "owner-fresh", needs: "file",
   async handle({ body, account, identity }, { platform, audit }) {
     const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
-    // A freeze or unfreeze takes nothing; a revocation names the grant to end, which is the whole request.
-    const grantId = type === "grant_revoke" ? parse(z.strictObject({ grantId: z.string().min(1).max(200) }), body)?.grantId : parse(z.strictObject({}), body) === undefined ? undefined : "";
-    if (grantId === undefined) return refused(400, "bad_request");
-    const action = type === "grant_revoke" ? { type, grantId } as const : { type } as const;
-    // A freeze and an unfreeze hold each other; a revocation holds only another revocation.
-    const holds = (other: string) => type === "grant_revoke" ? other === "grant_revoke" : other === "agent_freeze" || other === "agent_unfreeze";
+    const asked = action(body);
+    if (asked === undefined) return refused(400, "bad_request");
+    // A DAO member who may not file proposals is refused before anything is prepared.
+    if (signer === "dao" && !access.canPropose) return refused(403, "not_permitted");
+    // An edit that would leave the policy as it is is refused before anything is prepared.
+    if (asked.type === "policy_update") {
+      const current = await relay(() => platform.reads.overview(organization, agent), agent);
+      if (!current.ok) return readFailure(current, agent, "overview");
+      if (current.value.policy.policy && changesNothing(current.value.policy.policy, asked.changes)) return refused(409, "no_change");
+    }
     const actions = await relay(() => platform.reads.ownerActions(organization, agent), agent);
     if (!actions.ok) return readFailure(actions, agent, "owner/actions");
     const now = Date.now();
     // Held while an outcome is unknown: one already submitted, or a DAO's request waiting for its vote, which a second
     // filing would duplicate. A wallet owner's intent that was only prepared isn't held: it was never signed, so it can be
     // prepared again (a reload mid-signature must not delay an emergency stop), and the old one expires.
-    if (actions.value.some(other => holds(other.type)
+    if (actions.value.some(other => holdsEach(asked.type, other.type)
       && (other.stage === "submitted" || (other.stage === "prepared" && other.signer === "dao" && Date.parse(other.expiresAt) > now)))) return refused(409, "action_pending");
     if (signer === "wallet") {
       const allowed = await ownerAllowed(platform, organization, identity!, agent);
@@ -196,15 +203,18 @@ const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant
       if (!allowed) return refused(409, "owner_not_allowed");
     }
     await audit.append({ who: account!, action: audited_, agent, stage: "attempt" });
-    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action, signer }), agent);
+    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action: asked, signer }), agent);
     const reply = preparedReply(prepared, { signer, access, agent, what: "owner_action", refusal: "action_refused" });
     await recordResult(audit, { who: account!, action: audited_, agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
     return reply;
   },
 });
+const bare = (type: "agent_freeze" | "agent_unfreeze") => (body: unknown) => parse(z.strictObject({}), body) === undefined ? undefined : { type } as const;
+const revocation = (body: unknown) => { const input = parse(z.strictObject({ grantId: z.string().min(1).max(200) }), body); return input && { type: "grant_revoke", grantId: input.grantId } as const; };
+const policyEdit = (body: unknown) => { const input = parse(contract.policyUpdateRequest, body); return input && { type: "policy_update" as const, ...input }; };
 
 /** A route answering one of the agent's owner reads as the platform answers it (#61). */
-const readRoute = (path: string, read: "account" | "overview" | "activity" | "held" | "unresolved" | "runs"): Route => ({
+const readRoute = (path: string, read: "account" | "overview" | "activity" | "held" | "unresolved" | "runs" | "policyHistory"): Route => ({
   method: "GET", path, access: "owner", needs: "read",
   async handle({ identity }, { platform }) {
     const { agent, owner } = identity!;
@@ -323,7 +333,7 @@ function preparedReply(prepared: PreparedAnswer | { ok: false; kind: "unavailabl
     const transaction = dao && parse(contract.memberTransaction, access.canVote && dao.proposalAndVote ? dao.proposalAndVote : dao.proposal);
     const reply = signer === "wallet" && intent?.standard === "nep413" ? ok({ correlationId, expiresAt, intent })
       : signer === "wallet" && confirm ? ok({ correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } })
-      : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction } }) : unavailable();
+      : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction }, ...(prepared.value.policy && { policy: { current: prepared.value.policy.current, requested: prepared.value.policy.requested } }) }) : unavailable();
     if (reply.status !== 200) log(`platform_${what}_unreadable`, { agent, correlationId });
     return reply;
   }
@@ -885,6 +895,7 @@ export const routes: Route[] = [
   readRoute("/api/agents/:agent/held", "held"),
   readRoute("/api/agents/:agent/unresolved", "unresolved"),
   readRoute("/api/agents/:agent/runs", "runs"),
+  readRoute("/api/agents/:agent/policy-history", "policyHistory"),
   {
     // The account linked to fund the agent, with its balances and, for a DAO, its members: null when none is linked.
     method: "GET", path: "/api/agents/:agent/treasury", access: "owner", needs: "read",
@@ -1051,9 +1062,10 @@ export const routes: Route[] = [
     method: "GET", path: "/api/agents/:agent/grant/:id", access: "owner", needs: "read",
     handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_grant", forbidden: "not_connected" }),
   },
-  ownerActionRoute("/api/agents/:agent/freeze", "freeze", "agent_freeze"),
-  ownerActionRoute("/api/agents/:agent/unfreeze", "unfreeze", "agent_unfreeze"),
-  ownerActionRoute("/api/agents/:agent/grants/revoke", "grant-revoke", "grant_revoke"),
+  ownerActionRoute("/api/agents/:agent/freeze", "freeze", bare("agent_freeze")),
+  ownerActionRoute("/api/agents/:agent/unfreeze", "unfreeze", bare("agent_unfreeze")),
+  ownerActionRoute("/api/agents/:agent/grants/revoke", "grant-revoke", revocation),
+  ownerActionRoute("/api/agents/:agent/policy", "policy-update", policyEdit),
   {
     /**
      * A wallet owner's signature over an owner action's intent (#133; the grant's has its own route), relayed once and

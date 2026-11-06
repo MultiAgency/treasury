@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission, ASSETS, ownerOutputs, proposalId, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
+import { appConsentSubmission, ASSETS, ownerAction, ownerOutputs, proposalId, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
 import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
 
@@ -159,6 +159,15 @@ export const overviewRead = ownerOutputs.overview.extend({
   unmanaged: z.array(overviewShape.unmanaged.element.extend({ amount: rawAmount })),
 });
 export const activityRead = ownerOutputs.activity;
+/** The policy's revisions and the mandate digest (`policyHistory`, #134). */
+export const policyHistoryRead = ownerOutputs.policyHistory;
+/**
+ * A policy edit (`policy_update`): the revision and digest the owner reviewed, and the fields to change, as the SDK takes
+ * them. The page sends the whole editable part; the platform refuses an edit that changes nothing.
+ */
+type PolicyOption = Extract<(typeof ownerAction.options)[number], { shape: { type: z.ZodLiteral<"policy_update"> } }>;
+const policyUpdate = ownerAction.options.find((option): option is PolicyOption => option.shape.type.value === "policy_update")!;
+export const policyUpdateRequest = z.strictObject({ expectedPolicy: policyUpdate.shape.expectedPolicy, changes: policyUpdate.shape.changes });
 /** The agent's account: its wallet (the NEAR account that holds its balances), and the grants its executor holds. */
 export const accountRead = ownerOutputs.account;
 export const heldRead = ownerOutputs.held;
@@ -244,6 +253,8 @@ export const grantPrepared = z.strictObject({
   intent: nep413Intent.optional(),
   confirm: z.strictObject({ url: z.string(), expiresAt: z.string() }).optional(),
   dao: z.strictObject({ transaction: memberTransaction }).optional(),
+  /** A policy edit's terms before and after, for a DAO member to compare before filing (the DAO's proposal names only the fields). */
+  policy: z.strictObject({ current: z.looseObject({}), requested: z.looseObject({}) }).optional(),
 });
 /** A wallet owner's signed intent, as their wallet answers it: the intent, with the key that signed and its signature. */
 export const grantSubmission = z.strictObject({ signedData: nep413Intent.extend({ public_key: z.string(), signature: z.string() }) });

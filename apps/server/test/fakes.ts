@@ -76,7 +76,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     account: { agentId: "id-portfolio", executor: true, wallet: "portfolio.agents.near", grant: null, stagedGrant: null },
     books: [],
     overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
-    ledgerCsv: "correlationId,at,kind,status\n", ownerActions: [], ownerPending: [],
+    ledgerCsv: "correlationId,at,kind,status\n", ownerActions: [], ownerPending: [], policyHistory: [],
   };
   const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
   const read = async <K extends ReadName>(name: K, organization: string, agent: string, ...rest: string[]): Promise<ReadAnswer<ReadPath<K>>> => {
@@ -119,7 +119,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * Grants as the platform keeps them, by correlation ID: `prepared` until signed (or, for a DAO, voted), `submitted`
    * after. A submitted grant binds the strategy. `grantAnswers` queues answers a grant call gives instead; an Error is thrown.
    */
-  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown; type?: "grant_issue" | "agent_freeze" | "agent_unfreeze" | "grant_revoke" }[] = [];
+  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown; type?: "grant_issue" | "agent_freeze" | "agent_unfreeze" | "grant_revoke" | "policy_update" }[] = [];
   const ownerActionsOf = (agent: string) => grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: item.type ?? "grant_issue", expiresAt: item.expiresAt,
     signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null }));
   const grantAnswers: Partial<Record<"prepare" | "submit" | "ownerPrepare", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
@@ -349,6 +349,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         return !answered.ok || (answered.value as unknown[]).length > 0 ? answered : { ok: true, value: ownerActionsOf(agent) } as never;
       },
       ownerPending: (organization, agent) => read("ownerPending", organization, agent),
+      policyHistory: (organization, agent) => read("policyHistory", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
     grant: {
@@ -396,11 +397,12 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         if (queued) return queued as PreparedAnswer;
         const correlationId = `action-${grants.length + 1}`, expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
         grants.push({ correlationId, agent, signer: input.signer, digest: "", stage: "prepared", expiresAt, type: input.action.type });
-        const common = { correlationId, expiresAt, digest: null, preview: { summary: input.action.type === "agent_freeze" ? "Freeze the agent" : input.action.type === "grant_revoke" ? "Revoke the grant" : "Unfreeze the agent" } };
+        const common = { correlationId, expiresAt, digest: null, preview: { summary: input.action.type === "agent_freeze" ? "Freeze the agent" : input.action.type === "grant_revoke" ? "Revoke the grant" : input.action.type === "policy_update" ? "Change the policy" : "Unfreeze the agent" } };
         if (input.signer === "wallet") return { ok: true, value: { ...common,
           intent: { standard: "nep413", payload: { message: `${input.action.type} ${correlationId}`, recipient: "provider.test", nonce: Buffer.alloc(32, 1).toString("base64") } } } } as PreparedAnswer;
         const dao = owners[agent]!, hash = correlationId.padStart(64, "d");
-        return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
+        const edit = input.action.type === "policy_update" ? { policy: { current: { owner_approval: true }, requested: { owner_approval: false, ...input.action.changes } } } : {};
+        return { ok: true, value: { ...common, ...edit, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
       },
     },
     autopilot: {
@@ -515,7 +517,7 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
 }
 
 /** The owner reads by name, and the platform procedure each one is. */
-const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log", ledgerCsv: "ledgerCsv", ownerActions: "owner/actions", ownerPending: "owner/pending" } as const;
+const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log", ledgerCsv: "ledgerCsv", ownerActions: "owner/actions", ownerPending: "owner/pending", policyHistory: "policyHistory" } as const;
 type ReadName = keyof typeof READ_PATHS;
 type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
 type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);

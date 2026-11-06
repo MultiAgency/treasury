@@ -832,6 +832,65 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
 });
 
+test("the policy page leads with the terms as signed, then limits and grants, and keeps the revisions and the mandate digest collapsed", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  await visible(terms.getByText("Owner approval", { exact: true }));
+  await visible(terms.getByText(/^Revision \d+/));
+  await visible(page.getByRole("region", { name: "Limits" }).getByRole("table", { name: "USD budget windows" }));
+  await visible(page.getByRole("region", { name: "Grants" }));
+  const evidence = page.getByRole("region", { name: "Revisions and mandate digest" });
+  assert.equal(await evidence.getByText(/^sha256:[0-9a-f]{64}$/).isVisible(), false, "collapsed");
+  await evidence.getByText("Show the digest and the revisions").click();
+  await visible(evidence.getByText(/^sha256:[0-9a-f]{64}$/));
+  await visible(evidence.getByRole("list", { name: "Revisions" }).or(evidence.getByText("No revision records returned.")));
+  assert.deepEqual(await axe(), [], "the policy page, evidence open");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the owner edits the policy by keyboard: told what changes first, signs it, and the page reads the new revision", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  const before = Number((await terms.getByText(/^Revision \d+/).innerText()).match(/\d+/)![0]);
+  await terms.getByRole("button", { name: "Edit", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  await visible(rate);
+  assert.equal(await terms.getByRole("button", { name: "Review the changes" }).isDisabled(), true, "nothing changed yet");
+  assert.deepEqual(await axe(), [], "the editor");
+  // A rate that is not the one in force, whatever the stack signed.
+  const next = (await terms.getByText(/ actions an hour$/).count()) && (await terms.getByText("7 actions an hour").count()) ? "9" : "7";
+  await rate.fill(next);
+  await terms.getByRole("button", { name: "Review the changes" }).click();
+  const confirm = dialog("Change this policy?");
+  await visible(confirm);
+  await visible(confirm.getByRole("list", { name: "Changes" }).getByText(new RegExp(`^Actions an hour: .+ → ${next}$`)));
+  assert.match(await confirm.innerText(), /Your wallet signs it/);
+  assert.deepEqual(await axe(), [], "the review dialog");
+  await confirm.getByRole("button", { name: "Sign and apply" }).click();
+  await visible(terms.getByText(`${next} actions an hour`));
+  const after = Number((await terms.getByText(/^Revision \d+/).innerText()).match(/\d+/)![0]);
+  assert.equal(after, before + 1, "the new revision");
+  assert.deepEqual(await axe(), [], "after the edit");
+});
+
+test("a refusal because the policy isn't in force links to the Policy page", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const made = await propose(`policy-link-${Date.now()}`);
+  await page.route("**/api/agents/*/proposals/*/approve", route => route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "policy_not_in_force" } }));
+  await page.goto(here(`/proposals/${made.id}`));
+  const state = page.getByRole("region", { name: "State" });
+  await state.getByRole("button", { name: "Approve" }).click();
+  await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
+  const link = page.getByRole("link", { name: "Open the Policy page" });
+  await visible(link);
+  await link.click();
+  await visible(page.getByRole("heading", { level: 1, name: "Policy", exact: true }));
+  await page.unroute("**/api/agents/*/proposals/*/approve");
+});
+
 test("the policy page lists the treasury grant, and the owner opens revocation by keyboard, told first what it does; a platform that can't prepare it leaves the grant live and says so", { timeout: 150_000 }, async () => {
   await ensureConnected();
   await page.goto(here("/policy"));

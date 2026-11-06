@@ -1,11 +1,14 @@
-import type { OwnerAction, Overview } from "../../platform.ts";
+import type { z } from "zod";
+import type { policyUpdateRequest } from "../../../apps/server/src/contract.ts";
 // With their extensions: test/policy.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
-import { fromUnits, type Holding, symbolOf, toUnits } from "../../shared/format.ts";
+import { fromUnits, type AssetInfo as Holding, symbolOf, toUnits } from "../shared/format.ts";
+import type { OverviewRead } from "./proposals-api.ts";
 
 /** The policy form's model, apart from any page: what the owner may edit, and what a draft changes. */
 
-export type AgentPolicy = NonNullable<Overview["policy"]["policy"]>;
-export type PolicyChanges = Extract<OwnerAction, { type: "policy_update" }>["changes"];
+export type AgentPolicy = NonNullable<OverviewRead["policy"]["policy"]>;
+/** A policy edit's fields, as the server takes them (`POST …/policy`). */
+export type PolicyChanges = z.input<typeof policyUpdateRequest>["changes"];
 
 export const WINDOWS = [
   ["per_transaction", "Per payment"],

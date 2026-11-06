@@ -265,3 +265,32 @@ test("a council member sees the DAO's grants on the policy page, told the vote w
   await confirm.getByRole("button", { name: "Cancel" }).click();
   assert.deepEqual(await axe(), [], "the policy page, for a DAO");
 });
+
+test("a council member proposes a policy edit: told the vote windows first, shown the terms before and after, files it from their wallet, and the policy reads the new rate once the vote passes", { timeout: 180_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}/policy`);
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  await visible(terms.getByText(/about 290 seconds, or 600 seconds for an edit that changes an on-chain field/));
+  assert.equal(await terms.getByRole("button", { name: "Edit", exact: true }).count(), 0, "a DAO's member proposes, never signs");
+  await terms.getByRole("button", { name: "Propose an edit" }).click();
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  await visible(rate);
+  const next = (await terms.getByText("7 actions an hour").count()) ? "9" : "7";
+  await rate.fill(next);
+  await terms.getByRole("button", { name: "Review the changes" }).click();
+  const confirm = dialog("Change this policy?");
+  await visible(confirm);
+  assert.match(await confirm.innerText(), /you compare the terms, then file it/);
+  assert.deepEqual(await axe(), [], "the review dialog, for a DAO");
+  const filedBefore = sent.length;
+  await confirm.getByRole("button", { name: "Prepare for the DAO's vote" }).click();
+  const compare = terms.getByRole("region", { name: "Terms before and after" });
+  await visible(compare);
+  assert.equal(sent.length, filedBefore, "nothing filed until the member has compared");
+  await visible(compare.getByRole("table").or(compare.getByText("The platform reported no terms to compare.")));
+  assert.deepEqual(await axe(), [], "the comparison");
+  await compare.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await terms.getByText(`${next} actions an hour`).waitFor({ timeout: 90_000 });
+  assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
+  assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
+  assert.deepEqual(unexpected, []);
+});
