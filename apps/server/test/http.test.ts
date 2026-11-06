@@ -1321,3 +1321,78 @@ test("after the consent is revoked, the platform's forbidden asks the owner to r
 test("the health check answers without a session or an Origin, and says nothing but that the server is up", async () => {
   assert.deepEqual(await json(await call("GET", "/api/health")), { status: 200, body: { ok: true, value: { status: "up" } } });
 });
+
+// --- the DAO requests route (#130) ---
+
+test("the DAO requests route lists this agent's open requests, soonest deadline first, to any member who can read, with what the page needs", async t => {
+  await freshDao(t);
+  daoProposal("1".repeat(32));
+  const council_ = await signIn(council);
+  await call("POST", "/api/agents/dao-treasury/consent/text", { cookie: council_, body: {} });
+  await call("POST", `/api/agents/dao-treasury/proposals/${"1".repeat(32)}/approve`, { cookie: council_, body: {} });
+  for (const member of [council, proposer, reader]) {
+    const { status, body } = await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie: await signIn(member) }));
+    assert.equal(status, 200, member.accountId);
+    const { requests } = contract.daoAgentRequests.parse(body.value);
+    // The vote's deadline is its proposal's (an hour); the consent's is a week: the vote is first.
+    assert.deepEqual(requests.map(request => [request.kind, request.proposal]), [["vote", "1".repeat(32)], ["consent", undefined]], member.accountId);
+    assert.ok(requests[0]!.votingUntil < requests[1]!.votingUntil, "soonest first");
+    assert.equal(requests[0]!.verdict, "approve");
+    assert.equal(requests[1]!.verdict, undefined, "a consent has no verdict");
+    for (const request of requests) {
+      assert.equal(request.check, `https://platform.test/confirm/dao/${request.id}`);
+      assert.ok(request.description.length > 0 && request.offer !== null);
+    }
+  }
+});
+
+test("the DAO requests route lists only this agent's: another agent's request, and a setup, are not", async t => {
+  await freshDao(t);
+  const cookie = await signIn(council);
+  await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} });
+  const mine = daoRequests.consent(DAO_ORG, "dao-treasury")!;
+  await daoRequests.add({ ...mine, agent: "elsewhere", id: "e".repeat(64) } as never);
+  await daoRequests.add({ ...mine, organization: "someone--else", id: "d".repeat(64) } as never);
+  assert.equal(daoRequests.open().length, 3);
+  const { body } = await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie }));
+  assert.deepEqual(contract.daoAgentRequests.parse(body.value).requests.map(request => request.id), [mine.id]);
+});
+
+test("the DAO requests route settles nothing: a vote that passed stays listed until the server's own pass or a proposal's read relays it", async t => {
+  await freshDao(t);
+  daoProposal("1".repeat(32));
+  const cookie = await signIn(council);
+  await call("POST", `/api/agents/dao-treasury/proposals/${"1".repeat(32)}/approve`, { cookie, body: {} });
+  fake.daoVotes[0]!.passed = true;
+  fake.calls.length = 0;
+  audited.length = 0;
+  const { body } = await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie }));
+  assert.equal(contract.daoAgentRequests.parse(body.value).requests.length, 1, "still listed");
+  assert.ok(daoRequests.vote(DAO_ORG, "dao-treasury", "1".repeat(32)), "still open");
+  assert.deepEqual(audited, [], "nothing relayed, so nothing recorded");
+  assert.ok(!fake.calls.some(made => made.startsWith("dao") && !made.startsWith("daoRequest")), `no DAO call to the platform: ${fake.calls.join(", ")}`);
+});
+
+test("a request whose DAO proposal ended is closed by the read and not listed, as a proposal's read does", async t => {
+  await freshDao(t);
+  const cookie = await signIn(council);
+  await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} });
+  const id = fake.daoRequests[0]!.id;
+  fileOnChain(id, "Rejected");
+  const { body } = await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie }));
+  assert.deepEqual(contract.daoAgentRequests.parse(body.value), { requests: [] });
+  assert.equal(daoRequests.consent(DAO_ORG, "dao-treasury"), undefined, "closed");
+});
+
+test("the DAO requests route answers a wallet owner's agent with an empty list, and another account with not_owner", async t => {
+  await freshDao(t);
+  const mine = await json(await call("GET", "/api/agents/portfolio/dao-requests", { cookie: await signIn(owner) }));
+  assert.deepEqual(mine, { status: 200, body: { ok: true, value: { requests: [] } } });
+  const cookie = await signIn(council);
+  await call("POST", "/api/agents/dao-treasury/consent/text", { cookie, body: {} });
+  assert.deepEqual(await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie: await signIn(intruder) })),
+    { status: 403, body: { ok: false, kind: "not_owner" } }, "not a member of the DAO");
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/dao-requests", { cookie: await signIn(intruder) })),
+    { status: 403, body: { ok: false, kind: "not_owner" } }, "nor the owner of the wallet's agent");
+  assert.deepEqual(await json(await call("GET", "/api/agents/dao-treasury/dao-requests")), { status: 401, body: { ok: false, kind: "not_signed_in" } });
+});

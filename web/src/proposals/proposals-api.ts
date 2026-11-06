@@ -87,6 +87,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
          * answer: the proposal is found by its `requestId` (`request`).
          */
         proposeRebalance: (requestId: string) => call(contract.rebalanceMade, `${base}/proposals`, { method: "POST", body: contract.rebalanceRequest.parse({ requestId }) }),
+        /** The agent's open DAO requests (#130): its consent and its verdicts on proposals, soonest deadline first. Empty for a wallet owner. */
+        daoRequests: () => call(contract.daoAgentRequests, `${base}/dao-requests`),
         proposal: (id: string) => call(contract.proposalRead, proposal(id)),
         verdict: (id: string, verdict: Verdict, signed: z.input<typeof contract.verdictSubmission>) =>
           call(contract.proposalRead, `${proposal(id)}/${verdict}`, { method: "POST", body: contract.verdictSubmission.parse(signed) }),

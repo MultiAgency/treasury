@@ -8,7 +8,7 @@ import { z } from "zod";
 import { sha256, type Audit } from "./audit.ts";
 import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
 import { offerFor } from "./dao-offer.ts";
-import type { DaoRequests, StoredDaoRequest } from "./dao-requests.ts";
+import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
 import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
@@ -757,6 +757,22 @@ export const routes: Route[] = [
     async handle({ identity }, { platform }) {
       const listed = await platform.proposals.list(organizationOf(identity!.owner), identity!.agent);
       return listed.ok ? ok({ proposals: listed.value.proposals }) : proposalFailure(listed, identity!.agent);
+    },
+  },
+  {
+    // The DAO requests waiting for a vote on this agent: its consent, and its verdicts on proposals (#130). Answered from
+    // this server's own requests, so it costs the platform nothing; the DAO's state is read for each one's offer, as a
+    // proposal's read does. Nothing is settled here: the server's pass every minute already does. A wallet owner has none.
+    method: "GET", path: "/api/agents/:agent/dao-requests", access: "owner", needs: "read",
+    async handle({ identity }, context) {
+      if (identity!.signer !== "dao") return ok({ requests: [] });
+      const organization = organizationOf(identity!.owner), { agent } = identity!;
+      const open = context.daoRequests.open().filter((request): request is StoredAgentRequest => request.kind !== "setup" && request.organization === organization && request.agent === agent);
+      const views = await Promise.all(open.map(async request => {
+        const view = await daoView(request, identity!, context);
+        return view && { ...view, kind: request.kind, ...(request.kind === "vote" && { proposal: request.proposal }) };
+      }));
+      return ok({ requests: views.filter(view => view !== null).sort((a, b) => a.votingUntil - b.votingUntil) });
     },
   },
   {

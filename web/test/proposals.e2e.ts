@@ -285,7 +285,10 @@ test("a connected agent's page shows its portfolio from the owner reads: holding
   await usdc.waitFor();
   // The amount is the raw balance at 6 decimals, exactly: digits and at most one point, never a rounded or exponent form.
   assert.match((await usdc.getByRole("cell").first().textContent())!, /^\d+(\.\d{1,6})?$/);
-  for (const name of ["Needs attention", "Activity", "Autopilot runs"]) await portfolio.getByRole("heading", { name }).waitFor();
+  for (const name of ["Book", "Allocation", "Held payouts", "Activity", "Autopilot runs"]) await portfolio.getByRole("heading", { name, exact: true }).waitFor();
+  // The book as figures (#130): its value, the budget, and what is held privately; the allocation against the targets.
+  await visible(portfolio.getByText("Book value"));
+  await visible(portfolio.getByRole("table", { name: "Allocation" }).getByRole("row").filter({ has: page.getByRole("rowheader", { name: /USDC/ }) }));
   assert.deepEqual(await axe(), []);
   assert.deepEqual(unexpected, []);
 });
@@ -449,6 +452,50 @@ test("a strategy changed while the owner edits it is shown to them, and their dr
   await visible(autopilot.getByRole("status").filter({ hasText: "Strategy saved. Authorize it next." }));
   await visible(autopilot.getByText(/every 90 minutes/));
   assert.deepEqual(unexpected, []);
+});
+
+test("the home lists what needs the owner: a proposal awaiting a decision, then approved and not executed, then gone once executed", { timeout: 120_000 }, async () => {
+  const made = await propose(`page-${Date.now()}-home`);
+  const link = `Review proposal ${made.id.slice(0, 8)}…${made.id.slice(-6)}`;
+  const needs = () => page.getByRole("region", { name: "Needs your decision" });
+  const item = () => needs().getByRole("listitem").filter({ has: page.getByRole("link", { name: link }) });
+  await page.goto(here());
+  await signInIfAsked(needs());
+  await visible(item().getByText(/^Awaiting your decision: Swap 1 USDC for at least [0-9.]+ wNEAR$/));
+  await visible(item().getByText(/^Expires /));
+  assert.deepEqual(await axe(), [], "the home, a proposal awaiting a decision");
+
+  await item().getByRole("link", { name: link }).click();
+  const state = page.getByRole("region", { name: "State" });
+  await state.getByRole("button", { name: "Approve" }).click();
+  await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
+  await visible(state.getByText("Approved", { exact: true }));
+  await nav("Home").click();
+  await visible(item().getByText(/^Approved, not executed yet: Swap 1 USDC for at least [0-9.]+ wNEAR$/));
+  assert.deepEqual(await axe(), [], "the home, approved and not executed");
+
+  await item().getByRole("link", { name: link }).click();
+  await state.getByRole("button", { name: "Execute" }).click();
+  await dialog("Execute this proposal?").getByRole("button", { name: "Execute now" }).click();
+  await visible(state.getByText("Executed", { exact: true }));
+  await nav("Home").click();
+  await visible(needs());
+  await page.waitForLoadState("networkidle");
+  assert.equal(await item().count(), 0, `executed: it no longer needs the owner: ${await needs().innerText()}`);
+  assert.deepEqual(await axe(), [], "the home, nothing for it");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the home says where the agent stands, one line each, linking to its page", { timeout: 60_000 }, async () => {
+  await page.goto(here());
+  const standing = page.getByRole("region", { name: "Where the agent stands" });
+  await signInIfAsked(standing);
+  const lines = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem");
+  await visible(lines.filter({ hasText: /^Policy(In force|Not in force)/ }));
+  await visible(lines.filter({ hasText: /^Strategy(Authorized|Not authorized)/ }));
+  await visible(lines.filter({ hasText: /^Autopilot(On|Off)/ }));
+  assert.equal(await lines.filter({ hasText: /^Strategy/ }).getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/strategy`);
+  assert.deepEqual(await axe(), []);
 });
 
 test("the owner edits the strategy, authorizes it in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {

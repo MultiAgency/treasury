@@ -1,6 +1,7 @@
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ago, describeRequest, usd } from "../shared/format";
+import { describeRequest, usd } from "../shared/format";
 import { Button, Card, Loading, QueryError } from "../shared/ui";
+import { Book } from "./book";
 import { holdingsOf, recentActivity, recentRuns } from "./portfolio-view";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { amountText, when } from "./ui";
@@ -8,15 +9,16 @@ import { amountText, when } from "./ui";
 type Reads = ReturnType<typeof agentReads>;
 
 /**
- * The agent's portfolio as its owner reads it under the app's consent (#7, read-only): holdings and policy, what needs
- * attention, recent activity and the autopilot's recent runs. Nothing here acts: rebalancing is a proposal the owner
- * approves below. Shown once the agent is connected, since every read needs the consent.
+ * The agent's portfolio as its owner reads it under the app's consent (#7, read-only): the book and its allocation
+ * (#130), holdings and policy, held payouts, recent activity and the autopilot's recent runs. Nothing here acts:
+ * rebalancing is a proposal the owner approves on the Proposals page. What needs the owner's decision is above it
+ * (`NeedsDecision`). Shown once the agent is connected, since every read needs the consent.
  */
 export function Portfolio({ reads }: { reads: Reads }) {
   const client = useQueryClient();
   const overview = useQuery(reads.overview);
-  const [activity, held, unresolved, runs, books] = useQueries({ queries: [reads.activity, reads.held, reads.unresolved, reads.runs, reads.books] });
-  const fetching = [overview, activity, held, unresolved, runs, books].some(read => read.isFetching);
+  const [activity, held, runs, books] = useQueries({ queries: [reads.activity, reads.held, reads.runs, reads.books] });
+  const fetching = [overview, activity, held, runs, books].some(read => read.isFetching);
   const refresh = () => refreshPortfolio(client, reads);
   const book = overview.data?.book ?? [];
 
@@ -25,6 +27,8 @@ export function Portfolio({ reads }: { reads: Reads }) {
       <h2 id="portfolio-title" className="text-xl font-semibold">Portfolio</h2>
       <Button variant="ghost" size="sm" disabled={fetching} onClick={refresh}>{fetching ? "Checking…" : "Check again"}</Button>
     </div>
+
+    {overview.data && <Book overview={overview.data} now={overview.dataUpdatedAt} />}
 
     <Card>
       {overview.isPending ? <Loading label="Reading the portfolio…" />
@@ -45,19 +49,18 @@ export function Portfolio({ reads }: { reads: Reads }) {
     </Card>
 
     <Card>
-      <h3 className="text-base font-semibold">Needs attention</h3>
-      {held.isPending || unresolved.isPending ? <Loading label="Reading what needs attention…" />
+      <h3 className="text-base font-semibold">Held payouts</h3>
+      <p className="text-sm text-muted-foreground">Held for approval under the payout scope, which this app doesn't ask for: nothing here can act on them.</p>
+      {held.isPending ? <Loading label="Reading held payouts…" />
         : held.isError ? <QueryError error={held.error} retry={() => held.refetch()} />
-        : unresolved.isError ? <QueryError error={unresolved.error} retry={() => unresolved.refetch()} />
-        : held.data.length === 0 && unresolved.data.length === 0 ? <p className="text-sm" role="status">Nothing needs attention.</p>
-        : <ul aria-label="Needs attention" className="flex flex-col gap-1 text-sm">
+        : held.data.length === 0 ? <p className="text-sm" role="status">No payouts are held.</p>
+        : <ul aria-label="Held payouts" className="flex flex-col gap-1 text-sm">
           {held.data.map(item => <li key={item.correlationId}>Held for approval: {describeRequest(item.request, book)}</li>)}
-          {unresolved.data.map(item => <li key={item.key}>Outcome not proven yet ({item.kind}, {ago(item.at)}): nothing is sent again from here.</li>)}
         </ul>}
     </Card>
 
     <Card>
-      <h3 className="text-base font-semibold">Activity</h3>
+      <h3 id="activity" className="text-base font-semibold">Activity</h3>
       {activity.isPending ? <Loading label="Reading activity…" />
         : activity.isError ? <QueryError error={activity.error} retry={() => activity.refetch()} />
         : activity.data.length === 0 ? <p className="text-sm" role="status">No activity yet.</p>

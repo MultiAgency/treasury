@@ -2,7 +2,7 @@
  * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
-import { appConsentSubmission, ASSETS, ownerOutputs, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
+import { appConsentSubmission, ASSETS, ownerOutputs, proposalId, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
 import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
 
@@ -93,6 +93,12 @@ export const daoRequest = z.strictObject({ id: z.string(), description: z.string
  * for the same subject. An open vote may carry the other verdict: a member who disagrees votes against it in Trezu.
  */
 export const daoFiled = z.strictObject({ request: daoRequest });
+/**
+ * The agent's open DAO requests (#130): its consent, and its verdicts on proposals, each as `daoRequest` shows it and
+ * which it is (a vote names its proposal). Soonest deadline first. A wallet owner's agent has none.
+ */
+export const daoAgentRequest = daoRequest.extend({ kind: z.enum(["consent", "vote"]), proposal: proposalId.optional() });
+export const daoAgentRequests = z.strictObject({ requests: z.array(daoAgentRequest) });
 /**
  * One proposal, as the platform shows it, and for a DAO-owned agent the DAO's vote on it while one waits (`vote`).
  * The list is the SDK's own `proposalList`.

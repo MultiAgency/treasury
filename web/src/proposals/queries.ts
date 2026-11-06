@@ -49,6 +49,21 @@ export function agentReads(name: string) {
     account: queryOptions({ queryKey: [...key, "account"], queryFn: async () => answered(await agent.account()), retry: false }),
     proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false,
       refetchInterval: 30_000 }),
+    /**
+     * The agent's open DAO requests (#130): its consent and its verdicts on proposals. Answered from the server's own store,
+     * so it costs the platform nothing; not read again within half a minute, and never on its own.
+     */
+    daoRequests: queryOptions({ queryKey: [...key, "dao-requests"], queryFn: async () => answered(await agent.daoRequests()).requests, retry: false, staleTime: 30_000 }),
+    /**
+     * What the home glances at (#130): the same queries the other pages make (same keys, so one read serves both), without
+     * their polling and not read again within a minute. The home adds no polling; with the overview and unresolved reads it
+     * already made, these are at most three platform reads a visit (the proposals, the strategy and the autopilot).
+     */
+    glance: {
+      proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false, staleTime: 60_000 }),
+      strategy: queryOptions({ queryKey: [...key, "strategy"], queryFn: async () => answered(await agent.strategy()), retry: false, staleTime: 60_000 }),
+      autopilot: queryOptions({ queryKey: [...key, "autopilot"], queryFn: async () => answered(await agent.autopilot()), retry: false, staleTime: 60_000 }),
+    },
     /** One proposal, and for a DAO the DAO's vote on it while one waits: read again while either may change on its own. */
     proposal: (id: string) => queryOptions({ queryKey: [...key, "proposals", id], queryFn: async () => answered(await agent.proposal(id)),
       retry: false, refetchInterval: query => !query.state.data ? false : MOVING.has(query.state.data.proposal.state) ? 5_000 : query.state.data.vote ? 30_000 : false }),

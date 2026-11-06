@@ -228,7 +228,13 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | You approved this proposal., You rejected this proposal., Executed. Every swap succeeded. | status | proposal, State |
 | Portfolio, Check again | region and heading (level 2), button | `/agents/<agent>/` (Home), once connected |
 | Holdings | table (Asset, Amount exactly, Value) | Portfolio |
-| Needs attention, Activity, Autopilot runs | headings (level 3); lists | Portfolio |
+| Needs your decision | region and heading (level 2); list; empty: "Nothing needs a decision." (status) (#130) | `/agents/<agent>/` (Home), first; once connected, or for a DAO's waiting requests |
+| Awaiting your decision: …, Approved, not executed yet: …, Waiting for the DAO's vote to …, An operation's outcome isn't proven yet …; Expires `<time>` | list items | Needs your decision |
+| Review proposal `<id>`, Open the connection, Check the activity | links: the proposal's page, Home's Connection, the portfolio's Activity card (until #136) | Needs your decision |
+| Where the agent stands | region and heading (level 2); list: Policy, Strategy, Autopilot, each with its state; Open (link to Strategy) | Home, once connected |
+| Book, Allocation | headings (level 3); Book value, `<period>` budget left (or Budget), Held privately; table Allocation (Asset, Value, Weight · target) | Portfolio (#130; ported from the owner UI's overview, same words) |
+| Held payouts | heading (level 3), list; "No payouts are held." (was **Needs attention**, which also listed unresolved operations: now in Needs your decision) | Portfolio |
+| Activity, Autopilot runs | headings (level 3); lists | Portfolio |
 | Funding, Check again | region and heading (level 2), button | `/agents/<agent>/funding` (was `/agents/<agent>`), once connected |
 | Funding account; Money in: from `<account>` to this agent; Receive funds | headings (level 3) | Funding |
 | Funded from `<account>`. or Funded from `<dao>`, a DAO with `<n>` members. | status | Funding account, once linked |
