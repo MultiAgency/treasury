@@ -171,26 +171,32 @@ const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-
  * freeze or unfreeze is awaiting its outcome (they hold each other), and for a wallet owner only under a connection that
  * allows owner actions. Which form comes back (intent, confirm page, DAO transaction) is the platform's choice.
  */
-const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze", type: "agent_freeze" | "agent_unfreeze"): Route => ({
+type OwnerActionType = "agent_freeze" | "agent_unfreeze" | "grant_revoke";
+const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant-revoke", type: OwnerActionType): Route => ({
   method: "POST", path, access: "owner-fresh", needs: "file",
   async handle({ body, account, identity }, { platform, audit }) {
     const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
-    if (parse(z.strictObject({}), body) === undefined) return refused(400, "bad_request");
+    // A freeze or unfreeze takes nothing; a revocation names the grant to end, which is the whole request.
+    const grantId = type === "grant_revoke" ? parse(z.strictObject({ grantId: z.string().min(1).max(200) }), body)?.grantId : parse(z.strictObject({}), body) === undefined ? undefined : "";
+    if (grantId === undefined) return refused(400, "bad_request");
+    const action = type === "grant_revoke" ? { type, grantId } as const : { type } as const;
+    // A freeze and an unfreeze hold each other; a revocation holds only another revocation.
+    const holds = (other: string) => type === "grant_revoke" ? other === "grant_revoke" : other === "agent_freeze" || other === "agent_unfreeze";
     const actions = await relay(() => platform.reads.ownerActions(organization, agent), agent);
     if (!actions.ok) return readFailure(actions, agent, "owner/actions");
     const now = Date.now();
     // Held while an outcome is unknown: one already submitted, or a DAO's request waiting for its vote, which a second
     // filing would duplicate. A wallet owner's intent that was only prepared isn't held: it was never signed, so it can be
     // prepared again (a reload mid-signature must not delay an emergency stop), and the old one expires.
-    if (actions.value.some(action => (action.type === "agent_freeze" || action.type === "agent_unfreeze")
-      && (action.stage === "submitted" || (action.stage === "prepared" && action.signer === "dao" && Date.parse(action.expiresAt) > now)))) return refused(409, "action_pending");
+    if (actions.value.some(other => holds(other.type)
+      && (other.stage === "submitted" || (other.stage === "prepared" && other.signer === "dao" && Date.parse(other.expiresAt) > now)))) return refused(409, "action_pending");
     if (signer === "wallet") {
       const allowed = await ownerAllowed(platform, organization, identity!, agent);
       if (allowed === "unavailable") return unavailable();
       if (!allowed) return refused(409, "owner_not_allowed");
     }
     await audit.append({ who: account!, action: audited_, agent, stage: "attempt" });
-    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action: { type }, signer }), agent);
+    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action, signer }), agent);
     const reply = preparedReply(prepared, { signer, access, agent, what: "owner_action", refusal: "action_refused" });
     await recordResult(audit, { who: account!, action: audited_, agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
     return reply;
@@ -1047,6 +1053,7 @@ export const routes: Route[] = [
   },
   ownerActionRoute("/api/agents/:agent/freeze", "freeze", "agent_freeze"),
   ownerActionRoute("/api/agents/:agent/unfreeze", "unfreeze", "agent_unfreeze"),
+  ownerActionRoute("/api/agents/:agent/grants/revoke", "grant-revoke", "grant_revoke"),
   {
     /**
      * A wallet owner's signature over an owner action's intent (#133; the grant's has its own route), relayed once and

@@ -4,6 +4,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
+import { Policy } from "./policy";
 import { Activity, Run } from "./activity";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
@@ -177,6 +178,12 @@ export function StrategyPage() {
 export function FundingPage() {
   const { reads, identity } = useAgent();
   return <WhenConnected><Funding reads={reads} identity={identity} /></WhenConnected>;
+}
+
+/** Policy (`…/policy`, #142): the agent's grants, with revocation. */
+export function PolicyPage() {
+  const { reads, identity } = useAgent();
+  return <WhenConnected><Policy reads={reads} identity={identity} /></WhenConnected>;
 }
 
 /** Activity (`…/activity`, #136): the full history, the owner's actions, the autopilot's runs and the books. */

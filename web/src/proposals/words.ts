@@ -54,7 +54,7 @@ const PROPOSAL: Record<string, string> = {
 
 /** The owner actions the frame offers (#133): a freeze, an unfreeze. */
 const OWNER_ACTION: Record<string, string> = {
-  action_pending: "A freeze or unfreeze is already waiting for its vote or its outcome. Follow it rather than sending another: nothing new was prepared.",
+  action_pending: "An earlier owner action of this kind is already waiting for its vote or its outcome. Follow it rather than sending another: nothing new was prepared.",
   owner_not_allowed: "Your connection doesn't allow owner actions. Allow them in Connection, on the agent's Home page, first. Nothing was sent.",
   action_refused: "The platform refused it, so nothing took effect. It may already be in the state you asked for: read the agent's state again.",
   no_action: "The platform has no record of that action.",

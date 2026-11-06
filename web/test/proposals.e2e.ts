@@ -593,7 +593,7 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
 
 test("the emergency stop is in the frame of every page, with its own region and controls, and passes an axe scan", { timeout: 90_000 }, async () => {
   await ensureConnected();
-  for (const path of ["", "/proposals", "/strategy", "/funding", "/activity"]) {
+  for (const path of ["", "/proposals", "/strategy", "/funding", "/policy", "/activity"]) {
     await page.goto(here(path));
     const stop = page.getByRole("region", { name: "Emergency stop" });
     await visible(stop.getByRole("button", { name: "Freeze" }));
@@ -677,7 +677,7 @@ test("each of the agent's pages opens by its address, with its own heading and t
   await ensureConnected();
   const made = await propose(`page-${Date.now()}-pages`);
   const pages: [string, string, string][] = [["", "Home", "Home"], ["/", "Home", "Home"], ["/proposals", "Proposals", "Proposals"],
-    [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"], ["/activity", "Activity", "Activity"]];
+    [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"], ["/policy", "Policy", "Policy"], ["/activity", "Activity", "Activity"]];
   for (const [path, title, current] of pages) {
     await page.goto(here(path));
     await visible(page.getByRole("heading", { level: 1, name: title, exact: true }));
@@ -830,4 +830,31 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await page.goto(`${origin}/agents/${target.agent}/proposals/${made.id}`);
   await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+});
+
+test("the policy page lists the treasury grant, and the owner opens revocation by keyboard, told first what it does; a platform that can't prepare it leaves the grant live and says so", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const grants = page.getByRole("region", { name: "Grants" });
+  const live = grants.getByRole("list", { name: "Live grants" });
+  await visible(live.getByText("treasury", { exact: true }));
+  assert.deepEqual(await axe(), [], "the policy page");
+  const revoke = live.getByRole("button", { name: "Revoke grant treasury", exact: true });
+  await revoke.focus();
+  await page.keyboard.press("Enter");
+  const confirm = dialog("Revoke this grant?");
+  await visible(confirm);
+  const text = await confirm.innerText();
+  assert.match(text, /stops acting at once/);
+  assert.match(text, /does not move funds/);
+  assert.match(text, /Your wallet signs it/);
+  assert.deepEqual(await axe(), [], "the revoke dialog");
+  // The simulated provider of the pinned platform stack does not prepare a revocation (it answers only a grant's issue and
+  // a freeze), so the signed path can't run here: the platform's answer is shown as it is, and nothing changes. The signed
+  // path is covered by the server tests with the fake platform; it joins this file when the stack prepares revocations.
+  await confirm.getByRole("button", { name: "Sign and revoke" }).click();
+  await visible(grants.getByRole("alert").or(grants.getByText(/didn't answer|refused/)));
+  await visible(live.getByText("treasury", { exact: true }));
+  assert.equal(await grants.getByText(/^Ended grants/).count(), 0, "nothing was revoked");
+  assert.deepEqual(await axe(), [], "after the refusal");
 });

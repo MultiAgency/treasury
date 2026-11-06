@@ -173,7 +173,7 @@ export type Platform = {
    * which are the platform's `owner/submit` and `owner/status` whatever the action.
    */
   owner: {
-    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
+    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" } | { type: "grant_revoke"; grantId: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
   };
   /**
    * The agent's saved strategy and autopilot, under an Organization's consent (`treasury`): the strategy with whether

@@ -119,7 +119,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * Grants as the platform keeps them, by correlation ID: `prepared` until signed (or, for a DAO, voted), `submitted`
    * after. A submitted grant binds the strategy. `grantAnswers` queues answers a grant call gives instead; an Error is thrown.
    */
-  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown; type?: "grant_issue" | "agent_freeze" | "agent_unfreeze" }[] = [];
+  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown; type?: "grant_issue" | "agent_freeze" | "agent_unfreeze" | "grant_revoke" }[] = [];
   const ownerActionsOf = (agent: string) => grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: item.type ?? "grant_issue", expiresAt: item.expiresAt,
     signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null }));
   const grantAnswers: Partial<Record<"prepare" | "submit" | "ownerPrepare", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
@@ -396,7 +396,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         if (queued) return queued as PreparedAnswer;
         const correlationId = `action-${grants.length + 1}`, expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
         grants.push({ correlationId, agent, signer: input.signer, digest: "", stage: "prepared", expiresAt, type: input.action.type });
-        const common = { correlationId, expiresAt, digest: null, preview: { summary: input.action.type === "agent_freeze" ? "Freeze the agent" : "Unfreeze the agent" } };
+        const common = { correlationId, expiresAt, digest: null, preview: { summary: input.action.type === "agent_freeze" ? "Freeze the agent" : input.action.type === "grant_revoke" ? "Revoke the grant" : "Unfreeze the agent" } };
         if (input.signer === "wallet") return { ok: true, value: { ...common,
           intent: { standard: "nep413", payload: { message: `${input.action.type} ${correlationId}`, recipient: "provider.test", nonce: Buffer.alloc(32, 1).toString("base64") } } } } as PreparedAnswer;
         const dao = owners[agent]!, hash = correlationId.padStart(64, "d");

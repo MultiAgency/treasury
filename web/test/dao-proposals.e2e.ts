@@ -246,3 +246,22 @@ test("a council member proposes to freeze the DAO's agent from the frame: filed 
   assert.equal(sent.length, filedBefore + 2);
   assert.deepEqual(unexpected, []);
 });
+
+test("a council member sees the DAO's grants on the policy page, told the vote window before asking to revoke one; the dialog files for the vote, never signs", { timeout: 90_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}/policy`);
+  const grants = page.getByRole("region", { name: "Grants" });
+  await visible(grants);
+  await visible(grants.getByText(/put to the DAO's vote, which has about 5 minutes \(290 seconds\) to pass/));
+  const live = grants.getByRole("list", { name: "Live grants" });
+  await visible(live.getByRole("listitem").first());
+  assert.equal(await grants.getByRole("button", { name: /^Revoke grant/ }).count(), 0, "a DAO's member proposes, never signs");
+  const revoke = live.getByRole("button", { name: /^Propose to revoke grant/ }).first();
+  await revoke.focus();
+  await page.keyboard.press("Enter");
+  const confirm = dialog("Revoke this grant?");
+  await visible(confirm);
+  assert.match(await confirm.innerText(), /the DAO's vote has about 5 minutes \(290 seconds\) to pass; until then the grant stays live/);
+  assert.deepEqual(await axe(), [], "the revoke dialog, for a DAO");
+  await confirm.getByRole("button", { name: "Cancel" }).click();
+  assert.deepEqual(await axe(), [], "the policy page, for a DAO");
+});
