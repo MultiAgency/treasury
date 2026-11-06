@@ -14,25 +14,31 @@ import { proposalId } from "@multiagency/sdk";
  * | `/agents/<agent>/proposals/<id>` | Proposal |
  * | `/agents/<agent>/strategy` | Strategy |
  * | `/agents/<agent>/funding` | Funding |
+ * | `/agents/<agent>/activity` | Activity (#136) |
+ * | `/agents/<agent>/activity/runs/<id>` | Run |
  */
 export const AGENT_PAGES = {
   home: { path: "", title: "Home" },
   proposals: { path: "/proposals", title: "Proposals" },
   strategy: { path: "/strategy", title: "Strategy" },
   funding: { path: "/funding", title: "Funding" },
+  activity: { path: "/activity", title: "Activity" },
 } as const;
 export type AgentPage = keyof typeof AGENT_PAGES;
 /** The pages the navigation lists, in order. A page not built yet isn't here. */
-export const NAVIGATION: readonly AgentPage[] = ["home", "proposals", "strategy", "funding"];
+export const NAVIGATION: readonly AgentPage[] = ["home", "proposals", "strategy", "funding", "activity"];
 
 export const ROOT_TITLE = "Your treasuries";
 export const DAO_TITLE = "A DAO's Treasury";
 export const PROPOSAL_TITLE = "Proposal";
+export const RUN_TITLE = "Run";
 export const MISSING_TITLE = "Page not found";
 
 /** An agent page's address. The home keeps its trailing slash, as the owner UI's pages do. */
 export const agentAddress = (agent: string, page: AgentPage = "home") => `/agents/${agent}${AGENT_PAGES[page].path || "/"}`;
 export const proposalAddress = (agent: string, id: string) => `/agents/${agent}/proposals/${id}`;
+/** One recorded run of the autopilot, under the agent's Activity. */
+export const runAddress = (agent: string, id: string) => `/agents/${agent}/activity/runs/${encodeURIComponent(id)}`;
 
 /** Where an address is. An address that names nothing says what it got wrong, so it isn't mistaken for a page. */
 export type Place =
@@ -40,6 +46,7 @@ export type Place =
   | { kind: "dao"; title: string; dao: string }
   | { kind: "agent"; title: string; agent: string; page: AgentPage }
   | { kind: "proposal"; title: string; agent: string; id: string }
+  | { kind: "run"; title: string; agent: string; id: string }
   | { kind: "missing"; title: string; why: string };
 
 const decode = (text: string) => { try { return decodeURIComponent(text); } catch { return undefined; } };
@@ -63,6 +70,10 @@ export function place(pathname: string): Place {
       const id = decode(parts[3]!);
       return id === undefined ? missing("This address isn't a page of this app.") : { kind: "proposal", title: PROPOSAL_TITLE, agent, id };
     }
+    if (page === "activity" && parts[3] === "runs" && parts.length === 5) {
+      const id = decode(parts[4]!);
+      return id === undefined ? missing("This address isn't a page of this app.") : { kind: "run", title: RUN_TITLE, agent, id };
+    }
     if (page !== undefined && parts.length === 3) return { kind: "agent", title: AGENT_PAGES[page].title, agent, page };
   }
   return missing("This address isn't a page of this app.");
@@ -70,3 +81,6 @@ export function place(pathname: string): Place {
 
 /** Whether an address names a proposal: its ID is 32 lowercase hexadecimal characters. */
 export const isProposalId = (id: string) => proposalId.safeParse(id).success;
+
+/** Whether an address names a run: a tick's ID, as the server takes one in a path (`readId`). */
+export const isRunId = (id: string) => /^[A-Za-z0-9_.:-]{1,128}$/.test(id);

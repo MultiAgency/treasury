@@ -230,11 +230,11 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Holdings | table (Asset, Amount exactly, Value) | Portfolio |
 | Needs your decision | region and heading (level 2); list; empty: "Nothing needs a decision." (status) (#130) | `/agents/<agent>/` (Home), first; once connected, or for a DAO's waiting requests |
 | Awaiting your decision: …, Approved, not executed yet: …, Waiting for the DAO's vote to …, An operation's outcome isn't proven yet …; Expires `<time>` | list items | Needs your decision |
-| Review proposal `<id>`, Open the connection, Check the activity | links: the proposal's page, Home's Connection, the portfolio's Activity card (until #136) | Needs your decision |
+| Review proposal `<id>`, Open the connection, Check the activity | links: the proposal's page, Home's Connection, the Activity page at the operation's entry | Needs your decision |
 | Where the agent stands | region and heading (level 2); list: Policy, Strategy, Autopilot, each with its state; Open (link to Strategy) | Home, once connected |
 | Book, Allocation | headings (level 3); Book value, `<period>` budget left (or Budget), Held privately; table Allocation (Asset, Value, Weight · target) | Portfolio (#130; ported from the owner UI's overview, same words) |
 | Held payouts | heading (level 3), list; "No payouts are held." (was **Needs attention**, which also listed unresolved operations: now in Needs your decision) | Portfolio |
-| Activity, Autopilot runs | headings (level 3); lists | Portfolio |
+| ~~Activity, Autopilot runs~~ | removed from the home: they are on the Activity page | Portfolio (#136) |
 | Funding, Check again | region and heading (level 2), button | `/agents/<agent>/funding` (was `/agents/<agent>`), once connected |
 | Funding account; Money in: from `<account>` to this agent; Receive funds | headings (level 3) | Funding |
 | Funded from `<account>`. or Funded from `<dao>`, a DAO with `<n>` members. | status | Funding account, once linked |
@@ -257,7 +257,14 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Shield public balances | heading (level 3) | Funding |
 | Preview, Shield; Public balances | buttons; list (each balance exactly, then its shield's status) | Shield public balances, once the executor holds a treasury grant |
 | Shield these public balances?, Public balances to shield, Shield now | dialog, list, button | Shield public balances |
-| Books | heading (level 3), table (Asset, Public drift from chain, Private, not attributed) | Portfolio |
+| Books | heading (level 2), table (Asset, Public drift from chain, Private, not attributed) | Activity (was Portfolio, #136) |
+| Activity | heading (level 1) on `/agents/<agent>/activity`; navigation link | #136 |
+| Without a proven outcome | region and heading (level 2); list | Activity, when any |
+| History, Download CSV, Check status, Newer, Older, History pages, Page `n` of `m` | region and heading (level 2) with a list; link (the ledger's CSV, `/api/agents/<agent>/activity.csv`); button per row; buttons and navigation; status | Activity |
+| Owner actions | region and heading (level 2); list (Strategy grant, Freeze, …, each with where it stands); "No owner actions yet." | Activity |
+| Autopilot runs, Open the run of `<time>` | region and heading (level 2) with a list (was a card on the home); links | Activity |
+| Run | heading (level 1) on `/agents/<agent>/activity/runs/<id>`; Back to activity; Started, Started by, How it ended; Stages (ordered list) | #136 |
+| No run has this ID.; This address doesn't name a run … | alerts | Run |
 | Signed in as `<member>`, a member of `<dao>`, which owns this agent | text | signed in, a DAO-owned agent |
 | Ask the DAO to connect it; Connected by the vote of `<dao>`: … or Waiting for the vote of `<dao>` to connect this agent. | button; status | Connection, a DAO-owned agent |
 | stop this agent | link (the platform's DAO stop page), in place of Disconnect | Connection, a DAO-owned agent |

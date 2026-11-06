@@ -162,6 +162,8 @@ export const activityRead = ownerOutputs.activity;
 /** The agent's account: its wallet (the NEAR account that holds its balances), and the grants its executor holds. */
 export const accountRead = ownerOutputs.account;
 export const heldRead = ownerOutputs.held;
+/** The owner's actions for the agent and where each stands (#136): a grant, a freeze, … as the platform records them. */
+export const ownerActionsRead = ownerOutputs["owner/actions"];
 export const unresolvedRead = ownerOutputs.unresolved;
 /** The autopilot's recorded runs, and one run's recording (the platform's strict recording format). */
 export const runsRead = ownerOutputs["autopilot/evidence"];

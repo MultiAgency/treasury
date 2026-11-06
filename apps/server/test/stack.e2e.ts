@@ -193,6 +193,15 @@ test("the owner reads, approves and executes a proposal through the server, and 
   const ran = await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json() as { value: { result: string; proposal: ProposalView } };
   assert.deepEqual([ran.value.result, ran.value.proposal.state], ["final", "executed"], JSON.stringify(ran));
   assert.ok(ran.value.proposal.operations.some(operation => operation.status === "SUCCESS"), "the swap ran");
+  // The ledger downloads as a CSV (#136): the platform's header, then a row per operation its provider's history holds. The
+  // platform builds the rows from that history (`ledger.ts`), and the simulated provider's is empty, so on the stack the
+  // executed swap's row can't be found: that part of the ticket is for a real provider. What this checks is the download,
+  // after an execute, as the platform wrote it.
+  const csv = await get(`${agent}/activity.csv`, cookie), csvText = await csv.text();
+  assert.equal(csv.status, 200);
+  assert.match(csv.headers.get("content-type") ?? "", /^text\/csv/);
+  assert.match(csv.headers.get("content-disposition") ?? "", /^attachment; filename="[^"]+\.csv"$/);
+  assert.match(csvText, /^at,settledAt,type,status,failureCode,confidential,assetIn,amountIn,assetOut,amountOut,recipient,correlationId,/, "the platform's own header");
   const again = await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json() as { value: { result: string; proposal: ProposalView } };
   assert.deepEqual([again.value.result, again.value.proposal.state], ["final", "executed"], "asked again, it answers the state from a read and sends nothing");
 

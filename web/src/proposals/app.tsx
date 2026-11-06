@@ -4,12 +4,13 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { TreasuryBrand } from "../app/brand";
 import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
+import { Activity, Run } from "./activity";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
 import { Funding } from "./funding";
 import { NeedsDecision, Standing } from "./home";
 import { PageLink } from "./nav";
-import { AGENT_PAGES, agentAddress, isProposalId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
+import { AGENT_PAGES, agentAddress, isProposalId, isRunId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
@@ -89,7 +90,7 @@ function AgentNav({ agent }: { agent: string }) {
  */
 export function AgentFrame() {
   const here = usePlace();
-  if (here.kind !== "agent" && here.kind !== "proposal") return <Missing />;
+  if (here.kind !== "agent" && here.kind !== "proposal" && here.kind !== "run") return <Missing />;
   return <Gate name={here.agent} title={here.title} home={here.kind === "agent" && here.page === "home"} />;
 }
 
@@ -175,3 +176,20 @@ export function FundingPage() {
   return <WhenConnected><Funding reads={reads} identity={identity} /></WhenConnected>;
 }
 
+/** Activity (`…/activity`, #136): the full history, the owner's actions, the autopilot's runs and the books. */
+export function ActivityPage() {
+  const { reads, identity } = useAgent();
+  return <WhenConnected><Activity reads={reads} identity={identity} /></WhenConnected>;
+}
+
+/** One recorded run (`…/activity/runs/<id>`): a bad ID is shown as such, with the way back. */
+export function RunPage() {
+  const { reads, identity } = useAgent();
+  const here = usePlace();
+  const id = here.kind === "run" ? here.id : "";
+  return <WhenConnected>{isRunId(id) ? <Run reads={reads} id={id} identity={identity} />
+    : <div className="flex flex-col items-start gap-4">
+      <PageLink to={agentAddress(identity.agent, "activity")} className="text-sm underline">Back to activity</PageLink>
+      <p role="alert">This address doesn't name a run: a run's ID is letters, digits and . _ : - only, at most 128 characters.</p>
+    </div>}</WhenConnected>;
+}

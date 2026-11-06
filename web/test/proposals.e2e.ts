@@ -218,14 +218,21 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   await visible(state.getByRole("list", { name: "Operations" }).getByText("success"));
   assert.equal(await state.getByRole("button", { name: "Execute" }).count(), 0, "it ran once; nothing to execute again");
   assert.deepEqual(await axe(), [], "an executed proposal");
-  // What the swap changed is read again when the portfolio is next shown: never the book from before it.
+  // What the swap changed is read again when it is next shown: never the book from before it. The Home shows the book, the
+  // held payouts and what needs a decision; the history and the books are on the Activity page (#136), read when it is.
   const reread: string[] = [];
   const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
   page.on("request", read);
   await nav("Home").click();
   await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
+  for (const changed of ["overview", "held", "unresolved"])
+    assert.ok(reread.includes(`/api/agents/${target.agent}/${changed}`), `${changed} read again, not shown from before the swap: ${reread.join(", ")}`);
+  assert.ok(!reread.includes(`/api/agents/${target.agent}/activity`), "the Home no longer reads the history: it is on the Activity page");
+  await nav("Activity").click();
+  await visible(page.getByRole("region", { name: "History" }).getByRole("list", { name: "History" }));
+  await page.waitForLoadState("networkidle");
   page.off("request", read);
-  for (const changed of ["overview", "activity", "held", "unresolved", "books"])
+  for (const changed of ["activity", "books"])
     assert.ok(reread.includes(`/api/agents/${target.agent}/${changed}`), `${changed} read again, not shown from before the swap: ${reread.join(", ")}`);
 
   await page.goto(`${origin}/agents/${target.agent}/proposals/${second.id}`);
@@ -285,7 +292,9 @@ test("a connected agent's page shows its portfolio from the owner reads: holding
   await usdc.waitFor();
   // The amount is the raw balance at 6 decimals, exactly: digits and at most one point, never a rounded or exponent form.
   assert.match((await usdc.getByRole("cell").first().textContent())!, /^\d+(\.\d{1,6})?$/);
-  for (const name of ["Book", "Allocation", "Held payouts", "Activity", "Autopilot runs"]) await portfolio.getByRole("heading", { name, exact: true }).waitFor();
+  for (const name of ["Book", "Allocation", "Held payouts"]) await portfolio.getByRole("heading", { name, exact: true }).waitFor();
+  // The history, the autopilot's runs and the books moved to the Activity page (#136).
+  for (const name of ["Activity", "Autopilot runs", "Books"]) assert.equal(await portfolio.getByRole("heading", { name, exact: true }).count(), 0, `${name} is not on the home`);
   // The book as figures (#130): its value, the budget, and what is held privately; the allocation against the targets.
   await visible(portfolio.getByText("Book value"));
   await visible(portfolio.getByRole("table", { name: "Allocation" }).getByRole("row").filter({ has: page.getByRole("rowheader", { name: /USDC/ }) }));
@@ -350,9 +359,9 @@ test("the owner previews a public wNEAR balance, shields it once after reviewing
   await visible(funding.getByRole("status").filter({ hasText: "Shielded." }));
   await visible(balances.getByText(/^1 wNEAR public · shield success$/));
   assert.equal(await funding.getByRole("button", { name: "Shield", exact: true }).isDisabled(), true, "shielded once; a new preview comes first");
-  // The books are on the home page, with the rest of the portfolio.
-  await nav("Home").click();
-  await visible(page.getByRole("region", { name: "Portfolio" }).getByRole("table", { name: "Books" }));
+  // The books are on the Activity page (#136).
+  await nav("Activity").click();
+  await visible(page.getByRole("region", { name: "Books" }).getByRole("table", { name: "Books" }));
   assert.deepEqual(unexpected, []);
 });
 
@@ -576,7 +585,7 @@ test("each of the agent's pages opens by its address, with its own heading and t
   await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
   const made = await propose(`page-${Date.now()}-pages`);
   const pages: [string, string, string][] = [["", "Home", "Home"], ["/", "Home", "Home"], ["/proposals", "Proposals", "Proposals"],
-    [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"]];
+    [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"], ["/activity", "Activity", "Activity"]];
   for (const [path, title, current] of pages) {
     await page.goto(here(path));
     await visible(page.getByRole("heading", { level: 1, name: title, exact: true }));
@@ -597,6 +606,65 @@ test("each of the agent's pages opens by its address, with its own heading and t
     assert.equal(await page.getByText("Checking your session…").count(), 0, `${path}: loaded`);
     assert.deepEqual(await axe(), [], `${path}: the page`);
   }
+  assert.deepEqual(unexpected, []);
+});
+
+test("the activity page holds the full history with each operation's status, the CSV, the owner's actions, the runs and the books", { timeout: 90_000 }, async () => {
+  await page.goto(here("/activity"));
+  const history = page.getByRole("region", { name: "History" });
+  await signInIfAsked(history);
+  const rows = history.getByRole("list", { name: "History" }).getByRole("listitem");
+  await visible(rows.first());
+  assert.ok(await rows.count() >= 1 && await rows.count() <= 50, "at most a page of 50");
+  // The executed proposals' swaps are in it, newest first, with the outcome the platform recorded.
+  const texts = await rows.allInnerTexts();
+  assert.ok(texts.some(text => /proposal · 1 USDC → wNEAR · SUCCESS/.test(text)), `an executed proposal's swap, with its recorded status: ${JSON.stringify(texts.slice(0, 6))}`);
+  const times = await rows.locator("time").evaluateAll(nodes => nodes.map(node => Date.parse((node as HTMLTimeElement).dateTime)));
+  assert.deepEqual(times, [...times].sort((a, b) => b - a), "newest first");
+  assert.equal(await history.getByRole("navigation", { name: "History pages" }).getByRole("status").innerText().then(text => /^Page 1 of \d+/.test(text)), true);
+
+  // A row's operation status, by its correlation ID, on a click.
+  const withId = rows.filter({ has: page.getByRole("button", { name: /^Check status/ }) }).first();
+  await withId.getByRole("button", { name: /^Check status/ }).click();
+  await visible(withId.getByRole("status").filter({ hasText: /^Status: / }));
+
+  // The CSV downloads as the platform wrote it.
+  const link = history.getByRole("link", { name: "Download CSV" });
+  assert.equal(await link.getAttribute("href"), `/api/agents/${target.agent}/activity.csv`);
+  assert.ok(await link.getAttribute("download") !== null, "offered as a download");
+  const csv = await page.request.get(`${origin}${await link.getAttribute("href")}`);
+  assert.equal(csv.status(), 200);
+  assert.match(csv.headers()["content-type"] ?? "", /^text\/csv/);
+  assert.match(csv.headers()["content-disposition"] ?? "", /^attachment; filename="[^"]+\.csv"$/);
+
+  // The owner's actions, the runs and the books.
+  const actions = page.getByRole("region", { name: "Owner actions" });
+  await visible(actions.getByRole("list", { name: "Owner actions" }).or(actions.getByText("No owner actions yet.")));
+  await visible(page.getByRole("region", { name: "Autopilot runs" }));
+  await visible(page.getByRole("region", { name: "Books" }));
+  assert.deepEqual(await axe(), [], "the activity page");
+  assert.deepEqual(unexpected, []);
+});
+
+test("a run opens from the activity page's list, and a bad run ID is shown as such", { timeout: 90_000 }, async () => {
+  await page.goto(here("/activity"));
+  const runs = page.getByRole("region", { name: "Autopilot runs" });
+  await signInIfAsked(runs);
+  const open = runs.getByRole("link", { name: /^Open the run of / }).first();
+  await visible(open);
+  await open.click();
+  await visible(page.getByRole("heading", { level: 1, name: "Run", exact: true }));
+  await visible(page.getByRole("heading", { level: 2, name: /^Run / }));
+  await visible(page.getByText("How it ended"));
+  assert.equal(await page.title(), "Treasury proposals · Run");
+  assert.deepEqual(await axe(), [], "a run");
+  await page.getByRole("link", { name: "Back to activity" }).click();
+  await visible(page.getByRole("heading", { level: 1, name: "Activity", exact: true }));
+
+  await page.goto(here("/activity/runs/no-such-run"));
+  await visible(page.getByRole("alert").filter({ hasText: "No run has this ID." }));
+  await page.goto(here("/activity/runs/has%20space"));
+  await visible(page.getByRole("alert").filter({ hasText: "This address doesn't name a run" }));
   assert.deepEqual(unexpected, []);
 });
 

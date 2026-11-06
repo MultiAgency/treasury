@@ -76,6 +76,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     account: { agentId: "id-portfolio", executor: true, wallet: "portfolio.agents.near", grant: null, stagedGrant: null },
     books: [],
     overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
+    ledgerCsv: "correlationId,at,kind,status\n", ownerActions: [],
   };
   const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
   const read = async <K extends ReadName>(name: K, organization: string, agent: string, ...rest: string[]): Promise<ReadAnswer<ReadPath<K>>> => {
@@ -339,6 +340,8 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       held: (organization, agent) => read("held", organization, agent),
       unresolved: (organization, agent) => read("unresolved", organization, agent),
       runs: (organization, agent) => read("runs", organization, agent),
+      ledgerCsv: (organization, agent) => read("ledgerCsv", organization, agent),
+      ownerActions: (organization, agent) => read("ownerActions", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
     grant: {
@@ -491,7 +494,7 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
 }
 
 /** The owner reads by name, and the platform procedure each one is. */
-const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log" } as const;
+const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log", ledgerCsv: "ledgerCsv", ownerActions: "owner/actions" } as const;
 type ReadName = keyof typeof READ_PATHS;
 type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
 type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);

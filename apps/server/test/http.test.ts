@@ -885,7 +885,10 @@ test("each agent route asks for what it needs: a member who may only file is ref
   for (const route of routes.filter(route => route.access === "owner" || route.access === "owner-fresh")) {
     const need = needs[`${route.method} ${route.path}`]!;
     for (const [name, cookie] of Object.entries(members)) {
-      const { status, body } = await json(await call(route.method, pathOf(route, "dao-treasury").replace(":id", "0".repeat(32)), { cookie, ...(route.method !== "GET" && { body: {} }) }));
+      const response = await call(route.method, pathOf(route, "dao-treasury").replace(":id", "0".repeat(32)), { cookie, ...(route.method !== "GET" && { body: {} }) });
+      // A download (the ledger's CSV) isn't JSON: it was allowed.
+      const download = /^text\/csv/.test(response.headers.get("content-type") ?? "");
+      const status = response.status, body = download ? { csv: await response.text() } as any : await response.json() as any;
       const refusedHere = status === 403 && body.code === "not_permitted";
       assert.equal(refusedHere, !allowed[need]![name], `${name} ${route.method} ${route.path} (${need}): ${status} ${JSON.stringify(body)}`);
     }
@@ -1395,4 +1398,58 @@ test("the DAO requests route answers a wallet owner's agent with an empty list, 
   assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/dao-requests", { cookie: await signIn(intruder) })),
     { status: 403, body: { ok: false, kind: "not_owner" } }, "nor the owner of the wallet's agent");
   assert.deepEqual(await json(await call("GET", "/api/agents/dao-treasury/dao-requests")), { status: 401, body: { ok: false, kind: "not_signed_in" } });
+});
+
+// --- the activity downloads and the owner's actions (#136) ---
+
+test("the CSV route relays the ledger once and answers it as a download, never as a page", async () => {
+  const cookie = await signIn(owner);
+  fake.reads.ledgerCsv = "correlationId,at,kind,status\nc1,2026-11-06T10:00:00Z,swap,success\n";
+  fake.calls.length = 0;
+  const response = await call("GET", "/api/agents/portfolio/activity.csv", { cookie });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "text/csv; charset=utf-8");
+  assert.equal(response.headers.get("content-disposition"), 'attachment; filename="portfolio-activity.csv"');
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(await response.text(), "correlationId,at,kind,status\nc1,2026-11-06T10:00:00Z,swap,success\n", "as the platform wrote it");
+  assert.equal(fake.calls.filter(made => made.startsWith("reads.ledgerCsv")).length, 1, "relayed once");
+});
+
+test("a CSV whose read fails answers unavailable, or not connected, as JSON and not as a file", async t => {
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  fake.readAnswers.ledgerCsv = [{ ok: false, kind: "unavailable" } as never];
+  const failed = await call("GET", "/api/agents/portfolio/activity.csv", { cookie });
+  assert.equal(failed.status, 503);
+  assert.match(failed.headers.get("content-type")!, /^application\/json/);
+  assert.deepEqual(await failed.json(), { ok: false, kind: "unavailable" });
+  fake.readAnswers.ledgerCsv = [{ ok: false, kind: "forbidden", status: 403, error: "No live owner consent covers this Organization and agent" } as never];
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/activity.csv", { cookie })), { status: 409, body: { ok: false, kind: "refused", code: "not_connected" } });
+  fake.readAnswers.ledgerCsv = [new Error("socket hang up")];
+  assert.equal((await call("GET", "/api/agents/portfolio/activity.csv", { cookie })).status, 503, "a call that throws is unavailable too");
+});
+
+test("the owner-actions route relays owner/actions once, as the platform answers it, and maps a failure to unavailable", async t => {
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  const action = { correlationId: "g1", type: "grant_issue", expiresAt: "2026-11-06T13:00:00.000Z", signer: "wallet", stage: "submitted", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  fake.reads.ownerActions = [action] as never;
+  fake.calls.length = 0;
+  const { status, body } = await json(await call("GET", "/api/agents/portfolio/owner/actions", { cookie }));
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(contract.ownerActionsRead.parse(body.value).map(item => [item.correlationId, item.type, item.stage]), [["g1", "grant_issue", "submitted"]]);
+  assert.equal(fake.calls.filter(made => made.startsWith("reads.ownerActions")).length, 1, "relayed once");
+  fake.reads.ownerActions = [];
+  fake.readAnswers.ownerActions = [{ ok: false, kind: "unavailable" } as never];
+  assert.deepEqual(await json(await call("GET", "/api/agents/portfolio/owner/actions", { cookie })), { status: 503, body: { ok: false, kind: "unavailable" } });
+});
+
+test("another account gets not_owner from the CSV and the owner-actions routes, and no session gets not_signed_in", async () => {
+  for (const path of ["/api/agents/portfolio/activity.csv", "/api/agents/portfolio/owner/actions"]) {
+    fake.calls.length = 0;
+    assert.deepEqual(await json(await call("GET", path, { cookie: await signIn(intruder) })), { status: 403, body: { ok: false, kind: "not_owner" } }, path);
+    assert.ok(!fake.calls.some(made => made.startsWith("reads.")), `${path}: nothing read for a stranger`);
+    assert.deepEqual(await json(await call("GET", path)), { status: 401, body: { ok: false, kind: "not_signed_in" } }, path);
+  }
 });

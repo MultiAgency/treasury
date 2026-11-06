@@ -20,7 +20,7 @@ export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
-export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log"> = OwnerResult<OwnerOutput<P>>;
+export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log" | "ledgerCsv" | "owner/actions"> = OwnerResult<OwnerOutput<P>>;
 /**
  * A sweep as it ran: every event the stream gave, and how it ended (`null` when it ended normally). A stream lost after
  * any event ends `unknown`, as the SDK reports it: a shield may have gone out.
@@ -131,6 +131,10 @@ export type Platform = {
     unresolved(organization: string, agent: string): Promise<ReadAnswer<"unresolved">>;
     runs(organization: string, agent: string): Promise<ReadAnswer<"autopilot/evidence">>;
     recording(organization: string, agent: string, tickId: string): Promise<ReadAnswer<"autopilot/log">>;
+    /** The agent's ledger as CSV text (`ledgerCsv`, under `read`): every operation it recorded, for the owner to keep. */
+    ledgerCsv(organization: string, agent: string): Promise<ReadAnswer<"ledgerCsv">>;
+    /** The owner's actions for the agent and where each stands (`owner/actions`, an app read): the platform's record, across devices. */
+    ownerActions(organization: string, agent: string): Promise<ReadAnswer<"owner/actions">>;
   };
   /**
    * Funding the agent under an Organization's consent (its `treasury` scope): the account linked to fund it, a one-time
@@ -271,6 +275,8 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
       runs: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/evidence", {}),
       recording: async (organization, agent, tickId) => (await client()).agent(organization, agent).call("autopilot/log", { tickId }),
+      ledgerCsv: async (organization, agent) => (await client()).agent(organization, agent).call("ledgerCsv"),
+      ownerActions: async (organization, agent) => (await client()).agent(organization, agent).call("owner/actions"),
     },
     funding: {
       treasury: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/get"),
