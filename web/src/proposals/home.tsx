@@ -16,6 +16,13 @@ function NeedLink({ need, agent }: { need: Need; agent: string }) {
   const { target } = need;
   if (target.page === "proposal") return <PageLink to={proposalAddress(agent, target.id)} className="underline">Review proposal {short(target.id, 12)}</PageLink>;
   if (target.page === "connection") return <PageLink to={agentAddress(agent)} hash="connection" className="underline">Open the connection</PageLink>;
+  // A pending owner action is signed or voted on where it was asked for: the emergency stop in the frame (a freeze or
+  // unfreeze), the Strategy page (a grant), else the owner's actions on the Activity page.
+  if (target.page === "owner-action") {
+    const where = target.type === "agent_freeze" || target.type === "agent_unfreeze" ? { to: agentAddress(agent), hash: "emergency-stop" }
+      : target.type === "grant_issue" ? { to: agentAddress(agent, "strategy"), hash: undefined } : { to: agentAddress(agent, "activity"), hash: "owner-actions" };
+    return <PageLink to={where.to} hash={where.hash} className="underline">Open where it is signed or voted on</PageLink>;
+  }
   // The Activity page, at the operation's entry (#136).
   return <PageLink to={agentAddress(agent, "activity")} hash={unresolvedAnchor(target.key)} className="underline">Check the activity</PageLink>;
 }
@@ -30,9 +37,11 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
   const proposals = useQuery({ ...reads.glance.proposals, enabled: connected });
   const unresolved = useQuery({ ...reads.unresolved, enabled: connected });
   const dao = useQuery({ ...reads.daoRequests, enabled: identity.signer === "dao" });
-  const failing = [[proposals, "proposals"], [unresolved, "unresolved operations"], [dao, "the DAO's requests"]] as const;
-  const pending = (connected && (proposals.isPending || unresolved.isPending)) || (identity.signer === "dao" && dao.isPending);
-  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], now: Date.now() });
+  // The platform's pending owner action: the same read the emergency stop makes, so one read serves both.
+  const actions = useQuery({ ...reads.ownerPending, enabled: connected });
+  const failing = [[proposals, "proposals"], [unresolved, "unresolved operations"], [dao, "the DAO's requests"], [actions, "pending owner actions"]] as const;
+  const pending = (connected && (proposals.isPending || unresolved.isPending || actions.isPending)) || (identity.signer === "dao" && dao.isPending);
+  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], pendingActions: actions.data ?? [], now: Date.now() });
   if (!connected && items.length === 0) return null;
 
   return <section id="needs-decision" aria-labelledby="needs-decision-title" className="flex flex-col gap-4">

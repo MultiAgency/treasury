@@ -259,6 +259,12 @@ A second build (`src/proposals/`, built to `dist-proposals/`), served only by th
 | Shield these public balances?, Public balances to shield, Shield now | dialog, list, button | Shield public balances |
 | Books | heading (level 2), table (Asset, Public drift from chain, Private, not attributed) | Activity (was Portfolio, #136) |
 | Activity | heading (level 1) on `/agents/<agent>/activity`; navigation link | #136 |
+| Emergency stop | region and heading (level 2) in the frame of every page of an agent that exists, after the navigation (#133); status "Frozen: the agent refuses every send." or "Not frozen." | every agent page |
+| Freeze, Unfreeze; Propose to freeze, Propose to unfreeze (a DAO's member) | button: one at a time, by the state read from the overview; disabled while a freeze or unfreeze awaits its outcome (read from the platform, so after a reload too) | Emergency stop |
+| Freeze this agent?, Unfreeze this agent?; Sign and freeze, Sign and unfreeze, File for the DAO's vote, Cancel | dialogs, buttons: what a freeze does and doesn't stop is said before anything is signed | Emergency stop |
+| Connect the agent; Allow owner actions in Connection; A member who may file proposals asks the DAO to freeze it. | text with a link to Home's Connection: a control that can't work says why instead of disappearing | Emergency stop |
+| Open the confirm page | link (the platform's own page, where the owner signs what it holds for them) | Emergency stop, when the platform answers that form |
+| Freeze is waiting for a signature or the DAO's vote; Open where it is signed or voted on | list item with `Expires …`; link to the stop (`#emergency-stop`), the Strategy page (a grant) or Activity's owner actions | Needs your decision, from `owner/pending` |
 | Without a proven outcome | region and heading (level 2); list | Activity, when any |
 | History, Download CSV, Check status, Newer, Older, History pages, Page `n` of `m` | region and heading (level 2) with a list; link (the ledger's CSV, `/api/agents/<agent>/activity.csv`); button per row; buttons and navigation; status | Activity |
 | Owner actions | region and heading (level 2); list (Strategy grant, Freeze, …, each with where it stands); "No owner actions yet." | Activity |

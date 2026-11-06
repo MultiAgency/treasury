@@ -16,7 +16,7 @@ import type { Page } from "./page.ts";
 import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
 import * as contract from "./contract.ts";
 import type { Admitted } from "./contract.ts";
-import type { ConsentRecord, IdentityAnswer, Platform, ProposalAnswer, ProposalListAnswer, SweepRun } from "./platform.ts";
+import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, ProposalListAnswer, SweepRun } from "./platform.ts";
 import { failure, log } from "./log.ts";
 import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import { agentsOf, checkSetup, DAO_SETUP_MS, setupConsents, setupFor, setupText } from "./setup.ts";
@@ -165,6 +165,38 @@ function readFailure(answer: { ok: false; kind: string }, agent: string, read: s
 }
 /** An ID from the address for a read: a run's tick, a proposal's `requestId`, an operation's `correlationId`. */
 const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-9_.:-]{1,128}$/.test(value) ? value : undefined;
+/**
+ * Prepares an owner action the owner signs or the DAO votes on (#133), shaped on the grant's route so the next action
+ * (#142's revocation) is another call of this. Relayed once, recorded before and after (`audit`), refused while another
+ * freeze or unfreeze is awaiting its outcome (they hold each other), and for a wallet owner only under a connection that
+ * allows owner actions. Which form comes back (intent, confirm page, DAO transaction) is the platform's choice.
+ */
+const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze", type: "agent_freeze" | "agent_unfreeze"): Route => ({
+  method: "POST", path, access: "owner-fresh", needs: "file",
+  async handle({ body, account, identity }, { platform, audit }) {
+    const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
+    if (parse(z.strictObject({}), body) === undefined) return refused(400, "bad_request");
+    const actions = await relay(() => platform.reads.ownerActions(organization, agent), agent);
+    if (!actions.ok) return readFailure(actions, agent, "owner/actions");
+    const now = Date.now();
+    // Held while an outcome is unknown: one already submitted, or a DAO's request waiting for its vote, which a second
+    // filing would duplicate. A wallet owner's intent that was only prepared isn't held: it was never signed, so it can be
+    // prepared again (a reload mid-signature must not delay an emergency stop), and the old one expires.
+    if (actions.value.some(action => (action.type === "agent_freeze" || action.type === "agent_unfreeze")
+      && (action.stage === "submitted" || (action.stage === "prepared" && action.signer === "dao" && Date.parse(action.expiresAt) > now)))) return refused(409, "action_pending");
+    if (signer === "wallet") {
+      const allowed = await ownerAllowed(platform, organization, identity!, agent);
+      if (allowed === "unavailable") return unavailable();
+      if (!allowed) return refused(409, "owner_not_allowed");
+    }
+    await audit.append({ who: account!, action: audited_, agent, stage: "attempt" });
+    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action: { type }, signer }), agent);
+    const reply = preparedReply(prepared, { signer, access, agent, what: "owner_action", refusal: "action_refused" });
+    await recordResult(audit, { who: account!, action: audited_, agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
+    return reply;
+  },
+});
+
 /** A route answering one of the agent's owner reads as the platform answers it (#61). */
 const readRoute = (path: string, read: "account" | "overview" | "activity" | "held" | "unresolved" | "runs"): Route => ({
   method: "GET", path, access: "owner", needs: "read",
@@ -270,6 +302,35 @@ async function ownerStatus(identity: Admitted, id: string | undefined, status: P
   if (read.ok) return ok({ stage: read.value.stage, ...(read.value.failureCode !== undefined && { failureCode: read.value.failureCode }) });
   log("platform_owner_status_failed", { agent, ...failure(read) });
   return read.kind === "refused" && read.status === 404 ? refused(404, codes.missing) : read.kind === "forbidden" ? refused(409, codes.forbidden) : unavailable();
+}
+
+/**
+ * An owner action the platform prepared, as the page takes it (#133, and the grant before it): for a wallet owner the
+ * intent their wallet signs here, or the platform's confirm page where they sign; for a DAO the transaction a member
+ * files for its vote, the file-and-vote one when the member may vote too. Which form an action takes is the platform's
+ * choice, so each is handled and none assumed. A refusal is `refusal`; an answer in none of the forms is unavailable.
+ */
+function preparedReply(prepared: PreparedAnswer | { ok: false; kind: "unavailable" }, { signer, access, agent, what, refusal }: {
+  signer: "wallet" | "dao"; access: contract.Access; agent: string; what: string; refusal: string }): Reply {
+  if (prepared.ok) {
+    const { correlationId, expiresAt, intent, confirm, dao } = prepared.value;
+    const transaction = dao && parse(contract.memberTransaction, access.canVote && dao.proposalAndVote ? dao.proposalAndVote : dao.proposal);
+    const reply = signer === "wallet" && intent?.standard === "nep413" ? ok({ correlationId, expiresAt, intent })
+      : signer === "wallet" && confirm ? ok({ correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } })
+      : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction } }) : unavailable();
+    if (reply.status !== 200) log(`platform_${what}_unreadable`, { agent, correlationId });
+    return reply;
+  }
+  log(`platform_${what}_failed`, { agent, ...failure(prepared) });
+  return prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
+    : prepared.kind === "refused" ? refused(409, refusal) : unavailable();
+}
+
+/** Whether a wallet owner's live consent allows owner actions (`owner`): without it the platform refuses what the app prepares. */
+async function ownerAllowed(platform: Platform, organization: string, identity: Admitted, agent: string): Promise<boolean | "unavailable"> {
+  const listed = await platform.consents.list(organization);
+  if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return "unavailable"; }
+  return liveConsents(listed.value.consents, identity).some(consent => withOwner(consent.scopes));
 }
 
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
@@ -946,26 +1007,14 @@ export const routes: Route[] = [
       if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted" || (action.stage === "prepared" && Date.parse(action.expiresAt) > now))))
         return refused(409, "grant_pending");
       if (signer === "wallet") {
-        const listed = await platform.consents.list(organization);
-        if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return unavailable(); }
-        if (!liveConsents(listed.value.consents, identity!).some(consent => withOwner(consent.scopes))) return refused(409, "owner_not_allowed");
+        const allowed = await ownerAllowed(platform, organization, identity!, agent);
+        if (allowed === "unavailable") return unavailable();
+        if (!allowed) return refused(409, "owner_not_allowed");
       }
       await audit.append({ who: account!, action: "grant", agent, stage: "attempt" });
       const prepared = await relay(() => platform.grant.prepare(organization, agent,
         { action: { type: "grant_issue", label: "treasury", expectedStrategyDigest: input.expectedDigest }, signer }), agent);
-      let reply: Reply;
-      if (prepared.ok) {
-        const { correlationId, expiresAt, intent, confirm, dao } = prepared.value;
-        const transaction = dao && parse(contract.memberTransaction, access.canVote && dao.proposalAndVote ? dao.proposalAndVote : dao.proposal);
-        reply = signer === "wallet" && intent?.standard === "nep413" ? ok({ correlationId, expiresAt, intent })
-          : signer === "wallet" && confirm ? ok({ correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } })
-          : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction } }) : unavailable();
-        if (reply.status !== 200) log("platform_grant_unreadable", { agent, correlationId });
-      } else {
-        log("platform_grant_failed", { agent, ...failure(prepared) });
-        reply = prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
-          : prepared.kind === "refused" ? refused(409, "grant_refused") : unavailable();
-      }
+      const reply = preparedReply(prepared, { signer, access, agent, what: "grant", refusal: "grant_refused" });
       await recordResult(audit, { who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
       return reply;
     },
@@ -995,6 +1044,44 @@ export const routes: Route[] = [
     // Where a grant stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/grant/:id", access: "owner", needs: "read",
     handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_grant", forbidden: "not_connected" }),
+  },
+  ownerActionRoute("/api/agents/:agent/freeze", "freeze", "agent_freeze"),
+  ownerActionRoute("/api/agents/:agent/unfreeze", "unfreeze", "agent_unfreeze"),
+  {
+    /**
+     * A wallet owner's signature over an owner action's intent (#133; the grant's has its own route), relayed once and
+     * recorded before and after, whichever action it is. After a lost answer the page follows the action's status
+     * rather than sending it again.
+     */
+    method: "POST", path: "/api/agents/:agent/owner/actions/:id/submit", access: "owner-fresh", needs: "sign",
+    async handle({ body, account, identity, params }, { platform, audit }) {
+      const { agent, owner } = identity!;
+      const input = parse(contract.ownerActionSubmission, body);
+      if (input === undefined || !/^[A-Za-z0-9_-]{1,128}$/.test(params.id ?? "")) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "owner-submit", agent, subject: params.id, stage: "attempt" });
+      const submitted = await relay(() => platform.grant.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
+      const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
+        : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
+        : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_action")
+        : submitted.kind === "refused" ? refused(409, "action_refused") : unavailable();
+      if (!submitted.ok) log("platform_owner_submit_failed", { agent, ...failure(submitted) });
+      await recordResult(audit, { who: account!, action: "owner-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
+      return reply;
+    },
+  },
+  {
+    // Where an owner action stands, by the correlation ID its preparation answered.
+    method: "GET", path: "/api/agents/:agent/owner/actions/:id", access: "owner", needs: "read",
+    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_action", forbidden: "not_connected" }),
+  },
+  {
+    // The owner action still awaiting its outcome, if any (#133): read from the platform, so a reload or another device finds it.
+    method: "GET", path: "/api/agents/:agent/owner/pending", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.reads.ownerPending(organizationOf(owner), agent), agent);
+      return answer.ok ? ok(answer.value.map(({ correlationId, type, expiresAt, state }) => ({ correlationId, type, expiresAt, state }))) : readFailure(answer, agent, "owner/pending");
+    },
   },
   autopilotAction("/api/agents/:agent/autopilot/enable", "autopilot-on", "enable", contract.enableRequest,
     (platform, organization, agent, { expectedDigest }) => platform.autopilot.enable(organization, agent, expectedDigest), () => ({})),

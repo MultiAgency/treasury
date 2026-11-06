@@ -127,6 +127,20 @@ async function connectWithoutOwner() {
   assert.equal(await call("/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }), 200, "the older connection is stored");
 }
 
+/** Connects the agent when an earlier test left it disconnected (the strategy test ends by disconnecting it), and signs in. */
+async function ensureConnected() {
+  await page.goto(here());
+  const connection = page.getByRole("region", { name: "Connection" });
+  await signInIfAsked(connection);
+  const status = connection.getByRole("status").first();
+  await visible(status);
+  if (/^Not connected/.test(await status.innerText())) {
+    await connection.getByRole("button", { name: "Connect", exact: true }).click();
+    await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
+    await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  }
+}
+
 /** The stack's portfolio proposes a swap through the app route, as the app's proposer does (#20 PR 4). */
 async function propose(requestId: string): Promise<ProposalView> {
   const state = stack.state();
@@ -212,6 +226,11 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   const run = dialog("Execute this proposal?");
   await visible(run);
   assert.deepEqual(await axe(), [], "the execute dialog");
+  // Recorded from the execute on: the frame (#133) reads the overview on every page, so it is read again the moment the
+  // swap invalidates it, not when the Home is next shown.
+  const reread: string[] = [];
+  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
+  page.on("request", read);
   await run.getByRole("button", { name: "Execute now" }).click();
   await visible(state.getByRole("status").filter({ hasText: "Executed. Every swap succeeded." }));
   await visible(state.getByText("Executed", { exact: true }));
@@ -220,9 +239,6 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   assert.deepEqual(await axe(), [], "an executed proposal");
   // What the swap changed is read again when it is next shown: never the book from before it. The Home shows the book, the
   // held payouts and what needs a decision; the history and the books are on the Activity page (#136), read when it is.
-  const reread: string[] = [];
-  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
-  page.on("request", read);
   await nav("Home").click();
   await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
   for (const changed of ["overview", "held", "unresolved"])
@@ -575,14 +591,90 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   assert.deepEqual(unexpected, []);
 });
 
-test("each of the agent's pages opens by its address, with its own heading and the navigation marking it, and passes an axe scan", { timeout: 120_000 }, async () => {
-  // Disconnecting ended the last test with the agent not connected: connect it again, so every page has what it shows.
+test("the emergency stop is in the frame of every page, with its own region and controls, and passes an axe scan", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  for (const path of ["", "/proposals", "/strategy", "/funding", "/activity"]) {
+    await page.goto(here(path));
+    const stop = page.getByRole("region", { name: "Emergency stop" });
+    await visible(stop.getByRole("button", { name: "Freeze" }));
+    await visible(stop.getByText("Not frozen."));
+    assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true, `${path || "home"}: offered and enabled`);
+  }
+  assert.deepEqual(await axe(), [], "the stop, on a page");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the owner freezes by keyboard with their wallet, told first what it does, and unfreezes; the agent's state follows", { timeout: 150_000 }, async () => {
+  await page.goto(here("/strategy"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await stop.getByRole("button", { name: "Freeze" }).focus();
+  await page.keyboard.press("Enter");
+  const confirm = dialog("Freeze this agent?");
+  await visible(confirm);
+  const text = await confirm.innerText();
+  assert.match(text, /refuses every send/);
+  assert.match(text, /does not move funds/);
+  assert.match(text, /Your wallet signs it/);
+  assert.deepEqual(await axe(), [], "the freeze dialog");
+  await confirm.getByRole("button", { name: "Sign and freeze" }).click();
+  await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 45_000 });
+  await visible(stop.getByRole("button", { name: "Unfreeze" }));
+  assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "one control at a time");
+  assert.deepEqual(await axe(), [], "frozen");
+
+  await stop.getByRole("button", { name: "Unfreeze" }).click();
+  const back = dialog("Unfreeze this agent?");
+  await visible(back);
+  await back.getByRole("button", { name: "Sign and unfreeze" }).click();
+  await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  assert.deepEqual(unexpected, []);
+});
+
+test("a freeze whose outcome is unknown holds both controls, after a reload too, until the platform's record settles it", { timeout: 120_000 }, async () => {
+  await page.goto(here("/proposals"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  // The platform's own record, as it reads when a freeze was submitted and its outcome isn't recorded yet.
+  const submitted = { correlationId: "held-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), signer: "wallet", stage: "submitted", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [submitted] } }));
+  await page.reload();
+  await visible(stop.getByText(/outcome isn't known yet/));
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "held after a reload");
+  assert.deepEqual(await axe(), [], "held");
+  await page.goto(here("/funding"));
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "and on another page");
+  // The platform records it settled: the hold ends.
+  await page.unroute("**/api/agents/*/owner/actions");
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [{ ...submitted, stage: "settled", ownerSucceeded: true, status: "SUCCESS" }] } }));
+  await page.reload();
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 30_000 });
+  await page.unroute("**/api/agents/*/owner/actions");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the home lists a pending owner action, until it expires, with a link to where it is signed", { timeout: 120_000 }, async () => {
   await page.goto(here());
-  const connection = page.getByRole("region", { name: "Connection" });
-  await signInIfAsked(connection);
-  await connection.getByRole("button", { name: "Connect" }).click();
-  await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
-  await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  const needs = page.getByRole("region", { name: "Needs your decision" });
+  await visible(needs);
+  const waiting = { correlationId: "pending-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), hash: "h".repeat(64), state: "waiting" };
+  await page.route("**/api/agents/*/owner/pending", route => route.fulfill({ json: { ok: true, value: [{ correlationId: waiting.correlationId, type: waiting.type, expiresAt: waiting.expiresAt, state: waiting.state }] } }));
+  await page.reload();
+  const item = needs.getByRole("listitem").filter({ hasText: "Freeze is waiting for a signature or the DAO's vote" });
+  await visible(item);
+  await visible(item.getByText(/^Expires /));
+  assert.deepEqual(await axe(), [], "the home, a pending owner action");
+  await item.getByRole("link", { name: "Open where it is signed or voted on" }).click();
+  await page.waitForFunction(() => location.hash === "#emergency-stop");
+  await page.unroute("**/api/agents/*/owner/pending");
+  assert.deepEqual(unexpected, []);
+});
+
+test("each of the agent's pages opens by its address, with its own heading and the navigation marking it, and passes an axe scan", { timeout: 120_000 }, async () => {
+  // An earlier test may have left the agent disconnected: connect it, so every page has what it shows.
+  await ensureConnected();
   const made = await propose(`page-${Date.now()}-pages`);
   const pages: [string, string, string][] = [["", "Home", "Home"], ["/", "Home", "Home"], ["/proposals", "Proposals", "Proposals"],
     [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"], ["/activity", "Activity", "Activity"]];

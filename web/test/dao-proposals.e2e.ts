@@ -218,3 +218,31 @@ test("a council member asks the DAO to authorize the saved strategy: filed from 
   assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
   assert.deepEqual(await axe(), [], "authorized");
 });
+
+test("a council member proposes to freeze the DAO's agent from the frame: filed from their wallet, its vote shown; then proposes to unfreeze", { timeout: 180_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}`);
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop);
+  await visible(stop.getByText("Not frozen."));
+  assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "a DAO's member proposes, never signs");
+  const filedBefore = sent.length;
+  await stop.getByRole("button", { name: "Propose to freeze" }).click();
+  const confirm = dialog("Freeze this agent?");
+  await visible(confirm);
+  assert.match(await confirm.innerText(), /the DAO's vote must pass within minutes/);
+  assert.deepEqual(await axe(), [], "the freeze dialog, for a DAO");
+  await confirm.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await visible(stop.getByText(/^Filed\. The DAO's vote must pass by /).or(stop.getByText("Frozen: the agent refuses every send.")));
+  assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
+  assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
+  await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 60_000 });
+  assert.deepEqual(await axe(), [], "frozen, by the DAO's vote");
+
+  await stop.getByRole("button", { name: "Propose to unfreeze" }).click();
+  const back = dialog("Unfreeze this agent?");
+  await visible(back);
+  await back.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await stop.getByText("Not frozen.").waitFor({ timeout: 60_000 });
+  assert.equal(sent.length, filedBefore + 2);
+  assert.deepEqual(unexpected, []);
+});

@@ -391,6 +391,91 @@ test("with owner actions allowed, the owner signs a grant for the saved strategy
   }
 });
 
+/** The owner signed in with a connection that allows owner actions (#133), and the calls to freeze and unfreeze from here. */
+async function freezing() {
+  const issued = await challenge();
+  const cookie = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const agent = `/api/agents/${target.agent}`;
+  const live = ((await (await get(`${agent}/consent`, cookie)).json()) as { value: { consent: { scopes: string[] } | null } }).value.consent;
+  if (!live || !live.scopes.includes("owner")) {
+    const text = await post(`${agent}/consent/text`, { owner: true }, cookie);
+    const asked = ((await text.json()) as { value: { message: string; nonce: string; recipient: string } }).value;
+    const signed = await signOwner(target, asked);
+    assert.equal((await post(`${agent}/consent`, { message: asked.message, nonce: asked.nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie)).status, 200);
+  }
+  const frozen = async () => ((await (await get(`${agent}/overview`, cookie)).json()) as { value: { policy: { policy: { frozen?: boolean } | null } } }).value.policy.policy?.frozen === true;
+  const stageOf = async (id: string) => contract.ownerActionStatus.parse(((await (await get(`${agent}/owner/actions/${id}`, cookie)).json()) as { value: unknown }).value).stage;
+  const pending = async () => contract.ownerPendingRead.parse(((await (await get(`${agent}/owner/pending`, cookie)).json()) as { value: unknown }).value);
+  /** Prepares the action, and (an intent) signs it here and relays it once, then waits for it to take effect. A confirm page's form answers with its link. */
+  const act = async (action: "freeze" | "unfreeze") => {
+    const prepared = await post(`${agent}/${action}`, {}, cookie);
+    const preparedBody = await prepared.json() as { value: unknown };
+    assert.equal(prepared.status, 200, JSON.stringify(preparedBody));
+    const made = contract.ownerActionPrepared.parse(preparedBody.value);
+    assert.equal([made.intent, made.confirm, made.dao].filter(Boolean).length, 1, `exactly one form: ${JSON.stringify(made)}`);
+    if (!made.intent) return { made, signed: false as const };
+    const signed = await signOwner(target, made.intent.payload);
+    const submitted = await post(`${agent}/owner/actions/${made.correlationId}/submit`, { signedData: { ...made.intent, public_key: signed.publicKey, signature: signed.signature } }, cookie);
+    assert.equal(submitted.status, 200, await submitted.clone().text());
+    for (let waited = 0; ; waited += 1_000) {
+      const stage = await stageOf(made.correlationId);
+      if (stage === "submitted" && (await frozen()) === (action === "freeze")) break;
+      assert.ok(waited < 45_000, `still ${stage}, frozen ${await frozen()}`);
+      await new Promise(resolve => setTimeout(resolve, 1_000));
+    }
+    return { made, signed: true as const };
+  };
+  return { cookie, agent, frozen, pending, act };
+}
+
+test("freeze and unfreeze (#133): prepared in the form the platform chooses, an intent signed here and relayed once, followed to its status", { timeout: 120_000 }, async () => {
+  const { frozen, pending, act } = await freezing();
+  assert.equal(await frozen(), false, "not frozen to begin with");
+  const froze = await act("freeze");
+  if (!froze.signed) return void console.log("freeze answered a confirm page: its signed path waits for #140");
+  assert.ok(!(await pending()).some(item => item.correlationId === froze.made.correlationId), "not pending once it took effect");
+  assert.equal(await frozen(), true);
+  assert.equal((await act("unfreeze")).signed, true);
+  assert.equal(await frozen(), false);
+});
+
+test("while the agent is frozen nothing is sent: an earlier approval is invalidated, a new one is refused; after unfreeze a new proposal runs (#133)", { timeout: 150_000 }, async () => {
+  const { cookie, agent, frozen, act } = await freezing();
+  const host = new URL(stack.state().dashboard).host;
+  const platform = appClient({ base: stack.state().dashboard as `https://${string}`, credential: readFileSync(stack.state().app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const propose = async () => {
+    const made = await platform.agent(owner.replaceAll(".", "--"), target.agent).call("proposals/create",
+      { requestId: `stack-frozen-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: new Date(Date.now() + 2 * 86_400_000).toISOString() });
+    assert.ok(made.ok, JSON.stringify(made));
+    return made.value as ProposalView;
+  };
+  const approve = async (view: ProposalView) => {
+    const message = proposalText(view, "approve"), nonce = randomBytes(32).toString("base64");
+    const signed = await signOwner(target, { message, recipient: host, nonce });
+    return post(`${agent}/proposals/${view.id}/approve`, { message, nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie);
+  };
+  const execute = async (view: ProposalView) => ((await (await post(`${agent}/proposals/${view.id}/execute`, {}, cookie)).json()) as { value: { result: string; proposal: ProposalView | null } }).value;
+
+  const early = await propose();
+  assert.equal((await approve(early)).status, 200, "approved before the freeze");
+  const froze = await act("freeze");
+  if (!froze.signed) return void console.log("freeze answered a confirm page: the frozen-execute check waits for #140");
+  assert.equal(await frozen(), true);
+  // Freezing changes the policy: what was approved under the old one can't be executed, and nothing is sent.
+  const stopped = await execute(early);
+  assert.deepEqual([stopped.result, stopped.proposal?.state, stopped.proposal?.operations.length], ["final", "invalidated", 0], JSON.stringify(stopped.proposal?.reason));
+  // A proposal made while frozen can't be approved at all: the policy isn't in force.
+  const during = await propose();
+  const refused = await approve(during);
+  assert.deepEqual([refused.status, await refused.json()], [409, { ok: false, kind: "refused", code: "policy_not_in_force" }]);
+
+  assert.equal((await act("unfreeze")).signed, true);
+  const after = await propose();
+  assert.equal((await approve(after)).status, 200, "unfrozen: it can be approved");
+  const ran = await execute(after);
+  assert.deepEqual([ran.result, ran.proposal?.state], ["final", "executed"], "and it runs");
+});
+
 test("the owner saves a strategy through the server over the one they saw: autopilot off, the grant no longer binding it, a stale save refused", async () => {
   const issued = await challenge();
   const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));

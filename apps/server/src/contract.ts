@@ -247,6 +247,16 @@ export const grantPrepared = z.strictObject({
 });
 /** A wallet owner's signed intent, as their wallet answers it: the intent, with the key that signed and its signature. */
 export const grantSubmission = z.strictObject({ signedData: nep413Intent.extend({ public_key: z.string(), signature: z.string() }) });
+/** An owner action prepared for the owner (#133): the same three forms a grant comes in, whichever action it is. */
+export const ownerActionPrepared = grantPrepared;
+/** A wallet owner's signed intent for any owner action: the same shape as a grant's. */
+export const ownerActionSubmission = grantSubmission;
+/**
+ * The owner action still awaiting its outcome (`owner/pending`), as the page needs it: which, its kind, until when, and
+ * whether it still waits. The intent and hash the platform keeps are not passed on: what a wallet signs came with the
+ * preparation.
+ */
+export const ownerPendingRead = z.array(z.strictObject({ correlationId: z.string(), type: z.string(), expiresAt: z.string(), state: z.string() }));
 /** What the platform recorded for a submitted grant: its status, and a failure code once one is known. */
 export const grantSubmitted = z.strictObject({ status: z.string(), failureCode: z.string().nullable() });
 /** Where an owner action stands (a creation or a grant), as the platform's `owner/status` answers it. */
