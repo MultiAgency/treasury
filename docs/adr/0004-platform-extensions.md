@@ -17,13 +17,13 @@ These facts decide every item below:
 
 ## The one ask: the cash floor (platform#23)
 
-**Why it's needed even with signed proposals.** The autopilot sells whatever is over-weight. With a USDC target below the six-month floor, its runs spend USDC below the floor, and Ballast never sees them. ADR 3 puts the floor in Ballast only, which holds back Ballast's own proposals and nothing else.
+**Why it's needed even with signed proposals.** The autopilot sells whatever is over-weight. With a USDC target below the six-month floor, its runs spend USDC below the floor, and Ballast never checks them. ADR 3 puts the floor in Ballast only, which holds back Ballast's own proposals and nothing else.
 
-**What's agreed in planning.** The platform's answer on #23: not in the provider's policy, which has no balance floor and rejects unknown fields. Instead, in the strategy, `cashFloor: { usd, assets }`, bound by the grant, checked in `authorize.ts` on every send path, refused with `cash_floor_exceeded`. Not built yet.
+**What's proposed in planning.** The platform's answer on #23, waiting on approval: not in the provider's policy, which has no balance floor and rejects unknown fields. Instead, in the strategy, `cashFloor: { usd, assets }`, bound by the grant, checked in `authorize.ts` on every send path, refused with `cash_floor_exceeded`. Not built yet.
 
-**The refinement.** #23's check keeps cash at or above the floor after the swap. Read literally, that refuses a buy of USDC while cash is under the floor: the swap that restores it. Ballast's own check (`packages/core/src/exposure.ts`) refuses only a swap that lowers cash and would leave it under the floor. The platform's should work the same way, so a book already under its floor can always be brought back.
+**The refinement.** #23's check keeps cash at or above the floor after the swap. Read literally, that refuses a buy of USDC while cash is under the floor: the swap that restores it. Ballast's own check (`checkExposure`, `packages/core/src/exposure.ts`) has two rules: no order may spend cash if that leaves less than the floor, and while cash is under the floor, no order may buy a risk asset, even from the reserve. Neither refuses a swap that adds cash. The platform's should keep that property, so a book already under its floor can always be brought back. The second rule needs no counterpart there: the platform sees the reserve and operating cash as one USDC balance, so a buy paid from the reserve lowers cash and is refused under the floor anyway.
 
-**Open:** whether the floor should also hold a payout. That's moot for a Treasury agent, which makes none, and stays with #23.
+**Payouts:** a Treasury agent can't make one: its policy allows only swaps and agrees no payee, so a transfer or withdrawal is refused (`src/policy.ts`, `src/authorize.ts`). Payout agents do need a floor, for planned spending. Today the platform sets aside only held payouts and invoice reservations (`src/agent.ts`, `src/invoice-store.ts`). That's a separate floor from #23's, recorded with the payout gaps below for Payables.
 
 ## Checked and not asked
 
@@ -40,8 +40,8 @@ These facts decide every item below:
 | A DAO's vote on a held payout through an app | A payout feature. A wallet owner can already approve a held transfer through an app under `owner`; a DAO can't, since `approval_vote` isn't in `DAO_APP_ACTIONS`. For payout agents, not this app |
 | Approving a held withdrawal to a NEAR account | A payout feature. The provider's approval carries a `request_hash` that could be verified as a transfer's is, except that it doesn't cover `destination_asset`; verifying it isn't built (`src/payment-approval.ts`, `docs/enforcement.md`). For payout agents, not this app |
 
-The three payout gaps are real for payout agents. They're recorded here so Payables can take them up; they're not asked under A23.
+The three payout gaps, and the payout floor above, are real for payout agents. They're recorded here so Payables can take them up; they're not asked under A23.
 
 ## After agreement
 
-When #23's floor lands and is published, this app sets `cashFloor` from the mandate's six months of spend, and moves the floor from "Ballast only" to "Ballast and the platform" in ADR 3's rules map.
+When #23's floor lands and is published, this app sets `cashFloor` from the mandate's floor (`cashFloorUsd`: its months of operating cash, at least six, times the monthly spend), and moves the floor from "Ballast only" to "Ballast and the platform" in ADR 3's rules map.
