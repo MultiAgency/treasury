@@ -23,7 +23,7 @@ These facts decide every item below:
 
 **The refinement.** #23's check keeps cash at or above the floor after the swap. Read literally, that refuses a buy of USDC while cash is under the floor: the swap that restores it. Ballast's own check (`checkExposure`, `packages/core/src/exposure.ts`) has two rules: no order may spend cash if that leaves less than the floor, and while cash is under the floor, no order may buy a risk asset, even from the reserve. Neither refuses a swap that adds cash. The platform's should keep that property, so a book already under its floor can always be brought back. The second rule needs no counterpart there: the platform sees the reserve and operating cash as one USDC balance, so a buy paid from the reserve lowers cash and is refused under the floor anyway.
 
-**Payouts:** a Treasury agent can't make one: its policy allows only swaps and agrees no payee, so a transfer or withdrawal is refused (`src/policy.ts`, `src/authorize.ts`). Payout agents do need a floor, for planned spending. Today the platform sets aside only held payouts and invoice reservations (`src/agent.ts`, `src/invoice-store.ts`). That's a separate floor from #23's, recorded with the payout gaps below for Payables.
+**Payouts:** a Treasury agent can't make one: its policy allows only swaps and agrees no payee, so a transfer or withdrawal is refused (`src/policy.ts`, `src/authorize.ts`). Payout agents do need a floor, for planned spending. On the platform, only held payouts are set aside (`src/agent.ts`); an invoice's reservation is recorded but not subtracted from what can be paid (`src/invoice-store.ts`). Covenant (MultiAgency/demo) gates planned spending without one: each signed scope gets its own wallet, funded with its total. Unplanned spending stays with Treasury, under #23's floor.
 
 ## Checked and not asked
 
@@ -40,7 +40,7 @@ These facts decide every item below:
 | A DAO's vote on a held payout through an app | A payout feature. A wallet owner can already approve a held transfer through an app under `owner`; a DAO can't, since `approval_vote` isn't in `DAO_APP_ACTIONS`. For payout agents, not this app |
 | Approving a held withdrawal to a NEAR account | A payout feature. The provider's approval carries a `request_hash` that could be verified as a transfer's is, except that it doesn't cover `destination_asset`; verifying it isn't built (`src/payment-approval.ts`, `docs/enforcement.md`). For payout agents, not this app |
 
-The three payout gaps, and the payout floor above, are real for payout agents. They're recorded here so Payables can take them up; they're not asked under A23.
+The three payout gaps are real for payout agents. They're recorded here so Payables can take them up; they're not asked under A23.
 
 ## After agreement
 
