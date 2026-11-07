@@ -137,8 +137,6 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
           call(contract.grantSubmitted, `${base}/owner/actions/${correlation.parse(id)}/submit`, { method: "POST", body: contract.ownerActionSubmission.parse({ signedData }) }),
         /** Where an owner action stands, by its correlation ID: read, never sent again. */
         ownerActionStatus: (id: string) => call(contract.ownerActionStatus, `${base}/owner/actions/${correlation.parse(id)}`),
-        /** The owner action still awaiting its outcome, if any (`owner/pending`). */
-        ownerPending: () => call(contract.ownerPendingRead, `${base}/owner/pending`),
         grantStatus: (id: string) => call(contract.ownerActionStatus, `${base}/grant/${correlation.parse(id)}`),
         /** The saved strategy and whether the held grant binds it; the schedule. */
         strategy: () => call(contract.strategyRead, `${base}/strategy`),
@@ -191,7 +189,6 @@ export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
 export type RecordingRead = z.output<typeof contract.recordingRead>;
-export type OwnerPendingRead = z.output<typeof contract.ownerPendingRead>;
 export type OwnerActionPrepared = z.output<typeof contract.ownerActionPrepared>;
 export type OwnerActionsRead = z.output<typeof contract.ownerActionsRead>;
 export type OperationRead = z.output<typeof contract.operationRead>;

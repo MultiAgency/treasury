@@ -39,10 +39,9 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
   const [error, setError] = useState<string>();
   const [polling, setPolling] = useState(false);
   const every = polling ? 10_000 : false;
-  const actions = useQuery({ ...reads.ownerActionsGlance, enabled, refetchInterval: every });
-  const pending = useQuery({ ...reads.ownerPending, enabled });
+  const actions = useQuery({ ...reads.ownerActions, enabled, refetchInterval: every });
   const status = useQuery({
-    queryKey: [...reads.ownerActionsGlance.queryKey.slice(0, 2), "owner-action", action?.correlationId],
+    queryKey: [...reads.ownerActions.queryKey.slice(0, 2), "owner-action", action?.correlationId],
     queryFn: async () => {
       const read = await reads.agent.ownerActionStatus(action!.correlationId);
       if (!read.ok) throw new Error(failureText(read, "read"));
@@ -52,11 +51,11 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
     refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
   });
   const stage = status.data?.stage;
-  const waiting: Waiting | undefined = waitingOn(is, { actions: actions.data ?? [], pending: pending.data ?? [], now: Date.now() });
+  const waiting: Waiting | undefined = waitingOn(is, { actions: actions.data ?? [], now: Date.now() });
   const inFlight = action !== undefined && !(stage !== undefined && FINAL.has(stage));
   const holding = waiting !== undefined || inFlight || toFile !== undefined;
   useEffect(() => { setPolling(holding); }, [holding]);
-  const refresh = () => [reads.overview, reads.ownerActionsGlance, reads.ownerPending, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
+  const refresh = () => [reads.overview, reads.ownerActions, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   useEffect(() => { if (stage !== undefined && FINAL.has(stage)) { refresh(); onFinal?.(stage); } }, [stage]);
 
   const dao = identity.signer === "dao";
@@ -108,7 +107,7 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
   const dropFiling = () => setToFile(undefined);
 
   const progress: ReactNode = <>
-    {holding && !toFile && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" || waiting?.why === "pending" ? "Waiting for the vote or signature on an earlier one." : "An earlier one's outcome isn't known yet."} Nothing more of its kind can be sent until it is.</p>}
+    {holding && !toFile && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" ? "Waiting for the vote or signature on an earlier one." : "An earlier one's outcome isn't known yet."} Nothing more of its kind can be sent until it is.</p>}
     {action?.confirm && <p className="text-sm">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={action.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>. It expires {when(action.confirm.expiresAt)}.</p>}
     {action && <p role="status" className="text-sm">{!stage ? "Reading its status…" : words[stage] ?? stage}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}

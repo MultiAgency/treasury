@@ -61,7 +61,7 @@ const reset = (scopes: ("read" | "treasury" | "owner")[] = ["owner", "read", "tr
 };
 const prepares = () => fake.calls.filter(made => made.startsWith("owner.prepare"));
 const signedFor = (intent: { standard: "nep413"; payload: { message: string; recipient: string; nonce: string } }) => ({ signedData: { ...intent, public_key: owner.publicKey, signature: "ed25519:sig" } });
-const ownerSubmits = () => fake.calls.filter(made => made.startsWith("grant.submit"));
+const ownerSubmits = () => fake.calls.filter(made => made.startsWith("owner.submit"));
 const confirmAnswer = { ok: true, value: { correlationId: "freeze-confirm", expiresAt: new Date(Date.now() + 600_000).toISOString(), digest: null, preview: { summary: "Freeze the agent" },
   confirm: { url: "https://platform.test/confirm/abc", expiresAt: new Date(Date.now() + 600_000).toISOString(), token: "secret-token" } } };
 
@@ -164,25 +164,10 @@ test("a DAO's member asks for a freeze: prepared for the DAO's vote as the trans
   assert.equal((await call("POST", "unfreeze", {}, council, "daoagent")).status, 200, "a vote that lapsed holds nothing");
 });
 
-test("owner/pending is relayed once and passes on only which action, its kind, its deadline and whether it waits", async () => {
-  reset();
-  fake.reads.ownerPending = [{ correlationId: "p1", type: "agent_freeze", expiresAt: "2026-11-06T13:00:00.000Z", hash: "h".repeat(64), intent: { standard: "nep413", payload: { message: "m", recipient: "r", nonce: "n" } },
-    delegate: null, state: "waiting", payment: null }] as never;
-  fake.calls.length = 0;
-  const { status, body } = await call("GET", "owner/pending");
-  assert.equal(status, 200, JSON.stringify(body));
-  assert.deepEqual(contract.ownerPendingRead.parse(body.value), [{ correlationId: "p1", type: "agent_freeze", expiresAt: "2026-11-06T13:00:00.000Z", state: "waiting" }]);
-  assert.ok(!JSON.stringify(body).includes("intent") && !JSON.stringify(body).includes("hhhh"), "the intent and hash stay on the platform");
-  assert.equal(fake.calls.filter(made => made.startsWith("reads.ownerPending")).length, 1, "relayed once");
-  fake.readAnswers.ownerPending = [{ ok: false, kind: "unavailable" } as never];
-  assert.deepEqual((await call("GET", "owner/pending")).body, { ok: false, kind: "unavailable" });
-  fake.reads.ownerPending = [];
-});
-
 test("the owner-action routes answer another account with not_owner and no session with not_signed_in, and relay nothing for either", async () => {
   reset();
   // The council member owns no wallet agent: `portfolio` is owner.near's.
-  for (const [method, path] of [["POST", "freeze"], ["POST", "unfreeze"], ["GET", "owner/pending"], ["GET", "owner/actions/x"], ["POST", "owner/actions/x/submit"]] as const) {
+  for (const [method, path] of [["POST", "freeze"], ["POST", "unfreeze"], ["GET", "owner/actions/x"], ["POST", "owner/actions/x/submit"]] as const) {
     const stranger = await call(method, path, {}, council, "portfolio");
     assert.deepEqual([stranger.status, stranger.body], [403, { ok: false, kind: "not_owner" }], path);
     const anonymous = await fetch(`${base}/api/agents/portfolio/${path}`, { method, headers: { ...(method === "POST" && { origin: ORIGIN, "content-type": "application/json" }) }, ...(method === "POST" && { body: "{}" }) });

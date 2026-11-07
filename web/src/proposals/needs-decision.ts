@@ -1,6 +1,7 @@
 // What needs the owner at the agent's home (#130), from reads the page already makes: pure, so it's tested without a
 // browser. With its extensions: test/needs-decision.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import type { ProposalView } from "@multiagency/sdk";
+import { verdictOffered } from "./proposal-flow.ts";
 import { legText } from "./terms.ts";
 
 /** What an item asks of the owner, and where it leads (the page decides the link). */
@@ -18,8 +19,8 @@ export type Need = {
 
 type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
 type Unresolved = { key: string; kind: string; at: string };
-/** An owner action the platform still holds for a signature or the DAO's vote (`owner/pending`). */
-type PendingAction = { correlationId: string; type: string; expiresAt: string; state: string };
+/** An owner action as `owner/actions` records it. */
+type OwnerAction = { correlationId: string; type: string; stage: string; signer: string; expiresAt: string };
 
 const ACTION_WORDS: Record<string, string> = { agent_freeze: "Freeze", agent_unfreeze: "Unfreeze", grant_issue: "Strategy grant", grant_revoke: "Revoke a grant", policy_update: "Policy change" };
 
@@ -28,7 +29,7 @@ const live = (view: ProposalView, now: number) => Date.parse(view.expiresAt) > n
 
 /** Proposals waiting for the owner's answer: `proposed` and not expired, soonest deadline first. */
 export const openProposals = (proposals: readonly ProposalView[], now: number) =>
-  proposals.filter(view => view.state === "proposed" && live(view, now)).sort(byDeadline);
+  proposals.filter(view => verdictOffered(view, now)).sort(byDeadline);
 
 /** Proposals the owner approved that haven't been executed: `approved` and not expired, soonest deadline first. */
 export const approvedProposals = (proposals: readonly ProposalView[], now: number) =>
@@ -41,11 +42,13 @@ const swaps = (view: ProposalView) => view.legs.map(legText).join("; ");
  * proposals not executed, the DAO's requests waiting for a vote, and operations without a proven outcome (nothing to sign,
  * but nothing new runs until they're resolved). Held payouts aren't here: they're approved under a scope this app doesn't ask for.
  */
-export function needsDecision({ proposals, unresolved, daoRequests, pendingActions = [], now }: {
-  proposals: readonly ProposalView[]; unresolved: readonly Unresolved[]; daoRequests: readonly DaoWaiting[]; pendingActions?: readonly PendingAction[]; now: number;
+export function needsDecision({ proposals, unresolved, daoRequests, ownerActions = [], now }: {
+  proposals: readonly ProposalView[]; unresolved: readonly Unresolved[]; daoRequests: readonly DaoWaiting[]; ownerActions?: readonly OwnerAction[]; now: number;
 }): Need[] {
+  // A proposal whose verdict waits for the DAO's vote is listed as that vote only.
+  const voting = new Set(daoRequests.flatMap(request => request.kind === "vote" && request.proposal ? [request.proposal] : []));
   const items: Need[] = [
-    ...openProposals(proposals, now).map((view): Need => ({ key: `proposal-${view.id}`, kind: "open-proposal", text: `Awaiting your decision: ${swaps(view)}`,
+    ...openProposals(proposals, now).filter(view => !voting.has(view.id)).map((view): Need => ({ key: `proposal-${view.id}`, kind: "open-proposal", text: `Awaiting your decision: ${swaps(view)}`,
       deadline: Date.parse(view.expiresAt), target: { page: "proposal", id: view.id } })),
     ...approvedProposals(proposals, now).map((view): Need => ({ key: `proposal-${view.id}`, kind: "approved-proposal", text: `Approved, not executed yet: ${swaps(view)}`,
       deadline: Date.parse(view.expiresAt), target: { page: "proposal", id: view.id } })),
@@ -53,9 +56,10 @@ export function needsDecision({ proposals, unresolved, daoRequests, pendingActio
       ? { key: `dao-${request.id}`, kind: "dao-consent", text: "Waiting for the DAO's vote to connect the agent", deadline: request.votingUntil, target: { page: "connection" } }
       : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal`, deadline: request.votingUntil,
         target: { page: "proposal", id: request.proposal ?? "" } }),
-    // A freeze, unfreeze, revocation or grant waiting for a signature or the DAO's vote, until it expires (#133).
-    ...pendingActions.filter(item => item.state === "waiting" && Date.parse(item.expiresAt) > now).map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
-      text: `${ACTION_WORDS[item.type] ?? item.type} is waiting for a signature or the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
+    // A freeze, unfreeze, revocation or grant waiting for the DAO's vote, until it expires (#133). A wallet owner's intent that
+    // was only prepared is not waited on: it was never signed.
+    ...ownerActions.filter(item => item.stage === "prepared" && item.signer === "dao" && Date.parse(item.expiresAt) > now).map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
+      text: `${ACTION_WORDS[item.type] ?? item.type} is waiting for the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
       text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
   ];

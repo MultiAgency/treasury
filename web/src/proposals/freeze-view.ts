@@ -3,29 +3,25 @@
 // With its extensions: test/freeze-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 
 type Action = { type: string; stage: "settled" | "submitted" | "expired" | "prepared"; signer: "dao" | "wallet"; expiresAt: string; correlationId: string };
-type Pending = { type: string; state: string; expiresAt: string; correlationId: string };
 
 const STOPS = new Set(["agent_freeze", "agent_unfreeze"]);
 export const isStop = (type: string) => STOPS.has(type);
 
 /**
  * What a freeze or unfreeze waits on, if anything: one submitted whose outcome isn't recorded yet, a DAO's request still
- * waiting for its vote, or the platform's own pending one (`owner/pending`). A wallet owner's intent that was only
+ * waiting for its vote. `owner/actions` holds both: the platform builds `owner/pending` from the same records. A wallet owner's intent that was only
  * prepared isn't waited on: it was never signed, so it can be prepared again (the server holds the same way).
  */
-export function waitingStop(input: { actions: readonly Action[]; pending: readonly Pending[]; now: number }) { return waitingOn(isStop, input); }
+export function waitingStop(input: { actions: readonly Action[]; now: number }) { return waitingOn(isStop, input); }
 
-export type Waiting = { correlationId: string; type: string; why: "submitted" | "vote" | "pending"; expiresAt: string };
+export type Waiting = { correlationId: string; type: string; why: "submitted" | "vote"; expiresAt: string };
 /** What an owner action of the kinds `is` names waits on (a stop, a revocation): the one rule, so the pages hold alike. */
-export function waitingOn(is: (type: string) => boolean, { actions, pending, now }: { actions: readonly Action[]; pending: readonly Pending[]; now: number }): Waiting | undefined {
+export function waitingOn(is: (type: string) => boolean, { actions, now }: { actions: readonly Action[]; now: number }): Waiting | undefined {
   const live = (expiresAt: string) => Date.parse(expiresAt) > now;
   for (const action of actions) {
     if (!is(action.type)) continue;
     if (action.stage === "submitted") return { correlationId: action.correlationId, type: action.type, why: "submitted", expiresAt: action.expiresAt };
     if (action.stage === "prepared" && action.signer === "dao" && live(action.expiresAt)) return { correlationId: action.correlationId, type: action.type, why: "vote", expiresAt: action.expiresAt };
-  }
-  for (const item of pending) {
-    if (is(item.type) && item.state === "waiting" && live(item.expiresAt)) return { correlationId: item.correlationId, type: item.type, why: "pending", expiresAt: item.expiresAt };
   }
   return undefined;
 }

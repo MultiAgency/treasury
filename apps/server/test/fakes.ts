@@ -76,7 +76,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     account: { agentId: "id-portfolio", executor: true, wallet: "portfolio.agents.near", grant: null, stagedGrant: null },
     books: [],
     overview: OVERVIEW, activity: [], held: [], unresolved: [], runs: { ticks: [], corrupt: [] }, recording: undefined,
-    ledgerCsv: "correlationId,at,kind,status\n", ownerActions: [], ownerPending: [], policyHistory: [],
+    ledgerCsv: "correlationId,at,kind,status\n", ownerActions: [], policyHistory: [],
   };
   const readAnswers: { [K in ReadName]?: (ReadAnswer<ReadPath<K>> | Error)[] } = {};
   const read = async <K extends ReadName>(name: K, organization: string, agent: string, ...rest: string[]): Promise<ReadAnswer<ReadPath<K>>> => {
@@ -348,7 +348,6 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         const answered = await read("ownerActions", organization, agent);
         return !answered.ok || (answered.value as unknown[]).length > 0 ? answered : { ok: true, value: ownerActionsOf(agent) } as never;
       },
-      ownerPending: (organization, agent) => read("ownerPending", organization, agent),
       policyHistory: (organization, agent) => read("policyHistory", organization, agent),
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
@@ -366,27 +365,9 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         const dao = owners[agent]!, hash = correlationId.padStart(64, "c");
         return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
       },
-      async submit(organization, agent, input) {
-        calls.push(`grant.submit ${organization} ${agent} ${input.correlationId}`);
-        const queued = grantAnswers.submit?.shift();
-        if (queued instanceof Error) throw queued;
-        if (queued) return queued as never;
-        const found = grants.find(item => item.correlationId === input.correlationId && item.agent === agent);
-        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as never;
-        found.stage = "submitted";
-        found.signedData = input.signedData;
-        if ((found.type ?? "grant_issue") === "grant_issue") schedule(agent).unbound = false;
-        return { ok: true, value: { status: "SUCCESS", failureCode: null } } as never;
-      },
       async actions(organization, agent) {
         calls.push(`grant.actions ${organization} ${agent}`);
         return { ok: true, value: ownerActionsOf(agent) } as never;
-      },
-      async status(_organization, agent, correlationId) {
-        calls.push(`grant.status ${agent} ${correlationId}`);
-        const found = grants.find(item => item.correlationId === correlationId && item.agent === agent);
-        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as StatusAnswer;
-        return { ok: true, value: { stage: found.stage === "submitted" ? "submitted" : found.signer === "dao" ? "voting" : "submitting" } } as StatusAnswer;
       },
     },
     owner: {
@@ -403,6 +384,24 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         const dao = owners[agent]!, hash = correlationId.padStart(64, "d");
         const edit = input.action.type === "policy_update" ? { policy: { current: { owner_approval: true }, requested: { owner_approval: false, ...input.action.changes } } } : {};
         return { ok: true, value: { ...common, ...edit, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
+      },
+      async submit(organization, agent, input) {
+        calls.push(`owner.submit ${organization} ${agent} ${input.correlationId}`);
+        const queued = grantAnswers.submit?.shift();
+        if (queued instanceof Error) throw queued;
+        if (queued) return queued as never;
+        const found = grants.find(item => item.correlationId === input.correlationId && item.agent === agent);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as never;
+        found.stage = "submitted";
+        found.signedData = input.signedData;
+        if ((found.type ?? "grant_issue") === "grant_issue") schedule(agent).unbound = false;
+        return { ok: true, value: { status: "SUCCESS", failureCode: null } } as never;
+      },
+      async status(_organization, agent, correlationId) {
+        calls.push(`owner.status ${agent} ${correlationId}`);
+        const found = grants.find(item => item.correlationId === correlationId && item.agent === agent);
+        if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as StatusAnswer;
+        return { ok: true, value: { stage: found.stage === "submitted" ? "submitted" : found.signer === "dao" ? "voting" : "submitting" } } as StatusAnswer;
       },
     },
     autopilot: {
@@ -517,7 +516,7 @@ export function proposal(change: Partial<ProposalView> = {}): ProposalView {
 }
 
 /** The owner reads by name, and the platform procedure each one is. */
-const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log", ledgerCsv: "ledgerCsv", ownerActions: "owner/actions", ownerPending: "owner/pending", policyHistory: "policyHistory" } as const;
+const READ_PATHS = { account: "account", books: "reconcileBooks", overview: "overview", activity: "activity", held: "held", unresolved: "unresolved", runs: "autopilot/evidence", recording: "autopilot/log", ledgerCsv: "ledgerCsv", ownerActions: "owner/actions", policyHistory: "policyHistory" } as const;
 type ReadName = keyof typeof READ_PATHS;
 type ReadPath<K extends ReadName> = (typeof READ_PATHS)[K];
 type ReadValue<K extends ReadName> = Extract<ReadAnswer<ReadPath<K>>, { ok: true }>["value"] | (K extends "recording" ? undefined : never);
