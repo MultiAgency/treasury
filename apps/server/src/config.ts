@@ -91,6 +91,8 @@ const Settings = z.object({
    */
   TREASURY_ANCHOR_NETWORK: z.enum(["mainnet", "testnet"]).default("mainnet"),
   PLATFORM_TIMEOUT_MS: duration(15_000),
+  /** For an execute, which the platform answers once the plan's swaps have run: a two-swap plan took about 50 s on staging. */
+  PLATFORM_EXECUTE_TIMEOUT_MS: duration(180_000),
   CHAIN_TIMEOUT_MS: duration(10_000),
 });
 

@@ -39,7 +39,8 @@ const sent: { signerId: string; receiverId: string; actions: { params: { methodN
 
 before(async () => {
   await audit.check();
-  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
+  // `--on-chain-policy-edits`: a provider-enforced policy edit comes back NEP-366, held for the platform's confirm page (#140).
+  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test", "--on-chain-policy-edits"] });
   target = stack.target;
   const state = stack.state();
   owner = state.ownerAccount;
@@ -626,15 +627,16 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
 });
 
-test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000, todo: "the pinned stack never holds an edit for the confirm page: the platform enables that (onChainPolicyEdits) only in its own app-access harness, with no flag on stack.mjs" }, async () => {
+test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000, todo: "with --on-chain-policy-edits (platform 49b8d51) the stack holds the edit for its confirm page (NEP-366), but signing it there times out in the full run: the helper against this stack is unfinished" }, async () => {
   const show = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item);
   const state = stack.state();
   const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
   const agent = app.agent(owner.replaceAll(".", "--"), target.agent);
   const overview = async () => { const read = await agent.call("overview"); assert.ok(read.ok, show(read)); return read.value as { policy: { revision: number | null }; digest: string | null }; };
   const before = await overview();
-  // Turning owner approval off is enforced by the provider itself, so it comes back NEP-366: only a link, never the bytes.
-  const held = await agent.call("owner/prepare", { action: { type: "policy_update", expectedPolicy: { revision: before.policy.revision!, digest: before.digest! }, changes: { owner_approval: false } }, signer: "wallet" });
+  // The hourly action cap is enforced by the provider itself, so changing it comes back NEP-366: only a link, never the bytes.
+  // (The stack's policy has owner approval off already, so turning it off would change no enforced field.)
+  const held = await agent.call("owner/prepare", { action: { type: "policy_update", expectedPolicy: { revision: before.policy.revision!, digest: before.digest! }, changes: { max_actions_per_hour: 11 } }, signer: "wallet" });
   assert.ok(held.ok, show(held));
   const prepared = held.value as { correlationId: string; intent?: unknown; confirm?: { url: string } };
   assert.equal(prepared.intent, undefined, "the app never holds the delegate bytes");
