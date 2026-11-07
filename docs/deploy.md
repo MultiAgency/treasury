@@ -1,9 +1,9 @@
 # Deploying the app server
 
 The Treasury app server, with the proposals page it serves, runs on Railway: project `treasury`, environment
-`production`, one service `server`, built from this repository's `Dockerfile` with the settings in `railway.json`. It
-talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners and funds. When the
-platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
+`production`, one service `server`, built from this repository's `Dockerfile` with the settings in
+`.railway/railway.ts`. It talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners
+and funds. When the platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
 `TREASURY_PLATFORM_ORIGIN` and the credential, which is issued per host.
 
 The old prototype (`dao/treasury`) is a different service, `treasury` in the platform's own project; nothing here touches it.
@@ -35,6 +35,22 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 `PORT` is Railway's. `TREASURY_PAGE_DIR` is set by the image. `watch` runs only with `TREASURY_WATCH_FILE` and
 `TREASURY_REQUESTS_FILE` (on `/data`); `.env.example` lists the rest, each with a default.
 
+## Service settings
+
+`.railway/railway.ts` declares the service and its volume: build, health check and replicas. The restart policy is
+Railway's default (on failure, 10 retries), which it stores as unset, so the file doesn't declare it. Railway keeps a
+required mount unset for this service whatever the file says, so the server checks the volume itself
+(`TREASURY_REQUIRED_MOUNT`). Railway doesn't read the file during deploys; it stores what the last apply set. After
+changing the file:
+
+```sh
+railway config plan    # read-only: what would change
+railway config apply   # asks before changing anything
+```
+
+Variables are listed with `preserve()`, so their values stay in Railway. A variable added in Railway is added to the
+file too, or the plan stops. `pnpm typecheck` compiles the file against the `railway` package.
+
 ## The credential
 
 The platform's operator issues it on the gateway, from the gateway's state directory, and the token prints once. Run it
@@ -55,13 +71,14 @@ Railway builds from the `Dockerfile`, not from a local folder's guess. Either co
 untracked beside a checkout goes with it:
 
 ```sh
+railway config plan --detailed-exit-code   # exits 2 while .railway/railway.ts has changes not applied: apply them first
 rm -rf /tmp/treasury-deploy && git worktree prune && git worktree add --detach /tmp/treasury-deploy <commit>
 railway up /tmp/treasury-deploy --path-as-root --service server --environment production
 git worktree remove /tmp/treasury-deploy
 ```
 
-The first deploy: set the variables, deploy, then `railway domain` for the service, point a CNAME for `<host>` at the
-domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to it.
+The first deploy: set the variables, `railway config apply`, deploy, then `railway domain` for the service, point a
+CNAME for `<host>` at the domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to it.
 
 ## Checks after a deploy
 
