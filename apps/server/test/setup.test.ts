@@ -187,6 +187,8 @@ test("creation without a live setup consent asks for the setup again; the platfo
   await call("POST", "/api/setup", { cookie, body: (await signedSetup(other, cookie)).submission });
   for (const [answer, status, body] of [
     [{ ok: false, kind: "forbidden", status: 403, error: "Create the agent with the key that signed the setup" }, 409, { ok: false, kind: "refused", code: "not_set_up" }],
+    // One creation waits for its signature at a time: the platform refuses another, which isn't an outage.
+    [{ ok: false, kind: "refused", status: 400, error: "Agent creation already has an open owner action" }, 409, { ok: false, kind: "refused", code: "creation_refused" }],
     [new Error("socket hang up"), 503, { ok: false, kind: "unavailable" }],
   ] as const) {
     audited.length = 0;
@@ -194,6 +196,10 @@ test("creation without a live setup consent asks for the setup again; the platfo
     const reply = await json(await call("POST", `/api/agents/${agent}/creation`, { cookie, body: {} }));
     assert.deepEqual([reply.status, reply.body], [status, body]);
     assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["create", "attempt"], ["create", "result"]]);
+    const platform = answer instanceof Error ? { kind: "unavailable" } : { kind: answer.kind, status: answer.status };
+    const result = audited[1]!;
+    assert.ok(result.stage === "result");
+    assert.deepEqual(result.answer, { ok: false, ...platform, ...("code" in body && { code: body.code }) });
   }
   t.mock.method(console, "error", () => {});
 });

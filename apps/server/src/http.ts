@@ -601,8 +601,9 @@ export const routes: Route[] = [
     /**
      * Prepares the agent's creation under its setup consent, which reaches nothing else: a wallet owner signs it on the
      * platform's confirm page, with the key that signed the setup (the platform refuses any other); a DAO's member files
-     * the proposal for the DAO's vote, with a vote on it if their role votes. Each ask prepares a new one, which the
-     * owner may leave unsigned: it expires in minutes. Recorded before the platform is asked and after.
+     * the proposal for the DAO's vote, with a vote on it if their role votes. The owner may leave one unsigned: it
+     * expires in minutes. The platform's refusal is `creation_refused`, its text logged; one cause is a creation still
+     * waiting for its signature or vote. Recorded before the platform is asked and after.
      */
     method: "POST", path: "/api/agents/:agent/creation", access: "owner-fresh", needs: "file",
     async handle({ account, identity }, { platform, audit }) {
@@ -628,8 +629,10 @@ export const routes: Route[] = [
         if (reply.status !== 200) log("platform_creation_unreadable", { agent, correlationId });
       } else {
         log("platform_creation_failed", { agent, ...failure(prepared) });
-        // 403: no live setup consent covers it, or it names another key: the owner sets up again.
-        reply = prepared.kind === "forbidden" ? refused(409, "not_set_up") : unavailable();
+        // 403: no live setup consent covers it, or it names another key: the owner sets up again. A refusal (its text
+        // logged): the platform's reason, such as another creation still waiting for its signature or vote.
+        reply = prepared.kind === "forbidden" ? refused(409, "not_set_up")
+          : prepared.kind === "refused" ? refused(409, "creation_refused") : unavailable();
       }
       await recordResult(audit, { who: account!, action: "create", agent, stage: "result",
         ...(prepared.ok && { subject: prepared.value.correlationId }), answer: audited(prepared, reply) });
