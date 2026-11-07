@@ -63,19 +63,11 @@ export function agentReads(name: string) {
       refetchInterval: 30_000 }),
     /**
      * The agent's open DAO requests (#130): its consent and its verdicts on proposals. Answered from the server's own store,
-     * so it costs the platform nothing; not read again within half a minute, and never on its own.
+     * so it costs the platform nothing; not read again within half a minute, and read every half minute while it lists something
+     * (a vote settles on its own). Read again as soon as a consent or a verdict is filed.
      */
-    daoRequests: queryOptions({ queryKey: [...key, "dao-requests"], queryFn: async () => answered(await agent.daoRequests()).requests, retry: false, staleTime: 30_000 }),
-    /**
-     * What the home glances at (#130): the same queries the other pages make (same keys, so one read serves both), without
-     * their polling and not read again within a minute. The home adds no polling; with the overview and unresolved reads it
-     * already made, these are at most three platform reads a visit (the proposals, the strategy and the autopilot).
-     */
-    glance: {
-      proposals: queryOptions({ queryKey: [...key, "proposals"], queryFn: async () => answered(await agent.proposals()).proposals, retry: false, staleTime: 60_000 }),
-      strategy: queryOptions({ queryKey: [...key, "strategy"], queryFn: async () => answered(await agent.strategy()), retry: false, staleTime: 60_000 }),
-      autopilot: queryOptions({ queryKey: [...key, "autopilot"], queryFn: async () => answered(await agent.autopilot()), retry: false, staleTime: 60_000 }),
-    },
+    daoRequests: queryOptions({ queryKey: [...key, "dao-requests"], queryFn: async () => answered(await agent.daoRequests()).requests, retry: false, staleTime: 30_000,
+      refetchInterval: query => query.state.data?.length ? 30_000 : false }),
     /** One proposal, and for a DAO the DAO's vote on it while one waits: read again while either may change on its own. */
     proposal: (id: string) => queryOptions({ queryKey: [...key, "proposals", id], queryFn: async () => answered(await agent.proposal(id)),
       retry: false, refetchInterval: query => !query.state.data ? false : MOVING.has(query.state.data.proposal.state) ? 5_000 : query.state.data.vote ? 30_000 : false }),
@@ -88,7 +80,7 @@ export function agentReads(name: string) {
  * before it for up to that long.
  */
 export function refreshPortfolio(client: QueryClient, reads: ReturnType<typeof agentReads>) {
-  for (const read of [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books])
+  for (const read of [reads.overview, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books, reads.proposals, reads.strategy, reads.autopilot, reads.daoRequests])
     void client.invalidateQueries({ queryKey: read.queryKey });
 }
 

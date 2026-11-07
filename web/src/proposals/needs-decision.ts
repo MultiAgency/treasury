@@ -1,6 +1,7 @@
 // What needs the owner at the agent's home (#130), from reads the page already makes: pure, so it's tested without a
 // browser. With its extensions: test/needs-decision.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import type { ProposalView } from "@multiagency/sdk";
+import { verdictOffered } from "./proposal-flow.ts";
 import { legText } from "./terms.ts";
 
 /** What an item asks of the owner, and where it leads (the page decides the link). */
@@ -28,7 +29,7 @@ const live = (view: ProposalView, now: number) => Date.parse(view.expiresAt) > n
 
 /** Proposals waiting for the owner's answer: `proposed` and not expired, soonest deadline first. */
 export const openProposals = (proposals: readonly ProposalView[], now: number) =>
-  proposals.filter(view => view.state === "proposed" && live(view, now)).sort(byDeadline);
+  proposals.filter(view => verdictOffered(view, now)).sort(byDeadline);
 
 /** Proposals the owner approved that haven't been executed: `approved` and not expired, soonest deadline first. */
 export const approvedProposals = (proposals: readonly ProposalView[], now: number) =>
@@ -44,8 +45,10 @@ const swaps = (view: ProposalView) => view.legs.map(legText).join("; ");
 export function needsDecision({ proposals, unresolved, daoRequests, pendingActions = [], now }: {
   proposals: readonly ProposalView[]; unresolved: readonly Unresolved[]; daoRequests: readonly DaoWaiting[]; pendingActions?: readonly PendingAction[]; now: number;
 }): Need[] {
+  // A proposal whose verdict waits for the DAO's vote is listed as that vote only.
+  const voting = new Set(daoRequests.flatMap(request => request.kind === "vote" && request.proposal ? [request.proposal] : []));
   const items: Need[] = [
-    ...openProposals(proposals, now).map((view): Need => ({ key: `proposal-${view.id}`, kind: "open-proposal", text: `Awaiting your decision: ${swaps(view)}`,
+    ...openProposals(proposals, now).filter(view => !voting.has(view.id)).map((view): Need => ({ key: `proposal-${view.id}`, kind: "open-proposal", text: `Awaiting your decision: ${swaps(view)}`,
       deadline: Date.parse(view.expiresAt), target: { page: "proposal", id: view.id } })),
     ...approvedProposals(proposals, now).map((view): Need => ({ key: `proposal-${view.id}`, kind: "approved-proposal", text: `Approved, not executed yet: ${swaps(view)}`,
       deadline: Date.parse(view.expiresAt), target: { page: "proposal", id: view.id } })),

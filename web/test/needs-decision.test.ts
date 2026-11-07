@@ -81,3 +81,10 @@ test("a pending owner action is listed until it expires, with its deadline, and 
   assert.match(need[3]!.text, /^Revoke a grant is waiting/);
   assert.deepEqual(needsDecision({ proposals: [], unresolved: [], daoRequests: [], now: NOW }), [], "the pending actions are optional");
 });
+
+test("a proposal whose verdict waits for the DAO's vote is listed as the vote only, not twice", () => {
+  const id = "p".repeat(32);
+  const need = needsDecision({ proposals: [view(id, "proposed", HOUR), view("other", "proposed", 2 * HOUR)], unresolved: [],
+    daoRequests: [{ id: "v".repeat(64), kind: "vote", proposal: id, verdict: "approve", votingUntil: NOW + HOUR }], now: NOW });
+  assert.deepEqual(need.map(item => [item.kind, item.target]), [["dao-vote", { page: "proposal", id }], ["open-proposal", { page: "proposal", id: "other" }]]);
+});
