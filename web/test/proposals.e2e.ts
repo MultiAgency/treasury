@@ -627,7 +627,20 @@ test("the emergency stop is in the frame of every page, with its own region and 
   assert.deepEqual(unexpected, []);
 });
 
-test("the owner freezes by keyboard with their wallet, told first what it does, and unfreezes; the agent's state follows", { timeout: 150_000 }, async () => {
+/**
+ * Signs the stop's prepared action on the platform's confirm page: with `--on-chain-policy-edits` the provider enforces
+ * the freeze itself, so it comes back NEP-366, as it does in production.
+ */
+async function signStopOnConfirmPage(stop: ReturnType<Page["getByRole"]>) {
+  const link = stop.getByRole("link", { name: "open the confirm page" });
+  await visible(link);
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: (await link.getAttribute("href"))!,
+    owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
+  assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
+  assert.deepEqual(signed.unexpected, []);
+}
+
+test("the owner freezes by keyboard, told first what it does, signs on the platform's confirm page, and unfreezes; the agent's state follows (#140)", { timeout: 150_000 }, async () => {
   await page.goto(here("/strategy"));
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
@@ -641,6 +654,7 @@ test("the owner freezes by keyboard with their wallet, told first what it does, 
   assert.match(text, /Your wallet signs it/);
   assert.deepEqual(await axe(), [], "the freeze dialog");
   await confirm.getByRole("button", { name: "Sign and freeze" }).click();
+  await signStopOnConfirmPage(stop);
   await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Unfreeze" }));
   assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "one control at a time");
@@ -650,6 +664,7 @@ test("the owner freezes by keyboard with their wallet, told first what it does, 
   const back = dialog("Unfreeze this agent?");
   await visible(back);
   await back.getByRole("button", { name: "Sign and unfreeze" }).click();
+  await signStopOnConfirmPage(stop);
   await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   assert.deepEqual(unexpected, []);
@@ -660,9 +675,17 @@ test("a wallet that refuses the freeze's signature leaves Freeze enabled again, 
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
-  await stop.getByRole("button", { name: "Freeze" }).click();
-  await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
-  await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  // This stack prepares a freeze for the confirm page; the wallet's refusal is of an intent, so the freeze is answered as one.
+  const intent = { standard: "nep413", payload: { message: "Freeze the agent", recipient: new URL(origin).host, nonce: Buffer.alloc(32).toString("base64") } };
+  const asIntent = (route: Route) => route.fulfill({ json: { ok: true, value: { correlationId: "refused-freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), intent } } });
+  await page.route("**/api/agents/*/freeze", asIntent);
+  try {
+    await stop.getByRole("button", { name: "Freeze" }).click();
+    await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
+    await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  } finally {
+    await page.unroute("**/api/agents/*/freeze", asIntent);
+  }
   assert.equal(await stop.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
   await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true);
