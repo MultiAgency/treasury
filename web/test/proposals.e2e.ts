@@ -924,11 +924,8 @@ async function draftRateEdit() {
 
 test("an edit that expires before it was signed keeps the editor open and says so", { timeout: 120_000 }, async () => {
   const terms = await draftRateEdit();
-  // The platform reads the edit's intent as expired once its window has passed.
-  await page.route("**/api/agents/*/owner/actions/*", route => route.request().method() === "GET"
-    ? route.fulfill({ json: { ok: true, value: { stage: "expired" } } }) : route.fallback());
-  // The wallet refuses to sign, so the edit stays unsigned while its status reads expired.
-  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  // The signed edit is taken without applying it, and the platform reads it as expired, as it does once its window has passed.
+  await page.route("**/api/agents/*/owner/actions/*", route => route.fulfill({ json: { ok: true, value: route.request().method() === "GET" ? { stage: "expired" } : {} } }));
   try {
     await terms.getByRole("button", { name: "Review the changes" }).click();
     await dialog("Change this policy?").getByRole("button", { name: "Sign and apply" }).click();
