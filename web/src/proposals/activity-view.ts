@@ -19,14 +19,6 @@ export function pageOf<R>(rows: readonly R[], page: number, size = PAGE_SIZE): R
   return rows.slice((clamped - 1) * size, clamped * size);
 }
 
-/** The page (1-based) a row with this `correlationId` is on, or 1 when no row has it. */
-export function pageOfRow(rows: readonly Row[], correlationId: string, size = PAGE_SIZE): number {
-  const index = rows.findIndex(row => row.correlationId === correlationId);
-  return index < 0 ? 1 : Math.floor(index / size) + 1;
-}
-
-/** The anchor of a row, so a link can land on it. */
-export const rowAnchor = (correlationId: string) => `op-${correlationId}`;
 /** The anchor of an operation without a proven outcome, by its journal key. */
 export const unresolvedAnchor = (key: string) => `unresolved-${key.replace(/[^A-Za-z0-9_.:-]/g, "_")}`;
 
