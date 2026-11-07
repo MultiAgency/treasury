@@ -679,6 +679,8 @@ test("a freeze whose outcome is unknown holds both controls, after a reload too,
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "held after a reload");
   assert.deepEqual(await axe(), [], "held");
   await page.goto(here("/funding"));
+  // The fresh page reads the platform's record before it holds: wait for that, then check.
+  await visible(stop.getByText(/outcome isn't known yet/));
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "and on another page");
   // The platform records it settled: the hold ends.
   await page.unroute("**/api/agents/*/owner/actions");
