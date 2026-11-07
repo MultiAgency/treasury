@@ -41,6 +41,11 @@ export function agentReads(name: string) {
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
+    ownerActions: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false }),
+    /** One recorded run of the autopilot, by its tick ID (#136). */
+    recording: (tick: string) => queryOptions({ queryKey: [...key, "runs", tick], queryFn: async () => answered(await agent.recording(tick)), retry: false }),
+    /** One operation's status by its `correlationId`, asked for by a click on its row. */
+    operation: (correlationId: string) => queryOptions({ queryKey: [...key, "operations", correlationId], queryFn: async () => answered(await agent.operation(correlationId)), retry: false }),
     strategy: queryOptions({ queryKey: [...key, "strategy"], queryFn: async () => answered(await agent.strategy()), retry: false }),
     autopilot: queryOptions({ queryKey: [...key, "autopilot"], queryFn: async () => answered(await agent.autopilot()), retry: false }),
     books: queryOptions({ queryKey: [...key, "books"], queryFn: async () => answered(await agent.books()), retry: false }),

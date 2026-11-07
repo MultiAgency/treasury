@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ago } from "../shared/format";
 import { Card, Loading, QueryError, short } from "../shared/ui";
+import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
 import { agentAddress, proposalAddress } from "./pages";
@@ -15,8 +16,8 @@ function NeedLink({ need, agent }: { need: Need; agent: string }) {
   const { target } = need;
   if (target.page === "proposal") return <PageLink to={proposalAddress(agent, target.id)} className="underline">Review proposal {short(target.id, 12)}</PageLink>;
   if (target.page === "connection") return <PageLink to={agentAddress(agent)} hash="connection" className="underline">Open the connection</PageLink>;
-  // Until the Activity page (#136), the portfolio's Activity card.
-  return <PageLink to={agentAddress(agent)} hash="activity" className="underline">Check the activity</PageLink>;
+  // The Activity page, at the operation's entry (#136).
+  return <PageLink to={agentAddress(agent, "activity")} hash={unresolvedAnchor(target.key)} className="underline">Check the activity</PageLink>;
 }
 
 /**

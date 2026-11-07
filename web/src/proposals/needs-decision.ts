@@ -14,7 +14,7 @@ export type Need = {
   deadline: number | null;
   /** The ISO time an item happened, for those with no deadline (an unresolved operation). */
   at?: string;
-  target: { page: "proposal"; id: string } | { page: "connection" } | { page: "activity" };
+  target: { page: "proposal"; id: string } | { page: "connection" } | { page: "activity"; key: string };
 };
 
 type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
@@ -53,7 +53,7 @@ export function needsDecision({ proposals, unresolved, daoRequests, now }: {
       : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal`, deadline: request.votingUntil,
         target: { page: "proposal", id: request.proposal ?? "" } }),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
-      text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity" } })),
+      text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
   ];
   // Deadlines first, soonest first; then the rest, in the order the platform listed them.
   return items.map((item, index) => ({ item, index })).sort((a, b) => {

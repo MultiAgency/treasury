@@ -110,6 +110,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         held: () => call(contract.heldRead, `${base}/held`),
         unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
         runs: () => call(contract.runsRead, `${base}/runs`),
+        /** The owner's actions and where each stands (#136): the platform's record, across devices. */
+        ownerActions: () => call(contract.ownerActionsRead, `${base}/owner/actions`),
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
@@ -171,6 +173,9 @@ export type ProposalRead = z.output<typeof contract.proposalRead>;
 export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
+export type RecordingRead = z.output<typeof contract.recordingRead>;
+export type OwnerActionsRead = z.output<typeof contract.ownerActionsRead>;
+export type OperationRead = z.output<typeof contract.operationRead>;
 export type TreasuryRead = z.output<typeof contract.treasuryRead>["treasury"];
 export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
 export type SweepRun = z.output<typeof contract.sweepRun>;
@@ -180,3 +185,6 @@ export type GrantPrepared = z.output<typeof contract.grantPrepared>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */
 export const freshNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+
+/** Where the agent's ledger downloads as a CSV (#136): a link the browser follows with its own session, never a call of this module. */
+export const activityCsvPath = (agent: string) => `/api/agents/${contract.agentName.parse(agent)}/activity.csv`;

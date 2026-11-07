@@ -2,23 +2,23 @@ import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { describeRequest, usd } from "../shared/format";
 import { Button, Card, Loading, QueryError } from "../shared/ui";
 import { Book } from "./book";
-import { holdingsOf, recentActivity, recentRuns } from "./portfolio-view";
+import { holdingsOf } from "./portfolio-view";
 import { refreshPortfolio, type agentReads } from "./queries";
-import { amountText, when } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
 
 /**
  * The agent's portfolio as its owner reads it under the app's consent (#7, read-only): the book and its allocation
- * (#130), holdings and policy, held payouts, recent activity and the autopilot's recent runs. Nothing here acts:
- * rebalancing is a proposal the owner approves on the Proposals page. What needs the owner's decision is above it
- * (`NeedsDecision`). Shown once the agent is connected, since every read needs the consent.
+ * (#130), holdings and policy, and held payouts. Nothing here acts: rebalancing is a proposal the owner approves on the
+ * Proposals page. What needs the owner's decision is above it (`NeedsDecision`); the history, the owner's actions, the
+ * autopilot's runs and the books are on the Activity page (#136). Shown once the agent is connected, since every read needs the consent.
  */
 export function Portfolio({ reads }: { reads: Reads }) {
   const client = useQueryClient();
   const overview = useQuery(reads.overview);
-  const [activity, held, runs, books] = useQueries({ queries: [reads.activity, reads.held, reads.runs, reads.books] });
-  const fetching = [overview, activity, held, runs, books].some(read => read.isFetching);
+  const [held] = useQueries({ queries: [reads.held] });
+  const fetching = [overview, held].some(read => read.isFetching);
+  // Also marks the reads the Activity page shows as old, so a swap or a shield is there when it is opened (#149).
   const refresh = () => refreshPortfolio(client, reads);
   const book = overview.data?.book ?? [];
 
@@ -57,49 +57,6 @@ export function Portfolio({ reads }: { reads: Reads }) {
         : <ul aria-label="Held payouts" className="flex flex-col gap-1 text-sm">
           {held.data.map(item => <li key={item.correlationId}>Held for approval: {describeRequest(item.request, book)}</li>)}
         </ul>}
-    </Card>
-
-    <Card>
-      <h3 id="activity" className="text-base font-semibold">Activity</h3>
-      {activity.isPending ? <Loading label="Reading activity…" />
-        : activity.isError ? <QueryError error={activity.error} retry={() => activity.refetch()} />
-        : activity.data.length === 0 ? <p className="text-sm" role="status">No activity yet.</p>
-        : <ul aria-label="Activity" className="flex flex-col gap-1 text-sm">
-          {recentActivity(activity.data, 20).map((row, i) => <li key={row.correlationId ?? `${row.at}-${i}`}>
-            <time dateTime={row.at}>{when(row.at)}</time> · {row.kind} · {describeRequest(row.request, book)}
-            {row.refused ? ` · refused: ${row.refused}` : row.status ? ` · ${row.status}` : " · outcome not recorded yet"}
-          </li>)}
-        </ul>}
-    </Card>
-
-    <Card>
-      <h3 className="text-base font-semibold">Autopilot runs</h3>
-      {runs.isPending ? <Loading label="Reading the autopilot's runs…" />
-        : runs.isError ? <QueryError error={runs.error} retry={() => runs.refetch()} />
-        : runs.data.ticks.length === 0 ? <p className="text-sm" role="status">The autopilot hasn't run.</p>
-        : <ul aria-label="Autopilot runs" className="flex flex-col gap-1 text-sm">
-          {recentRuns(runs.data, 10).map(run => <li key={run.id}>
-            <time dateTime={run.at}>{when(run.at)}</time> · {run.trigger === "schedule" ? "scheduled" : "by the operator"} · {run.outcome}{run.planUsd !== null && ` · plan ${usd(run.planUsd)}`}
-          </li>)}
-        </ul>}
-      {runs.data && runs.data.corrupt.length > 0 && <p className="text-sm" role="alert">{runs.data.corrupt.length} recorded line(s) couldn't be read.</p>}
-    </Card>
-
-    <Card>
-      <h3 className="text-base font-semibold">Books</h3>
-      <p className="text-sm text-muted-foreground">The provider's balances checked against the chain, and its private balances against recorded executions.</p>
-      {books.isPending ? <Loading label="Reading the books…" />
-        : books.isError ? <QueryError error={books.error} retry={() => books.refetch()} />
-        : books.data.length === 0 ? <p className="text-sm" role="status">No balances to reconcile.</p>
-        : <table className="w-full text-sm">
-          <caption className="sr-only">Books</caption>
-          <thead><tr className="text-left text-muted-foreground"><th scope="col" className="py-1 font-medium">Asset</th><th scope="col" className="py-1 font-medium">Public drift from chain</th><th scope="col" className="py-1 font-medium">Private, not attributed</th></tr></thead>
-          <tbody>{books.data.map(row => <tr key={row.asset} className="border-t">
-            <th scope="row" className="py-1 font-medium">{row.symbol}</th>
-            <td className="py-1 font-mono break-all">{row.public.drift === "0" ? "none" : amountText(row.public.drift, row.asset)}</td>
-            <td className="py-1 font-mono break-all">{row.confidential.unattributed === "0" ? "none" : amountText(row.confidential.unattributed, row.asset)}</td>
-          </tr>)}</tbody>
-        </table>}
     </Card>
   </section>;
 }

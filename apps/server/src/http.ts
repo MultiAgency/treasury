@@ -81,7 +81,11 @@ type Context = Deps & { settle: Settle; consentsToday: RateLimit; daoFilingsToda
 export type Access = "public" | "session" | "owner" | "owner-fresh";
 /** A call as its handler sees it. `identity` is the agent's, as the owner check read it (see `Access`), on owner routes only. */
 type Call = { req: IncomingMessage; body: unknown; token: string | undefined; account: string | undefined; params: Record<string, string>; identity?: Admitted };
-type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string };
+/**
+ * What a route answers: JSON, or (`csv`) a download: the text as the platform produced it, named for the browser to save.
+ * The body of a download is never read as JSON, so it carries no value.
+ */
+type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string; csv?: { filename: string; text: string } };
 /**
  * What an agent route needs of the account's access, beyond being admitted, as the platform's own rule for the
  * procedure it stands for (`mayCall`, so it can't drift from what the platform enforces): `read` a read; `sign` relaying
@@ -823,6 +827,24 @@ export const routes: Route[] = [
   readRoute("/api/agents/:agent/account", "account"),
   readRoute("/api/agents/:agent/overview", "overview"),
   readRoute("/api/agents/:agent/activity", "activity"),
+  {
+    // The agent's ledger as a CSV download (#136): relayed once as the platform wrote it.
+    method: "GET", path: "/api/agents/:agent/activity.csv", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.reads.ledgerCsv(organizationOf(owner), agent), agent);
+      return answer.ok ? { status: 200, body: { ok: true, value: null }, csv: { filename: `${agent}-activity.csv`, text: answer.value } } : readFailure(answer, agent, "ledgerCsv");
+    },
+  },
+  {
+    // The owner's actions and where each stands (#136), as the platform records them: across devices, never the audit file.
+    method: "GET", path: "/api/agents/:agent/owner/actions", access: "owner", needs: "read",
+    async handle({ identity }, { platform }) {
+      const { agent, owner } = identity!;
+      const answer = await relay(() => platform.reads.ownerActions(organizationOf(owner), agent), agent);
+      return answer.ok ? ok(answer.value) : readFailure(answer, agent, "owner/actions");
+    },
+  },
   readRoute("/api/agents/:agent/held", "held"),
   readRoute("/api/agents/:agent/unresolved", "unresolved"),
   readRoute("/api/agents/:agent/runs", "runs"),
@@ -1217,7 +1239,14 @@ export function createServer(deps: Deps) {
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
-    const send = ({ status, body, cookie }: Reply) => {
+    const send = ({ status, body, cookie, csv }: Reply) => {
+      if (csv) {
+        // A file for the owner to keep: it is only ever offered as a download, never rendered as a page.
+        res.writeHead(status, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${csv.filename}"`,
+          "cache-control": "no-store", "x-content-type-options": "nosniff" });
+        res.end(csv.text);
+        return;
+      }
       res.writeHead(status, {
         "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff",
         ...(cookie && { "set-cookie": cookie }),

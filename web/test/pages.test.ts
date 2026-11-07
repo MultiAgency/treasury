@@ -5,7 +5,7 @@ import type { ProposalView } from "@multiagency/sdk";
 import { createRequests } from "../../apps/server/src/requests.ts";
 import { createWatch } from "../../apps/server/src/watch.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
-import { AGENT_PAGES, agentAddress, isProposalId, NAVIGATION, place, proposalAddress, ROOT_TITLE, DAO_TITLE } from "../src/proposals/pages.ts";
+import { AGENT_PAGES, agentAddress, isProposalId, isRunId, NAVIGATION, place, proposalAddress, ROOT_TITLE, DAO_TITLE, runAddress } from "../src/proposals/pages.ts";
 
 const ID = "0123456789abcdef0123456789abcdef";
 
@@ -18,6 +18,8 @@ test("every address in the table names its page", () => {
   assert.deepEqual(place(`/agents/portfolio/proposals/${ID}`), { kind: "proposal", title: "Proposal", agent: "portfolio", id: ID });
   assert.deepEqual(place("/agents/portfolio/strategy"), { kind: "agent", title: "Strategy", agent: "portfolio", page: "strategy" });
   assert.deepEqual(place("/agents/portfolio/funding/"), { kind: "agent", title: "Funding", agent: "portfolio", page: "funding" });
+  assert.deepEqual(place("/agents/portfolio/activity"), { kind: "agent", title: "Activity", agent: "portfolio", page: "activity" });
+  assert.deepEqual(place("/agents/portfolio/activity/runs/tick-1"), { kind: "run", title: "Run", agent: "portfolio", id: "tick-1" });
 });
 
 test("the addresses the table builds are read back as the same page", () => {
@@ -90,7 +92,16 @@ test("a bad proposal ID is still the proposal page, for the page to show as such
 });
 
 test("the navigation lists the pages that exist, once each, home first", () => {
-  assert.deepEqual([...NAVIGATION], ["home", "proposals", "strategy", "funding"]);
+  assert.deepEqual([...NAVIGATION], ["home", "proposals", "strategy", "funding", "activity"]);
   assert.equal(new Set(NAVIGATION).size, NAVIGATION.length);
   for (const page of NAVIGATION) assert.ok(page in AGENT_PAGES);
+});
+
+test("a run's address is read back, and a run ID is what the server takes in a path", () => {
+  assert.deepEqual(place(runAddress("portfolio", "2026-11-06T10:00:00.000Z-1")), { kind: "run", title: "Run", agent: "portfolio", id: "2026-11-06T10:00:00.000Z-1" });
+  assert.deepEqual(place(runAddress("portfolio", "a b")), { kind: "run", title: "Run", agent: "portfolio", id: "a b" }, "escaped in the address, read back as given");
+  assert.equal(isRunId("tick-1_a.b:c"), true);
+  for (const bad of ["", "a b", "a/b", "x".repeat(129), "é"]) assert.equal(isRunId(bad), false, JSON.stringify(bad));
+  for (const address of ["/agents/portfolio/activity/runs", "/agents/portfolio/activity/runs/a/b", "/agents/portfolio/activity/other/a", "/agents/portfolio/activity/runs/%E0%A4%A"])
+    assert.equal(place(address).kind, "missing", address);
 });
