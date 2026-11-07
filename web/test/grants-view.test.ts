@@ -15,16 +15,15 @@ test("a grant is live until it is revoked or expires; the rest are history, newe
   assert.deepEqual(ended.map(item => item.grant_id), ["revoked", "old"]);
 });
 
-test("a revocation waits on its outcome when submitted, when a DAO's request is waiting for its vote, or when the platform lists it pending; a freeze doesn't count", () => {
+test("a revocation waits on its outcome when submitted, or when a DAO's request is waiting for its vote; a freeze doesn't count", () => {
   const live = new Date(NOW + 60_000).toISOString(), lapsed = new Date(NOW - 1000).toISOString();
   const action = (type: string, stage: "submitted" | "prepared" | "settled", signer: "dao" | "wallet", expiresAt = live) => ({ type, stage, signer, expiresAt, correlationId: `${type}-${stage}` });
-  const wait = (actions: ReturnType<typeof action>[], pending: { type: string; state: string; expiresAt: string; correlationId: string }[] = []) => waitingRevocation({ actions, pending, now: NOW })?.why;
+  const wait = (actions: ReturnType<typeof action>[]) => waitingRevocation({ actions, now: NOW })?.why;
   assert.equal(wait([action("grant_revoke", "submitted", "wallet")]), "submitted");
   assert.equal(wait([action("grant_revoke", "prepared", "dao")]), "vote");
   assert.equal(wait([action("grant_revoke", "prepared", "dao", lapsed)]), undefined, "a vote that lapsed holds nothing");
   assert.equal(wait([action("grant_revoke", "prepared", "wallet")]), undefined, "an unsigned intent can be prepared again");
   assert.equal(wait([action("agent_freeze", "submitted", "wallet")]), undefined);
-  assert.equal(wait([], [{ type: "grant_revoke", state: "waiting", expiresAt: live, correlationId: "p" }]), "pending");
   assert.equal(wait([action("grant_revoke", "settled", "wallet")]), undefined);
 });
 

@@ -20,7 +20,7 @@ export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
-export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log" | "ledgerCsv" | "owner/actions" | "owner/pending"> = OwnerResult<OwnerOutput<P>>;
+export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log" | "ledgerCsv" | "owner/actions"> = OwnerResult<OwnerOutput<P>>;
 /**
  * A sweep as it ran: every event the stream gave, and how it ended (`null` when it ended normally). A stream lost after
  * any event ends `unknown`, as the SDK reports it: a shield may have gone out.
@@ -135,8 +135,6 @@ export type Platform = {
     ledgerCsv(organization: string, agent: string): Promise<ReadAnswer<"ledgerCsv">>;
     /** The owner's actions for the agent and where each stands (`owner/actions`, an app read): the platform's record, across devices. */
     ownerActions(organization: string, agent: string): Promise<ReadAnswer<"owner/actions">>;
-    /** The owner action still awaiting its outcome, if any (`owner/pending`, an app read): what a freeze or unfreeze held for a vote or a signature waits on. */
-    ownerPending(organization: string, agent: string): Promise<ReadAnswer<"owner/pending">>;
   };
   /**
    * Funding the agent under an Organization's consent (its `treasury` scope): the account linked to fund it, a one-time
@@ -157,23 +155,23 @@ export type Platform = {
   };
   /**
    * A grant binding the saved strategy (`grant_issue`, label `treasury`, for the strategy's digest): prepared for a wallet
-   * owner to sign (under `owner`) or for a DAO's vote (under `treasury`), a wallet owner's signature submitted, and its
-   * owner actions and their status read.
+   * owner to sign (under `owner`) or for a DAO's vote (under `treasury`), and its owner actions read. Its signature is
+   * submitted and its status followed with the other owner actions (`owner.submit`, `owner.status`).
    */
   grant: {
     prepare(organization: string, agent: string, input: { action: { type: "grant_issue"; label: "treasury"; expectedStrategyDigest: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
-    submit(organization: string, agent: string, input: { correlationId: string; signedData: Record<string, unknown> }): Promise<OwnerResult<OwnerOutput<"owner/submit">>>;
     actions(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"owner/actions">>>;
-    status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };
   /**
    * An owner action other than a grant (#133), prepared the same way: for a wallet owner to sign (under `owner`), or for
    * a DAO's vote. Today a freeze or unfreeze; the same call takes a grant's revocation and a policy edit when they come
-   * (#142, #134). Submitting a wallet owner's signature and following the action are `grant.submit` and `grant.status`,
-   * which are the platform's `owner/submit` and `owner/status` whatever the action.
+   * (#142, #134). Submitting a wallet owner's signature and following the action are `submit` and `status`, the platform's
+   * `owner/submit` and `owner/status` whatever the action.
    */
   owner: {
     prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" } | { type: "grant_revoke"; grantId: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
+    submit(organization: string, agent: string, input: { correlationId: string; signedData: Record<string, unknown> }): Promise<OwnerResult<OwnerOutput<"owner/submit">>>;
+    status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };
   /**
    * The agent's saved strategy and autopilot, under an Organization's consent (`treasury`): the strategy with whether
@@ -288,10 +286,11 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
       recording: async (organization, agent, tickId) => (await client()).agent(organization, agent).call("autopilot/log", { tickId }),
       ledgerCsv: async (organization, agent) => (await client()).agent(organization, agent).call("ledgerCsv"),
       ownerActions: async (organization, agent) => (await client()).agent(organization, agent).call("owner/actions"),
-      ownerPending: async (organization, agent) => (await client()).agent(organization, agent).call("owner/pending"),
     },
     owner: {
       prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),
+      submit: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/submit", input),
+      status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
     },
     funding: {
       treasury: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/get"),
@@ -316,9 +315,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     },
     grant: {
       prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),
-      submit: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/submit", input),
       actions: async (organization, agent) => (await client()).agent(organization, agent).call("owner/actions"),
-      status: async (organization, agent, correlationId) => (await client()).agent(organization, agent).call("owner/status", { correlationId }),
     },
     autopilot: {
       strategy: async (organization, agent) => (await client()).agent(organization, agent).call("strategy/get"),

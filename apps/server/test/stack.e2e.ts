@@ -405,7 +405,6 @@ async function freezing() {
   }
   const frozen = async () => ((await (await get(`${agent}/overview`, cookie)).json()) as { value: { policy: { policy: { frozen?: boolean } | null } } }).value.policy.policy?.frozen === true;
   const stageOf = async (id: string) => contract.ownerActionStatus.parse(((await (await get(`${agent}/owner/actions/${id}`, cookie)).json()) as { value: unknown }).value).stage;
-  const pending = async () => contract.ownerPendingRead.parse(((await (await get(`${agent}/owner/pending`, cookie)).json()) as { value: unknown }).value);
   /** Prepares the action, and (an intent) signs it here and relays it once, then waits for it to take effect. A confirm page's form answers with its link. */
   const act = async (action: "freeze" | "unfreeze") => {
     const prepared = await post(`${agent}/${action}`, {}, cookie);
@@ -425,19 +424,22 @@ async function freezing() {
     }
     return { made, signed: true as const };
   };
-  return { cookie, agent, frozen, pending, act };
+  return { cookie, agent, frozen, act };
 }
 
 test("freeze and unfreeze (#133): prepared in the form the platform chooses, an intent signed here and relayed once, followed to its status", { timeout: 120_000 }, async () => {
-  const { frozen, pending, act } = await freezing();
+  const { frozen, act } = await freezing();
   assert.equal(await frozen(), false, "not frozen to begin with");
   const froze = await act("freeze");
-  if (!froze.signed) return void console.log("freeze answered a confirm page: its signed path waits for #140");
-  assert.ok(!(await pending()).some(item => item.correlationId === froze.made.correlationId), "not pending once it took effect");
+  assert.ok(froze.signed, "the stack answers a freeze with an intent");
   assert.equal(await frozen(), true);
   assert.equal((await act("unfreeze")).signed, true);
   assert.equal(await frozen(), false);
 });
+
+// The provider sends freeze and unfreeze as NEP-366 (the platform's docs/app-access.md), so in production a wallet owner
+// freezes through the platform's confirm page, a path this stack never answers with: it waits for the confirm-page helper.
+test.todo("a freeze answered with the platform's confirm page is signed there, and takes effect (#140)");
 
 test("while the agent is frozen nothing is sent: an earlier approval is invalidated, a new one is refused; after unfreeze a new proposal runs (#133)", { timeout: 150_000 }, async () => {
   const { cookie, agent, frozen, act } = await freezing();
@@ -459,7 +461,7 @@ test("while the agent is frozen nothing is sent: an earlier approval is invalida
   const early = await propose();
   assert.equal((await approve(early)).status, 200, "approved before the freeze");
   const froze = await act("freeze");
-  if (!froze.signed) return void console.log("freeze answered a confirm page: the frozen-execute check waits for #140");
+  assert.ok(froze.signed, "the stack answers a freeze with an intent");
   assert.equal(await frozen(), true);
   // Freezing changes the policy: what was approved under the old one can't be executed, and nothing is sent.
   const stopped = await execute(early);

@@ -41,10 +41,9 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
   const [polling, setPolling] = useState(false);
   const every = polling ? 10_000 : false;
   const overview = useQuery({ ...reads.overview, refetchInterval: every });
-  const actions = useQuery({ ...reads.ownerActionsGlance, refetchInterval: every });
-  const pending = useQuery(reads.ownerPending);
+  const actions = useQuery({ ...reads.ownerActions, refetchInterval: every });
   const status = useQuery({
-    queryKey: [...reads.ownerActionsGlance.queryKey.slice(0, 2), "owner-action", action?.prepared.correlationId],
+    queryKey: [...reads.ownerActions.queryKey.slice(0, 2), "owner-action", action?.prepared.correlationId],
     queryFn: async () => {
       const read = await reads.agent.ownerActionStatus(action!.prepared.correlationId);
       if (!read.ok) throw new Error(failureText(read, "read"));
@@ -54,11 +53,11 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
     refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
   });
   const stage = status.data?.stage;
-  const waiting = waitingRevocation({ actions: actions.data ?? [], pending: pending.data ?? [], now: Date.now() });
+  const waiting = waitingRevocation({ actions: actions.data ?? [], now: Date.now() });
   const inFlight = action !== undefined && !(stage !== undefined && FINAL.has(stage));
   const holding = waiting !== undefined || inFlight;
   useEffect(() => { setPolling(holding); }, [holding]);
-  const refresh = () => [reads.overview, reads.ownerActionsGlance, reads.ownerPending, reads.account].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
+  const refresh = () => [reads.overview, reads.ownerActions, reads.account].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   useEffect(() => { if (stage !== undefined && FINAL.has(stage)) refresh(); }, [stage]);
 
   const dao = identity.signer === "dao";
@@ -123,7 +122,7 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
           </div>
         </Card></li>)}
       </ul>}
-    {holding && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" || waiting?.why === "pending" ? "Waiting for the vote or signature on an earlier revocation." : "An earlier revocation's outcome isn't known yet."} Nothing more can be sent until it is.</p>}
+    {holding && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" ? "Waiting for the vote or signature on an earlier revocation." : "An earlier revocation's outcome isn't known yet."} Nothing more can be sent until it is.</p>}
     {action?.prepared.confirm && <p className="text-sm">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={action.prepared.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>. It expires {when(action.prepared.confirm.expiresAt)}.</p>}
     {action && <p role="status" className="text-sm">{!stage ? "Reading its status…" : STAGE_WORDS[stage] ?? stage}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}

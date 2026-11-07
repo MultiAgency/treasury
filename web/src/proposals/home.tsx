@@ -34,14 +34,14 @@ function NeedLink({ need, agent }: { need: Need; agent: string }) {
  * read, so only they show (and nothing, when there are none: the connection says what is wrong).
  */
 export function NeedsDecision({ reads, identity, connected }: { reads: Reads; identity: Identity; connected: boolean }) {
-  const proposals = useQuery({ ...reads.glance.proposals, enabled: connected });
+  const proposals = useQuery({ ...reads.proposals, refetchInterval: false, enabled: connected });
   const unresolved = useQuery({ ...reads.unresolved, enabled: connected });
   const dao = useQuery({ ...reads.daoRequests, enabled: identity.signer === "dao" });
-  // The platform's pending owner action: the same read the emergency stop makes, so one read serves both.
-  const actions = useQuery({ ...reads.ownerPending, enabled: connected });
+  // The owner's actions and where each stands: the same read the emergency stop makes, so one read serves both.
+  const actions = useQuery({ ...reads.ownerActions, enabled: connected });
   const failing = [[proposals, "proposals"], [unresolved, "unresolved operations"], [dao, "the DAO's requests"], [actions, "pending owner actions"]] as const;
   const pending = (connected && (proposals.isPending || unresolved.isPending || actions.isPending)) || (identity.signer === "dao" && dao.isPending);
-  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], pendingActions: actions.data ?? [], now: Date.now() });
+  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], ownerActions: actions.data ?? [], now: Date.now() });
   if (!connected && items.length === 0) return null;
 
   return <section id="needs-decision" aria-labelledby="needs-decision-title" className="flex flex-col gap-4">
@@ -66,8 +66,8 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
 /** Where the agent stands, one line each (#130): the policy, whether the grant binds the saved strategy, and autopilot. */
 export function Standing({ reads, identity }: { reads: Reads; identity: Identity }) {
   const overview = useQuery(reads.overview);
-  const strategy = useQuery(reads.glance.strategy);
-  const autopilot = useQuery(reads.glance.autopilot);
+  const strategy = useQuery(reads.strategy);
+  const autopilot = useQuery(reads.autopilot);
   const line = (label: string, read: { isPending: boolean; isError: boolean }, text: string | undefined, to?: string) => <li className="flex flex-wrap gap-x-2">
     <span className="font-medium">{label}</span>
     {read.isPending ? <span className="text-muted-foreground">Reading…</span> : read.isError || text === undefined ? <span role="alert">Couldn't be read.</span> : <span>{text}</span>}
