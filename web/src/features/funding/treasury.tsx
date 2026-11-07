@@ -10,7 +10,7 @@ import { connect, useWallet, wallet as ownWallet } from "../../app/wallet";
 import { useAttempt } from "../../shared/action-hooks";
 import { Field, focusInvalid } from "../../shared/form";
 import { accountError } from "../../shared/form-validation";
-import { ago, fromUnits, toUnits } from "../../shared/format";
+import { ago, fromUnits, linkedBalances, toUnits } from "../../shared/format";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, input, Loading, QueryError, Section, short, Spinner } from "../../shared/ui";
 import { ConfirmButton } from "../owner/confirm-button";
 import { dao } from "../owner/wallet";
@@ -373,7 +373,7 @@ export function TreasurySection() {
             <div className="flex flex-col gap-1">
               <span className="break-all font-mono text-lg">{treasury.accountId}</span>
               <span className="text-sm text-muted-foreground">
-                {treasury.balances.near} NEAR · {fromUnits(treasury.balances.usdc, 6)} USDC in the account
+                {linkedBalances(treasury.balances).near} NEAR · {linkedBalances(treasury.balances).usdc} USDC in the account
               </span>
             </div>
             {treasury.dao ? (

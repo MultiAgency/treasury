@@ -5,7 +5,7 @@ import { blockFunding, useFundingBlock } from "../features/funding/funding-block
 import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "../features/funding/funding-transaction";
 import { Field, focusInvalid } from "../shared/form";
 import { accountError } from "../shared/form-validation";
-import { ago, fromUnits, toUnits } from "../shared/format";
+import { ago, fromUnits, linkedBalances, toUnits } from "../shared/format";
 import { Button, Card, CopyButton, ErrorBox, errorMessage, input, Loading, QueryError, Spinner } from "../shared/ui";
 import type { DepositRead, Identity, TreasuryRead } from "./proposals-api";
 import type { agentReads } from "./queries";
@@ -76,12 +76,13 @@ function FundingAccount({ reads, identity, linked }: { reads: Reads; identity: I
   if (!linked) return canChange
     ? <LinkAccount account={identity.account} busy={busy} error={error} onLink={accountId => change(() => reads.agent.link(accountId))} />
     : <p className="text-sm" role="status">No funding account is linked.</p>;
+  const held = linkedBalances(linked.balances);
   return <div className="flex flex-col gap-3 text-sm">
     <p role="status">Funded from <span className="font-mono break-all">{linked.accountId}</span>
       {linked.dao ? `, a DAO with ${linked.dao.members.length} member${linked.dao.members.length === 1 ? "" : "s"}` : ""}.</p>
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-      <dt className="text-muted-foreground">NEAR</dt><dd className="font-mono">{fromUnits(linked.balances.near, 24)}</dd>
-      <dt className="text-muted-foreground">USDC</dt><dd className="font-mono">{fromUnits(linked.balances.usdc, 6)}</dd>
+      <dt className="text-muted-foreground">NEAR</dt><dd className="font-mono">{held.near}</dd>
+      <dt className="text-muted-foreground">USDC</dt><dd className="font-mono">{held.usdc}</dd>
     </dl>
     {identity.signer === "dao" && <p className="text-muted-foreground">A DAO agent is funded by its DAO, fixed at setup.</p>}
     {canChange && linked.dao && <label className="flex items-center gap-2">
