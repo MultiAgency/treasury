@@ -910,6 +910,46 @@ test("the owner edits the policy by keyboard: told what changes first, signs it,
   assert.deepEqual(await axe(), [], "after the edit");
 });
 
+/** Opens the policy editor with a rate that differs from the one in force, ready to review. */
+async function draftRateEdit() {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  await terms.getByRole("button", { name: "Edit", exact: true }).click();
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  await visible(rate);
+  await rate.fill((await rate.inputValue()) === "5" ? "6" : "5");
+  return terms;
+}
+
+test("an edit that expires before it was signed keeps the editor open and says so", { timeout: 120_000 }, async () => {
+  const terms = await draftRateEdit();
+  // The platform reads the edit's intent as expired once its window has passed.
+  await page.route("**/api/agents/*/owner/actions/*", route => route.request().method() === "GET"
+    ? route.fulfill({ json: { ok: true, value: { stage: "expired" } } }) : route.fallback());
+  // The wallet refuses to sign, so the edit stays unsigned while its status reads expired.
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  try {
+    await terms.getByRole("button", { name: "Review the changes" }).click();
+    await dialog("Change this policy?").getByRole("button", { name: "Sign and apply" }).click();
+    await visible(terms.getByText("It expired before it was signed or voted on. The policy is unchanged."));
+    assert.equal(await terms.getByLabel("Actions an hour (blank for no cap)").count(), 1, "the editor is still open");
+  } finally {
+    await page.unroute("**/api/agents/*/owner/actions/*");
+  }
+});
+
+test("a wallet that refuses the edit's signature leaves Review the changes enabled again", { timeout: 90_000 }, async () => {
+  const terms = await draftRateEdit();
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  await terms.getByRole("button", { name: "Review the changes" }).click();
+  await dialog("Change this policy?").getByRole("button", { name: "Sign and apply" }).click();
+  await visible(terms.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  assert.equal(await terms.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
+  await page.waitForFunction(() => ![...document.querySelectorAll("button")].some(button => button.textContent?.includes("Review the changes") && button.disabled), undefined, { timeout: 10_000 });
+  assert.equal(await terms.getByRole("button", { name: "Review the changes" }).isEnabled(), true);
+});
+
 test("a refusal because the policy isn't in force links to the Policy page", { timeout: 90_000 }, async () => {
   await ensureConnected();
   const made = await propose(`policy-link-${Date.now()}`);

@@ -34,7 +34,7 @@ export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads:
   const [reviewing, setReviewing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const dao = identity.signer === "dao";
-  const flow = useOwnerFlow({ reads, identity, is: type => type === "policy_update", words: STAGE_WORDS, reviewDao: true, onFinal: onDone });
+  const flow = useOwnerFlow({ reads, identity, is: type => type === "policy_update", words: STAGE_WORDS, reviewDao: true, onFinal: stage => { if (stage === "submitted") onDone(); } });
   const result = changesOf(draft, data.book, policy);
   const lines = differences(baseline.draft, draft, data.book);
   const stale = !sameReviewedPolicy(baseline.policy, reviewedPolicyOf(data));

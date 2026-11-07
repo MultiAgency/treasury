@@ -181,8 +181,6 @@ const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant
     const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
     const asked = action(body);
     if (asked === undefined) return refused(400, "bad_request");
-    // A DAO member who may not file proposals is refused before anything is prepared.
-    if (signer === "dao" && !access.canPropose) return refused(403, "not_permitted");
     // An edit that would leave the policy as it is is refused before anything is prepared.
     if (asked.type === "policy_update") {
       const current = await relay(() => platform.reads.overview(organization, agent), agent);

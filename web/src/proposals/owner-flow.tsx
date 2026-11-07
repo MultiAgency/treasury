@@ -20,12 +20,15 @@ export const FINAL = new Set(["submitted", "expired", "failed"]);
  * outcome holds another of its kind after a reload too. A DAO member may be shown the terms before and after before
  * filing (`reviewDao`).
  */
-export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, onFinal }: {
+export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, enabled = true, onFinal }: {
   reads: Reads; identity: Identity; is: (type: string) => boolean;
   /** The words for each stage: what has happened to this kind of action. */
   words: Record<string, string>;
   reviewDao?: boolean;
-  onFinal?: () => void;
+  /** Whether the platform's records may be read yet (the stop reads them only once the agent is connected). */
+  enabled?: boolean;
+  /** Called once with the stage an action reached when it is final. */
+  onFinal?: (stage: string) => void;
 }) {
   const client = useQueryClient();
   const [action, setAction] = useState<OwnerActionPrepared>();
@@ -36,8 +39,8 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, on
   const [error, setError] = useState<string>();
   const [polling, setPolling] = useState(false);
   const every = polling ? 10_000 : false;
-  const actions = useQuery({ ...reads.ownerActionsGlance, refetchInterval: every });
-  const pending = useQuery(reads.ownerPending);
+  const actions = useQuery({ ...reads.ownerActionsGlance, enabled, refetchInterval: every });
+  const pending = useQuery({ ...reads.ownerPending, enabled });
   const status = useQuery({
     queryKey: [...reads.ownerActionsGlance.queryKey.slice(0, 2), "owner-action", action?.correlationId],
     queryFn: async () => {
@@ -54,7 +57,7 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, on
   const holding = waiting !== undefined || inFlight || toFile !== undefined;
   useEffect(() => { setPolling(holding); }, [holding]);
   const refresh = () => [reads.overview, reads.ownerActionsGlance, reads.ownerPending, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
-  useEffect(() => { if (stage !== undefined && FINAL.has(stage)) { refresh(); onFinal?.(); } }, [stage]);
+  useEffect(() => { if (stage !== undefined && FINAL.has(stage)) { refresh(); onFinal?.(stage); } }, [stage]);
 
   const dao = identity.signer === "dao";
   const sendFiled = async (prepared: OwnerActionPrepared) => {
@@ -72,6 +75,8 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, on
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }
     } catch (problem) {
+      // Nothing was signed or filed, so the platform has no outcome to wait for: let the next one be asked for.
+      setAction(undefined);
       setError(problem instanceof WrongAccount ? problem.message : `${dao ? "The wallet didn't send it" : "The wallet didn't sign"}: ${errorMessage(problem)}. Nothing took effect.`);
     } finally {
       setBusy(false);
