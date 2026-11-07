@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
-import { chromium, type Browser, type Page } from "playwright";
+import { chromium, type Browser, type Page, type Route } from "playwright";
 import { chainedFileAudit, verifyChain } from "../../apps/server/src/chain.ts";
 import { consentText } from "../../apps/server/src/consent.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
@@ -505,6 +505,25 @@ test("the home says where the agent stands, one line each, linking to its page",
   await visible(lines.filter({ hasText: /^Autopilot(On|Off)/ }));
   assert.equal(await lines.filter({ hasText: /^Strategy/ }).getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/strategy`);
   assert.deepEqual(await axe(), []);
+});
+
+test("on an approve-only host the home's Strategy line says so, never that it is not authorized", { timeout: 60_000 }, async () => {
+  // The platform answers `grantMatches: null` when the host has no executor.
+  const approveOnly = async (route: Route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...(await response.json()), grantMatches: null } });
+  };
+  await page.route(/strategy\/get/, approveOnly);
+  try {
+    await page.goto(here());
+    const standing = page.getByRole("region", { name: "Where the agent stands" });
+    await signInIfAsked(standing);
+    const line = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem").filter({ hasText: /^Strategy/ });
+    await visible(line.getByText("This host only approves: the strategy is authorized on the agent's executor"));
+    assert.equal(await line.getByText(/Not authorized/).count(), 0);
+  } finally {
+    await page.unroute(/strategy\/get/, approveOnly);
+  }
 });
 
 test("the owner edits the strategy, authorizes it in their wallet, turns autopilot on, runs it once, and disconnecting turns it off first", { timeout: 120_000 }, async () => {
