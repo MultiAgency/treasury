@@ -15,10 +15,10 @@ Freeze is the stop that halts every send. A wallet owner can freeze the agent fr
 
 ## Running it locally
 
-Everything runs against the platform's simulated stack at [`ce5fec6`](https://github.com/MultiAgency/platform/commit/ce5fec6), the commit SDK 0.5.2 was published from (tag `sdk-v0.5.2`). Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
+Everything runs against the platform's simulated stack at [`49b8d51`](https://github.com/MultiAgency/platform/commit/49b8d51), the commit SDK 0.5.3 was published from (tag `sdk-v0.5.3`). Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout ce5fec6
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 49b8d51
 (cd ../platform && pnpm install --frozen-lockfile)
 pnpm install
 ```
@@ -35,6 +35,6 @@ pnpm --filter @treasury/web test:stack       # the owner UI, and the app's pages
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-kit's local node; not in CI
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `ce5fec6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `49b8d51` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
