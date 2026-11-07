@@ -6,7 +6,7 @@ import {
   type DecisionRecord, type Intent, type Level, type OracleLimits, type ProfileName, type Sample, type WhipsawState,
 } from "../../../packages/core/src/index.ts";
 import { createRecords } from "./records.ts";
-import type { Body } from "./requests.ts";
+import { newRequestId, type Body } from "./requests.ts";
 
 /**
  * What the owner chose for an agent `watch` runs Ballast for (#47): a profile and the mandate answers the platform can't
@@ -122,11 +122,15 @@ export type EngineStates = Awaited<ReturnType<typeof createEngineState>>;
 const decimalOf = (price: number) => price.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
 
 type Holding = OwnerOutput<"overview">["book"][number];
-/** A Ballast decision as the audit log records it (A7.2, #54): the engines' record, and the agent it was made for. */
-export type DecisionEntry = DecisionRecord & { organization: string; agent: string };
-/** What one tick decided: a proposal to make, with what to record once it's stored, or why not. */
+/**
+ * A Ballast decision as the audit log records it (A7.2, #54): the engines' record, the agent it was made for, and for
+ * one that proposes, the `requestId` its request is stored and sent under (#172). A recorded `requestId` with no
+ * request or proposal under it was never stored (the store was full, or the server stopped first).
+ */
+export type DecisionEntry = DecisionRecord & { organization: string; agent: string; requestId?: string };
+/** What one tick decided: a proposal to make under its `requestId`, with what to record once it's stored, or why not. */
 export type Decision =
-  | { body: Body; intent: Intent; level: Level; detail: Record<string, unknown> }
+  | { requestId: string; body: Body; intent: Intent; level: Level; detail: Record<string, unknown> }
   | { skipped: string; [detail: string]: unknown };
 
 /**
@@ -203,26 +207,31 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         decimals: Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals])),
         maxSlippageBps: m.limits.policy.maxSlippageBps,
       });
-      await audit.append({ ...record, organization, agent });
-
       const { intent, policy: verdict, proposal } = record;
       const detail = { zone: intent.zone, level, ...(reading.frozen ? { frozen: reading.reason } : { twap: reading.twap15m, ema: reading.ema30d }) };
+      const decision = ((): Decision => {
+        if (intent.action === "hold") return { skipped: "ballast holds", reason: intent.reason, ...detail };
+        if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
+        if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
+        const { sizeUsd, legs } = proposal;
+        if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
+        const approval = verdict?.result.ok === "needs-approval" ? `; ${verdict.result.reason}` : "";
+        return {
+          requestId: newRequestId(agent),
+          body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of wNEAR${approval}`.slice(0, 280) },
+          intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
+        };
+      })();
+      // A proposal is recorded under the requestId its request will be stored and sent with (#172).
+      await audit.append({ ...record, organization, agent, ...("skipped" in decision ? {} : { requestId: decision.requestId }) });
+
       if (intent.action === "hold") {
         // A hold may re-arm a disarmed zone: written only when it changes.
         const deviation = reading.frozen ? null : deviationPct(reading.twap15m, reading.ema30d);
         const next = nextState(state.whipsaw as WhipsawState, intent, deviation, at);
         if (JSON.stringify(next) !== JSON.stringify(state.whipsaw)) await states.change(organization, agent, s => ({ ...s, whipsaw: next }));
-        return { skipped: "ballast holds", reason: intent.reason, ...detail };
       }
-      if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
-      if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
-      const { sizeUsd, legs } = proposal;
-      if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
-      const approval = verdict?.result.ok === "needs-approval" ? `; ${verdict.result.reason}` : "";
-      return {
-        body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of wNEAR${approval}`.slice(0, 280) },
-        intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
-      };
+      return decision;
     },
 
     /**

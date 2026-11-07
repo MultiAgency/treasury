@@ -40,10 +40,10 @@ function overview(price: number | null, now: number, change: Partial<OwnerOutput
   } as unknown as OwnerOutput<"overview">;
 }
 
-async function world({ seeded = true, failAudit = false }: { seeded?: boolean; failAudit?: boolean } = {}) {
+async function world({ seeded = true, failAudit = false, max }: { seeded?: boolean; failAudit?: boolean; max?: number } = {}) {
   const dir = tempDir("treasury-ballast-");
   const clock = { now: T0 };
-  const requests = await createRequests(join(dir, "requests.json"));
+  const requests = await createRequests(join(dir, "requests.json"), max === undefined ? {} : { max });
   const history = await createPriceHistory(join(dir, "requests.json.history"));
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
@@ -237,6 +237,28 @@ test("every decision is recorded with its inputs before it's acted on, and the l
   assert.deepEqual(replayAuditLog(log), { ok: true, count: 1 });
 });
 
+const entriesOf = async (w: Awaited<ReturnType<typeof world>>) =>
+  (await w.log()).trim().split("\n").map(line => (JSON.parse(line) as { entry: DecisionEntry }).entry);
+
+test("a proposing decision's record names the request it became: the one stored and sent (#172)", async () => {
+  const w = await world();
+  assert.ok("proposed" in await w.tick());
+  const [entry] = await entriesOf(w);
+  const { requestId } = w.sent[0] as { requestId: string };
+  assert.equal(entry!.requestId, requestId);
+  assert.deepEqual(w.states.find(ORG, AGENT).proposed.map(p => p.requestId), [requestId]);
+});
+
+test("with the stored requests full, the decision is recorded with its requestId and no request under it is stored or sent (#172)", async () => {
+  const w = await world({ max: 0 });
+  assert.equal((await w.tick()).held, "stored requests full");
+  const [entry] = await entriesOf(w);
+  assert.equal(entry!.intent.action, "buy-volatile");
+  assert.match(String(entry!.requestId), /^portfolio_[0-9a-f]{24}$/);
+  assert.deepEqual(w.requests.of(ORG, AGENT), []);
+  assert.equal(w.sent.length, 0);
+});
+
 test("a hold is a decision too: recorded with its frozen reading, and it replays (#54)", async () => {
   const w = await world({ seeded: false });
   const held = await w.tick();
@@ -244,6 +266,7 @@ test("a hold is a decision too: recorded with its frozen reading, and it replays
   const log = await w.log();
   const [entry] = log.trim().split("\n").map(line => (JSON.parse(line) as { entry: DecisionEntry }).entry);
   assert.deepEqual([entry!.intent.action, entry!.reading.frozen, entry!.policy, entry!.proposal], ["hold", true, undefined, undefined]);
+  assert.equal("requestId" in entry!, false, "a hold becomes no request (#172)");
   assert.deepEqual(replayAuditLog(log), { ok: true, count: 1 });
 });
 
