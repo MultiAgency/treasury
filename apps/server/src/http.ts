@@ -1096,7 +1096,7 @@ export const routes: Route[] = [
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_action")
-        : submitted.kind === "refused" ? refused(409, "action_refused") : unavailable();
+        : submitted.kind === "refused" ? refused(409, "action_refused") : submitted.kind === "rate_limited" ? platformLimited() : unavailable();
       if (!submitted.ok) log("platform_owner_submit_failed", { agent, ...failure(submitted) });
       await recordResult(audit, { who: account!, action: "owner-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
       return reply;
