@@ -11,6 +11,7 @@ import { Button, ErrorBox, Loading } from "./shared/ui";
 import "./theme/tokens.css";
 import "./styles.css";
 import "./treasury-theme.css";
+import "./dashboard-theme.css";
 
 document.documentElement.classList.add("treasury-theme", "dark");
 

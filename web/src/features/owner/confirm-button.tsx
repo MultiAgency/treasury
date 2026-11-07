@@ -16,6 +16,7 @@ export function ConfirmButton({
   permitted,
   reviewKey,
   summary,
+  variant,
 }: {
   label: ReactNode;
   title: string;
@@ -27,6 +28,8 @@ export function ConfirmButton({
   /** Exact reviewed details, retained with the confirmation snapshot. */
   summary?: ReactNode;
   disabled?: boolean;
+  /** The trigger's look only; the dialog is the same for every variant. */
+  variant?: "default" | "outline" | "danger";
 } & ({ path: string; permitted?: never } | {
   path?: never;
   /** Explicit access to the target agent for cross-agent actions. The gateway also enforces it. */
@@ -47,7 +50,7 @@ export function ConfirmButton({
   }, [changed]);
   return (
     <>
-      <Button ref={trigger} disabled={disabled || !allowed} title={allowed ? undefined : "Your account cannot perform this action"} onClick={() => {
+      <Button ref={trigger} variant={variant} disabled={disabled || !allowed} title={allowed ? undefined : "Your account cannot perform this action"} onClick={() => {
         setInvalidated(false);
         setReview(reviewKey === undefined ? undefined : { key: reviewKey, title, description, summary, confirm: onConfirm });
         dialog.current?.showModal();
@@ -84,6 +87,7 @@ export function ConfirmButton({
               Cancel
             </Button>
             <Button
+              className={variant === "danger" ? "dash-danger-solid" : undefined}
               disabled={disabled || !allowed || invalidReview}
               onClick={() => {
                 if (disabled || !allowed || invalidReview) return;

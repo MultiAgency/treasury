@@ -160,16 +160,12 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
         }}>Compare draft with current policy</Button>}
         <ErrorBox error={invalid ? `Check ${invalid}. Correct the highlighted field before reviewing.` : undefined} />
         {reviewing && !stale && "changes" in result && (
-          <div role="status" className="flex flex-col gap-2 text-sm">
-            <span className="text-muted-foreground">
+          <div role="status" className="flex flex-col overflow-hidden rounded-xl bg-inset text-sm shadow-[0_0_0_1px_color-mix(in_oklch,var(--dash-brand)_35%,transparent)]">
+            <span className="flex items-center gap-2 border-b bg-accent-tint px-3 py-2 font-medium text-accent-ink">
               {viaDao ? "The DAO will be asked to sign these changes:" : "You will sign these changes:"}
             </span>
-            <ul className="flex flex-col gap-1">
-              {lines.map((line) => (
-                <li key={line} className="font-mono text-xs">
-                  {line}
-                </li>
-              ))}
+            <ul className="flex flex-col divide-y">
+              {lines.map((line) => <li key={line} className="px-3 py-2 text-[13px]"><DiffLine line={line} /></li>)}
             </ul>
           </div>
         )}
@@ -207,4 +203,20 @@ export function Editor({ policy, data, setup, onDone }: { policy: AgentPolicy; d
       </form>
     </Card>
   );
+}
+
+/**
+ * One reviewed change as a diff row (after beautifui's diff-table): the field, the current value struck through, the
+ * signed value in green. Inline, so the row still reads as the line the review composed ("Field: old → new").
+ */
+function DiffLine({ line }: { line: string }) {
+  const colon = line.indexOf(": ");
+  const arrow = line.indexOf(" → ", colon);
+  if (colon < 0 || arrow < 0) return <span className="font-mono text-xs">{line}</span>;
+  return <>
+    <span className="text-muted-foreground">{line.slice(0, colon + 2)}</span>
+    <span className="rounded bg-red-tint px-1 font-mono text-[12.5px] text-red line-through decoration-1">{line.slice(colon + 2, arrow)}</span>
+    <span className="text-ink-3">{" → "}</span>
+    <span className="rounded bg-green-tint px-1 font-mono text-[12.5px] text-green">{line.slice(arrow + 3)}</span>
+  </>;
 }

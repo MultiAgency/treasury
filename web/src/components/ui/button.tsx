@@ -18,6 +18,8 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive-muted text-destructive-muted-foreground hover:bg-destructive-muted/80",
         link: "text-primary underline-offset-4 hover:underline",
+        /** A destructive action's trigger: red outline; the solid red belongs to its confirmation. */
+        danger: "border-destructive/45 bg-transparent text-destructive hover:bg-destructive-muted",
       },
       size: {
         default:

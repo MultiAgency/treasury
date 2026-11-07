@@ -30,11 +30,11 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
       return <li key={g.grant_id} className="flex flex-col gap-1 py-3 text-sm first:pt-0 last:pb-0">
         <span className="flex flex-wrap items-center gap-2">
           <span className="break-all">{g.label}</span>
-          <Badge>{g.revoked_at ? "Revoked" : "Expired"}</Badge>
+          <Badge tone={g.revoked_at ? "destructive" : "neutral"}>{g.revoked_at ? "Revoked" : "Expired"}</Badge>
         </span>
         <span className="text-muted-foreground">
-          issued {ago(g.issued_at)} · {g.revoked_at ? <>revoked <time dateTime={g.revoked_at}>{g.revoked_at}</time></>
-            : <>expired <time dateTime={g.expires_at}>{g.expires_at}</time></>}
+          issued {ago(g.issued_at)} · {g.revoked_at ? <>revoked <time dateTime={g.revoked_at} title={new Date(g.revoked_at).toLocaleString()}>{ago(g.revoked_at)}</time></>
+            : <>expired <time dateTime={g.expires_at} title={new Date(g.expires_at).toLocaleString()}>{ago(g.expires_at)}</time></>}
         </span>
       </li>;
     })}
@@ -51,7 +51,7 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
   if (live.length === 0)
     return (
       <Section title="Grants" description="No live grant: the agent can't send until the owner issues one.">
-        <Card>
+        <Card className="!bg-[var(--inset)]">
           {issueButton}
           {connectedNotOwner && <p className="text-xs text-muted-foreground">Only {ownerName(setup)} can revoke or issue grants. Connect that account.</p>}
           {ended.length > 0 && <Details summary={`Ended grants (${ended.length})`}>{history}</Details>}
@@ -77,44 +77,44 @@ export function Grants({ data, setup }: { data: Overview; setup: Setup }) {
         title="Revoke the current grant?"
         description="The agent stops: nothing moves until the owner issues a new grant. Operations it already committed still finish."
         confirm="Revoke"
+        variant="danger"
         onConfirm={() => revoke(g.grant_id)}
       />
     ) : (
-      <Button size="sm" variant="outline" disabled={blocked} onClick={() => revoke(g.grant_id)}>
+      <Button size="sm" variant="danger" disabled={blocked} onClick={() => revoke(g.grant_id)}>
         {label}
       </Button>
     );
   };
 
   return (
-    <Section title="Grants" description="Live grants allow actions inside the policy. Expired and revoked grants remain here as history.">
-      <Card>
-          <p className="text-muted-foreground">
-            Revoking a grant stops it at once; operations it already committed still finish.{viaDao ? " Each revocation is one DAO proposal." : ""} A
-            new grant replaces the current one once the owner signs it. A treasury grant's label carries the strategy in force, so signing it
-            approves that strategy for the autopilot.
-          </p>
-          <ul aria-label="Live grants" className="flex flex-col divide-y">
-            {live.map((g) => (
-              <li key={g.grant_id} className="flex flex-wrap items-center justify-between gap-3 py-2">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <span className="flex flex-wrap items-center gap-2"><span className="break-all">{g.label}</span><Badge tone="info">Live</Badge>{g.grant_id === setup.grant?.id && <Badge tone="info">Current</Badge>}</span>
-                  <span className="text-muted-foreground">Expires {ago(g.expires_at)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {revokeButton(g)}
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          {connectedNotOwner && <p className="text-xs text-muted-foreground">Only {ownerName(setup)} can revoke or issue grants. Connect that account.</p>}
-        <Details summary="Issue or renew a grant" open={hash === "grants"} className="border-t pt-3">{issueButton}</Details>
+    <Section title="Grants" description="Who may act inside the policy, and until when."
+      action={<Details summary="Issue or renew a grant" open={hash === "grants"} className="dash-header-disclosure">{issueButton}</Details>}
+      info={<>Revoking a grant stops it at once; operations it already committed still finish.{viaDao ? " Each revocation is one DAO proposal." : ""} A new grant replaces the current one once the owner signs it. A treasury grant's label carries the strategy in force, so signing it approves that strategy for the autopilot. Other grants and operations already committed by the provider need separate review.</>}>
+      <div className="overflow-hidden rounded-lg bg-inset shadow-hairline">
+        <div className="hidden grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 border-b px-3 py-2 text-xs font-medium text-muted-foreground sm:grid" aria-hidden="true">
+          <span>Grant</span><span>Status</span><span>Expires</span><span className="w-20 text-right">Action</span>
+        </div>
+        <ul aria-label="Live grants" className="flex flex-col divide-y">
+          {live.map((g) => (
+            <li key={g.grant_id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-sm sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <span className="flex min-w-0 items-center gap-2"><span className="size-2 shrink-0 rounded-full bg-[var(--dash-brand)]" aria-hidden="true" /><span className="break-all font-mono text-[13px]">{g.label}</span></span>
+              <span className="col-start-1 flex flex-wrap items-center gap-1.5 sm:col-start-auto"><Badge tone="success">Live</Badge>{g.grant_id === setup.grant?.id && <Badge tone="brand">Current</Badge>}</span>
+              <span className="col-start-1 text-muted-foreground sm:col-start-auto" title={new Date(g.expires_at).toLocaleString()}>Expires {ago(g.expires_at)}</span>
+              <div className="col-start-2 row-span-3 row-start-1 flex justify-end sm:col-start-auto sm:row-span-1 sm:row-start-auto sm:w-20">
+                {revokeButton(g)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      {connectedNotOwner && <p className="text-xs text-muted-foreground">Only {ownerName(setup)} can revoke or issue grants. Connect that account.</p>}
+      <div className="flex flex-col">
         {ended.length > 0 && <Details summary={`Ended grants (${ended.length})`}>{history}</Details>}
-        <PendingNote action={action} waiting={waiting} setup={setup} />
-        {action.label && <p className="text-sm text-muted-foreground">{action.label}</p>}
-          <ErrorBox error={action.error} />
-      </Card>
+      </div>
+      <PendingNote action={action} waiting={waiting} setup={setup} />
+      {action.label && <p className="text-sm text-muted-foreground">{action.label}</p>}
+      <ErrorBox error={action.error} />
     </Section>
   );
 }

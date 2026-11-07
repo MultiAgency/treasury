@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
 import { useCanCall } from "../../app/viewer";
 import { failureKind, type Strategy } from "../../platform";
@@ -6,14 +6,20 @@ import { confirmDiscard, useDirtyDraft } from "../../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../../shared/form";
 import { Button, Details, ErrorBox, errorMessage, Spinner } from "../../shared/ui";
 import { parseStrategyDraft, strategyDraft } from "./strategy-form";
+import { ValuePill } from "@/components/beautifui/atoms";
+import { assetVar } from "./book";
 
 export function StrategySummary({ strategy, nameOf, advanced = true }: { strategy: Strategy; nameOf: (asset: string) => string; advanced?: boolean }) {
-  return <dl className="grid gap-3 text-sm sm:grid-cols-2">
-    <div><dt className="text-muted-foreground">Target allocation</dt><dd>{Object.entries(strategy.targetBps).map(([asset, bps]) => `${bps / 100}% ${nameOf(asset)}`).join(" · ")}</dd></div>
-    <div><dt className="text-muted-foreground">Schedule</dt><dd>Every {strategy.autopilot.everyMin} minutes</dd></div>
-    <div><dt className="text-muted-foreground">Automatic rebalance ceiling</dt><dd>${strategy.autopilot.maxUsd}{strategy.autopilot.maxUsd === 0 && " · swaps require manual execution"}</dd></div>
-    {advanced && <div><dt className="text-muted-foreground">Minimum swap</dt><dd>${strategy.minLegUsd}</dd></div>}
-    {advanced && <div><dt className="text-muted-foreground">Maximum swap cost</dt><dd>{strategy.maxCostBps / 100}%</dd></div>}
+  const row = "grid grid-cols-[minmax(8rem,12rem)_minmax(0,1fr)] items-center gap-3 px-3 py-2.5";
+  return <dl className="flex w-full flex-col divide-y overflow-hidden rounded-lg bg-inset text-sm shadow-hairline">
+    <div className={row}><dt className="text-muted-foreground">Target allocation</dt><dd className="flex flex-wrap items-center gap-1.5">{Object.entries(strategy.targetBps).map(([asset, bps], i) => <Fragment key={asset}>
+      {i > 0 && <span className="sr-only"> · </span>}
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-field py-px pr-2 pl-1.5 text-[12.5px] font-medium shadow-hairline"><span className="size-2 rounded-full" style={{ background: assetVar(nameOf(asset)) }} aria-hidden="true" />{`${bps / 100}% ${nameOf(asset)}`}</span>
+    </Fragment>)}</dd></div>
+    <div className={row}><dt className="text-muted-foreground">Schedule</dt><dd><ValuePill tone="info">Every {strategy.autopilot.everyMin} minutes</ValuePill></dd></div>
+    <div className={row}><dt className="text-muted-foreground">Automatic rebalance ceiling</dt><dd><ValuePill tone={strategy.autopilot.maxUsd === 0 ? "orange" : "green"}>${strategy.autopilot.maxUsd}</ValuePill>{strategy.autopilot.maxUsd === 0 && <span className="text-muted-foreground"> · swaps require manual execution</span>}</dd></div>
+    {advanced && <div className={row}><dt className="text-muted-foreground">Minimum swap</dt><dd><ValuePill>${strategy.minLegUsd}</ValuePill></dd></div>}
+    {advanced && <div className={row}><dt className="text-muted-foreground">Maximum swap cost</dt><dd><ValuePill>{strategy.maxCostBps / 100}%</ValuePill></dd></div>}
   </dl>;
 }
 

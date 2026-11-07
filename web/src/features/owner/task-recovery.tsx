@@ -64,7 +64,7 @@ export function StopSchedule() {
   return <Section title="Schedule">
     <p>{SCHEDULE_STOP_SCOPE}</p>
     <StopBlocked control={control} />
-    <Button variant="outline" disabled={control.disabled} onClick={control.stop}>Turn off</Button>
+    <Button variant="danger" disabled={control.disabled} onClick={control.stop}>Turn off</Button>
     <StopResult control={control} />
   </Section>;
 }

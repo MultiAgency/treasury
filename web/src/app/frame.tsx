@@ -1,18 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Outlet, useLocation } from "@tanstack/react-router";
 import { ArrowClockwise } from "@phosphor-icons/react";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RecoveryActivity } from "../features/activity/activity";
 import { StopSchedule } from "../features/owner/task-recovery";
 import { reads, type Overview, type Setup } from "../platform";
 import { Button, Loading, QueryError, Spinner } from "../shared/ui";
-import { TreasuryBrand } from "./brand";
-import { useGateway } from "./gateway-context";
 import { useHashTarget } from "./hash-target";
 import { AGENT } from "./location";
 import { PAGES, pageTitle } from "./pages";
 import { useCanCall, useViewer } from "./viewer";
-import { WalletButton } from "./wallet-button";
+import { Layout, OwnerChip } from "./shell/layout";
+import "@fontsource/instrument-serif/400.css";
 
 /** The selected agent's setup and overview, for the pages inside the frame. */
 const AgentContext = createContext<{ setup: Setup; data: Overview } | null>(null);
@@ -44,21 +43,22 @@ export function ownerName(setup: Setup) {
   return setup.owner?.type === "near" ? setup.owner.account_id : "the owner's wallet";
 }
 
-/** The signed-in frame: a skip link, the agent's frame, and on a self-service host the way back to its treasuries. */
+/** The signed-in frame: a skip link, then the agent's frame in the sidebar layout. */
 export function Shell() {
-  const gateway = useGateway();
   useHashTarget();
+  // The dashboard's theme (dashboard-theme.css) applies while the signed-in shell is shown, portals and dialogs included.
+  useLayoutEffect(() => {
+    document.documentElement.classList.add("dash");
+    return () => document.documentElement.classList.remove("dash");
+  }, []);
   return <>
-    <a href="#agent-main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
+    <a href="#agent-main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:p-3">Skip to main content</a>
     <AgentFrame />
-    <footer className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 border-t px-4 py-5 text-sm sm:px-8">
-      {gateway?.selfServiceTreasury && <Button asChild variant="outline"><a href="/">Your treasuries</a></Button>}
-    </footer>
   </>;
 }
 
 function Notice({ children }: { children: ReactNode }) {
-  return <div className="flex items-center gap-3 p-8 text-muted-foreground">{children}</div>;
+  return <div className="dash-content flex items-center gap-3 text-muted-foreground">{children}</div>;
 }
 
 /** Pages with their own schedule control: the frame doesn't offer a second one there once the page is shown. */
@@ -92,6 +92,9 @@ function AgentFrame() {
   const recovering = Boolean(setup.error) || (failedFor === account && !setup.isSuccess);
   const ready = Boolean(setup.data?.agentId) && !recovering;
   const overview = useQuery({ ...agentReads.overview, enabled: ready });
+  // The sidebar's flags: operations awaiting an outcome, and a running schedule. The same reads the pages make.
+  const unresolved = useQuery({ ...agentReads.unresolved, enabled: ready });
+  const schedule = useQuery({ ...agentReads.autopilot, enabled: ready });
   // Records already shown stay shown when a later setup read fails; only a first failure replaces the frame.
   const loaded = Boolean(setup.data?.agentId && overview.data);
   const error = setup.error ?? overview.error;
@@ -102,57 +105,50 @@ function AgentFrame() {
   const retained = page === "/activity";
 
   if (recovering && !loaded)
-    return <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10 sm:px-8">
-      <TreasuryBrand />
-      <h1 className="text-2xl font-semibold">Available records</h1>
-      <div className="flex flex-col items-start gap-3 rounded-2xl bg-destructive-muted p-6 text-sm text-destructive-muted-foreground">
-        <p role="alert">Setup unavailable</p>
-        <p>Retained records can still be reviewed when access is authorized. Setup, balances, policy and grant status are not confirmed here.</p>
-        {setup.error && <p>{setup.error.message}</p>}
-        <Button variant="outline" size="sm" disabled={setup.isFetching} onClick={() => setup.refetch()}>
-          {setup.isFetching ? <Spinner /> : <ArrowClockwise size={16} />}
-          {setup.isFetching ? "Retrying setup…" : "Retry setup"}
-        </Button>
-      </div>
-      {page === "/automations" ? <StopSchedule />
-        : retained ? <RecoveryActivity /> : <Link to="/activity" className="underline">Review existing operation records</Link>}
-    </main>;
+    return <Layout nav={false} wallet={false}>
+      <main id="agent-main" tabIndex={-1} className="dash-content flex max-w-4xl flex-col gap-4 focus:outline-none">
+        <h1 className="dash-title">Available records</h1>
+        <div className="dash-card flex flex-col items-start gap-3 text-sm">
+          <p role="alert" className="flex items-center gap-2 font-medium text-destructive-muted-foreground"><span className="dash-led dash-led-warn" aria-hidden="true" />Setup unavailable</p>
+          <p className="text-muted-foreground">Retained records can still be reviewed when access is authorized. Setup, balances, policy and grant status are not confirmed here.</p>
+          {setup.error && <p>{setup.error.message}</p>}
+          <Button variant="outline" size="sm" disabled={setup.isFetching} onClick={() => setup.refetch()}>
+            {setup.isFetching ? <Spinner /> : <ArrowClockwise size={16} />}
+            {setup.isFetching ? "Retrying setup…" : "Retry setup"}
+          </Button>
+        </div>
+        {page === "/automations" ? <StopSchedule />
+          : retained ? <RecoveryActivity /> : <Link to="/activity" className="underline">Review existing operation records</Link>}
+      </main>
+    </Layout>;
   if (!setup.data)
-    return retained
-      ? <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-6 px-4 py-10 sm:px-8">
-        <TreasuryBrand />
-        <p role="status">Loading agent observations… Available records can be reviewed while setup loads.</p>
+    return <Layout nav={false} wallet={false}>{retained
+      ? <main id="agent-main" tabIndex={-1} className="dash-content flex max-w-4xl flex-col gap-4 focus:outline-none">
+        <p role="status" className="text-sm text-muted-foreground">Loading agent observations… Available records can be reviewed while setup loads.</p>
         <RecoveryActivity />
       </main>
-      : <Notice><Spinner /> Loading…</Notice>;
+      : <Notice><Spinner /> Loading…</Notice>}</Layout>;
   if (!setup.data.agentId)
-    return <main id="agent-main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-12 px-4 py-10 sm:px-8">
-      <header className="flex min-w-0 flex-wrap items-center justify-between gap-4"><TreasuryBrand /><WalletButton /></header>
-      <p role="status">This Treasury agent hasn't been created yet.</p>
-    </main>;
+    return <Layout nav={false}>
+      <main id="agent-main" tabIndex={-1} className="dash-content focus:outline-none">
+        <p role="status" className="dash-card max-w-xl">This Treasury agent hasn't been created yet.</p>
+      </main>
+    </Layout>;
 
-  return <main id="agent-main" tabIndex={-1} className="scroll-mt-48 mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8 sm:px-8 lg:py-10">
-    <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <TreasuryBrand />
-        <section aria-label="Treasury owner"><dl className="text-sm">
-          <dt className="text-muted-foreground">Owner</dt>
-          <dd className="break-words">{ownerName(setup.data)}</dd>
-        </dl></section>
-      </div>
-      <WalletButton />
-    </header>
-    {title !== PAGES["/"] && <Button asChild variant="outline" className="self-start"><Link to="/">Back to overview</Link></Button>}
-    {error && <>
-      <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
-      <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
-    </>}
-    {error && canStop && setup.data.executor === true && !(SCHEDULE_PAGES.includes(page) && overview.data) && <StopSchedule />}
-    <SetupContext.Provider value={setup.data}>
-      {overview.data
-        ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
-        // Activity reads the agent's own records: it doesn't wait for the overview, nor hide when it fails.
-        : retained ? <Outlet /> : error ? null : <Loading label="Loading the book…" />}
-    </SetupContext.Provider>
-  </main>;
+  return <Layout page={page} back={title !== PAGES["/"]} flags={{ "/activity": { count: unresolved.data?.length }, "/automations": { on: schedule.data?.on } }} owner={<OwnerChip name={ownerName(setup.data)} />}
+    synced={overview.dataUpdatedAt ? <>Book read <time dateTime={new Date(overview.dataUpdatedAt).toISOString()}>{new Date(overview.dataUpdatedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</time></> : undefined}>
+    <main id="agent-main" tabIndex={-1} className="dash-content dash-page scroll-mt-48 focus:outline-none">
+      {error && <div className="dash-card flex flex-col gap-3">
+        <p className="text-sm">{overview.data ? "Refresh failed. Showing previously loaded records; check again before acting." : "Some agent details could not be loaded."}</p>
+        <QueryError error={error} retry={() => { void setup.refetch(); void overview.refetch(); }} />
+      </div>}
+      {error && canStop && setup.data.executor === true && !(SCHEDULE_PAGES.includes(page) && overview.data) && <StopSchedule />}
+      <SetupContext.Provider value={setup.data}>
+        {overview.data
+          ? <AgentContext.Provider value={{ setup: setup.data, data: overview.data }}><Outlet /></AgentContext.Provider>
+          // Activity reads the agent's own records: it doesn't wait for the overview, nor hide when it fails.
+          : retained ? <Outlet /> : error ? null : <Loading label="Loading the book…" />}
+      </SetupContext.Provider>
+    </main>
+  </Layout>;
 }

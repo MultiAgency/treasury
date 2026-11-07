@@ -160,7 +160,7 @@ export function OwnerControls({ setup, frozen }: { setup: Setup; frozen: boolean
     <div className="flex flex-col items-end gap-2">
       <div className="flex items-center gap-3">
         {action.label && <span className="text-sm text-muted-foreground">{action.label}</span>}
-        <Button variant="outline" size="sm" disabled={action.busy || Boolean(action.unknown) || Boolean(waiting) || connectedNotOwner || !permitted} onClick={onClick}>
+        <Button variant={frozen ? "outline" : "danger"} size="sm" disabled={action.busy || Boolean(action.unknown) || Boolean(waiting) || connectedNotOwner || !permitted} onClick={onClick}>
           {action.busy ? <Spinner /> : frozen ? <Sun size={16} /> : <Snowflake size={16} />}
           {viaDao ? `Propose to ${verb}` : wallet.status === "connected" ? (frozen ? "Unfreeze" : "Freeze") : `Connect to ${verb}`}
         </Button>

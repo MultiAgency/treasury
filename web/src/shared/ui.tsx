@@ -6,6 +6,7 @@ import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { assetColor } from "./format";
+import { InfoTip } from "../dashboard/info-tip";
 
 export { Button };
 /** Native input/select callers share the same states as the Input component. */
@@ -15,7 +16,7 @@ export { inputStyles as input } from "@/components/ui/input";
 export const reviewDialog =
   "m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-4xl border-0 bg-popover p-6 text-popover-foreground ring-1 ring-foreground/5 backdrop:bg-black/80 backdrop:backdrop-blur-xs";
 
-export type Tone = "neutral" | "success" | "warning" | "info" | "destructive";
+export type Tone = "neutral" | "success" | "warning" | "info" | "destructive" | "brand";
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return <BadgePrimitive variant={tone}>{children}</BadgePrimitive>;
@@ -29,12 +30,13 @@ export function LinkButton(props: ComponentProps<typeof Link>) {
   return <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link {...props} /></Button>;
 }
 
-export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
-  return <section className="flex flex-col gap-6">
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
+/** A titled glass panel (`h2`); nested inside another panel it flattens into a plain group. */
+export function Section({ title, description, info, action, className, children }: { title: string; description?: string; info?: ReactNode; action?: ReactNode; className?: string; children: ReactNode }) {
+  return <section className={cn("dz-section flex min-w-0 flex-col gap-6", className)}>
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex min-w-0 max-w-2xl flex-col gap-1.5">
+        <span className="flex items-center gap-1.5"><h2 className="text-xl font-medium tracking-tight">{title}</h2>{info && <InfoTip label={`About ${title.toLowerCase()}`}>{info}</InfoTip>}</span>
+        {description && <p className="text-sm leading-relaxed text-muted-foreground">{description}</p>}
       </div>
       {action}
     </div>
@@ -43,15 +45,15 @@ export function Section({ title, description, action, children }: { title: strin
 }
 
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex min-w-0 flex-col gap-6 rounded-2xl bg-card p-6 text-base text-card-foreground ring-1 ring-foreground/10", className)}>{children}</div>;
+  return <div className={cn("dz-card flex min-w-0 flex-col gap-6 p-6 text-base text-card-foreground", className)}>{children}</div>;
 }
 
 /** A card's icon, title (`h3`) and one-line description. */
 export function CardHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
   return <div className="flex gap-4">
-    <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-muted text-brand-strong">{icon}</div>
+    <div className="dash-link-icon">{icon}</div>
     <div className="flex min-w-0 flex-col gap-1">
-      <h3 className="font-heading text-lg font-medium">{title}</h3>
+      <h3 className="text-sm font-semibold">{title}</h3>
       <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   </div>;
@@ -125,7 +127,7 @@ export function CopyButton({ text }: { text: string }) {
 /** Detail most readers skip, such as identifiers and rare controls, folded under a one-line summary. */
 export function Details({ summary, open, className = "", children }: { summary: string; open?: boolean; className?: string; children: ReactNode }) {
   return <details open={open} className={cn("text-sm", className)}>
-    <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground">{summary}</summary>
+    <summary className="min-h-11 cursor-pointer py-3">{summary}</summary>
     <div className="mt-2 flex flex-col gap-2">{children}</div>
   </details>;
 }

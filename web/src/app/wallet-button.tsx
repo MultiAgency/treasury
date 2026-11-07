@@ -1,4 +1,4 @@
-import { Wallet as WalletIcon } from "@phosphor-icons/react";
+import { SignOut, Wallet as WalletIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button, ErrorBox, Spinner, errorMessage, short } from "../shared/ui";
@@ -19,7 +19,11 @@ export function WalletButton() {
     const mismatch = viewer !== null && wallet.accountId !== viewer.account;
     return <div className="flex max-w-sm flex-col items-end gap-2">
       <DropdownMenu>
-        <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label={`Wallet: ${wallet.accountId}`}><WalletIcon data-icon="inline-start" aria-hidden="true" />{short(wallet.accountId)}</Button></DropdownMenuTrigger>
+        <DropdownMenuTrigger asChild><Button variant="outline" size="sm" aria-label={`Wallet: ${wallet.accountId}`}>
+          <WalletIcon size={15} aria-hidden="true" />
+          <span className="min-w-0 truncate font-mono text-[13px]">{short(wallet.accountId)}</span>
+          <span className="dash-led dash-led-on ml-auto max-sm:hidden" aria-hidden="true" />
+        </Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end"><DropdownMenuGroup>
           <DropdownMenuItem onSelect={() => {
             setError(undefined);
@@ -28,14 +32,14 @@ export function WalletButton() {
         </DropdownMenuGroup></DropdownMenuContent>
       </DropdownMenu>
       {/* A status, not an alert: it stays while the mismatch does, and an alert would be announced again on every page. */}
-      {mismatch && <p role="status" className="text-right text-sm">
+      {mismatch && <p role="status" className="text-left text-xs text-warning-muted-foreground">
         This wallet is connected to {wallet.accountId}, but you're signed in as {viewer.account}. Owner actions are unavailable until they match.
       </p>}
       <ErrorBox error={error} />
     </div>;
   }
   return <div className="flex max-w-sm flex-col items-end gap-2">
-    <Button variant="outline" size="sm" className="h-auto max-w-full whitespace-normal py-3" disabled={wallet.status === "connecting"} onClick={() => {
+    <Button size="sm" className="h-auto max-w-full whitespace-normal py-3" disabled={wallet.status === "connecting"} onClick={() => {
       setError(undefined);
       connect().catch(e => setError(errorMessage(e)));
     }}>
@@ -45,7 +49,7 @@ export function WalletButton() {
     {viewer && <Button variant="ghost" size="sm" onClick={() => {
       setError(undefined);
       signOut().catch(e => setError(errorMessage(e)));
-    }}>Sign out</Button>}
+    }}><SignOut size={15} aria-hidden="true" />Sign out</Button>}
     <ErrorBox error={error} />
   </div>;
 }

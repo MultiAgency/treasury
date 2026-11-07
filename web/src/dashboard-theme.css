@@ -1,0 +1,283 @@
+/*
+ * The signed-in owner dashboard, after the medesk dashboard block: a neutral grayscale scale (its dark variant), the
+ * page pure black, cards one step up with no heavy borders, hairlines at white 10%, semantic colours for status only.
+ * Geist for UI text at 14px, Geist Mono for amounts, Instrument Serif as a sparing display accent (page titles).
+ *
+ * Scoped to :root.dash, which the signed-in shell sets while mounted (portals, sheets and dialogs included), so the
+ * signed-out landing and the proposals build are untouched. Unlayered on purpose: it maps the shared Tailwind variables
+ * and restyles shared primitives (buttons, badges, tables, disclosures, dialogs) without changing their markup.
+ */
+
+:root.dash, :root.dash.treasury-theme.dark {
+  color-scheme: dark;
+  --background: #000;
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 15%);
+  --input-surface: oklch(1 0 0 / 4%);
+  --ring: oklch(0.556 0 0);
+  /* Colour, for meaning and identity; text stays white and grey for reading. */
+  --dash-brand: #5fd3a6;
+  --dash-brand-ink: #03140d;
+  --asset-wnear: #3dd6b5;
+  --asset-usdc: #4c8df6;
+  --asset-eth: #8b7cf6;
+  --asset-other: #f5b44c;
+  --asset-other-2: #f472b6;
+  --status-success: #34c77b;
+  --status-warning: #f5a524;
+  --status-danger: #f2555a;
+  --status-info: #4c8df6;
+  --brand: var(--dash-brand);
+  --brand-strong: var(--dash-brand);
+  --brand-muted: color-mix(in oklch, var(--dash-brand) 14%, transparent);
+  /* The chart scale is the asset colours, in the slots `assetColor` gives them: ETH 1, wNEAR 2, USDC 3; then the others. */
+  --chart-1: var(--asset-eth);
+  --chart-2: var(--asset-wnear);
+  --chart-3: var(--asset-usdc);
+  --chart-4: var(--asset-other);
+  --chart-5: var(--asset-other-2);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.145 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
+  --sidebar-accent: oklch(0.205 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: var(--dash-brand);
+  /* Status only. */
+  --dash-info: var(--status-info);
+  --dash-success: var(--status-success);
+  --dash-warning: var(--status-warning);
+  --success: var(--dash-success);
+  --success-muted: color-mix(in oklch, var(--dash-success) 14%, transparent);
+  --success-muted-foreground: var(--dash-success);
+  --warning-muted: color-mix(in oklch, var(--dash-warning) 14%, transparent);
+  --warning-muted-foreground: var(--dash-warning);
+  --info-muted: color-mix(in oklch, var(--dash-info) 14%, transparent);
+  --info-muted-foreground: var(--dash-info);
+  --destructive: var(--status-danger);
+  --destructive-muted: color-mix(in oklch, var(--status-danger) 14%, transparent);
+  --destructive-muted-foreground: #ff7b7f;
+  --destructive-foreground: oklch(0.145 0 0);
+  --logo: var(--dash-brand);
+  --logo-tint: 0.25;
+  --pattern-dot: 0%;
+  --dash-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --dash-ui: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --dash-serif: "Instrument Serif", ui-serif, Georgia, serif;
+}
+
+:root.treasury-theme.dark body { background-color: #000; }
+:root.dash body { background: var(--sidebar); background-image: none; color: var(--foreground); font-family: var(--dash-ui); font-size: 14px; -webkit-font-smoothing: antialiased; }
+:root.dash h1, :root.dash h2, :root.dash h3, :root.dash h4, :root.dash .font-heading { font-family: var(--dash-ui); letter-spacing: -0.01em; }
+:root.dash table, :root.dash .tabular-nums { font-variant-numeric: tabular-nums; }
+:root.dash :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+:root.dash .font-mono, :root.dash code { font-family: var(--dash-mono); }
+
+/* ---------- Layout ---------- */
+/* The content is an inset black panel beside the sidebar, as in the block. */
+.dash-frame { display: flex; min-width: 0; flex: 1; flex-direction: column; background: var(--sidebar); }
+@media (min-width: 768px) { .dash-frame { padding: 8px 8px 8px 0; } }
+.dash-inset { display: flex; min-width: 0; min-height: calc(100svh - 16px); flex: 1; flex-direction: column; background: var(--background); }
+@media (min-width: 768px) { .dash-inset { border-radius: 12px; box-shadow: 0 0 0 1px var(--border); } }
+@media (max-width: 767px) { .dash-inset { min-height: 100svh; } }
+.dash-topbar { position: sticky; top: 0; z-index: 20; display: flex; height: 56px; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; background: color-mix(in oklch, #000 86%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid var(--border); }
+@media (min-width: 768px) { .dash-topbar { padding: 0 24px; border-radius: 12px 12px 0 0; } }
+.dash-content { width: 100%; padding: 20px 16px 40px; }
+@media (min-width: 768px) { .dash-content { padding: 24px 24px 48px; } }
+
+/* The page grid: cards of the block's density, full width. */
+.dash-page { display: grid; gap: 12px; grid-template-columns: repeat(12, minmax(0, 1fr)); align-items: start; }
+.dash-page > * { grid-column: 1 / -1; min-width: 0; }
+@media (min-width: 1200px) {
+  .dash-span-8 { grid-column: span 8 !important; }
+  .dash-span-7 { grid-column: span 7 !important; }
+  .dash-span-6 { grid-column: span 6 !important; }
+  .dash-span-5 { grid-column: span 5 !important; }
+  .dash-span-4 { grid-column: span 4 !important; }
+  .dash-span-3 { grid-column: span 3 !important; }
+}
+@media (min-width: 720px) and (max-width: 1199px) { .dash-md-6 { grid-column: span 6 !important; } }
+.dash-stretch { align-self: stretch; }
+.dash-fade { animation: dash-fade .15s ease-out both; }
+@keyframes dash-fade { from { opacity: 0; } }
+
+.dash-title { font-family: var(--dash-serif) !important; font-size: 30px; font-weight: 400; line-height: 1.1; letter-spacing: -0.01em !important; color: var(--foreground); }
+@media (max-width: 639px) { .dash-title { font-size: 26px; } }
+.dash-mono { font-family: var(--dash-mono); font-variant-numeric: tabular-nums; }
+.dash-kpi { font-family: var(--dash-ui); font-variant-numeric: tabular-nums; font-size: 1.75rem; line-height: 1; font-weight: 500; letter-spacing: -0.025em; }
+.dash-led { display: inline-block; width: 6px; height: 6px; flex: none; border-radius: 99px; background: var(--muted-foreground); }
+.dash-led-on { background: var(--dash-success); }
+.dash-led-warn { background: var(--dash-warning); }
+.dash-swatch { display: inline-block; width: 10px; height: 10px; flex: none; border-radius: 3px; }
+
+/* Cards: one step up from the page, no borders, as in the block. */
+:root.dash .dash-card, :root.dash .dz-card, :root.dash .dz-section { min-width: 0; border-radius: 12px; background: var(--card); color: var(--card-foreground); border: 0; }
+:root.dash .dash-card, :root.dash .dz-section { padding: 16px; }
+:root.dash .dz-card { padding: 16px; gap: 14px; }
+:root.dash .dz-section { gap: 16px; }
+:root.dash .dz-section > div:first-child h2, :root.dash .dash-card h2 { font-size: 1.125rem; line-height: 1.5rem; font-weight: 500; }
+:root.dash .dz-section > div:first-child p { font-size: 14px; }
+/* Nested: a section or card inside a card is a group on the page colour, never a card in a card in a card. */
+:root.dash .dz-section .dz-section, :root.dash .dash-card .dz-section, :root.dash .dz-card .dz-section { padding: 0; background: none; border-radius: 0; }
+:root.dash .dz-section .dz-card, :root.dash .dash-card .dz-card { background: oklch(0.145 0 0); border-radius: 10px; padding: 14px; box-shadow: inset 0 0 0 1px var(--border); }
+
+/* ---------- Shared primitives ---------- */
+:root.dash [data-slot="button"] { min-height: 36px; height: 36px; min-width: 36px; border-radius: 8px; font-size: 14px; font-weight: 500; gap: 6px; padding-inline: 14px; }
+:root.dash [data-slot="button"][data-size="sm"] { min-height: 32px; height: 32px; font-size: 13px; padding-inline: 12px; }
+:root.dash [data-slot="button"].h-auto { height: auto; }
+:root.dash [data-slot="button"][data-size^="icon"] { padding-inline: 0; width: 36px; }
+:root.dash [data-slot="button"][data-variant="outline"] { background: transparent; border-color: var(--input); }
+:root.dash [data-slot="button"][data-variant="outline"]:hover { background: var(--accent); }
+:root.dash [data-slot="button"][data-variant="secondary"] { background: var(--secondary); }
+:root.dash [data-slot="button"][data-variant="destructive"] { border: 1px solid color-mix(in oklch, var(--destructive) 30%, transparent); }
+:root.dash [data-slot="sidebar"] [data-slot="button"], :root.dash [data-slot="sidebar-trigger"] { min-height: 0; }
+
+:root.dash [data-slot="badge"] { height: auto; min-height: 22px; padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 500; white-space: normal; text-align: left; }
+:root.dash [data-slot="badge"][data-variant="neutral"] { background: var(--secondary); color: oklch(0.85 0 0); }
+:root.dash [data-slot="badge"]:is([data-variant="success"], [data-variant="warning"], [data-variant="destructive"], [data-variant="info"], [data-variant="brand"])::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 99px; background: currentColor; }
+
+:root.dash [data-slot="alert"] { border-radius: 10px; }
+
+:root.dash [data-slot="input"], :root.dash input[type="text"], :root.dash input[type="number"], :root.dash input:not([type]), :root.dash select, :root.dash textarea {
+  height: 36px; min-height: 36px; border-radius: 8px; padding-inline: 12px; font-size: 14px; background-color: var(--secondary); border: 1px solid transparent; color: var(--foreground);
+}
+:root.dash input:focus-visible, :root.dash select:focus-visible { border-color: var(--dash-brand); outline: none; box-shadow: 0 0 0 3px color-mix(in oklch, var(--dash-brand) 25%, transparent); }
+:root.dash input[type="checkbox"] { accent-color: var(--dash-brand); }
+
+:root.dash details > summary { list-style: none; display: flex; min-height: 32px; align-items: center; gap: 8px; padding-block: 6px; color: var(--muted-foreground); cursor: pointer; }
+:root.dash details > summary::-webkit-details-marker { display: none; }
+:root.dash details > summary::before { content: ""; flex: none; width: 6px; height: 6px; margin: 0 3px 0 2px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); transition: transform .15s ease; }
+:root.dash details[open] > summary::before { transform: rotate(45deg); }
+:root.dash details > summary:hover { color: var(--foreground); }
+
+/* Tables: the block's — muted headers, hairline rows, a soft hover; headers stick inside their scroller. */
+:root.dash table { border-collapse: separate; border-spacing: 0; }
+:root.dash thead th, :root.dash thead td { position: sticky; top: 0; z-index: 1; background: var(--card); height: 40px; padding-top: 0; padding-bottom: 0; font-size: 13px; font-weight: 500; color: var(--muted-foreground); }
+:root.dash tbody th, :root.dash tbody td { padding-top: 12px; padding-bottom: 12px; border-top: 1px solid oklch(1 0 0 / 6%); vertical-align: top; }
+:root.dash tbody tr, :root.dash thead tr { border: 0; }
+:root.dash tbody tr { transition: background-color .12s; }
+:root.dash tbody tr:hover { background: oklch(1 0 0 / 3%); }
+
+:root.dash .divide-y > * + * { border-color: oklch(1 0 0 / 6%); }
+:root.dash .border-t, :root.dash .border-b, :root.dash .border { border-color: var(--border); }
+:root.dash code.bg-muted { border-radius: 8px; background: var(--secondary); padding: 8px 12px; font-size: 12.5px; }
+
+:root.dash dialog { background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 24px 80px rgb(0 0 0 / 0.7); }
+:root.dash dialog::backdrop { background: rgb(0 0 0 / 0.7); backdrop-filter: none; }
+
+/* Activity's history as a compact timeline. */
+:root.dash .dash-timeline > li { position: relative; padding-left: 24px; border: 0 !important; }
+:root.dash .dash-timeline > li::before { content: ""; position: absolute; left: 5px; top: 0; bottom: 0; width: 1px; background: var(--border); }
+:root.dash .dash-timeline > li:first-child::before { top: 20px; }
+:root.dash .dash-timeline > li:last-child::before { bottom: calc(100% - 20px); }
+:root.dash .dash-timeline > li::after { content: ""; position: absolute; left: 1px; top: 16px; width: 9px; height: 9px; border-radius: 99px; background: var(--background); box-shadow: inset 0 0 0 2px var(--chart-2); }
+:root.dash .dash-timeline > li:first-child::after { box-shadow: inset 0 0 0 2px var(--foreground); }
+
+/* The block's dropdown spacing. */
+:root.dash [data-slot="dropdown-menu-content"] [data-slot="dropdown-menu-item"] { padding: 0.625rem; }
+
+@media (prefers-reduced-motion: reduce) { .dash-fade { animation: none; } }
+
+/* The wallet at the sidebar's foot fills it; on a phone's top bar it stays compact. */
+.dash-wallet > div { max-width: none; align-items: stretch; }
+.dash-wallet button { width: 100%; justify-content: flex-start; }
+.dash-wallet-top > div { align-items: flex-end; }
+.dash-wallet-top button { max-width: 46vw; }
+
+/* Quick links, as the block's compact cards. */
+.dash-link { position: relative; display: flex; min-width: 0; min-height: 112px; flex-direction: column; justify-content: space-between; gap: 14px; padding: 16px; border-radius: 12px; background: var(--card); color: var(--foreground); transition: background-color .12s; }
+.dash-link:hover { background: oklch(0.205 0 0); }
+.dash-link-icon { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 8px; background: var(--secondary); color: var(--muted-foreground); }
+.dash-link:hover .dash-link-icon { color: var(--foreground); }
+
+/* ---------- Colour ---------- */
+:root.dash [data-slot="button"][data-variant="default"] { background: var(--dash-brand); color: var(--dash-brand-ink); border: 0; }
+:root.dash [data-slot="button"][data-variant="default"]:hover { background: color-mix(in oklch, var(--dash-brand) 88%, white); }
+:root.dash [data-slot="button"][data-variant="link"], :root.dash a.underline { color: inherit; }
+:root.dash a.underline { text-decoration-color: color-mix(in oklch, var(--dash-brand) 60%, transparent); }
+:root.dash a.underline:hover { color: var(--dash-brand); }
+
+/* The active page: a mint tint, a mint icon and an indicator bar. */
+:root.dash [data-slot="sidebar-menu-button"][aria-current="page"] { background: color-mix(in oklch, var(--dash-brand) 12%, transparent) !important; color: var(--foreground); }
+:root.dash [data-slot="sidebar-menu-button"][aria-current="page"] svg { color: var(--dash-brand); }
+:root.dash [data-slot="sidebar-menu-button"][aria-current="page"]::before { content: ""; position: absolute; left: -8px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--dash-brand); }
+.dash-nav-count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 99px; display: inline-grid; place-items: center; font-size: 11px; font-weight: 600; background: color-mix(in oklch, var(--status-warning) 16%, transparent); color: var(--status-warning); }
+.dash-nav-dot { margin-left: auto; width: 7px; height: 7px; border-radius: 99px; background: var(--dash-brand); box-shadow: 0 0 0 3px color-mix(in oklch, var(--dash-brand) 20%, transparent); }
+:root.dash [data-collapsible="icon"] .dash-nav-count, :root.dash [data-collapsible="icon"] .dash-nav-dot { position: absolute; top: 6px; right: 6px; margin: 0; min-width: 0; width: 8px; height: 8px; padding: 0; font-size: 0; }
+
+/* Tinted icon tiles and chips: the colour at ~14% behind, full colour in front. */
+.dash-tile { display: grid; width: 32px; height: 32px; flex: none; place-items: center; border-radius: 9px; color: var(--tone); background: color-mix(in oklch, var(--tone) 14%, transparent); }
+.dash-chip { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--tone); background: color-mix(in oklch, var(--tone) 14%, transparent); white-space: nowrap; }
+.dash-chip::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+.dash-chip.muted { --tone: oklch(0.708 0 0); }
+.tone-brand { --tone: var(--dash-brand); }
+.tone-success { --tone: var(--status-success); }
+.tone-warning { --tone: var(--status-warning); }
+.tone-danger { --tone: var(--status-danger); }
+.tone-info { --tone: var(--status-info); }
+.tone-wnear { --tone: var(--asset-wnear); }
+.tone-usdc { --tone: var(--asset-usdc); }
+.tone-eth { --tone: var(--asset-eth); }
+.tone-other { --tone: var(--asset-other); }
+.tone-muted { --tone: oklch(0.708 0 0); }
+.dash-led-on { background: var(--status-success); }
+.dash-led-warn { background: var(--status-warning); }
+.dash-led-brand { background: var(--dash-brand); }
+.dash-link-icon { color: var(--tone, var(--muted-foreground)); background: color-mix(in oklch, var(--tone, oklch(0.708 0 0)) 14%, transparent); }
+.dash-link:hover .dash-link-icon { color: var(--tone, var(--foreground)); }
+.dash-link:hover { box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--tone, white) 30%, transparent); }
+.dash-wallet-top button > span { display: none; }
+
+/* ---------- beautifui foundation, on our tokens ---------- */
+:root.dash {
+  --page: #000;
+  --surface: var(--card);
+  --inset: oklch(0.145 0 0);
+  --hover: oklch(0.22 0 0);
+  --field: oklch(0.24 0 0);
+  --ink: oklch(0.985 0 0);
+  --ink-2: oklch(0.74 0 0);
+  --ink-3: oklch(0.6 0 0);
+  --line: oklch(1 0 0 / 9%);
+  --line-strong: oklch(1 0 0 / 15%);
+  --accent-ink: var(--dash-brand);
+  --accent-tint: color-mix(in oklch, var(--dash-brand) 14%, transparent);
+  --green: var(--status-success);
+  --green-tint: color-mix(in oklch, var(--status-success) 14%, transparent);
+  --orange: var(--status-warning);
+  --orange-tint: color-mix(in oklch, var(--status-warning) 14%, transparent);
+  --red: var(--status-danger);
+  --red-tint: color-mix(in oklch, var(--status-danger) 14%, transparent);
+  --shadow-hairline: 0 0 0 1px var(--line);
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.08), 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-raised: 0 0 0 1px oklch(1 0 0 / 0.12), 0 2px 10px oklch(0 0 0 / 0.3);
+}
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { :root.dash [style*="fade-up"], :root.dash [style*="pop-in"] { animation: none !important; } }
+
+:root.dash [data-slot="button"].dash-danger-solid { background: var(--status-danger); color: #fff; }
+:root.dash [data-slot="button"].dash-danger-solid:hover { background: color-mix(in oklch, var(--status-danger) 88%, white); }
+:root.dash [data-slot="button"][data-variant="danger"] { border-color: color-mix(in oklch, var(--status-danger) 45%, transparent); color: var(--status-danger); }
+
+/* A disclosure in a section's header acts like an outline button; what it reveals drops below it. */
+:root.dash .dash-header-disclosure { display: flex; flex-direction: column; align-items: flex-end; }
+:root.dash .dash-header-disclosure > summary { min-height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--input); color: var(--foreground); font-size: 13px; font-weight: 500; }
+:root.dash .dash-header-disclosure > summary:hover { background: var(--accent); }
+:root.dash .dash-header-disclosure > div { margin-top: 8px; }

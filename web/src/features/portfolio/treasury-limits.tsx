@@ -5,7 +5,8 @@ import { useAgent, useAgentReads } from "../../app/frame";
 import { PERIOD } from "../../shared/budget";
 import { amountOf, symbolOf, usd } from "../../shared/format";
 import { useNameOf } from "../../shared/names";
-import { Button, Loading, Section } from "../../shared/ui";
+import { Button, Loading } from "../../shared/ui";
+import { InfoTip } from "../../dashboard/info-tip";
 import { accessDenied, ReadFailure } from "../../shared/read-failure";
 import { Row } from "../activity/activity";
 
@@ -19,33 +20,37 @@ export function TreasuryLimits() {
   const caps = (Object.keys(CAP_WINDOWS) as (keyof typeof CAP_WINDOWS)[])
     .flatMap(window => Object.entries(policy?.limits?.[window] ?? {}).map(([asset, raw]) => ({ window, asset, raw })));
   const [refusalsOpen, setRefusalsOpen] = useState(false);
-  return <Section title="Signed limits" description="Per-asset caps and the shared USD budget constrain spending separately. Each operation is checked again before submission.">
-    <dl className="text-sm"><dt className="text-muted-foreground">Allowed assets</dt><dd className="mt-1 break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => symbolOf(asset, data.book)).join(", ") || "None"}</dd></dl>
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="min-w-0">
-        <h3 className="mb-3 text-sm font-medium">Per-asset caps</h3>
-        {caps.length ? <ul className="divide-y text-sm">{caps.map(({ window, asset, raw }) => <li key={`${window}|${asset}`} className="break-words py-3 first:pt-0">{CAP_WINDOWS[window]}: {amountOf(raw, asset, data.book)}</li>)}</ul> : <p className="text-sm text-muted-foreground">{policy ? "No asset caps reported" : "Policy unavailable"}</p>}
-        <p className="mt-3 text-sm text-muted-foreground">These are signed caps, not remaining allowances inferred from balances.</p>
-      </div>
-      <div className="min-w-0 overflow-x-auto">
-        <table aria-label="USD budget windows" className="w-full text-left text-sm tabular-nums">
-          <thead><tr className="border-b text-muted-foreground"><th scope="col" className="pb-3 pr-3 font-medium">USD budget</th><th scope="col" className="pb-3 pr-3 text-right font-medium">Signed limit</th><th scope="col" className="pb-3 text-right font-medium">Reported left</th></tr></thead>
-          <tbody>{(Object.keys(PERIOD) as (keyof typeof PERIOD)[]).map(period => {
-            const signed = policy?.budget?.[`${period}_usd`];
-            const reported = data.policy.usage.budget[period];
-            return <tr key={period} className="border-b last:border-0"><th scope="row" className="py-3 pr-3 font-medium">{PERIOD[period]}</th>
-              <td className="py-3 pr-3 text-right">{signed === undefined ? "Not reported" : signed === null ? "No limit" : usd(signed)}</td>
-              <td className="py-3 text-right">{reported?.limit_usd === null ? "No limit" : reported?.remaining_usd == null ? "Unavailable" : usd(reported.remaining_usd)}</td></tr>;
-          })}</tbody>
-        </table>
-      </div>
+  return <section className="dash-card flex h-full min-w-0 flex-col gap-4">
+    <div className="flex flex-col gap-1">
+      <span className="flex items-center gap-1.5"><h2 className="text-lg leading-6 font-medium">Signed limits</h2>
+        <InfoTip label="About signed limits">Per-asset caps and the shared USD budget constrain spending separately. Each operation is checked again before submission. These are signed caps, not remaining allowances inferred from balances.</InfoTip></span>
+      <p className="text-sm text-muted-foreground">Caps and budgets the owner signed.</p>
     </div>
-    <Button asChild variant="outline" className="self-start"><Link to="/policy">Edit policy</Link></Button>
-    <details className="text-sm" onToggle={event => setRefusalsOpen(event.currentTarget.open)}>
-      <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground">Review recorded refusals</summary>
-      {refusalsOpen && <RecordedRefusals />}
-    </details>
-  </Section>;
+    <dl className="flex flex-wrap items-center justify-between gap-2 border-y py-2.5 text-sm"><dt className="text-muted-foreground">Allowed assets</dt><dd className="break-words">{!policy ? "Unavailable" : policy.assets === "any" ? "Any asset" : policy.assets.map(asset => symbolOf(asset, data.book)).join(", ") || "None"}</dd></dl>
+    <div className="flex min-w-0 flex-col gap-2">
+      <h3 className="text-sm text-muted-foreground">Per-asset caps</h3>
+      {caps.length ? <ul className="flex flex-col divide-y rounded-lg bg-[oklch(0.145_0_0)] text-sm">{caps.map(({ window, asset, raw }) => <li key={`${window}|${asset}`} className="break-words px-3 py-2.5 font-mono text-[13px]">{CAP_WINDOWS[window]}: {amountOf(raw, asset, data.book)}</li>)}</ul> : <p className="text-sm text-muted-foreground">{policy ? "No asset caps reported" : "Policy unavailable"}</p>}
+    </div>
+    <div className="min-w-0 overflow-x-auto rounded-lg bg-[oklch(0.145_0_0)] [&_thead_th]:!bg-[oklch(0.145_0_0)]">
+      <table aria-label="USD budget windows" className="w-full text-left text-sm tabular-nums">
+        <thead><tr><th scope="col" className="px-3 font-medium">USD budget</th><th scope="col" className="px-3 text-right font-medium">Signed limit</th><th scope="col" className="px-3 text-right font-medium">Reported left</th></tr></thead>
+        <tbody>{(Object.keys(PERIOD) as (keyof typeof PERIOD)[]).map(period => {
+          const signed = policy?.budget?.[`${period}_usd`];
+          const reported = data.policy.usage.budget[period];
+          return <tr key={period}><th scope="row" className="px-3 text-left font-medium">{PERIOD[period]}</th>
+            <td className="px-3 text-right font-mono text-muted-foreground">{signed === undefined ? "Not reported" : signed === null ? "No limit" : usd(signed)}</td>
+            <td className="px-3 text-right font-mono">{reported?.limit_usd === null ? "No limit" : reported?.remaining_usd == null ? "Unavailable" : usd(reported.remaining_usd)}</td></tr>;
+        })}</tbody>
+      </table>
+    </div>
+    <div className="mt-auto flex flex-col gap-1">
+      <Button asChild variant="outline" size="sm" className="self-start"><Link to="/policy">Edit policy</Link></Button>
+      <details className="text-sm" onToggle={event => setRefusalsOpen(event.currentTarget.open)}>
+        <summary>Review recorded refusals</summary>
+        {refusalsOpen && <RecordedRefusals />}
+      </details>
+    </div>
+  </section>;
 }
 
 /** Inspect existing evidence. No refusal probe, provider status check or money action. */

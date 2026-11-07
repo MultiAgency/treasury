@@ -218,8 +218,9 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
 
   return (
     <>
-    {!limit && planId === undefined && <div id="owner-actions" className="scroll-mt-24"><OwnerActions /></div>}
+    {!limit && planId === undefined && <div id="owner-actions" className="dash-span-4 scroll-mt-24"><OwnerActions /></div>}
     <Section
+      className={!limit && planId === undefined ? "dash-span-8" : undefined}
       title={planId !== undefined ? "This plan’s operations" : limit ? "Recent activity" : "Operation history"}
       description={planId !== undefined ? "Retained operations linked to this exact plan, including its shields and refusals." : "Operations recorded on this instance, including refusals, newest first."}
       action={
@@ -239,7 +240,7 @@ function ActivityRecords({ limit, planId, overview, nameOf = (account: string) =
           : <>No actions recorded on this instance.{overview && swaps(overview) && " Preview a rebalance to get started."}</>}</p>
       )}
       {actions.length > 0 && (
-        <ol className="flex flex-col">
+        <ol className="dash-timeline flex flex-col">
           {actions.slice(0, limit).map((op) => (
             <Row key={key(op)} op={op} book={overview?.book ?? []} nameOf={nameOf} />
           ))}
