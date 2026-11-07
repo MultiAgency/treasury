@@ -174,7 +174,7 @@ test("the owner reads: each a GET of the agent's route, parsed by the server's c
 
 test("funding: the account and the funding account as GETs, a deposit address and each change to the funding account as one JSON POST", async () => {
   const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
-  const linked = { accountId: "funds.near", dao: null, balances: { near: "1", usdc: "2" }, confidential: false, payees: [] };
+  const linked = { accountId: "funds.near", dao: null, balances: { near: "306132631859932448916007858", usdc: "305530000" }, confidential: false, payees: [] };
   const deposit = { correlationId: "d1", address: "a".repeat(64), memo: null, minAmount: null, expiresAt: null };
   server.answer(`GET ${base}/account`, ok({ agentId: "id-portfolio", executor: true, wallet: "portfolio.near", grant: null, stagedGrant: null }));
   server.answer(`GET ${base}/treasury`, ok({ treasury: linked }));

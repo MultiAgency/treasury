@@ -8,7 +8,7 @@ import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
 import { createDaoReader, runDaoReader } from "./dao-reader.ts";
-import { createBallast, createEngineState, createPriceHistory } from "./ballast.ts";
+import { createBallast, createEngineState, createPriceHistory, type DecisionEntry } from "./ballast.ts";
 import { createDaoRequests } from "./dao-requests.ts";
 import { createSettle } from "./dao-settle.ts";
 import { chainDaos } from "./dao.ts";
@@ -27,7 +27,7 @@ await credential.get(); // Refuse to start without a readable 0600 credential.
 // The audit trail is a hash chain (A7, #53). A log in the old plain format is moved aside first (#90), never chained over.
 const asidePlain = await movePlainLogAside(settings.TREASURY_AUDIT_FILE);
 if (asidePlain) console.log(JSON.stringify({ event: "audit_plain_log_moved", to: asidePlain }));
-const audit = chainedFileAudit<AuditEntry | AnchorEntry>(settings.TREASURY_AUDIT_FILE);
+const audit = chainedFileAudit<AuditEntry | AnchorEntry | DecisionEntry>(settings.TREASURY_AUDIT_FILE);
 await audit.check(); // Refuse to start without an audit trail it can append to, or with one whose chain is broken.
 
 const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS });
@@ -59,13 +59,16 @@ const watched = settings.TREASURY_WATCH_FILE ? {
 const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
   history: await createPriceHistory(`${settings.TREASURY_REQUESTS_FILE!}.history`),
   states: await createEngineState(`${settings.TREASURY_REQUESTS_FILE!}.engine`),
+  // Every decision goes to the audit log with its inputs, so a replay of the log makes the same one (A7.2, #54).
+  audit,
 }) : undefined;
 
 // Refuse to start with the DAO requests unreadable.
 const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE);
 
 // One platform client for the routes and watch, so they share the identity cache and the credential's reads.
-const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS });
+const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS,
+  executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
 // One settle for the routes and the reader, so reads of the same DAO request at once share one.
 const settle = createSettle({ platform, daoRequests, audit });
 const handler = createServer({

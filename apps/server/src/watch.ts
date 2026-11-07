@@ -3,7 +3,7 @@ import type { Ballast, BallastSettings } from "./ballast.ts";
 import { liveConsents } from "./consent.ts";
 import type { Notify } from "./notify.ts";
 import type { ProposalAnswer, WatchPlatform } from "./platform.ts";
-import { memoryHolds, newRequestId, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
+import { memoryHolds, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
 
 /**
  * How `watch` paces itself. A tick reads 3 times (overview, unresolved, autopilot), or once while a proposal of its own
@@ -286,9 +286,10 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
         if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
         const decided = await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours);
         if ("skipped" in decided) return event(decided);
-        // Ballast records the proposal before its request is stored: a crash between the two, or a full store, counts a
-        // proposal never made, which only holds back more; never one made and not counted.
-        const requestId = newRequestId(agent);
+        // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
+        // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one
+        // made and not counted.
+        const { requestId } = decided;
         await ballast.proposed(organization, agent, requestId, decided.intent);
         const request = await requests.add(organization, agent, decided.body, requestId);
         if (!request) return event({ held: "stored requests full" });
