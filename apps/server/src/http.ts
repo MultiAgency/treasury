@@ -933,8 +933,8 @@ export const routes: Route[] = [
     /**
      * Prepares a grant binding the saved strategy the owner saw, once it's read again: refused, with nothing prepared,
      * if the strategy changed (`strategy_changed`), autopilot is on (`autopilot_on`, as the owner turns it off first),
-     * the host only approves (`approve_only`), or a grant is already waiting for its signature, vote or outcome
-     * (`grant_pending`, followed rather than signed twice). A wallet owner's connection must allow owner actions
+     * the host only approves (`approve_only`), or a grant is already waiting for its vote or outcome (`grant_pending`,
+     * followed rather than signed twice). A wallet's grant only prepared doesn't wait: nothing signed it. A wallet owner's connection must allow owner actions
      * (`owner_not_allowed`); a DAO's grant is filed for its vote, which must pass before it expires, in minutes.
      * Recorded before the platform is asked and after.
      */
@@ -951,7 +951,10 @@ export const routes: Route[] = [
       const actions = await relay(() => platform.grant.actions(organization, agent), agent);
       if (!actions.ok) return readFailure(actions, agent, "owner/actions");
       const now = Date.now();
-      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted" || (action.stage === "prepared" && Date.parse(action.expiresAt) > now))))
+      // A grant submitted, or a DAO's still open for its vote, is followed rather than signed twice. A wallet's grant takes
+      // effect only by its submit here, so one only prepared holds nothing: its wallet may have refused the signature.
+      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted"
+        || (action.stage === "prepared" && action.signer === "dao" && Date.parse(action.expiresAt) > now))))
         return refused(409, "grant_pending");
       if (signer === "wallet") {
         const listed = await platform.consents.list(organization);

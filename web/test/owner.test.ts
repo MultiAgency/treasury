@@ -295,3 +295,19 @@ test("a lost owner/prepare: a record it left is followed; with none, nothing too
   const unread = await freeze(wallets);
   assert.equal(!unread.ok && (unread.error as Error).message, "Preparing was interrupted, and the owner actions couldn’t be read to see whether it was recorded. Check them before preparing again.");
 });
+
+test("a grant whose signature the wallet refused can be prepared again: its record, only prepared, holds nothing", async () => {
+  const grant = { type: "grant_issue", label: "treasury", expectedStrategyDigest: `sha256:${"a".repeat(64)}` } as const;
+  const refusing = wallet({ signIntent: async () => { throw new Error("User rejected the request"); } });
+  answers.push(none, prepared);
+  const refused = await freeze(refusing.wallets, { action: grant });
+  assert.equal(!refused.ok && (refused.error as Error).message, "User rejected the request");
+  assert.ok(!refused.ok && refused.unknown === undefined && refused.earlier === undefined, "nothing left unknown or held");
+
+  sent = [];
+  const { wallets, asked } = wallet();
+  answers.push(actions({ type: "grant_issue", stage: "prepared" }), prepared, json({ json: { status: "SUCCESS", failureCode: null } }));
+  assert.deepEqual(await freeze(wallets, { action: grant }), { ok: true });
+  assert.deepEqual(sent, ["owner/actions", "owner/prepare", "owner/submit"]);
+  assert.deepEqual(asked, ["sign"]);
+});
