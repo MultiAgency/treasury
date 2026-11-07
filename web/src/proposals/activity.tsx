@@ -1,9 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ago, describeRequest, usd } from "../shared/format";
 import { Button, Card, Loading, Note, QueryError, short } from "../shared/ui";
-import { actionName, actionStanding, history, pageCount, pageOf, pageOfRow, rowAnchor, runSummary, unresolvedAnchor } from "./activity-view";
+import { actionName, actionStanding, history, pageCount, pageOf, runSummary, unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { agentAddress, runAddress } from "./pages";
 import { recentRuns } from "./portfolio-view";
@@ -17,7 +16,7 @@ type Reads = ReturnType<typeof agentReads>;
 function Row({ reads, row, book }: { reads: Reads; row: ActivityRead[number]; book: Parameters<typeof describeRequest>[1] }) {
   const [asked, setAsked] = useState(false);
   const status = useQuery({ ...reads.operation(row.correlationId ?? "none"), enabled: asked && row.correlationId !== undefined });
-  return <li id={row.correlationId ? rowAnchor(row.correlationId) : undefined} className="flex flex-col gap-1 scroll-mt-24">
+  return <li className="flex flex-col gap-1">
     <span>
       <time dateTime={row.at}>{when(row.at)}</time> · {row.kind} · {describeRequest(row.request, book)}
       {row.refused ? ` · refused: ${row.refused}` : row.status ? ` · ${row.status}` : " · outcome not recorded yet"}
@@ -46,11 +45,8 @@ export function Activity({ reads, identity }: { reads: Reads; identity: Identity
   const books = useQuery(reads.books);
   const overview = useQuery(reads.overview);
   const book = overview.data?.book ?? [];
-  const hash = useRouterState({ select: state => state.location.hash });
   const rows = useMemo(() => history(activity.data ?? []), [activity.data]);
   const [page, setPage] = useState(1);
-  // A link to a row (`#op-…`) opens the page that holds it.
-  useEffect(() => { if (hash.startsWith("op-")) setPage(pageOfRow(rows, hash.slice(3))); }, [hash, rows]);
   const pages = pageCount(rows.length);
   const shown = pageOf(rows, page);
   const fetching = [activity, unresolved, actions, runs, books].some(read => read.isFetching);

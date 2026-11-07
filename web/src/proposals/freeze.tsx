@@ -98,6 +98,8 @@ export function EmergencyStop({ reads, identity }: { reads: Reads; identity: Ide
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }
     } catch (problem) {
+      // Nothing was signed or filed, so the platform has no outcome to wait for: let the next one be asked for.
+      setAction(undefined);
       setError(problem instanceof WrongAccount ? problem.message : `${dao ? "The wallet didn't send it" : "The wallet didn't sign"}: ${errorMessage(problem)}. Nothing took effect.`);
     } finally {
       setBusy(false);
