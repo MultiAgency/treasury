@@ -1,5 +1,8 @@
 import { appClient, type AppBase, type AppInputs, type OwnerFailure, type OwnerOutput, type OwnerResult, type ProposalView } from "@multiagency/sdk";
+import type { z } from "zod";
 import type { Credential } from "./credential.ts";
+/** A policy edit's fields, as the SDK takes them. */
+type PolicyChanges = Extract<z.input<typeof import("@multiagency/sdk").ownerAction>, { type: "policy_update" }>["changes"];
 
 type App = ReturnType<typeof appClient>;
 export type IdentityAnswer = Awaited<ReturnType<App["identity"]>>;
@@ -20,7 +23,7 @@ export type PreparedAnswer = OwnerResult<OwnerOutput<"owner/prepare">>;
 /** Where an owner action stands: submitted, still voting, expired or failed. */
 export type StatusAnswer = OwnerResult<OwnerOutput<"owner/status">>;
 /** An owner read as the SDK answers it: its parsed output, `bigint` amounts included, or the failure's kind. */
-export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log" | "ledgerCsv" | "owner/actions"> = OwnerResult<OwnerOutput<P>>;
+export type ReadAnswer<P extends "account" | "reconcileBooks" | "overview" | "activity" | "held" | "unresolved" | "autopilot/evidence" | "autopilot/log" | "ledgerCsv" | "owner/actions" | "policyHistory"> = OwnerResult<OwnerOutput<P>>;
 /**
  * A sweep as it ran: every event the stream gave, and how it ended (`null` when it ended normally). A stream lost after
  * any event ends `unknown`, as the SDK reports it: a shield may have gone out.
@@ -135,6 +138,8 @@ export type Platform = {
     ledgerCsv(organization: string, agent: string): Promise<ReadAnswer<"ledgerCsv">>;
     /** The owner's actions for the agent and where each stands (`owner/actions`, an app read): the platform's record, across devices. */
     ownerActions(organization: string, agent: string): Promise<ReadAnswer<"owner/actions">>;
+    /** The policy's revisions and the mandate digest (`policyHistory`, under `read`, #134). */
+    policyHistory(organization: string, agent: string): Promise<ReadAnswer<"policyHistory">>;
   };
   /**
    * Funding the agent under an Organization's consent (its `treasury` scope): the account linked to fund it, a one-time
@@ -169,7 +174,7 @@ export type Platform = {
    * `owner/submit` and `owner/status` whatever the action.
    */
   owner: {
-    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" } | { type: "grant_revoke"; grantId: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
+    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" } | { type: "grant_revoke"; grantId: string } | { type: "policy_update"; expectedPolicy: { revision: number; digest: string }; changes: PolicyChanges }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
     submit(organization: string, agent: string, input: { correlationId: string; signedData: Record<string, unknown> }): Promise<OwnerResult<OwnerOutput<"owner/submit">>>;
     status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };
@@ -294,6 +299,7 @@ export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs
       recording: async (organization, agent, tickId) => (await client()).agent(organization, agent).call("autopilot/log", { tickId }),
       ledgerCsv: async (organization, agent) => (await client()).agent(organization, agent).call("ledgerCsv"),
       ownerActions: async (organization, agent) => (await client()).agent(organization, agent).call("owner/actions"),
+      policyHistory: async (organization, agent) => (await client()).agent(organization, agent).call("policyHistory"),
     },
     owner: {
       prepare: async (organization, agent, input) => (await client()).agent(organization, agent).call("owner/prepare", input),

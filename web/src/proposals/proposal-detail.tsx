@@ -70,7 +70,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   /** A failure's words, with the way forward its code names. */
   const failureNotice = (failure: Failure): Notice => ({ tone: "alert", body: <>
     {failureText(failure, "proposal")}{" "}
-    {failure.kind === "refused" && failure.code === "policy_not_in_force" && <a className="underline" href={`https://${host}/a/${reads.name}/policy`}>Open the Policy page</a>}
+    {failure.kind === "refused" && failure.code === "policy_not_in_force" && <PageLink to={agentAddress(reads.name, "policy")} className="underline">Open the Policy page</PageLink>}
     {failure.kind === "refused" && failure.code === "not_connected" && <PageLink to={agentAddress(reads.name)} hash="connection" className="underline">Connect the agent</PageLink>}
   </> });
 

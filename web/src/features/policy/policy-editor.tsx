@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Overview, Setup } from "../../platform";
 import { PendingNote, useOwnerAction, useSigner } from "../owner/owner";
-import { type AgentPolicy, allowsAsset, BUDGET, changesOf, type Draft, differences, draftOf, WINDOWS } from "./policy-draft";
+import { type AgentPolicy, allowsAsset, BUDGET, changesOf, type Draft, differences, draftOf, WINDOWS } from "../../proposals/policy-draft";
 import { focusInvalid } from "../../shared/form";
 import { useDirtyDraft, confirmDiscard } from "../../shared/dirty-draft";
 import { Button, Card, ErrorBox, input, Spinner } from "../../shared/ui";
-import { reviewedPolicyOf, sameReviewedPolicy } from "./policy-review";
+import { reviewedPolicyOf, sameReviewedPolicy } from "../../proposals/policy-review";
 
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: string }) {
   return (

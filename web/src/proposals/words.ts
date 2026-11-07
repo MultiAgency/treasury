@@ -56,6 +56,7 @@ const PROPOSAL: Record<string, string> = {
 /** The owner actions the frame offers (#133): a freeze, an unfreeze. */
 const OWNER_ACTION: Record<string, string> = {
   action_pending: "An earlier owner action of this kind is already waiting for its vote or its outcome. Follow it rather than sending another: nothing new was prepared.",
+  no_change: "That edit leaves the policy as it is, so nothing was prepared.",
   owner_not_allowed: "Your connection doesn't allow owner actions. Allow them in Connection, on the agent's Home page, first. Nothing was sent.",
   action_refused: "The platform refused it, so nothing took effect. It may already be in the state you asked for: read the agent's state again.",
   no_action: "The platform has no record of that action.",
@@ -133,3 +134,13 @@ const SCOPE_ORDER = ["read", "treasury", "owner"];
 export const scopeList = (scopes: readonly string[]) => [...scopes]
   .sort((a, b) => (SCOPE_ORDER.indexOf(a) + 1 || 99) - (SCOPE_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b))
   .join(", ").replace(/, ([^,]*)$/, " and $1");
+
+/** What has happened to a grant's revocation, by its stage. */
+export const revokeWords: Record<string, string> = {
+  voting: "Waiting for the signature, or for the DAO's vote.",
+  submitting: "Signed; the platform is submitting it.",
+  submitted: "Done: the platform has the revocation, and the grant no longer acts.",
+  expired: "It expired before it was signed or voted on. The grant is still live.",
+  failed: "The platform couldn't carry it out. The grant is still live.",
+  unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
+};

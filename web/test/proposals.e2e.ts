@@ -628,16 +628,35 @@ test("the emergency stop is in the frame of every page, with its own region and 
 });
 
 /**
- * Signs the stop's prepared action on the platform's confirm page: with `--on-chain-policy-edits` the provider enforces
- * the freeze itself, so it comes back NEP-366, as it does in production.
+ * Signs the action `region` just prepared on the platform's confirm page, and answers its link: with
+ * `--on-chain-policy-edits` the provider enforces a freeze and a policy edit itself, so they come back NEP-366, as in
+ * production. A finished action's link stays shown until the next replaces it, so `used` is waited past.
  */
-async function signStopOnConfirmPage(stop: ReturnType<Page["getByRole"]>) {
-  const link = stop.getByRole("link", { name: "open the confirm page" });
-  await visible(link);
-  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: (await link.getAttribute("href"))!,
-    owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
+async function signOnConfirmLink(region: ReturnType<Page["getByRole"]>, used?: string) {
+  const link = region.getByRole("link", { name: "open the confirm page" });
+  let url: string | null = null;
+  for (let waited = 0; ; waited += 250) {
+    url = (await link.count()) ? await link.getAttribute("href") : null;
+    if (url && url !== used) break;
+    assert.ok(waited < 20_000, "no new confirm link");
+    await page.waitForTimeout(250);
+  }
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url, owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
   assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
   assert.deepEqual(signed.unexpected, []);
+  return url;
+}
+
+/**
+ * Answers the owner action prepared at `path` (POST) as an intent the wallet signs here: this stack prepares freezes and
+ * policy edits for the confirm page, and a wallet's refusal is of an intent. Nothing it answers is ever submitted.
+ */
+async function answeredAsIntent<T>(path: string, run: () => Promise<T>): Promise<T> {
+  const intent = { standard: "nep413", payload: { message: "An owner action", recipient: new URL(origin).host, nonce: Buffer.alloc(32).toString("base64") } };
+  const asIntent = (route: Route) => route.request().method() !== "POST" ? route.fallback()
+    : route.fulfill({ json: { ok: true, value: { correlationId: `refused-${Date.now()}`, expiresAt: new Date(Date.now() + 600_000).toISOString(), intent } } });
+  await page.route(path, asIntent);
+  try { return await run(); } finally { await page.unroute(path, asIntent); }
 }
 
 test("the owner freezes by keyboard, told first what it does, signs on the platform's confirm page, and unfreezes; the agent's state follows (#140)", { timeout: 150_000 }, async () => {
@@ -654,7 +673,7 @@ test("the owner freezes by keyboard, told first what it does, signs on the platf
   assert.match(text, /Your wallet signs it/);
   assert.deepEqual(await axe(), [], "the freeze dialog");
   await confirm.getByRole("button", { name: "Sign and freeze" }).click();
-  await signStopOnConfirmPage(stop);
+  const froze = await signOnConfirmLink(stop);
   await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Unfreeze" }));
   assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "one control at a time");
@@ -664,7 +683,7 @@ test("the owner freezes by keyboard, told first what it does, signs on the platf
   const back = dialog("Unfreeze this agent?");
   await visible(back);
   await back.getByRole("button", { name: "Sign and unfreeze" }).click();
-  await signStopOnConfirmPage(stop);
+  await signOnConfirmLink(stop, froze);
   await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   assert.deepEqual(unexpected, []);
@@ -675,17 +694,11 @@ test("a wallet that refuses the freeze's signature leaves Freeze enabled again, 
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
-  // This stack prepares a freeze for the confirm page; the wallet's refusal is of an intent, so the freeze is answered as one.
-  const intent = { standard: "nep413", payload: { message: "Freeze the agent", recipient: new URL(origin).host, nonce: Buffer.alloc(32).toString("base64") } };
-  const asIntent = (route: Route) => route.fulfill({ json: { ok: true, value: { correlationId: "refused-freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), intent } } });
-  await page.route("**/api/agents/*/freeze", asIntent);
-  try {
+  await answeredAsIntent("**/api/agents/*/freeze", async () => {
     await stop.getByRole("button", { name: "Freeze" }).click();
     await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
     await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
-  } finally {
-    await page.unroute("**/api/agents/*/freeze", asIntent);
-  }
+  });
   assert.equal(await stop.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
   await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true);
@@ -892,6 +905,105 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await page.goto(`${origin}/agents/${target.agent}/proposals/${made.id}`);
   await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+});
+
+test("the policy page leads with the terms as signed, then limits and grants, and keeps the revisions and the mandate digest collapsed", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  await visible(terms.getByText("Owner approval", { exact: true }));
+  await visible(terms.getByText(/^Revision \d+/));
+  await visible(page.getByRole("region", { name: "Limits" }).getByRole("table", { name: "USD budget windows" }));
+  await visible(page.getByRole("region", { name: "Grants" }));
+  const evidence = page.getByRole("region", { name: "Revisions and mandate digest" });
+  assert.equal(await evidence.getByText(/^sha256:[0-9a-f]{64}$/).isVisible(), false, "collapsed");
+  await evidence.getByText("Show the digest and the revisions").click();
+  await visible(evidence.getByText(/^sha256:[0-9a-f]{64}$/));
+  await visible(evidence.getByRole("list", { name: "Revisions" }).or(evidence.getByText("No revision records returned.")));
+  assert.deepEqual(await axe(), [], "the policy page, evidence open");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the owner edits the policy by keyboard: told what changes first, signs it on the platform's confirm page, and the page reads the new revision (#140)", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  const before = Number((await terms.getByText(/^Revision \d+/).innerText()).match(/\d+/)![0]);
+  await terms.getByRole("button", { name: "Edit", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  await visible(rate);
+  assert.equal(await terms.getByRole("button", { name: "Review the changes" }).isDisabled(), true, "nothing changed yet");
+  assert.deepEqual(await axe(), [], "the editor");
+  // A rate that is not the one in force, whatever the stack signed.
+  const next = (await terms.getByText(/ actions an hour$/).count()) && (await terms.getByText("7 actions an hour").count()) ? "9" : "7";
+  await rate.fill(next);
+  await terms.getByRole("button", { name: "Review the changes" }).click();
+  const confirm = dialog("Change this policy?");
+  await visible(confirm);
+  await visible(confirm.getByRole("list", { name: "Changes" }).getByText(new RegExp(`^Actions an hour: .+ → ${next}$`)));
+  assert.match(await confirm.innerText(), /Your wallet signs it/);
+  assert.deepEqual(await axe(), [], "the review dialog");
+  await confirm.getByRole("button", { name: "Sign and apply" }).click();
+  await signOnConfirmLink(terms);
+  await terms.getByText(`${next} actions an hour`).waitFor({ timeout: 45_000 });
+  const after = Number((await terms.getByText(/^Revision \d+/).innerText()).match(/\d+/)![0]);
+  assert.equal(after, before + 1, "the new revision");
+  assert.deepEqual(await axe(), [], "after the edit");
+});
+
+/** Opens the policy editor with a rate that differs from the one in force, ready to review. */
+async function draftRateEdit() {
+  await ensureConnected();
+  await page.goto(here("/policy"));
+  const terms = page.getByRole("region", { name: "Policy as signed" });
+  await terms.getByRole("button", { name: "Edit", exact: true }).click();
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  await visible(rate);
+  await rate.fill((await rate.inputValue()) === "5" ? "6" : "5");
+  return terms;
+}
+
+test("an edit that expires before it was signed keeps the editor open and says so", { timeout: 120_000 }, async () => {
+  const terms = await draftRateEdit();
+  // The signed edit is taken without applying it, and the platform reads it as expired, as it does once its window has passed.
+  await page.route("**/api/agents/*/owner/actions/*", route => route.fulfill({ json: { ok: true, value: route.request().method() === "GET" ? { stage: "expired" } : {} } }));
+  try {
+    await terms.getByRole("button", { name: "Review the changes" }).click();
+    await dialog("Change this policy?").getByRole("button", { name: "Sign and apply" }).click();
+    await visible(terms.getByText("It expired before it was signed or voted on. The policy is unchanged."));
+    assert.equal(await terms.getByLabel("Actions an hour (blank for no cap)").count(), 1, "the editor is still open");
+  } finally {
+    await page.unroute("**/api/agents/*/owner/actions/*");
+  }
+});
+
+test("a wallet that refuses the edit's signature leaves Review the changes enabled again", { timeout: 90_000 }, async () => {
+  const terms = await draftRateEdit();
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  await answeredAsIntent("**/api/agents/*/policy", async () => {
+    await terms.getByRole("button", { name: "Review the changes" }).click();
+    await dialog("Change this policy?").getByRole("button", { name: "Sign and apply" }).click();
+    await visible(terms.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  });
+  assert.equal(await terms.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
+  await page.waitForFunction(() => ![...document.querySelectorAll("button")].some(button => button.textContent?.includes("Review the changes") && button.disabled), undefined, { timeout: 10_000 });
+  assert.equal(await terms.getByRole("button", { name: "Review the changes" }).isEnabled(), true);
+});
+
+test("a refusal because the policy isn't in force links to the Policy page", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const made = await propose(`policy-link-${Date.now()}`);
+  await page.route("**/api/agents/*/proposals/*/approve", route => route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "policy_not_in_force" } }));
+  await page.goto(here(`/proposals/${made.id}`));
+  const state = page.getByRole("region", { name: "State" });
+  await state.getByRole("button", { name: "Approve" }).click();
+  await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
+  const link = page.getByRole("link", { name: "Open the Policy page" });
+  await visible(link);
+  await link.click();
+  await visible(page.getByRole("heading", { level: 1, name: "Policy", exact: true }));
+  await page.unroute("**/api/agents/*/proposals/*/approve");
 });
 
 test("the policy page lists the treasury grant, and the owner opens revocation by keyboard, told first what it does; a platform that can't prepare it leaves the grant live and says so", { timeout: 150_000 }, async () => {

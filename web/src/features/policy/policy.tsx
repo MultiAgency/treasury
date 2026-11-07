@@ -7,7 +7,7 @@ import { Badge, Button, Details, Section } from "../../shared/ui";
 import { OwnerControls, useSigner } from "../owner/owner";
 import { SCHEDULE_STOP_SCOPE } from "../owner/task-recovery";
 import { Grants } from "./grants";
-import { type AgentPolicy, BUDGET, type Window, WINDOWS } from "./policy-draft";
+import { type AgentPolicy, BUDGET, type Window, WINDOWS } from "../../proposals/policy-draft";
 import { Editor } from "./policy-editor";
 import { PolicyEvidence } from "./policy-evidence";
 import { PolicyObservations } from "./policy-observations";

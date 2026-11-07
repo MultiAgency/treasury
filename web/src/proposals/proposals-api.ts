@@ -110,6 +110,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         held: () => call(contract.heldRead, `${base}/held`),
         unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
         runs: () => call(contract.runsRead, `${base}/runs`),
+        /** The policy's revisions and the mandate digest (#134). */
+        policyHistory: () => call(contract.policyHistoryRead, `${base}/policy-history`),
         /** The owner's actions and where each stands (#136): the platform's record, across devices. */
         ownerActions: () => call(contract.ownerActionsRead, `${base}/owner/actions`),
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
@@ -127,6 +129,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         freeze: () => call(contract.ownerActionPrepared, `${base}/freeze`, { method: "POST", body: {} }),
         unfreeze: () => call(contract.ownerActionPrepared, `${base}/unfreeze`, { method: "POST", body: {} }),
         /** Ends one grant (#142), prepared like a freeze: signed here, on the confirm page, or put to the DAO's vote. Sent once. */
+        /** A policy edit (#134), prepared like a freeze: the reviewed revision and digest, and the fields to change. Sent once. */
+        policyEdit: (input: z.input<typeof contract.policyUpdateRequest>) => call(contract.ownerActionPrepared, `${base}/policy`, { method: "POST", body: contract.policyUpdateRequest.parse(input) }),
         revokeGrant: (grantId: string) => call(contract.ownerActionPrepared, `${base}/grants/revoke`, { method: "POST", body: { grantId } }),
         /** A wallet owner's signed intent for any owner action (the grant has its own call), relayed once. */
         submitOwnerAction: (id: string, signedData: z.input<typeof contract.ownerActionSubmission>["signedData"]) =>
@@ -180,6 +184,7 @@ export type DaoSetup = z.output<typeof contract.daoSetup>;
 export type Creation = z.output<typeof contract.creation>;
 export type CreationStatus = z.output<typeof contract.creationStatus>;
 export type ProposalRead = z.output<typeof contract.proposalRead>;
+export type PolicyHistoryRead = z.output<typeof contract.policyHistoryRead>;
 export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;

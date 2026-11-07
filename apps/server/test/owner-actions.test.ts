@@ -15,12 +15,13 @@ import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const DAO = "agentic.sputnik-dao.near", DIGEST = `sha256:${"a".repeat(64)}`;
-const owner = wallet("owner.near"), council = wallet("council.near");
+const owner = wallet("owner.near"), council = wallet("council.near"), voter = wallet("voter.near");
 const fake = fakePlatform({ portfolio: "owner.near", daoagent: DAO }, { daos: ["daoagent"] });
 const policy: Policy = {
   proposal_bond: "100000000000000000000000", proposal_period: String(7 * 86_400 * 1e9), default_vote_policy: { threshold: [1, 2] },
   roles: [{ name: "all", kind: "Everyone", permissions: [], vote_policy: {} },
-    { name: "council", kind: { Group: ["council.near"] }, permissions: ["call:AddProposal", "call:VoteApprove", "call:VoteReject"], vote_policy: {} }],
+    { name: "council", kind: { Group: ["council.near"] }, permissions: ["call:AddProposal", "call:VoteApprove", "call:VoteReject"], vote_policy: {} },
+    { name: "voters", kind: { Group: ["voter.near"] }, permissions: ["call:VoteApprove"], vote_policy: {} }],
 };
 const audit: AuditEntry[] = [];
 const cookies: Record<string, string> = {};
@@ -30,7 +31,7 @@ before(async () => {
   server = createHttpServer(createServer({
     platform: fake.platform,
     signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000,
-      keyLookup: standInKeyLookup(Object.fromEntries([owner, council].map(who => [who.accountId, [who.publicKey]]))) }),
+      keyLookup: standInKeyLookup(Object.fromEntries([owner, council, voter].map(who => [who.accountId, [who.publicKey]]))) }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
@@ -38,7 +39,7 @@ before(async () => {
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  for (const who of [owner, council]) {
+  for (const who of [owner, council, voter]) {
     const issued = await (await fetch(`${base}/api/session/challenge`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: "{}" })).json() as any;
     cookies[who.accountId] = (await fetch(`${base}/api/session`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(who.sign(issued.value)) }))
       .headers.get("set-cookie")!.split(";")[0]!;
@@ -221,4 +222,68 @@ test("a DAO's member asks for a revocation: prepared for the vote as the transac
   assert.ok(contract.ownerActionPrepared.parse(prepared.body.value).dao, "a transaction to file");
   assert.deepEqual(prepares(), [`owner.prepare ${DAO.replaceAll(".", "--")} daoagent dao grant_revoke`]);
   assert.deepEqual((await call("POST", "grants/revoke", { grantId: "g2" }, council, "daoagent")).body, { ok: false, kind: "refused", code: "action_pending" }, "held for the vote");
+});
+
+const REVIEWED = { revision: 1, digest: DIGEST };
+test("a wallet owner edits the policy: the reviewed revision and the changes are what is prepared, recorded as a policy update; a malformed edit is refused before anything is prepared", async () => {
+  reset();
+  for (const bad of [{}, { expectedPolicy: REVIEWED }, { expectedPolicy: { revision: 1, digest: "x" }, changes: {} }, { expectedPolicy: REVIEWED, changes: { owner_approval: true }, extra: 1 }])
+    assert.deepEqual((await call("POST", "policy", bad)).body, { ok: false, kind: "refused", code: "bad_request" }, JSON.stringify(bad));
+  assert.deepEqual(prepares(), [], "nothing prepared");
+  const prepared = await call("POST", "policy", { expectedPolicy: REVIEWED, changes: { owner_approval: false } });
+  assert.equal(prepared.status, 200, prepared.text);
+  const made = contract.ownerActionPrepared.parse(prepared.body.value);
+  assert.ok(made.intent && !made.dao && !made.policy, "an intent to sign here");
+  assert.deepEqual(prepares(), ["owner.prepare owner--near portfolio wallet policy_update"]);
+  assert.deepEqual(audit.map(entry => [entry.action, entry.stage, entry.subject]), [["policy-update", "attempt", undefined], ["policy-update", "result", made.correlationId]], "recorded before and after");
+  assert.deepEqual((await call("POST", `owner/actions/${made.correlationId}/submit`, signedFor(made.intent!))).body, { ok: true, value: { status: "SUCCESS", failureCode: null } });
+});
+
+test("a policy edit is held only by another policy edit whose outcome is unknown; a freeze or a revocation does not hold it", async () => {
+  reset();
+  const future = new Date(Date.now() + 600_000).toISOString();
+  fake.grants.push({ correlationId: "f1", agent: "portfolio", signer: "wallet", digest: "", stage: "submitted", expiresAt: future, type: "agent_freeze" });
+  fake.grants.push({ correlationId: "r1", agent: "portfolio", signer: "wallet", digest: "", stage: "submitted", expiresAt: future, type: "grant_revoke" });
+  const edit = { expectedPolicy: REVIEWED, changes: { owner_approval: false } };
+  assert.equal((await call("POST", "policy", edit)).status, 200);
+  fake.grants.push({ correlationId: "p1", agent: "portfolio", signer: "wallet", digest: "", stage: "submitted", expiresAt: future, type: "policy_update" });
+  assert.deepEqual((await call("POST", "policy", edit)).body, { ok: false, kind: "refused", code: "action_pending" });
+  fake.grants.length = 0;
+  fake.grants.push({ correlationId: "p2", agent: "portfolio", signer: "wallet", digest: "", stage: "submitted", expiresAt: future, type: "policy_update" });
+  assert.equal((await call("POST", "freeze")).status, 200, "a policy edit doesn't hold a freeze");
+});
+
+test("a DAO member's policy edit is filed for the vote with the terms before and after beside it; a member without filing roles is refused before anything is prepared", async () => {
+  reset();
+  const edit = { expectedPolicy: REVIEWED, changes: { owner_approval: false } };
+  const prepared = await call("POST", "policy", edit, council, "daoagent");
+  assert.equal(prepared.status, 200, prepared.text);
+  const made = contract.ownerActionPrepared.parse(prepared.body.value);
+  assert.ok(made.dao && !made.intent, "a transaction to file");
+  assert.deepEqual(made.policy, { current: { owner_approval: true }, requested: { owner_approval: false } }, "the member compares before filing");
+  assert.deepEqual(prepares(), [`owner.prepare ${DAO.replaceAll(".", "--")} daoagent dao policy_update`]);
+  fake.calls.length = 0;
+  assert.deepEqual((await call("POST", "policy", edit, voter, "daoagent")).body, { ok: false, kind: "refused", code: "not_permitted" });
+  assert.deepEqual(prepares(), [], "nothing prepared for a member who can only vote");
+});
+
+test("the policy history is relayed as the platform answers it", async () => {
+  reset();
+  fake.reads.policyHistory = [{ revision: 1, digest: DIGEST, at: "2026-11-01T00:00:00.000Z" }] as never;
+  const read = await call("GET", "policy-history");
+  assert.equal(read.status, 200, read.text);
+  assert.ok(Array.isArray(read.body.value));
+});
+
+test("a policy edit that changes nothing is refused as no_change, with nothing prepared and nothing recorded", async () => {
+  reset();
+  const base = fake.reads.overview as any, saved = base.policy.policy;
+  base.policy.policy = { frozen: false, actions: ["swap"], confidential: true, owner_approval: true, assets: "any", limits: {}, max_actions_per_hour: 10, budget: { daily_usd: null, weekly_usd: null, monthly_usd: null }, destinations: { mode: "any", list: [] } };
+  try {
+    const same = await call("POST", "policy", { expectedPolicy: REVIEWED, changes: { owner_approval: true, max_actions_per_hour: 10 } });
+    assert.deepEqual(same.body, { ok: false, kind: "refused", code: "no_change" });
+    assert.deepEqual(prepares(), []);
+    assert.deepEqual(audit, [], "refused before anything was attempted");
+    assert.equal((await call("POST", "policy", { expectedPolicy: REVIEWED, changes: { owner_approval: false } })).status, 200, "a real change goes through");
+  } finally { base.policy.policy = saved; }
 });
