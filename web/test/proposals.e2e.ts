@@ -528,9 +528,10 @@ test("on an approve-only host the home's Strategy line says so, never that it is
   // The platform answers `grantMatches: null` when the host has no executor.
   const approveOnly = async (route: Route) => {
     const response = await route.fetch();
-    await route.fulfill({ response, json: { ...(await response.json()), grantMatches: null } });
+    const body = await response.json() as { ok: boolean; value?: object };
+    await route.fulfill({ response, json: body.ok ? { ...body, value: { ...body.value, grantMatches: null } } : body });
   };
-  await page.route(/strategy\/get/, approveOnly);
+  await page.route("**/api/agents/*/strategy", approveOnly);
   try {
     await page.goto(here());
     const standing = page.getByRole("region", { name: "Where the agent stands" });
@@ -539,7 +540,7 @@ test("on an approve-only host the home's Strategy line says so, never that it is
     await visible(line.getByText("This host only approves: the strategy is authorized on the agent's executor"));
     assert.equal(await line.getByText(/Not authorized/).count(), 0);
   } finally {
-    await page.unroute(/strategy\/get/, approveOnly);
+    await page.unroute("**/api/agents/*/strategy", approveOnly);
   }
 });
 
