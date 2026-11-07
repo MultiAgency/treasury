@@ -1,0 +1,49 @@
+/*
+ * Agentic Treasury, "the vault": the shared colour, type and motion tokens. The signed-out landing uses them, and
+ * the dashboard's theme maps its own variables onto them, so both read as one product.
+ * Near-black, a sage/mint glow, white type, and one hot light: the vault's mint-white core. No light theme.
+ */
+:root {
+  /* Surfaces */
+  --vault-bg: #050506;
+  --vault-surface: #0a0d0c;
+  --vault-surface-raised: #101513;
+  --vault-glass: rgb(255 255 255 / 0.035);
+  --vault-glass-strong: rgb(10 13 12 / 0.7);
+  --vault-border: rgb(255 255 255 / 0.08);
+  --vault-border-strong: rgb(255 255 255 / 0.18);
+  --vault-hairline: rgb(207 233 221 / 0.3);
+
+  /* Type colours */
+  --vault-text: #ffffff;
+  --vault-text-secondary: rgb(255 255 255 / 0.8);
+  --vault-text-muted: rgb(255 255 255 / 0.6);
+  --vault-text-faint: rgb(255 255 255 / 0.45);
+
+  /* The glow: sage atmosphere, mint light, and the core */
+  --vault-sage: #a9c4b7;
+  --vault-sage-deep: #5e7f72;
+  --vault-mint: #8fe0bc;
+  --vault-mint-deep: #3fa37c;
+  --vault-glow: #c9ffe9;
+  --vault-core: #e6fff4;
+  /* Only on glass refractions, never as a fill */
+  --vault-violet-edge: #b8a8ff;
+  --vault-danger: #ff8a7a;
+
+  --vault-glow-soft: 0 0 28px -2px rgb(201 255 233 / 0.55);
+  --vault-glow-dot: 0 0 10px 2px rgb(201 255 233 / 0.7);
+
+  /* Type */
+  --vault-font-display: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --vault-font-body: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --vault-font-mono: "Geist Mono Variable", ui-monospace, monospace;
+  --vault-tracking-display: -0.045em;
+  --vault-tracking-heading: -0.03em;
+
+  /* Shape and motion */
+  --vault-radius-card: 26px;
+  --vault-radius-chip: 14px;
+  --vault-radius-pill: 999px;
+  --vault-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}

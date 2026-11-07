@@ -8,6 +8,7 @@ import { SignedOutHome } from "./app/home";
 import { AGENT } from "./app/location";
 import { onSessionChange } from "./app/session-signal";
 import { Button, ErrorBox, Loading } from "./shared/ui";
+import "./theme/tokens.css";
 import "./styles.css";
 import "./treasury-theme.css";
 

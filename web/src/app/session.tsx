@@ -21,7 +21,8 @@ export async function signOut() {
   location.assign("/");
 }
 
-export function SignIn({ primary = false }: { primary?: boolean }) {
+/** `className` restyles the button and `containerClassName` its wrapper (the signed-out landing); behaviour is unchanged. */
+export function SignIn({ primary = false, className, containerClassName }: { primary?: boolean; className?: string; containerClassName?: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const signIn = async () => {
@@ -38,10 +39,10 @@ export function SignIn({ primary = false }: { primary?: boolean }) {
       setBusy(false);
     }
   };
-  return <div className="flex max-w-sm flex-col items-start gap-2">
+  return <div className={containerClassName ?? "flex max-w-sm flex-col items-start gap-2"}>
     <ErrorBox error={error} />
     <span role="status" className="sr-only">{busy ? "Complete sign-in in your NEAR wallet." : ""}</span>
-    <Button variant={primary ? "default" : "outline"} size={primary ? "default" : "sm"} className="w-fit" onClick={signIn} disabled={busy}>
+    <Button variant={primary ? "default" : "outline"} size={primary ? "default" : "sm"} className={className ?? "w-fit"} onClick={signIn} disabled={busy}>
       {busy ? <Spinner /> : <SignInIcon size={16} aria-hidden="true" />} {busy ? "Connecting…" : "Connect wallet"}
     </Button>
   </div>;
