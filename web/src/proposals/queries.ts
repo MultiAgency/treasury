@@ -41,14 +41,7 @@ export function agentReads(name: string) {
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
-    ownerActions: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false }),
-    /**
-     * The owner action still awaiting its outcome (`owner/pending`, #133): read when the page shows it, and not within
-     * half a minute of the last read, so the frame costs the platform at most two reads a minute on any page.
-     */
-    ownerPending: queryOptions({ queryKey: [...key, "owner-pending"], queryFn: async () => answered(await agent.ownerPending()), retry: false, staleTime: 30_000 }),
-    /** The same `owner/actions` read the Activity page makes, glanced at by the frame for an action whose outcome is unknown. */
-    ownerActionsGlance: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false, staleTime: 30_000 }),
+    ownerActions: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false, staleTime: 30_000 }),
     /** One recorded run of the autopilot, by its tick ID (#136). */
     recording: (tick: string) => queryOptions({ queryKey: [...key, "runs", tick], queryFn: async () => answered(await agent.recording(tick)), retry: false }),
     /** One operation's status by its `correlationId`, asked for by a click on its row. */

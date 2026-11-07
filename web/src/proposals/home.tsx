@@ -37,11 +37,11 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
   const proposals = useQuery({ ...reads.proposals, refetchInterval: false, enabled: connected });
   const unresolved = useQuery({ ...reads.unresolved, enabled: connected });
   const dao = useQuery({ ...reads.daoRequests, enabled: identity.signer === "dao" });
-  // The platform's pending owner action: the same read the emergency stop makes, so one read serves both.
-  const actions = useQuery({ ...reads.ownerPending, enabled: connected });
+  // The owner's actions and where each stands: the same read the emergency stop makes, so one read serves both.
+  const actions = useQuery({ ...reads.ownerActions, enabled: connected });
   const failing = [[proposals, "proposals"], [unresolved, "unresolved operations"], [dao, "the DAO's requests"], [actions, "pending owner actions"]] as const;
   const pending = (connected && (proposals.isPending || unresolved.isPending || actions.isPending)) || (identity.signer === "dao" && dao.isPending);
-  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], pendingActions: actions.data ?? [], now: Date.now() });
+  const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], ownerActions: actions.data ?? [], now: Date.now() });
   if (!connected && items.length === 0) return null;
 
   return <section id="needs-decision" aria-labelledby="needs-decision-title" className="flex flex-col gap-4">

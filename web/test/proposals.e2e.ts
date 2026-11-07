@@ -689,20 +689,20 @@ test("a freeze whose outcome is unknown holds both controls, after a reload too,
   assert.deepEqual(unexpected, []);
 });
 
-test("the home lists a pending owner action, until it expires, with a link to where it is signed", { timeout: 120_000 }, async () => {
+test("the home lists an owner action waiting for the DAO's vote, until it expires, with a link to where it is voted on", { timeout: 120_000 }, async () => {
   await page.goto(here());
   const needs = page.getByRole("region", { name: "Needs your decision" });
   await visible(needs);
-  const waiting = { correlationId: "pending-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), hash: "h".repeat(64), state: "waiting" };
-  await page.route("**/api/agents/*/owner/pending", route => route.fulfill({ json: { ok: true, value: [{ correlationId: waiting.correlationId, type: waiting.type, expiresAt: waiting.expiresAt, state: waiting.state }] } }));
+  const waiting = { correlationId: "pending-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), signer: "dao", stage: "prepared", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [waiting] } }));
   await page.reload();
-  const item = needs.getByRole("listitem").filter({ hasText: "Freeze is waiting for a signature or the DAO's vote" });
+  const item = needs.getByRole("listitem").filter({ hasText: "Freeze is waiting for the DAO's vote" });
   await visible(item);
   await visible(item.getByText(/^Expires /));
-  assert.deepEqual(await axe(), [], "the home, a pending owner action");
+  assert.deepEqual(await axe(), [], "the home, an owner action waiting for the vote");
   await item.getByRole("link", { name: "Open where it is signed or voted on" }).click();
   await page.waitForFunction(() => location.hash === "#emergency-stop");
-  await page.unroute("**/api/agents/*/owner/pending");
+  await page.unroute("**/api/agents/*/owner/actions");
   assert.deepEqual(unexpected, []);
 });
 

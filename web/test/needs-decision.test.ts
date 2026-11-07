@@ -70,16 +70,18 @@ test("an operation's or request's equal deadlines keep the order they were given
   assert.deepEqual(need.map(item => item.key), [`dao-${"1".repeat(64)}`, `dao-${"2".repeat(64)}`]);
 });
 
-test("a pending owner action is listed until it expires, with its deadline, and leads to where it is signed or voted on", () => {
-  const pending = (type: string, expiresInMs: number, state = "waiting") => ({ correlationId: `c-${type}-${expiresInMs}-${state}`, type, expiresAt: new Date(NOW + expiresInMs).toISOString(), state });
+test("an owner action waiting for the DAO's vote is listed until it expires, with its deadline, and leads to where it is voted on", () => {
+  const action = (type: string, expiresInMs: number, stage = "prepared", signer = "dao") => ({ correlationId: `c-${type}-${expiresInMs}-${stage}-${signer}`, type, stage, signer, expiresAt: new Date(NOW + expiresInMs).toISOString() });
   const need = needsDecision({ proposals: [view("p", "proposed", 3 * HOUR)], unresolved: [], daoRequests: [],
-    pendingActions: [pending("agent_freeze", HOUR), pending("grant_issue", 2 * HOUR), pending("agent_unfreeze", HOUR, "done"), pending("agent_freeze", -MIN), pending("grant_revoke", 5 * HOUR)], now: NOW });
-  assert.deepEqual(need.map(item => [item.kind, item.deadline === null ? null : item.deadline - NOW]), [["owner-action", HOUR], ["owner-action", 2 * HOUR], ["open-proposal", 3 * HOUR], ["owner-action", 5 * HOUR]]);
+    ownerActions: [action("agent_freeze", HOUR), action("grant_issue", 2 * HOUR), action("agent_unfreeze", HOUR, "settled"), action("agent_freeze", -MIN), action("grant_revoke", 5 * HOUR),
+      action("agent_freeze", HOUR, "prepared", "wallet")], now: NOW });
+  assert.deepEqual(need.map(item => [item.kind, item.deadline === null ? null : item.deadline - NOW]), [["owner-action", HOUR], ["owner-action", 2 * HOUR], ["open-proposal", 3 * HOUR], ["owner-action", 5 * HOUR]],
+    "not one that finished, lapsed, or was only prepared for a wallet to sign");
   assert.deepEqual(need.filter(item => item.kind === "owner-action").map(item => item.target), [
     { page: "owner-action", type: "agent_freeze" }, { page: "owner-action", type: "grant_issue" }, { page: "owner-action", type: "grant_revoke" }]);
-  assert.match(need[0]!.text, /^Freeze is waiting for a signature or the DAO's vote$/);
+  assert.match(need[0]!.text, /^Freeze is waiting for the DAO's vote$/);
   assert.match(need[3]!.text, /^Revoke a grant is waiting/);
-  assert.deepEqual(needsDecision({ proposals: [], unresolved: [], daoRequests: [], now: NOW }), [], "the pending actions are optional");
+  assert.deepEqual(needsDecision({ proposals: [], unresolved: [], daoRequests: [], now: NOW }), [], "the owner's actions are optional");
 });
 
 test("a proposal whose verdict waits for the DAO's vote is listed as the vote only, not twice", () => {

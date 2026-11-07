@@ -1030,7 +1030,7 @@ export const routes: Route[] = [
       const input = parse(contract.grantSubmission, body);
       if (input === undefined || !/^[A-Za-z0-9_-]{1,128}$/.test(params.id ?? "")) return refused(400, "bad_request");
       await audit.append({ who: account!, action: "grant-submit", agent, subject: params.id, stage: "attempt" });
-      const submitted = await relay(() => platform.grant.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
+      const submitted = await relay(() => platform.owner.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_grant")
@@ -1043,7 +1043,7 @@ export const routes: Route[] = [
   {
     // Where a grant stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/grant/:id", access: "owner", needs: "read",
-    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_grant", forbidden: "not_connected" }),
+    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.owner.status, { missing: "no_grant", forbidden: "not_connected" }),
   },
   ownerActionRoute("/api/agents/:agent/freeze", "freeze", "agent_freeze"),
   ownerActionRoute("/api/agents/:agent/unfreeze", "unfreeze", "agent_unfreeze"),
@@ -1059,7 +1059,7 @@ export const routes: Route[] = [
       const input = parse(contract.ownerActionSubmission, body);
       if (input === undefined || !/^[A-Za-z0-9_-]{1,128}$/.test(params.id ?? "")) return refused(400, "bad_request");
       await audit.append({ who: account!, action: "owner-submit", agent, subject: params.id, stage: "attempt" });
-      const submitted = await relay(() => platform.grant.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
+      const submitted = await relay(() => platform.owner.submit(organizationOf(owner), agent, { correlationId: params.id!, signedData: input.signedData }), agent);
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_action")
@@ -1072,16 +1072,7 @@ export const routes: Route[] = [
   {
     // Where an owner action stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/owner/actions/:id", access: "owner", needs: "read",
-    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.grant.status, { missing: "no_action", forbidden: "not_connected" }),
-  },
-  {
-    // The owner action still awaiting its outcome, if any (#133): read from the platform, so a reload or another device finds it.
-    method: "GET", path: "/api/agents/:agent/owner/pending", access: "owner", needs: "read",
-    async handle({ identity }, { platform }) {
-      const { agent, owner } = identity!;
-      const answer = await relay(() => platform.reads.ownerPending(organizationOf(owner), agent), agent);
-      return answer.ok ? ok(answer.value.map(({ correlationId, type, expiresAt, state }) => ({ correlationId, type, expiresAt, state }))) : readFailure(answer, agent, "owner/pending");
-    },
+    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.owner.status, { missing: "no_action", forbidden: "not_connected" }),
   },
   autopilotAction("/api/agents/:agent/autopilot/enable", "autopilot-on", "enable", contract.enableRequest,
     (platform, organization, agent, { expectedDigest }) => platform.autopilot.enable(organization, agent, expectedDigest), () => ({})),

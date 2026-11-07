@@ -10,23 +10,20 @@ test("only a freeze and an unfreeze are stops", () => {
   assert.deepEqual(["agent_freeze", "agent_unfreeze", "grant_issue", "grant_revoke", "policy_update"].map(isStop), [true, true, false, false, false]);
 });
 
-test("a stop waits on a submitted action, a DAO's request awaiting its vote, or the platform's pending one", () => {
-  const wait = (actions: ReturnType<typeof action>[], pending: { type: string; state: string; expiresAt: string; correlationId: string }[] = []) => waitingStop({ actions, pending, now: NOW });
+test("a stop waits on a submitted action or a DAO's request awaiting its vote", () => {
+  const wait = (actions: ReturnType<typeof action>[]) => waitingStop({ actions, now: NOW });
   assert.equal(wait([action("agent_freeze", "submitted")])?.why, "submitted");
   assert.equal(wait([action("agent_unfreeze", "submitted")])?.type, "agent_unfreeze");
   assert.equal(wait([action("agent_freeze", "prepared", "dao")])?.why, "vote");
-  assert.equal(wait([], [{ correlationId: "p", type: "agent_freeze", state: "waiting", expiresAt: soon }])?.why, "pending");
 });
 
 test("nothing is waited on for an action that was only prepared for a wallet, one that finished or lapsed, or one that isn't a stop", () => {
-  const wait = (actions: ReturnType<typeof action>[], pending: { type: string; state: string; expiresAt: string; correlationId: string }[] = []) => waitingStop({ actions, pending, now: NOW });
+  const wait = (actions: ReturnType<typeof action>[]) => waitingStop({ actions, now: NOW });
   assert.equal(wait([action("agent_freeze", "prepared", "wallet")]), undefined, "never signed: it can be prepared again");
   assert.equal(wait([action("agent_freeze", "settled"), action("agent_unfreeze", "expired")]), undefined);
   assert.equal(wait([action("agent_freeze", "prepared", "dao", gone)]), undefined, "a vote that lapsed");
   assert.equal(wait([action("grant_issue", "submitted"), action("grant_revoke", "prepared", "dao")]), undefined, "a grant is not a stop");
-  assert.equal(wait([], [{ correlationId: "p", type: "agent_freeze", state: "done", expiresAt: soon }, { correlationId: "q", type: "agent_freeze", state: "waiting", expiresAt: gone },
-    { correlationId: "r", type: "grant_issue", state: "waiting", expiresAt: soon }]), undefined);
-  assert.equal(waitingStop({ actions: [], pending: [], now: NOW }), undefined);
+  assert.equal(waitingStop({ actions: [], now: NOW }), undefined);
 });
 
 test("the control offered: Freeze while it runs, Unfreeze while frozen, and a DAO's member proposes", () => {

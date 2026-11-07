@@ -46,10 +46,9 @@ export function EmergencyStop({ reads, identity }: { reads: Reads; identity: Ide
   // within half a minute, and read every ten seconds only while something waits.
   const every = polling ? 10_000 : false;
   const overview = useQuery({ ...reads.overview, enabled: connected, staleTime: 60_000, refetchInterval: every });
-  const actions = useQuery({ ...reads.ownerActionsGlance, enabled: connected, refetchInterval: every });
-  const pending = useQuery({ ...reads.ownerPending, enabled: connected });
+  const actions = useQuery({ ...reads.ownerActions, enabled: connected, refetchInterval: every });
   const status = useQuery({
-    queryKey: [...reads.ownerActionsGlance.queryKey.slice(0, 2), "owner-action", action?.prepared.correlationId],
+    queryKey: [...reads.ownerActions.queryKey.slice(0, 2), "owner-action", action?.prepared.correlationId],
     queryFn: async () => {
       const read = await reads.agent.ownerActionStatus(action!.prepared.correlationId);
       if (!read.ok) throw new Error(failureText(read, "read"));
@@ -59,11 +58,11 @@ export function EmergencyStop({ reads, identity }: { reads: Reads; identity: Ide
     refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
   });
   const stage = status.data?.stage;
-  const waiting = waitingStop({ actions: actions.data ?? [], pending: pending.data ?? [], now: Date.now() });
+  const waiting = waitingStop({ actions: actions.data ?? [], now: Date.now() });
   const inFlight = action !== undefined && !(stage !== undefined && FINAL.has(stage));
   const holding = waiting !== undefined || inFlight;
   useEffect(() => { setPolling(holding); }, [holding]);
-  const refresh = () => [reads.overview, reads.ownerActionsGlance, reads.ownerPending].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
+  const refresh = () => [reads.overview, reads.ownerActions].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   // One that reached a final stage has done what it will: read the state again, and let the next one be asked for.
   useEffect(() => { if (stage !== undefined && FINAL.has(stage)) { refresh(); setAction(undefined); } }, [stage]);
 
@@ -116,7 +115,7 @@ export function EmergencyStop({ reads, identity }: { reads: Reads; identity: Ide
     </div>
     {ready && <div className="flex flex-wrap items-center gap-3">
       <Button variant={ready.action === "freeze" ? "destructive" : "outline"} disabled={busy || holding} onClick={() => setReview(ready.action)}>{busy && <Spinner />} {ready.label}</Button>
-      {holding && <span className="text-sm text-muted-foreground">{waiting?.why === "vote" || waiting?.why === "pending" ? "Waiting for the vote or signature on the earlier one." : "The earlier one's outcome isn't known yet."} Nothing more can be sent until it is.</span>}
+      {holding && <span className="text-sm text-muted-foreground">{waiting?.why === "vote" ? "Waiting for the vote or signature on the earlier one." : "The earlier one's outcome isn't known yet."} Nothing more can be sent until it is.</span>}
     </div>}
     {controls.kind === "not-connected" && <p className="text-sm">The agent isn't connected to this app, so it can't be frozen from here and its state can't be read. <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connect the agent</PageLink> on its Home page.</p>}
     {controls.kind === "needs-owner-scope" && <p className="text-sm">Your connection doesn't allow owner actions yet: <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Allow owner actions in Connection</PageLink>, then freeze from here.</p>}

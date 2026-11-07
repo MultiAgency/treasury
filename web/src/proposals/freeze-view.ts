@@ -3,25 +3,21 @@
 // With its extensions: test/freeze-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 
 type Action = { type: string; stage: "settled" | "submitted" | "expired" | "prepared"; signer: "dao" | "wallet"; expiresAt: string; correlationId: string };
-type Pending = { type: string; state: string; expiresAt: string; correlationId: string };
 
 const STOPS = new Set(["agent_freeze", "agent_unfreeze"]);
 export const isStop = (type: string) => STOPS.has(type);
 
 /**
  * What a freeze or unfreeze waits on, if anything: one submitted whose outcome isn't recorded yet, a DAO's request still
- * waiting for its vote, or the platform's own pending one (`owner/pending`). A wallet owner's intent that was only
+ * waiting for its vote. `owner/actions` holds both: the platform builds `owner/pending` from the same records. A wallet owner's intent that was only
  * prepared isn't waited on: it was never signed, so it can be prepared again (the server holds the same way).
  */
-export function waitingStop({ actions, pending, now }: { actions: readonly Action[]; pending: readonly Pending[]; now: number }): { correlationId: string; type: string; why: "submitted" | "vote" | "pending"; expiresAt: string } | undefined {
+export function waitingStop({ actions, now }: { actions: readonly Action[]; now: number }): { correlationId: string; type: string; why: "submitted" | "vote"; expiresAt: string } | undefined {
   const live = (expiresAt: string) => Date.parse(expiresAt) > now;
   for (const action of actions) {
     if (!isStop(action.type)) continue;
     if (action.stage === "submitted") return { correlationId: action.correlationId, type: action.type, why: "submitted", expiresAt: action.expiresAt };
     if (action.stage === "prepared" && action.signer === "dao" && live(action.expiresAt)) return { correlationId: action.correlationId, type: action.type, why: "vote", expiresAt: action.expiresAt };
-  }
-  for (const item of pending) {
-    if (isStop(item.type) && item.state === "waiting" && live(item.expiresAt)) return { correlationId: item.correlationId, type: item.type, why: "pending", expiresAt: item.expiresAt };
   }
   return undefined;
 }
