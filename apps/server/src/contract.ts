@@ -109,7 +109,7 @@ export const consent = z.strictObject({
   ended: z.enum(["expired", "stopped", "rejected", "changed"]).optional(),
 });
 
-/** The signed-in account, and its own Treasury agents: set up or created under its Organization (`agentsOf`). */
+/** The signed-in account, and its own Treasury agents under its Organization: created, or set up within its time (`agentsOf`). */
 export const setups = z.strictObject({ account: z.string(), agents: z.array(agentName) });
 /**
  * A DAO's Treasury setup, for a member: the member's access by the DAO's roles, the agents its consents name (set up
