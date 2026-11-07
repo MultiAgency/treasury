@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { writeSecretFiles } from "../src/start.ts";
+import { volumeProblem, writeSecretFiles } from "../src/start.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const tap = `tap_00000000-0000-4000-8000-000000000000.${"a".repeat(43)}`;
@@ -27,4 +27,14 @@ test("unset or empty secrets write nothing, so a file put there another way stay
   const env: NodeJS.ProcessEnv = { TREASURY_CREDENTIAL: tap };
   await assert.rejects(writeSecretFiles(env), /TREASURY_CREDENTIAL is set, but TREASURY_CREDENTIAL_FILE doesn't name the file/);
   assert.equal(env.TREASURY_CREDENTIAL, tap, "nothing was written, so nothing was dropped");
+});
+
+test("with a required mount named, the server starts only on the volume Railway mounted there", () => {
+  // Unset (locally, in tests): no check.
+  assert.equal(volumeProblem({}), undefined);
+  assert.equal(volumeProblem({ TREASURY_REQUIRED_MOUNT: "/data", RAILWAY_VOLUME_MOUNT_PATH: "/data" }), undefined);
+  // No volume attached, or attached elsewhere: the files would land on the container's own disk, lost on the next deploy.
+  assert.match(volumeProblem({ TREASURY_REQUIRED_MOUNT: "/data" })!, /no volume is mounted at \/data/);
+  assert.match(volumeProblem({ TREASURY_REQUIRED_MOUNT: "/data", RAILWAY_VOLUME_MOUNT_PATH: "/mnt" })!, /no volume is mounted at \/data.*\/mnt/);
+  assert.match(volumeProblem({ TREASURY_REQUIRED_MOUNT: "data" })!, /absolute path/);
 });

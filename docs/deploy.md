@@ -11,7 +11,9 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 ## The service
 
 - **One replica, a volume at `/data`.** The audit trail, stored requests and DAO requests are files there, each with
-  one writer, so the service never scales out. `railway.json` sets one replica and refuses to deploy without the volume.
+  one writer, so the service never scales out: its config sets one replica. With `TREASURY_REQUIRED_MOUNT=/data` the
+  server refuses to start unless Railway reports the volume mounted there (`RAILWAY_VOLUME_MOUNT_PATH`), so a deploy
+  without it never starts on the container's own disk.
 - **Health check:** `GET /api/health`. The server answers only after its configuration, credential file and audit
   trail were checked at startup, so a deploy that would fail to start never takes traffic.
 - **Secrets as variables, files at startup.** The server reads its credential (and the anchor key, with A7.3) only from
@@ -27,6 +29,7 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 | `TREASURY_CREDENTIAL` | the `tap_…` token (secret) |
 | `TREASURY_CREDENTIAL_FILE` | `/data/secrets/app-credential` |
 | `TREASURY_PUBLIC_ORIGIN` | `https://<host>`, the service's domain. Sign-in names this host, so it isn't changed once owners have signed in |
+| `TREASURY_REQUIRED_MOUNT` | `/data`: the server starts only on the volume mounted there |
 | `TREASURY_AUDIT_FILE` | `/data/audit.jsonl` |
 | `TREASURY_DAO_REQUESTS_FILE` | `/data/dao-requests.json` |
 | `TREASURY_TRUSTED_PROXY_HOPS` | `1`: Railway's edge appends the client's address last (checked 2026-11-05, below). With `0` the server sees whichever edge node forwarded the request, which varies, so the per-address challenge limit doesn't hold |
