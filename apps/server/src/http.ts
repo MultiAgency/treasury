@@ -101,6 +101,12 @@ const fail = (status: number, body: contract.ServerFailure): Reply => ({ status,
 const refused = (status: number, code: string) => fail(status, { ok: false, kind: "refused", code });
 const notOwner = () => fail(403, { ok: false, kind: "not_owner" });
 const unavailable = () => fail(503, { ok: false, kind: "unavailable" });
+/**
+ * The platform's own limit on this deployment's calls (its 429 JSON answer, `rate_limited`): nothing was done, and it
+ * isn't this account's doing, so it reads apart from this server's per-account `rate_limited`. A 429 that isn't the
+ * platform's answer (a proxy's page) proves nothing about the request and stays `unavailable`.
+ */
+const platformLimited = () => refused(429, "platform_rate_limited");
 
 
 const parse = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> | undefined => {
@@ -193,7 +199,7 @@ const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unli
     await audit.append({ who: account!, action, agent, stage: "attempt" });
     const answer = await relay(() => change(platform, organizationOf(owner), agent, input), agent);
     const reply = answer.ok ? ok({}) : answer.kind === "forbidden" ? refused(409, "not_connected")
-      : answer.kind === "refused" ? refused(409, "funding_refused") : unavailable();
+      : answer.kind === "refused" ? refused(409, "funding_refused") : answer.kind === "rate_limited" ? platformLimited() : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_funding_failed", { agent, action, ...failure(answer) });
     await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
@@ -248,7 +254,7 @@ const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-o
     await audit.append({ who: account!, action, agent, stage: "attempt" });
     const answer = await relay(() => send(platform, organizationOf(owner), agent, input), agent);
     const reply = answer.ok ? ok(shown(answer.value)) : answer.kind === "forbidden" ? refused(409, "not_connected")
-      : answer.kind === "refused" ? refused(409, "autopilot_refused") : unavailable();
+      : answer.kind === "refused" ? refused(409, "autopilot_refused") : answer.kind === "rate_limited" ? platformLimited() : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_autopilot_failed", { agent, action, ...failure(answer) });
     await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
@@ -546,11 +552,12 @@ export const routes: Route[] = [
       if (!stored.ok && stored.kind === "unavailable") stored = await relay(() => platform.setup(submission), account!);
       if (!stored.ok) log("platform_setup_failed", { owner: account, ...failure(stored) });
       // 409: the owner's Treasury agent is already created, or the deployment can set up no more on this host. 403: this
-      // host doesn't set agents up. 400: the text or signature wasn't accepted. Anything else may work later as is.
+      // host doesn't set agents up. 400: the text or signature wasn't accepted. The platform's limit: nothing was done.
+      // Anything else may work later as is.
       const status = !stored.ok && "status" in stored ? stored.status : undefined;
       const reply = stored.ok ? ok({ agent: stored.value.agent })
         : status === 409 ? refused(409, "already_set_up") : status === 403 ? refused(403, "setup_unavailable")
-        : status === 400 ? refused(400, "setup_refused") : unavailable();
+        : status === 400 ? refused(400, "setup_refused") : !stored.ok && stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "setup", signedTextSha256, stage: "result",
         ...(stored.ok && { agent: stored.value.agent, subject: stored.value.consent.id }), answer: audited(stored, reply) });
       return reply;
@@ -632,7 +639,7 @@ export const routes: Route[] = [
         // 403: no live setup consent covers it, or it names another key: the owner sets up again. A refusal (its text
         // logged): the platform's reason, such as another creation still waiting for its signature or vote.
         reply = prepared.kind === "forbidden" ? refused(409, "not_set_up")
-          : prepared.kind === "refused" ? refused(409, "creation_refused") : unavailable();
+          : prepared.kind === "refused" ? refused(409, "creation_refused") : prepared.kind === "rate_limited" ? platformLimited() : unavailable();
       }
       await recordResult(audit, { who: account!, action: "create", agent, stage: "result",
         ...(prepared.ok && { subject: prepared.value.correlationId }), answer: audited(prepared, reply) });
@@ -709,11 +716,12 @@ export const routes: Route[] = [
       if (!stored.ok && stored.kind === "unavailable") stored = await submit();
       if (!stored.ok) log("platform_consent_failed", { agent, ...failure(stored) });
       // 400: not accepted. 409: the agent changed since the text was built; read it again and ask for a new signature.
-      // 403: the platform says the signer doesn't own the agent. Anything else, a 429 included, may work later as is.
+      // 403: the platform says the signer doesn't own the agent. The platform's limit: nothing was stored. Anything else
+      // (a proxy's 429 included) may work later as is.
       const reply = stored.ok ? ok({ consent: shown(stored.value.consent) })
         : stored.kind === "refused" && stored.status === 400 ? refused(400, "consent_refused")
         : stored.kind === "refused" && stored.status === 409 ? refused(409, "agent_changed")
-        : stored.kind === "forbidden" ? notOwner() : unavailable();
+        : stored.kind === "forbidden" ? notOwner() : stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "consent", agent, signedTextSha256, stage: "result",
         ...(stored.ok && { subject: stored.value.consent.id }), answer: audited(stored, reply) });
       if (stored.ok) {
@@ -948,7 +956,7 @@ export const routes: Route[] = [
       } else {
         log("platform_grant_failed", { agent, ...failure(prepared) });
         reply = prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
-          : prepared.kind === "refused" ? refused(409, "grant_refused") : unavailable();
+          : prepared.kind === "refused" ? refused(409, "grant_refused") : prepared.kind === "rate_limited" ? platformLimited() : unavailable();
       }
       await recordResult(audit, { who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
       return reply;
@@ -969,7 +977,7 @@ export const routes: Route[] = [
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_grant")
-        : submitted.kind === "refused" ? refused(409, "grant_refused") : unavailable();
+        : submitted.kind === "refused" ? refused(409, "grant_refused") : submitted.kind === "rate_limited" ? platformLimited() : unavailable();
       if (!submitted.ok) log("platform_grant_submit_failed", { agent, ...failure(submitted) });
       await recordResult(audit, { who: account!, action: "grant-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
       return reply;
