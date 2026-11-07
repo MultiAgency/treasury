@@ -169,7 +169,7 @@ export type Platform = {
    * `owner/submit` and `owner/status` whatever the action.
    */
   owner: {
-    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
+    prepare(organization: string, agent: string, input: { action: { type: "agent_freeze" } | { type: "agent_unfreeze" } | { type: "grant_revoke"; grantId: string }; signer: "wallet" | "dao" }): Promise<PreparedAnswer>;
     submit(organization: string, agent: string, input: { correlationId: string; signedData: Record<string, unknown> }): Promise<OwnerResult<OwnerOutput<"owner/submit">>>;
     status(organization: string, agent: string, correlationId: string): Promise<StatusAnswer>;
   };

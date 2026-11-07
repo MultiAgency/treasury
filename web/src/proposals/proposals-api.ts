@@ -126,6 +126,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** Freezes the agent, or unfreezes it (#133): prepared for the owner to sign here, on the platform's confirm page, or for the DAO's vote. Sent once. */
         freeze: () => call(contract.ownerActionPrepared, `${base}/freeze`, { method: "POST", body: {} }),
         unfreeze: () => call(contract.ownerActionPrepared, `${base}/unfreeze`, { method: "POST", body: {} }),
+        /** Ends one grant (#142), prepared like a freeze: signed here, on the confirm page, or put to the DAO's vote. Sent once. */
+        revokeGrant: (grantId: string) => call(contract.ownerActionPrepared, `${base}/grants/revoke`, { method: "POST", body: { grantId } }),
         /** A wallet owner's signed intent for any owner action (the grant has its own call), relayed once. */
         submitOwnerAction: (id: string, signedData: z.input<typeof contract.ownerActionSubmission>["signedData"]) =>
           call(contract.grantSubmitted, `${base}/owner/actions/${correlation.parse(id)}/submit`, { method: "POST", body: contract.ownerActionSubmission.parse({ signedData }) }),

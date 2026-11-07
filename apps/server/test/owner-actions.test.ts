@@ -188,3 +188,37 @@ test("the owner-action routes answer another account with not_owner and no sessi
   assert.deepEqual(prepares(), []);
   assert.ok(!fake.calls.some(made => made.startsWith("grant.") || made.startsWith("reads.")), `nothing relayed: ${fake.calls.join(", ")}`);
 });
+
+test("a wallet owner revokes a grant: the grant named is what is prepared, signed here, recorded as a revocation; a bare or extra body is refused before anything is prepared", async () => {
+  reset();
+  assert.deepEqual((await call("POST", "grants/revoke", {})).body, { ok: false, kind: "refused", code: "bad_request" });
+  assert.deepEqual((await call("POST", "grants/revoke", { grantId: "g1", extra: 1 })).body, { ok: false, kind: "refused", code: "bad_request" });
+  assert.deepEqual(prepares(), [], "nothing prepared");
+  const prepared = await call("POST", "grants/revoke", { grantId: "g1" });
+  assert.equal(prepared.status, 200, prepared.text);
+  const made = contract.ownerActionPrepared.parse(prepared.body.value);
+  assert.ok(made.intent && !made.dao, "an intent to sign here");
+  assert.deepEqual(prepares(), ["owner.prepare owner--near portfolio wallet grant_revoke"]);
+  assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["grant-revoke", "attempt"], ["grant-revoke", "result"]]);
+  const submitted = await call("POST", `owner/actions/${made.correlationId}/submit`, signedFor(made.intent!));
+  assert.deepEqual(submitted.body, { ok: true, value: { status: "SUCCESS", failureCode: null } });
+});
+
+test("a revocation is held only by another revocation whose outcome is unknown, never by a freeze; a connection without owner actions is refused", async () => {
+  reset();
+  fake.grants.push({ correlationId: "r1", agent: "portfolio", signer: "wallet", digest: "", stage: "submitted", expiresAt: new Date(Date.now() + 600_000).toISOString(), type: "grant_revoke" });
+  assert.deepEqual((await call("POST", "grants/revoke", { grantId: "g2" })).body, { ok: false, kind: "refused", code: "action_pending" });
+  assert.equal((await call("POST", "freeze")).status, 200, "a revocation doesn't hold a freeze");
+  reset(["read", "treasury"]);
+  assert.deepEqual((await call("POST", "grants/revoke", { grantId: "g1" })).body, { ok: false, kind: "refused", code: "owner_not_allowed" });
+  assert.deepEqual(prepares(), []);
+});
+
+test("a DAO's member asks for a revocation: prepared for the vote as the transaction they file", async () => {
+  reset();
+  const prepared = await call("POST", "grants/revoke", { grantId: "g1" }, council, "daoagent");
+  assert.equal(prepared.status, 200, prepared.text);
+  assert.ok(contract.ownerActionPrepared.parse(prepared.body.value).dao, "a transaction to file");
+  assert.deepEqual(prepares(), [`owner.prepare ${DAO.replaceAll(".", "--")} daoagent dao grant_revoke`]);
+  assert.deepEqual((await call("POST", "grants/revoke", { grantId: "g2" }, council, "daoagent")).body, { ok: false, kind: "refused", code: "action_pending" }, "held for the vote");
+});

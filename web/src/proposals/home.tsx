@@ -77,8 +77,7 @@ export function Standing({ reads, identity }: { reads: Reads; identity: Identity
     <h2 id="standing-title" className="text-xl font-semibold">Where the agent stands</h2>
     <Card>
       <ul aria-label="Where the agent stands" className="flex flex-col gap-2 text-sm">
-        {/* The Policy page is #142's: the line links to it once it exists. */}
-        {line("Policy", overview, overview.data && (overview.data.notInForce ? `Not in force: ${overview.data.notInForce}` : `In force, revision ${overview.data.policy.revision ?? "—"}`))}
+        {line("Policy", overview, overview.data && (overview.data.notInForce ? `Not in force: ${overview.data.notInForce}` : `In force, revision ${overview.data.policy.revision ?? "—"}`), agentAddress(identity.agent, "policy"))}
         {line("Strategy", strategy, strategy.data && (strategy.data.grantMatches === null ? "This host only approves: the strategy is authorized on the agent's executor" : strategy.data.grantMatches ? "Authorized: the agent's grant binds the saved strategy" : "Not authorized: no grant binds the saved strategy"), agentAddress(identity.agent, "strategy"))}
         {line("Autopilot", autopilot, autopilot.data && (autopilot.data.on ? "On" : "Off"), agentAddress(identity.agent, "strategy"))}
       </ul>

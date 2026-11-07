@@ -18,6 +18,7 @@ test("every address in the table names its page", () => {
   assert.deepEqual(place(`/agents/portfolio/proposals/${ID}`), { kind: "proposal", title: "Proposal", agent: "portfolio", id: ID });
   assert.deepEqual(place("/agents/portfolio/strategy"), { kind: "agent", title: "Strategy", agent: "portfolio", page: "strategy" });
   assert.deepEqual(place("/agents/portfolio/funding/"), { kind: "agent", title: "Funding", agent: "portfolio", page: "funding" });
+  assert.deepEqual(place("/agents/portfolio/policy"), { kind: "agent", title: "Policy", agent: "portfolio", page: "policy" });
   assert.deepEqual(place("/agents/portfolio/activity"), { kind: "agent", title: "Activity", agent: "portfolio", page: "activity" });
   assert.deepEqual(place("/agents/portfolio/activity/runs/tick-1"), { kind: "run", title: "Run", agent: "portfolio", id: "tick-1" });
 });
@@ -92,7 +93,7 @@ test("a bad proposal ID is still the proposal page, for the page to show as such
 });
 
 test("the navigation lists the pages that exist, once each, home first", () => {
-  assert.deepEqual([...NAVIGATION], ["home", "proposals", "strategy", "funding", "activity"]);
+  assert.deepEqual([...NAVIGATION], ["home", "proposals", "strategy", "funding", "policy", "activity"]);
   assert.equal(new Set(NAVIGATION).size, NAVIGATION.length);
   for (const page of NAVIGATION) assert.ok(page in AGENT_PAGES);
 });

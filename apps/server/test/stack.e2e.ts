@@ -495,3 +495,8 @@ test("the owner saves a strategy through the server over the one they saw: autop
   const stale = await post(`${agent}/strategy`, { strategy: before.strategy, expectedDigest: before.digest }, cookie);
   assert.deepEqual(await stale.json(), { ok: false, kind: "refused", code: "strategy_changed" }, "saved over the strategy the owner saw, never another");
 });
+
+// The pinned platform stack's simulated provider prepares only a grant's issue and a freeze, so a revocation can't be
+// prepared against it: the route is covered with the fake platform (owner-actions.test.ts), and this joins the suite when
+// the stack prepares one (#142), signed through the confirm page where the platform chooses that form (#140).
+test.todo("grant revocation (#142): prepared in the form the platform chooses, signed, and the grant reads revoked (needs the stack to prepare grant_revoke, and #140 for the confirm page)");
