@@ -124,6 +124,8 @@ test("the platform's answers to a setup: already set up, unavailable on this hos
     [[{ ok: false, kind: "refused", status: 409, error: "exists" }], 409, "already_set_up", 1],
     [[{ ok: false, kind: "forbidden", status: 403, error: "Agent setup isn't available on this host" }], 403, "setup_unavailable", 1],
     [[{ ok: false, kind: "refused", status: 400, error: "bad signature" }], 400, "setup_refused", 1],
+    // The platform's limit on the deployment's calls: nothing was done, and not sent again.
+    [[{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }], 429, "platform_rate_limited", 1],
     [[{ ok: false, kind: "unavailable" }, { ok: false, kind: "unavailable" }], 503, undefined, 2],
   ] as const;
   for (const [answers, status, code, calls] of cases) {
@@ -189,6 +191,7 @@ test("creation without a live setup consent asks for the setup again; the platfo
     [{ ok: false, kind: "forbidden", status: 403, error: "Create the agent with the key that signed the setup" }, 409, { ok: false, kind: "refused", code: "not_set_up" }],
     // One creation waits for its signature at a time: the platform refuses another, which isn't an outage.
     [{ ok: false, kind: "refused", status: 400, error: "Agent creation already has an open owner action" }, 409, { ok: false, kind: "refused", code: "creation_refused" }],
+    [{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }, 429, { ok: false, kind: "refused", code: "platform_rate_limited" }],
     [new Error("socket hang up"), 503, { ok: false, kind: "unavailable" }],
   ] as const) {
     audited.length = 0;

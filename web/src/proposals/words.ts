@@ -71,6 +71,11 @@ const FUNDING: Record<string, string> = {
 };
 
 /** A failure in words for the owner, from its kind and code only. */
+/** Codes that read the same in every context. */
+const ANY: Record<string, string> = {
+  platform_rate_limited: "The platform is limiting this app's requests for now. Nothing was done; try again in a few minutes.",
+};
+
 export function failureText(failure: Failure, context: Context): string {
   switch (failure.kind) {
     case "not_signed_in": return "You're not signed in, or your session has ended. Sign in again.";
@@ -83,7 +88,7 @@ export function failureText(failure: Failure, context: Context): string {
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
       const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : context === "autopilot" ? AUTOPILOT : {};
-      return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
+      return table[failure.code] ?? ANY[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }
 }
