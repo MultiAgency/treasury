@@ -1006,7 +1006,7 @@ test("a refusal because the policy isn't in force links to the Policy page", { t
   await page.unroute("**/api/agents/*/proposals/*/approve");
 });
 
-test("the policy page lists the treasury grant, and the owner opens revocation by keyboard, told first what it does; a platform that can't prepare it leaves the grant live and says so", { timeout: 150_000 }, async () => {
+test("the policy page lists the treasury grant, and the owner revokes it by keyboard, told first what it does: signed once, it reads ended", { timeout: 150_000 }, async () => {
   await ensureConnected();
   await page.goto(here("/policy"));
   const grants = page.getByRole("region", { name: "Grants" });
@@ -1023,14 +1023,14 @@ test("the policy page lists the treasury grant, and the owner opens revocation b
   assert.match(text, /does not move funds/);
   assert.match(text, /Your wallet signs it/);
   assert.deepEqual(await axe(), [], "the revoke dialog");
-  // The simulated provider of the pinned platform stack does not prepare a revocation (it answers only a grant's issue and
-  // a freeze), so the signed path can't run here: the platform's answer is shown as it is, and nothing changes. The signed
-  // path is covered by the server tests with the fake platform; it joins this file when the stack prepares revocations.
+  // The simulated provider performs `grant_revoke` (since 49b8d51) and prepares it as an intent the wallet signs here.
+  // The tests after this one need no grant.
   await confirm.getByRole("button", { name: "Sign and revoke" }).click();
-  await visible(grants.getByRole("alert").or(grants.getByText(/didn't answer|refused/)));
-  await visible(live.getByText("treasury", { exact: true }));
-  assert.equal(await grants.getByText(/^Ended grants/).count(), 0, "nothing was revoked");
-  assert.deepEqual(await axe(), [], "after the refusal");
+  await grants.getByText("Done: the platform has the revocation, and the grant no longer acts.").waitFor({ timeout: 45_000 });
+  await visible(grants.getByText(/^Ended grants \(1\)/));
+  assert.equal(await live.getByText("treasury", { exact: true }).count(), 0, "no longer live");
+  assert.equal(await grants.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
+  assert.deepEqual(await axe(), [], "after the revocation");
 });
 
 test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000 }, async () => {
