@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { amountOf, describeRequest, exactAmountOf, exactPayment, symbolOf } from "../src/shared/format.ts";
+import { amountOf, describeRequest, exactAmountOf, exactPayment, linkedBalances, symbolOf } from "../src/shared/format.ts";
 
 const usdc = { asset: ASSETS.USDC, symbol: "USDC", decimals: 6 } as Parameters<typeof amountOf>[2][number];
 
@@ -41,4 +41,11 @@ test("an exact amount is never rounded, and an asset without known decimals stay
   assert.equal(exactAmountOf("499996000000000000000000", "nep141:wrap.near", []), "0.499996 wNEAR");
   assert.equal(exactAmountOf("2999999999", "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", []), "2999.999999 USDC");
   assert.equal(exactAmountOf("7", "nep141:other.near", []), "7 raw units · nep141:other.near");
+});
+
+test("a linked account's balances, as both Funding views show them: treasury/get's yoctoNEAR at 24 decimals and USDC at 6, exactly", () => {
+  // multiagentic.near's on staging (2026-11-06): its view_account amount, storage reserve included.
+  assert.deepEqual(linkedBalances({ near: "306132631859932448916007858", usdc: "305530000" }), { near: "306.132631859932448916007858", usdc: "305.53" });
+  assert.deepEqual(linkedBalances({ near: "1000000000000000000000000", usdc: "0" }), { near: "1", usdc: "0" });
+  assert.deepEqual(linkedBalances({ near: "1", usdc: "1" }), { near: "0.000000000000000000000001", usdc: "0.000001" });
 });

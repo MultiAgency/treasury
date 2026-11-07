@@ -106,6 +106,12 @@ const fail = (status: number, body: contract.ServerFailure): Reply => ({ status,
 const refused = (status: number, code: string) => fail(status, { ok: false, kind: "refused", code });
 const notOwner = () => fail(403, { ok: false, kind: "not_owner" });
 const unavailable = () => fail(503, { ok: false, kind: "unavailable" });
+/**
+ * The platform's own limit on this deployment's calls (its 429 JSON answer, `rate_limited`): nothing was done, and it
+ * isn't this account's doing, so it reads apart from this server's per-account `rate_limited`. A 429 that isn't the
+ * platform's answer (a proxy's page) proves nothing about the request and stays `unavailable`.
+ */
+const platformLimited = () => refused(429, "platform_rate_limited");
 
 
 const parse = <S extends z.ZodType>(schema: S, value: unknown): z.output<S> | undefined => {
@@ -243,7 +249,7 @@ const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unli
     await audit.append({ who: account!, action, agent, stage: "attempt" });
     const answer = await relay(() => change(platform, organizationOf(owner), agent, input), agent);
     const reply = answer.ok ? ok({}) : answer.kind === "forbidden" ? refused(409, "not_connected")
-      : answer.kind === "refused" ? refused(409, "funding_refused") : unavailable();
+      : answer.kind === "refused" ? refused(409, "funding_refused") : answer.kind === "rate_limited" ? platformLimited() : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_funding_failed", { agent, action, ...failure(answer) });
     await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
@@ -298,7 +304,7 @@ const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-o
     await audit.append({ who: account!, action, agent, stage: "attempt" });
     const answer = await relay(() => send(platform, organizationOf(owner), agent, input), agent);
     const reply = answer.ok ? ok(shown(answer.value)) : answer.kind === "forbidden" ? refused(409, "not_connected")
-      : answer.kind === "refused" ? refused(409, "autopilot_refused") : unavailable();
+      : answer.kind === "refused" ? refused(409, "autopilot_refused") : answer.kind === "rate_limited" ? platformLimited() : unavailable();
     if (!answer.ok && answer.kind !== "forbidden") log("platform_autopilot_failed", { agent, action, ...failure(answer) });
     await recordResult(audit, { who: account!, action, agent, stage: "result", answer: audited(answer, reply) });
     return reply;
@@ -337,7 +343,7 @@ function preparedReply(prepared: PreparedAnswer | { ok: false; kind: "unavailabl
   }
   log(`platform_${what}_failed`, { agent, ...failure(prepared) });
   return prepared.kind === "forbidden" ? refused(409, signer === "wallet" ? "owner_not_allowed" : "not_connected")
-    : prepared.kind === "refused" ? refused(409, refusal) : unavailable();
+    : prepared.kind === "refused" ? refused(409, refusal) : prepared.kind === "rate_limited" ? platformLimited() : unavailable();
 }
 
 /** Whether a wallet owner's live consent allows owner actions (`owner`): without it the platform refuses what the app prepares. */
@@ -350,6 +356,21 @@ async function ownerAllowed(platform: Platform, organization: string, identity: 
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
+}
+/**
+ * The agents "Your treasuries" lists for an owner (`agentsOf`): a lapsed setup's agent only once created, as its
+ * identity answers; the platform's 404 means it isn't. Null when an identity can't be read: unavailable, never a guess.
+ */
+async function treasuriesOf(consents: readonly ConsentRecord[], owner: string, platform: Platform): Promise<string[] | null> {
+  const { listed, lapsed } = agentsOf(consents, owner);
+  const created = await Promise.all(lapsed.map(async agent => {
+    const answer = await relay(async () => (await platform.identity(agent)).answer, agent);
+    if (answer.ok) return answer.value.agentId !== null;
+    if (answer.kind === "refused" && answer.status === 404) return false;
+    log("platform_identity_failed", { agent, ...failure(answer) });
+    return null;
+  }));
+  return created.includes(null) ? null : [...listed, ...lapsed.filter((_, i) => created[i])].sort();
 }
 /** Whether the platform's answer may have been lost: then the proposal is read once, never the call sent again. */
 const lost = (answer: ProposalAnswer) => !answer.ok && !(answer.kind === "refused" && answer.status !== undefined) && answer.kind !== "forbidden" && answer.kind !== "session";
@@ -571,13 +592,14 @@ export const routes: Route[] = [
     },
   },
   {
-    // The signed-in account's own Treasury agents, set up or created, as its consents under its Organization name them.
+    // The signed-in account's own Treasury agents under its Organization: created, or set up within its time (`treasuriesOf`).
     method: "GET", path: "/api/setup", access: "session",
     async handle({ account }, { platform, requests }) {
       if (!requests(account!)) return refused(429, "rate_limited");
       const listed = await platform.consents.list(organizationOf(account!));
       if (!listed.ok) { log("platform_consents_failed", { owner: account, ...failure(listed) }); return unavailable(); }
-      return ok({ account, agents: agentsOf(listed.value.consents, account!) });
+      const agents = await treasuriesOf(listed.value.consents, account!, platform);
+      return agents ? ok({ account, agents }) : unavailable();
     },
   },
   {
@@ -609,11 +631,12 @@ export const routes: Route[] = [
       if (!stored.ok && stored.kind === "unavailable") stored = await relay(() => platform.setup(submission), account!);
       if (!stored.ok) log("platform_setup_failed", { owner: account, ...failure(stored) });
       // 409: the owner's Treasury agent is already created, or the deployment can set up no more on this host. 403: this
-      // host doesn't set agents up. 400: the text or signature wasn't accepted. Anything else may work later as is.
+      // host doesn't set agents up. 400: the text or signature wasn't accepted. The platform's limit: nothing was done.
+      // Anything else may work later as is.
       const status = !stored.ok && "status" in stored ? stored.status : undefined;
       const reply = stored.ok ? ok({ agent: stored.value.agent })
         : status === 409 ? refused(409, "already_set_up") : status === 403 ? refused(403, "setup_unavailable")
-        : status === 400 ? refused(400, "setup_refused") : unavailable();
+        : status === 400 ? refused(400, "setup_refused") : !stored.ok && stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "setup", signedTextSha256, stage: "result",
         ...(stored.ok && { agent: stored.value.agent, subject: stored.value.consent.id }), answer: audited(stored, reply) });
       return reply;
@@ -633,7 +656,8 @@ export const routes: Route[] = [
       const settled = open && await context.settle(open);
       const listed = await context.platform.consents.list(organization);
       if (!listed.ok) { log("platform_consents_failed", { dao: member.owner, ...failure(listed) }); return unavailable(); }
-      const agents = agentsOf(listed.value.consents, member.owner);
+      const agents = await treasuriesOf(listed.value.consents, member.owner, context.platform);
+      if (!agents) return unavailable();
       if (settled?.result === "reserved" && !agents.includes(settled.agent)) agents.push(settled.agent);
       const request = open && settled?.result === "pending" ? await daoView(open, member, context) : null;
       const ended = !request && !agents.length ? context.daoRequests.setupEnded(organization) : undefined;
@@ -653,7 +677,9 @@ export const routes: Route[] = [
       if (!mayCall(member.access, "owner/prepare")) return refused(403, "not_permitted");
       const listed = await context.platform.consents.list(organizationOf(member.owner));
       if (!listed.ok) { log("platform_consents_failed", { dao: member.owner, ...failure(listed) }); return unavailable(); }
-      if (agentsOf(listed.value.consents, member.owner).length) return refused(409, "already_set_up");
+      const agents = await treasuriesOf(listed.value.consents, member.owner, context.platform);
+      if (!agents) return unavailable();
+      if (agents.length) return refused(409, "already_set_up");
       return fileDao({ kind: "setup" }, account!, member, context);
     },
   },
@@ -661,8 +687,9 @@ export const routes: Route[] = [
     /**
      * Prepares the agent's creation under its setup consent, which reaches nothing else: a wallet owner signs it on the
      * platform's confirm page, with the key that signed the setup (the platform refuses any other); a DAO's member files
-     * the proposal for the DAO's vote, with a vote on it if their role votes. Each ask prepares a new one, which the
-     * owner may leave unsigned: it expires in minutes. Recorded before the platform is asked and after.
+     * the proposal for the DAO's vote, with a vote on it if their role votes. The owner may leave one unsigned: it
+     * expires in minutes. The platform's refusal is `creation_refused`, its text logged; one cause is a creation still
+     * waiting for its signature or vote. Recorded before the platform is asked and after.
      */
     method: "POST", path: "/api/agents/:agent/creation", access: "owner-fresh", needs: "file",
     async handle({ account, identity }, { platform, audit }) {
@@ -688,8 +715,10 @@ export const routes: Route[] = [
         if (reply.status !== 200) log("platform_creation_unreadable", { agent, correlationId });
       } else {
         log("platform_creation_failed", { agent, ...failure(prepared) });
-        // 403: no live setup consent covers it, or it names another key: the owner sets up again.
-        reply = prepared.kind === "forbidden" ? refused(409, "not_set_up") : unavailable();
+        // 403: no live setup consent covers it, or it names another key: the owner sets up again. A refusal (its text
+        // logged): the platform's reason, such as another creation still waiting for its signature or vote.
+        reply = prepared.kind === "forbidden" ? refused(409, "not_set_up")
+          : prepared.kind === "refused" ? refused(409, "creation_refused") : prepared.kind === "rate_limited" ? platformLimited() : unavailable();
       }
       await recordResult(audit, { who: account!, action: "create", agent, stage: "result",
         ...(prepared.ok && { subject: prepared.value.correlationId }), answer: audited(prepared, reply) });
@@ -766,11 +795,12 @@ export const routes: Route[] = [
       if (!stored.ok && stored.kind === "unavailable") stored = await submit();
       if (!stored.ok) log("platform_consent_failed", { agent, ...failure(stored) });
       // 400: not accepted. 409: the agent changed since the text was built; read it again and ask for a new signature.
-      // 403: the platform says the signer doesn't own the agent. Anything else, a 429 included, may work later as is.
+      // 403: the platform says the signer doesn't own the agent. The platform's limit: nothing was stored. Anything else
+      // (a proxy's 429 included) may work later as is.
       const reply = stored.ok ? ok({ consent: shown(stored.value.consent) })
         : stored.kind === "refused" && stored.status === 400 ? refused(400, "consent_refused")
         : stored.kind === "refused" && stored.status === 409 ? refused(409, "agent_changed")
-        : stored.kind === "forbidden" ? notOwner() : unavailable();
+        : stored.kind === "forbidden" ? notOwner() : stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "consent", agent, signedTextSha256, stage: "result",
         ...(stored.ok && { subject: stored.value.consent.id }), answer: audited(stored, reply) });
       if (stored.ok) {
@@ -1001,8 +1031,8 @@ export const routes: Route[] = [
     /**
      * Prepares a grant binding the saved strategy the owner saw, once it's read again: refused, with nothing prepared,
      * if the strategy changed (`strategy_changed`), autopilot is on (`autopilot_on`, as the owner turns it off first),
-     * the host only approves (`approve_only`), or a grant is already waiting for its signature, vote or outcome
-     * (`grant_pending`, followed rather than signed twice). A wallet owner's connection must allow owner actions
+     * the host only approves (`approve_only`), or a grant is already waiting for its vote or outcome (`grant_pending`,
+     * followed rather than signed twice). A wallet's grant only prepared doesn't wait: nothing signed it. A wallet owner's connection must allow owner actions
      * (`owner_not_allowed`); a DAO's grant is filed for its vote, which must pass before it expires, in minutes.
      * Recorded before the platform is asked and after.
      */
@@ -1019,7 +1049,10 @@ export const routes: Route[] = [
       const actions = await relay(() => platform.grant.actions(organization, agent), agent);
       if (!actions.ok) return readFailure(actions, agent, "owner/actions");
       const now = Date.now();
-      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted" || (action.stage === "prepared" && Date.parse(action.expiresAt) > now))))
+      // A grant submitted, or a DAO's still open for its vote, is followed rather than signed twice. A wallet's grant takes
+      // effect only by its submit here, so one only prepared holds nothing: its wallet may have refused the signature.
+      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted"
+        || (action.stage === "prepared" && action.signer === "dao" && Date.parse(action.expiresAt) > now))))
         return refused(409, "grant_pending");
       if (signer === "wallet") {
         const allowed = await ownerAllowed(platform, organization, identity!, agent);
@@ -1049,7 +1082,7 @@ export const routes: Route[] = [
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_grant")
-        : submitted.kind === "refused" ? refused(409, "grant_refused") : unavailable();
+        : submitted.kind === "refused" ? refused(409, "grant_refused") : submitted.kind === "rate_limited" ? platformLimited() : unavailable();
       if (!submitted.ok) log("platform_grant_submit_failed", { agent, ...failure(submitted) });
       await recordResult(audit, { who: account!, action: "grant-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
       return reply;
@@ -1080,7 +1113,7 @@ export const routes: Route[] = [
       const reply = submitted.ok ? ok({ status: submitted.value.status, failureCode: submitted.value.failureCode ?? null })
         : submitted.kind === "forbidden" ? refused(409, "owner_not_allowed")
         : submitted.kind === "refused" && submitted.status === 404 ? refused(404, "no_action")
-        : submitted.kind === "refused" ? refused(409, "action_refused") : unavailable();
+        : submitted.kind === "refused" ? refused(409, "action_refused") : submitted.kind === "rate_limited" ? platformLimited() : unavailable();
       if (!submitted.ok) log("platform_owner_submit_failed", { agent, ...failure(submitted) });
       await recordResult(audit, { who: account!, action: "owner-submit", agent, subject: params.id, stage: "result", answer: audited(submitted, reply) });
       return reply;

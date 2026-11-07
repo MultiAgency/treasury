@@ -119,6 +119,16 @@ test("nothing is prepared without owner actions allowed, or for a malformed body
   assert.deepEqual(audit.filter(entry => entry.action === "unfreeze" && entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined), [{ ok: false, kind: "unavailable" }], "a result even when the call threw");
 });
 
+test("the platform's limit on the deployment's calls: the freeze isn't prepared, so asking again is offered at once", async () => {
+  reset();
+  fake.grantAnswers.ownerPrepare = [{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }];
+  const limited = await call("POST", "freeze");
+  assert.deepEqual([limited.status, limited.body], [429, { ok: false, kind: "refused", code: "platform_rate_limited" }]);
+  assert.deepEqual(audit.filter(entry => entry.action === "freeze" && entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined),
+    [{ ok: false, kind: "rate_limited", status: 429, code: "platform_rate_limited" }]);
+  assert.equal((await call("POST", "freeze")).status, 200, "nothing waits on a freeze that was never prepared");
+});
+
 test("an action the platform holds for the owner's confirm page comes back as that link and nothing else: no token, no intent", async () => {
   reset();
   fake.grantAnswers.ownerPrepare = [confirmAnswer as never];
@@ -137,14 +147,17 @@ test("a malformed signature is refused unasked; a lost submit is unavailable, re
   const made = contract.ownerActionPrepared.parse((await call("POST", "freeze")).body.value);
   assert.deepEqual((await call("POST", `owner/actions/${made.correlationId}/submit`, { signedData: { standard: "nep413" } })).body, { ok: false, kind: "refused", code: "bad_request" });
   assert.equal(ownerSubmits().length, 0, "nothing relayed for a malformed one");
-  fake.grantAnswers.submit = [new Error("socket hang up"), { ok: false, kind: "refused", status: 400, error: "signature invalid: detail" }];
+  fake.grantAnswers.submit = [new Error("socket hang up"), { ok: false, kind: "refused", status: 400, error: "signature invalid: detail" }, { ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }];
   assert.equal((await call("POST", `owner/actions/${made.correlationId}/submit`, signedFor(made.intent!))).status, 503);
   assert.equal(ownerSubmits().length, 1, "the server never sends it again by itself: one call, however it answered");
   const refused = await call("POST", `owner/actions/${made.correlationId}/submit`, signedFor(made.intent!));
   assert.deepEqual(refused.body, { ok: false, kind: "refused", code: "action_refused" });
   assert.ok(!refused.text.includes("detail"));
+  const limited = await call("POST", `owner/actions/${made.correlationId}/submit`, signedFor(made.intent!));
+  assert.deepEqual([limited.status, limited.body], [429, { ok: false, kind: "refused", code: "platform_rate_limited" }]);
   assert.deepEqual(audit.filter(entry => entry.action === "owner-submit" && entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined),
-    [{ ok: false, kind: "unavailable" }, { ok: false, kind: "refused", status: 400, code: "action_refused" }]);
+    [{ ok: false, kind: "unavailable" }, { ok: false, kind: "refused", status: 400, code: "action_refused" },
+      { ok: false, kind: "rate_limited", status: 429, code: "platform_rate_limited" }]);
   assert.deepEqual((await call("POST", "owner/actions/no-such-action/submit", signedFor(made.intent!))).body, { ok: false, kind: "refused", code: "no_action" });
   assert.deepEqual((await call("GET", "owner/actions/no-such-action")).body, { ok: false, kind: "refused", code: "no_action" });
 });

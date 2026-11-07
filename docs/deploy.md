@@ -1,9 +1,9 @@
 # Deploying the app server
 
 The Treasury app server, with the proposals page it serves, runs on Railway: project `treasury`, environment
-`production`, one service `server`, built from this repository's `Dockerfile` with the settings in `railway.json`. It
-talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners and funds. When the
-platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
+`production`, one service `server`, built from this repository's `Dockerfile` with the settings in
+`.railway/railway.ts`. It talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners
+and funds. When the platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
 `TREASURY_PLATFORM_ORIGIN` and the credential, which is issued per host.
 
 The old prototype (`dao/treasury`) is a different service, `treasury` in the platform's own project; nothing here touches it.
@@ -11,7 +11,9 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 ## The service
 
 - **One replica, a volume at `/data`.** The audit trail, stored requests and DAO requests are files there, each with
-  one writer, so the service never scales out. `railway.json` sets one replica and refuses to deploy without the volume.
+  one writer, so the service never scales out: its config sets one replica. With `TREASURY_REQUIRED_MOUNT=/data` the
+  server refuses to start unless Railway reports the volume mounted there (`RAILWAY_VOLUME_MOUNT_PATH`), so a deploy
+  without it never starts on the container's own disk.
 - **Health check:** `GET /api/health`. The server answers only after its configuration, credential file and audit
   trail were checked at startup, so a deploy that would fail to start never takes traffic.
 - **Secrets as variables, files at startup.** The server reads its credential (and the anchor key, with A7.3) only from
@@ -27,6 +29,7 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 | `TREASURY_CREDENTIAL` | the `tap_…` token (secret) |
 | `TREASURY_CREDENTIAL_FILE` | `/data/secrets/app-credential` |
 | `TREASURY_PUBLIC_ORIGIN` | `https://<host>`, the service's domain. Sign-in names this host, so it isn't changed once owners have signed in |
+| `TREASURY_REQUIRED_MOUNT` | `/data`: the server starts only on the volume mounted there |
 | `TREASURY_AUDIT_FILE` | `/data/audit.jsonl` |
 | `TREASURY_DAO_REQUESTS_FILE` | `/data/dao-requests.json` |
 | `TREASURY_TRUSTED_PROXY_HOPS` | `1`: Railway's edge appends the client's address last (checked 2026-11-05, below). With `0` the server sees whichever edge node forwarded the request, which varies, so the per-address challenge limit doesn't hold |
@@ -34,6 +37,22 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 
 `PORT` is Railway's. `TREASURY_PAGE_DIR` is set by the image. `watch` runs only with `TREASURY_WATCH_FILE` and
 `TREASURY_REQUESTS_FILE` (on `/data`); `.env.example` lists the rest, each with a default.
+
+## Service settings
+
+`.railway/railway.ts` declares the service and its volume: build, health check and replicas. The restart policy is
+Railway's default (on failure, 10 retries), which it stores as unset, so the file doesn't declare it. Railway keeps a
+required mount unset for this service whatever the file says, so the server checks the volume itself
+(`TREASURY_REQUIRED_MOUNT`). Railway doesn't read the file during deploys; it stores what the last apply set. After
+changing the file:
+
+```sh
+railway config plan    # read-only: what would change
+railway config apply   # asks before changing anything
+```
+
+Variables are listed with `preserve()`, so their values stay in Railway. A variable added in Railway is added to the
+file too, or the plan stops. `pnpm typecheck` compiles the file against the `railway` package.
 
 ## The credential
 
@@ -55,13 +74,14 @@ Railway builds from the `Dockerfile`, not from a local folder's guess. Either co
 untracked beside a checkout goes with it:
 
 ```sh
-rm -rf /tmp/treasury-deploy && git worktree add --detach /tmp/treasury-deploy <commit>
-railway up /tmp/treasury-deploy --service server --environment production
+railway config plan --detailed-exit-code   # exits 2 while .railway/railway.ts has changes not applied: apply them first
+rm -rf /tmp/treasury-deploy && git worktree prune && git worktree add --detach /tmp/treasury-deploy <commit>
+railway up /tmp/treasury-deploy --path-as-root --service server --environment production
 git worktree remove /tmp/treasury-deploy
 ```
 
-The first deploy: set the variables, deploy, then `railway domain` for the service, point a CNAME for `<host>` at the
-domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to it.
+The first deploy: set the variables, `railway config apply`, deploy, then `railway domain` for the service, point a
+CNAME for `<host>` at the domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to it.
 
 ## Checks after a deploy
 

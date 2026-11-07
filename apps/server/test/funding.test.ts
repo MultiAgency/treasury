@@ -71,19 +71,21 @@ test("a malformed change is refused before anything is asked or recorded", async
 test("the platform's refusal is funding_refused without its text, no consent is not_connected, and a lost answer is unavailable: each recorded", async () => {
   reset();
   fake.fundingAnswers.link = [{ ok: false, kind: "refused", status: 400, error: "account does not exist: secret detail" },
-    { ok: false, kind: "forbidden", status: 403, error: "No live owner consent" }, new Error("socket hang up")];
+    { ok: false, kind: "forbidden", status: 403, error: "No live owner consent" }, new Error("socket hang up"), { ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }];
   const answers = [];
-  for (let i = 0; i < 3; i++) answers.push(await call("POST", `${agent}/treasury/link`, owner, { accountId: "funds.near" }));
+  for (let i = 0; i < 4; i++) answers.push(await call("POST", `${agent}/treasury/link`, owner, { accountId: "funds.near" }));
   assert.deepEqual(answers.map(({ status, body }) => [status, body]), [
     [409, { ok: false, kind: "refused", code: "funding_refused" }],
     [409, { ok: false, kind: "refused", code: "not_connected" }],
     [503, { ok: false, kind: "unavailable" }],
+    [429, { ok: false, kind: "refused", code: "platform_rate_limited" }],
   ]);
   assert.ok(!answers[0]!.text.includes("secret detail"), "the platform's text stays on the server");
   assert.deepEqual(audit.filter(entry => entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined), [
     { ok: false, kind: "refused", status: 400, code: "funding_refused" },
     { ok: false, kind: "forbidden", status: 403, code: "not_connected" },
     { ok: false, kind: "unavailable" },
+    { ok: false, kind: "rate_limited", status: 429, code: "platform_rate_limited" },
   ]);
 });
 

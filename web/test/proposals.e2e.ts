@@ -23,7 +23,8 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { signOnConfirmPage } from "./confirm-page.ts";
+import { ETH, fundPublic, setTargets, signOwner, signOwnerDelegate, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -38,7 +39,8 @@ const sent: { signerId: string; receiverId: string; actions: { params: { methodN
 
 before(async () => {
   await audit.check();
-  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
+  // `--on-chain-policy-edits`: a provider-enforced policy edit comes back NEP-366, held for the platform's confirm page (#140).
+  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test", "--on-chain-policy-edits"] });
   target = stack.target;
   const state = stack.state();
   owner = state.ownerAccount;
@@ -625,7 +627,20 @@ test("the emergency stop is in the frame of every page, with its own region and 
   assert.deepEqual(unexpected, []);
 });
 
-test("the owner freezes by keyboard with their wallet, told first what it does, and unfreezes; the agent's state follows", { timeout: 150_000 }, async () => {
+/**
+ * Signs the stop's prepared action on the platform's confirm page: with `--on-chain-policy-edits` the provider enforces
+ * the freeze itself, so it comes back NEP-366, as it does in production.
+ */
+async function signStopOnConfirmPage(stop: ReturnType<Page["getByRole"]>) {
+  const link = stop.getByRole("link", { name: "open the confirm page" });
+  await visible(link);
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: (await link.getAttribute("href"))!,
+    owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
+  assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
+  assert.deepEqual(signed.unexpected, []);
+}
+
+test("the owner freezes by keyboard, told first what it does, signs on the platform's confirm page, and unfreezes; the agent's state follows (#140)", { timeout: 150_000 }, async () => {
   await page.goto(here("/strategy"));
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
@@ -639,6 +654,7 @@ test("the owner freezes by keyboard with their wallet, told first what it does, 
   assert.match(text, /Your wallet signs it/);
   assert.deepEqual(await axe(), [], "the freeze dialog");
   await confirm.getByRole("button", { name: "Sign and freeze" }).click();
+  await signStopOnConfirmPage(stop);
   await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Unfreeze" }));
   assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "one control at a time");
@@ -648,6 +664,7 @@ test("the owner freezes by keyboard with their wallet, told first what it does, 
   const back = dialog("Unfreeze this agent?");
   await visible(back);
   await back.getByRole("button", { name: "Sign and unfreeze" }).click();
+  await signStopOnConfirmPage(stop);
   await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   assert.deepEqual(unexpected, []);
@@ -658,9 +675,17 @@ test("a wallet that refuses the freeze's signature leaves Freeze enabled again, 
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
-  await stop.getByRole("button", { name: "Freeze" }).click();
-  await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
-  await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  // This stack prepares a freeze for the confirm page; the wallet's refusal is of an intent, so the freeze is answered as one.
+  const intent = { standard: "nep413", payload: { message: "Freeze the agent", recipient: new URL(origin).host, nonce: Buffer.alloc(32).toString("base64") } };
+  const asIntent = (route: Route) => route.fulfill({ json: { ok: true, value: { correlationId: "refused-freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), intent } } });
+  await page.route("**/api/agents/*/freeze", asIntent);
+  try {
+    await stop.getByRole("button", { name: "Freeze" }).click();
+    await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
+    await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  } finally {
+    await page.unroute("**/api/agents/*/freeze", asIntent);
+  }
   assert.equal(await stop.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
   await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true);
@@ -990,4 +1015,39 @@ test("the policy page lists the treasury grant, and the owner opens revocation b
   await visible(live.getByText("treasury", { exact: true }));
   assert.equal(await grants.getByText(/^Ended grants/).count(), 0, "nothing was revoked");
   assert.deepEqual(await axe(), [], "after the refusal");
+});
+
+test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000 }, async () => {
+  const show = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item);
+  const state = stack.state();
+  const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const agent = app.agent(owner.replaceAll(".", "--"), target.agent);
+  const overview = async () => { const read = await agent.call("overview"); assert.ok(read.ok, show(read)); return read.value as { policy: { revision: number | null }; digest: string | null }; };
+  const before = await overview();
+  // The hourly action cap is enforced by the provider itself, so changing it comes back NEP-366: only a link, never the bytes.
+  // (The stack's policy has owner approval off already, so turning it off would change no enforced field.)
+  const held = await agent.call("owner/prepare", { action: { type: "policy_update", expectedPolicy: { revision: before.policy.revision!, digest: before.digest! }, changes: { max_actions_per_hour: 11 } }, signer: "wallet" });
+  assert.ok(held.ok, show(held));
+  const prepared = held.value as { correlationId: string; intent?: unknown; confirm?: { url: string } };
+  assert.equal(prepared.intent, undefined, "the app never holds the delegate bytes");
+  const confirm = prepared.confirm;
+  assert.ok(confirm?.url.startsWith(`${state.dashboard}/confirm/`), "a confirm link on the platform's host");
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: confirm!.url, owner: { accountId: owner, publicKey: state.testPublicKey } });
+  assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
+  assert.deepEqual(signed.asked.filter(item => !item.delegate).map(item => item.message?.split("\n")[0]), ["Open a MultiAgency confirm page."], "first the link's readable text");
+  assert.deepEqual(signed.unexpected, []);
+  for (let waited = 0; ; waited += 1_000) {
+    const status = await agent.call("owner/status", { correlationId: prepared.correlationId });
+    if (status.ok && (status.value as { status: string | null }).status === "SUCCESS") break;
+    assert.ok(waited < 45_000, `still ${show(status)}`);
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+  assert.equal((await overview()).policy.revision, before.policy.revision! + 1, "the overview reads the new revision");
+});
+
+test("the stack's owner signs a delegate action through its control, as the confirm page asks the wallet for it (#140)", async () => {
+  const signed = await signOwnerDelegate(target, { receiverId: "outlayer.near", actions: [{ type: "FunctionCall", params: { methodName: "store_wallet_policy", args: { wallet_pubkey: "x", encrypted_data: "y" }, gas: "30000000000000", deposit: "0" } }] });
+  assert.equal(signed.accountId, owner);
+  assert.match(signed.signedDelegate, /^[A-Za-z0-9+/]+=*$/, "a signed delegate, base64");
+  await assert.rejects(() => signOwnerDelegate(target, { receiverId: "outlayer.near", actions: [] }), "no actions is refused");
 });

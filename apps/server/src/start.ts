@@ -8,6 +8,22 @@ import { writeAtomic } from "./files.ts";
 export const SECRET_FILES = { TREASURY_CREDENTIAL: "TREASURY_CREDENTIAL_FILE", TREASURY_ANCHOR_KEY: "TREASURY_ANCHOR_KEY_FILE" } as const;
 
 /**
+ * Why the server mustn't start on this host's disk, or undefined. With `TREASURY_REQUIRED_MOUNT` set (on Railway,
+ * `/data`), the audit trail, stored requests and secrets live on the volume mounted there, and Railway names the
+ * mounted volume's path in `RAILWAY_VOLUME_MOUNT_PATH`. Without that volume they would land on the container's own
+ * disk: a fresh audit trail, lost on the next deploy. Railway's own guard (`requiredMountPath`) isn't settable for this
+ * service from `.railway/railway.ts`, so the server checks.
+ */
+export function volumeProblem(env: NodeJS.ProcessEnv): string | undefined {
+  const required = env.TREASURY_REQUIRED_MOUNT;
+  if (!required) return undefined;
+  if (!required.startsWith("/")) return `TREASURY_REQUIRED_MOUNT must be an absolute path, not ${required}`;
+  const mounted = env.RAILWAY_VOLUME_MOUNT_PATH;
+  if (mounted !== required) return `no volume is mounted at ${required}${mounted ? ` (Railway mounted one at ${mounted})` : ""}: attach the service's volume there before it starts`;
+  return undefined;
+}
+
+/**
  * Writes each secret set in `env` to the file its setting names, owner-only and whole (`writeAtomic`), and deletes the
  * secret from `env`. A secret without its file setting is refused, so it's never silently dropped. Answers the files written.
  */
@@ -27,6 +43,8 @@ export async function writeSecretFiles(env: NodeJS.ProcessEnv): Promise<string[]
 
 if (import.meta.main) {
   try {
+    const problem = volumeProblem(process.env);
+    if (problem) throw new Error(problem);
     for (const file of await writeSecretFiles(process.env)) console.log(JSON.stringify({ event: "secret_file_written", file }));
   } catch (error) {
     console.error(`Invalid configuration:\n${(error as Error).message}`);
