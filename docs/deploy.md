@@ -55,8 +55,8 @@ Railway builds from the `Dockerfile`, not from a local folder's guess. Either co
 untracked beside a checkout goes with it:
 
 ```sh
-rm -rf /tmp/treasury-deploy && git worktree add --detach /tmp/treasury-deploy <commit>
-railway up /tmp/treasury-deploy --service server --environment production
+rm -rf /tmp/treasury-deploy && git worktree prune && git worktree add --detach /tmp/treasury-deploy <commit>
+railway up /tmp/treasury-deploy --path-as-root --service server --environment production
 git worktree remove /tmp/treasury-deploy
 ```
 
