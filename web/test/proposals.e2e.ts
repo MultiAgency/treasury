@@ -80,8 +80,9 @@ before(async () => {
     const accounts = [{ accountId: account, publicKey }];
     const wallet = { manifest: { id: "local-test-wallet", name: "Local test wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
       signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => {},
-      signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) =>
-        (window as unknown as { __localSign: (p: unknown) => Promise<unknown> }).__localSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
+      signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) => (window as unknown as { __refuseNext?: boolean }).__refuseNext
+        ? (delete (window as unknown as { __refuseNext?: boolean }).__refuseNext, Promise.reject(new Error("The wallet refused the signature")))
+        : (window as unknown as { __localSign: (p: unknown) => Promise<unknown> }).__localSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
       signAndSendTransaction: (transaction: unknown) => (window as unknown as { __localSend: (t: unknown) => Promise<unknown> }).__localSend(transaction) };
     window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet })));
     localStorage.setItem("proposals:selected-wallet:mainnet", "local-test-wallet");
@@ -648,6 +649,20 @@ test("the owner freezes by keyboard with their wallet, told first what it does, 
   await back.getByRole("button", { name: "Sign and unfreeze" }).click();
   await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
   await visible(stop.getByRole("button", { name: "Freeze" }));
+  assert.deepEqual(unexpected, []);
+});
+
+test("a wallet that refuses the freeze's signature leaves Freeze enabled again, with nothing to wait for", { timeout: 90_000 }, async () => {
+  await page.goto(here("/proposals"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  await stop.getByRole("button", { name: "Freeze" }).click();
+  await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
+  await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  assert.equal(await stop.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
+  await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true);
   assert.deepEqual(unexpected, []);
 });
 
