@@ -67,7 +67,8 @@ const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
 const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE);
 
 // One platform client for the routes and watch, so they share the identity cache and the credential's reads.
-const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS });
+const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS,
+  executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
 // One settle for the routes and the reader, so reads of the same DAO request at once share one.
 const settle = createSettle({ platform, daoRequests, audit });
 const handler = createServer({
