@@ -116,7 +116,7 @@ The plan proposes new procedures for four needs, as #62 quotes it; the task card
 | Emergency-stop orchestration | `autopilot/stop` at once, with no signature. Freeze through `owner/prepare`, effective once the owner's wallet signs on the confirm page, or the DAO's vote passes, before the intent expires. The DAO stop page, done by the DAO's vote, ends every app's consent and turns autopilot off | Partly | **Wallet owner:** after `autopilot/stop`, swaps still go out through Run now, autopilot turned on again, another app's `executePlan`, and approved proposals; freeze stops every send, once signed within minutes (#133). **DAO:** the stop ends those app paths but doesn't freeze or revoke the grant, and a freeze needs the DAO's vote within the same minutes, impractical for most DAOs (platform#20). Details in #95; section 4, item 7 |
 | Ledger export | `ledger`, `ledgerCsv`, `reconcileBooks`, `activity` and `paymentHistory`, app-route reads under `read` | Have | Nothing new |
 
-The candidates for #62's contracts, then: the gaps above (an amount ceiling on `treasury-execute` plans, a payout hold above an amount, a DAO's vote on a held payout, a freeze effective at once), with approving a held withdrawal to a NEAR account and venue exposure and a cash floor in the signed policy (both in 3.2).
+[ADR 4](adr/0004-platform-extensions.md) settles these: no new procedures or contracts, and one refinement to the cash floor already planned on MultiAgency/platform#23. The payout gaps (a hold above an amount, a DAO's vote on a held payout, approving a held withdrawal) are real for payout agents, not for a Treasury agent, which makes no payouts.
 
 ## 4. Improvements to the SDK going forward
 
@@ -141,7 +141,7 @@ Issue status and acceptance evidence belong on the issues, rather than in a snap
 
 - #60 is the pure conversion from an engine intent to exact raw-unit proposal legs. #61 adds owner reads and request recovery. Neither alone wires the Ballast engine into watch.
 - Engine integration still needs decisions about oracle sources and history, persistent band/whipsaw/DCA state, policy context, and where the owner selects Ballast.
-- The running server records through the hash-chained audit store, and anchors its head hourly on FastData KV (#55), with the decision and the key's threat model on #55. Decision recording/replay (#54) is held work.
+- The running server records through the hash-chained audit store, and anchors its head hourly on FastData KV (#55), with the decision and the key's threat model on #55. Every Ballast decision is recorded there with its inputs, and `check:replay` replays them (#54).
 - Owner-UI additions from #104 remain held while the app-route decision is settled. Creation (#12) should use the existing app setup API, with Treasury support added to the stack for end-to-end coverage.
 - History examples remain synthetic until H5 supplies data; mandate defaults and sleeve labels remain unapproved pending H8/H6.
 

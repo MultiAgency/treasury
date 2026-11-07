@@ -8,8 +8,11 @@ import { appendLine, ensureAppendable } from "./files.ts";
 // or a reordering is found by `verifyChain`. Only hashes ever leave the machine (A7.3 anchors the head hash); the
 // entries stay here.
 
-/** The kinds of record the log holds. `approval` covers an owner's approve and reject, with a verdict; `order` covers an execute. */
-export const AUDIT_KINDS = ["mandate", "oracle", "proposal", "policy", "approval", "order", "fill", "level", "payout", "note", "anchor", "consent", "revocation"] as const;
+/**
+ * The kinds of record the log holds. `approval` covers an owner's approve and reject, with a verdict; `order` covers an
+ * execute. `decision` is one engine decision with every input it was made from, which a replay makes again (A7.2, #54).
+ */
+export const AUDIT_KINDS = ["mandate", "oracle", "proposal", "policy", "decision", "approval", "order", "fill", "level", "payout", "note", "anchor", "consent", "revocation"] as const;
 export type AuditKind = (typeof AUDIT_KINDS)[number];
 
 /** The "previous hash" of the first record. */

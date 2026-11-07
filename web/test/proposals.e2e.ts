@@ -23,7 +23,8 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
-import { ETH, fundPublic, setTargets, signOwner, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { signOnConfirmPage } from "./confirm-page.ts";
+import { ETH, fundPublic, setTargets, signOwner, signOwnerDelegate, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -38,7 +39,8 @@ const sent: { signerId: string; receiverId: string; actions: { params: { methodN
 
 before(async () => {
   await audit.check();
-  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
+  // `--on-chain-policy-edits`: a provider-enforced policy edit comes back NEP-366, held for the platform's confirm page (#140).
+  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test", "--on-chain-policy-edits"] });
   target = stack.target;
   const state = stack.state();
   owner = state.ownerAccount;
@@ -690,4 +692,39 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await page.goto(`${origin}/agents/${target.agent}/proposals/${made.id}`);
   await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+});
+
+test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000 }, async () => {
+  const show = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item);
+  const state = stack.state();
+  const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const agent = app.agent(owner.replaceAll(".", "--"), target.agent);
+  const overview = async () => { const read = await agent.call("overview"); assert.ok(read.ok, show(read)); return read.value as { policy: { revision: number | null }; digest: string | null }; };
+  const before = await overview();
+  // The hourly action cap is enforced by the provider itself, so changing it comes back NEP-366: only a link, never the bytes.
+  // (The stack's policy has owner approval off already, so turning it off would change no enforced field.)
+  const held = await agent.call("owner/prepare", { action: { type: "policy_update", expectedPolicy: { revision: before.policy.revision!, digest: before.digest! }, changes: { max_actions_per_hour: 11 } }, signer: "wallet" });
+  assert.ok(held.ok, show(held));
+  const prepared = held.value as { correlationId: string; intent?: unknown; confirm?: { url: string } };
+  assert.equal(prepared.intent, undefined, "the app never holds the delegate bytes");
+  const confirm = prepared.confirm;
+  assert.ok(confirm?.url.startsWith(`${state.dashboard}/confirm/`), "a confirm link on the platform's host");
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: confirm!.url, owner: { accountId: owner, publicKey: state.testPublicKey } });
+  assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
+  assert.deepEqual(signed.asked.filter(item => !item.delegate).map(item => item.message?.split("\n")[0]), ["Open a MultiAgency confirm page."], "first the link's readable text");
+  assert.deepEqual(signed.unexpected, []);
+  for (let waited = 0; ; waited += 1_000) {
+    const status = await agent.call("owner/status", { correlationId: prepared.correlationId });
+    if (status.ok && (status.value as { status: string | null }).status === "SUCCESS") break;
+    assert.ok(waited < 45_000, `still ${show(status)}`);
+    await new Promise(resolve => setTimeout(resolve, 1_000));
+  }
+  assert.equal((await overview()).policy.revision, before.policy.revision! + 1, "the overview reads the new revision");
+});
+
+test("the stack's owner signs a delegate action through its control, as the confirm page asks the wallet for it (#140)", async () => {
+  const signed = await signOwnerDelegate(target, { receiverId: "outlayer.near", actions: [{ type: "FunctionCall", params: { methodName: "store_wallet_policy", args: { wallet_pubkey: "x", encrypted_data: "y" }, gas: "30000000000000", deposit: "0" } }] });
+  assert.equal(signed.accountId, owner);
+  assert.match(signed.signedDelegate, /^[A-Za-z0-9+/]+=*$/, "a signed delegate, base64");
+  await assert.rejects(() => signOwnerDelegate(target, { receiverId: "outlayer.near", actions: [] }), "no actions is refused");
 });

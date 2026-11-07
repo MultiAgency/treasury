@@ -421,8 +421,12 @@ test("a lost answer resubmits the same signed body once; the platform's answers 
       { ok: false, kind: "refused", status: 409, code: "agent_changed" }],
     [[{ ok: false, kind: "refused", status: 400, error: "Signature didn't verify" }], 400, { ok: false, kind: "refused", code: "consent_refused" },
       { ok: false, kind: "refused", status: 400, code: "consent_refused" }],
+    // A 429 that isn't the platform's own answer (a proxy's page) proves nothing about the request: unavailable.
     [[{ ok: false, kind: "refused", status: 429, error: "Request limit reached" }], 503, { ok: false, kind: "unavailable" },
       { ok: false, kind: "refused", status: 429 }],
+    // The platform's own limit on the deployment's calls: nothing was stored.
+    [[{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }], 429, { ok: false, kind: "refused", code: "platform_rate_limited" },
+      { ok: false, kind: "rate_limited", status: 429, code: "platform_rate_limited" }],
     [[{ ok: false, kind: "forbidden", status: 403, error: "This host has no such agent owned by the signer" }], 403, { ok: false, kind: "not_owner" },
       { ok: false, kind: "forbidden", status: 403, code: "not_owner" }],
   ];
@@ -432,7 +436,8 @@ test("a lost answer resubmits the same signed body once; the platform's answers 
     fake.consentAnswers.push(...queued);
     assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: fresh })), { status, body });
     assert.deepEqual(results().map(entry => entry.stage === "result" && entry.answer), [recorded], "recorded with the platform's status and the browser's code");
-    assert.ok(!JSON.stringify(body).match(/identity|verify|signer|limit/), "no platform text reaches the browser");
+    const texts = queued.flatMap(answer => !answer.ok && "error" in answer ? [answer.error] : []);
+    assert.ok(!texts.some(text => JSON.stringify(body).includes(text)), "no platform text reaches the browser");
   }
 });
 

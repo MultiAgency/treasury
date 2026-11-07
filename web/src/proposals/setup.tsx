@@ -43,9 +43,10 @@ type Review = { phase: "reading" } | { phase: "review"; text: ConsentText; notic
 /**
  * Sets up the account's own Treasury: its wallet signs exactly the setup text the server built, for the platform's host.
  * The platform reserves the agent; creating it is the next step, on the agent's page. A lost answer is never sent
- * again from here: the treasuries are read again, and a setup that went through shows there.
+ * again from here: the treasuries are read again, and a setup that went through shows there. `again`: the agent was
+ * reserved, but its setup lapsed before it was created; the platform finds the same reservation and sets it up anew.
  */
-function SetUp({ account }: { account: string }) {
+function SetUp({ account, again = false }: { account: string; again?: boolean }) {
   const client = useQueryClient();
   const [review, setReview] = useState<Review>();
   const [error, setError] = useState<string>();
@@ -76,11 +77,11 @@ function SetUp({ account }: { account: string }) {
   };
 
   return <section aria-labelledby="set-up" className="flex flex-col gap-4">
-    <h2 id="set-up" className="text-xl font-semibold">Set up your Treasury</h2>
+    <h2 id="set-up" className="text-xl font-semibold">{again ? "Set up your Treasury again" : "Set up your Treasury"}</h2>
     <Card>
       <div className="flex flex-col items-start gap-3">
-        <p>You have no Treasury here yet. Setting one up reserves a Treasury agent for your account; you create it next, on the platform's own page.</p>
-        <Button disabled={review !== undefined} onClick={prepare}>{review?.phase === "reading" ? "Preparing…" : "Set up a Treasury"}</Button>
+        <p>{again ? "Setting it up again reserves this agent for another hour; you create it next, here." : "You have no Treasury here yet. Setting one up reserves a Treasury agent for your account; you create it next, on the platform's own page."}</p>
+        <Button disabled={review !== undefined} onClick={prepare}>{review?.phase === "reading" ? "Preparing…" : again ? "Set it up again" : "Set up a Treasury"}</Button>
         <ErrorBox error={error} />
       </div>
     </Card>
@@ -286,9 +287,10 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
           </>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
         <ErrorBox error={error} />
-        {lapsed && <a className="text-sm underline" href={identity.signer === "dao" ? `/setup/dao/${encodeURIComponent(identity.owner)}` : "/"}>Set it up again</a>}
+        {lapsed && identity.signer === "dao" && <a className="text-sm underline" href={`/setup/dao/${encodeURIComponent(identity.owner)}`}>Set it up again</a>}
       </div>
     </Card>
+    {lapsed && identity.signer === "wallet" && <SetUp account={identity.account} again />}
   </section>;
 }
 
