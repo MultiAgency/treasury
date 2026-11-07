@@ -64,7 +64,10 @@ test("nothing is prepared for a changed strategy, with autopilot on, without own
   assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "owner_not_allowed" });
   assert.deepEqual(prepares(), []);
   reset();
-  assert.equal((await call("POST", "grant", { expectedDigest: DIGEST })).status, 200);
+  // A wallet's grant takes effect only by its submit here, so one only prepared holds nothing (the refused signature
+  // below). One submitted is followed, never signed twice.
+  const first = contract.grantPrepared.parse((await call("POST", "grant", { expectedDigest: DIGEST })).body.value);
+  await call("POST", `grant/${first.correlationId}/submit`, signedFor(first.intent!));
   assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "grant_pending" }, "followed, never signed twice");
   assert.equal(prepares().length, 1);
 });
@@ -104,6 +107,19 @@ test("a DAO's member asks for the grant: prepared for the DAO's vote as the tran
   assert.ok(grant.dao && !grant.intent, "a transaction to file, not an intent to sign");
   assert.deepEqual(prepares(), [`grant.prepare ${DAO.replaceAll(".", "--")} daoagent dao ${DIGEST}`]);
   assert.deepEqual(contract.ownerActionStatus.parse((await call("GET", `grant/${grant.correlationId}`, {}, council, "daoagent")).body.value), { stage: "voting" });
+  // The DAO's vote can still pass it without this server: a second is refused while it waits.
+  assert.deepEqual((await call("POST", "grant", { expectedDigest: DIGEST }, council, "daoagent")).body, { ok: false, kind: "refused", code: "grant_pending" });
   assert.deepEqual((await call("POST", `grant/${grant.correlationId}/submit`, { signedData: { standard: "nep413", payload: { message: "m", recipient: "r", nonce: "n" }, public_key: "k", signature: "s" } }, council, "daoagent")).body,
     { ok: false, kind: "refused", code: "not_permitted" });
+});
+
+test("a grant whose signature the owner's wallet refused can be authorized again: nothing was signed, so nothing holds", async () => {
+  reset();
+  const first = await call("POST", "grant", { expectedDigest: DIGEST });
+  assert.equal(first.status, 200, first.text);
+  assert.ok(contract.grantPrepared.parse(first.body.value).intent, "an intent for the wallet to sign");
+  // The wallet refuses the signature: nothing is submitted, and the page offers the authorization again.
+  const again = await call("POST", "grant", { expectedDigest: DIGEST });
+  assert.equal(again.status, 200, `a refused signature holds the next grant: ${again.text}`);
+  assert.equal(prepares().length, 2);
 });

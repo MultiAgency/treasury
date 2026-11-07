@@ -66,9 +66,17 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
     }
     setGrant(prepared.value);
     keepGrant(reads.name, strategy.digest, prepared.value);
+    let forgotten = false;
     try {
       if (prepared.value.intent) {
-        const signedData = await signIntent(prepared.value.intent, identity.owner);
+        let signedData: Awaited<ReturnType<typeof signIntent>>;
+        try { signedData = await signIntent(prepared.value.intent, identity.owner); } catch (problem) {
+          // Nothing was signed, so nothing can take effect: the grant is forgotten, and authorizing again is offered at once.
+          setGrant(undefined);
+          forgetGrant(reads.name);
+          forgotten = true;
+          throw problem;
+        }
         const submitted = await reads.agent.submitGrant(prepared.value.correlationId, signedData);
         // A lost answer may have been submitted: its status below says, and nothing is sent again.
         if (!submitted.ok) setError(submitted.kind === "lost" || submitted.kind === "unavailable"
@@ -83,7 +91,8 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
       setError(problem instanceof WrongAccount ? problem.message : `${dao ? "The wallet didn't send it" : "The wallet didn't sign"}: ${errorMessage(problem)}. Nothing took effect.`);
     } finally {
       setBusy(false);
-      void status.refetch();
+      // A forgotten grant has no status to read: its query is off, and refetch would run it anyway.
+      if (!forgotten) void status.refetch();
     }
   };
 
