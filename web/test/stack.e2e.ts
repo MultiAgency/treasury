@@ -375,8 +375,8 @@ test("revoking the current grant: reviewed in the dialog, signed once in the own
 });
 
 test("a policy edit drafted, reviewed and signed in the owner's page: one policy_update, applied as the next revision", async () => {
-  // The stack's `portfolio` provider signs every policy edit as NEP-413 (`onChainPolicyEdits` is off for it in
-  // test/e2e/environment.mjs), so the edit is signed in the page and applied; the NEP-366 path isn't exercised here.
+  // This stack starts without `--on-chain-policy-edits`, so `portfolio` signs every policy edit as NEP-413: the edit is
+  // signed in the page and applied. The NEP-366 path and the confirm page are test/proposals.e2e.ts's.
   await home.goto(`${dashboard}/a/portfolio/policy`);
   await home.getByRole("button", { name: "Edit", exact: true }).click();
   // While it's invalid, the field's label also holds its error, so its name starts with its label.

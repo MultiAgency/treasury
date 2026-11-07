@@ -59,7 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: The platform's stack, its confirm page and its browser
         working-directory: platform
-        # The stack serves the platform's confirm page from web/dist but doesn't build it; unbuilt, the page is blank.
+        # The stack serves the platform's confirm page from web/dist but doesn't build it; unbuilt, /confirm/<token> answers 404.
         run: pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web && pnpm exec playwright install --with-deps chromium
       - name: The app server on the stack
         run: pnpm --filter @treasury/server test:stack
