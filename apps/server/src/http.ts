@@ -272,6 +272,21 @@ async function ownerStatus(identity: Admitted, id: string | undefined, status: P
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
 }
+/**
+ * The agents "Your treasuries" lists for an owner (`agentsOf`): a lapsed setup's agent only once created, as its
+ * identity answers; the platform's 404 means it isn't. Null when an identity can't be read: unavailable, never a guess.
+ */
+async function treasuriesOf(consents: readonly ConsentRecord[], owner: string, platform: Platform): Promise<string[] | null> {
+  const { listed, lapsed } = agentsOf(consents, owner);
+  const created = await Promise.all(lapsed.map(async agent => {
+    const answer = await relay(async () => (await platform.identity(agent)).answer, agent);
+    if (answer.ok) return answer.value.agentId !== null;
+    if (answer.kind === "refused" && answer.status === 404) return false;
+    log("platform_identity_failed", { agent, ...failure(answer) });
+    return null;
+  }));
+  return created.includes(null) ? null : [...listed, ...lapsed.filter((_, i) => created[i])].sort();
+}
 /** Whether the platform's answer may have been lost: then the proposal is read once, never the call sent again. */
 const lost = (answer: ProposalAnswer) => !answer.ok && !(answer.kind === "refused" && answer.status !== undefined) && answer.kind !== "forbidden" && answer.kind !== "session";
 
@@ -492,13 +507,14 @@ export const routes: Route[] = [
     },
   },
   {
-    // The signed-in account's own Treasury agents, set up or created, as its consents under its Organization name them.
+    // The signed-in account's own Treasury agents under its Organization: created, or set up within its time (`treasuriesOf`).
     method: "GET", path: "/api/setup", access: "session",
     async handle({ account }, { platform, requests }) {
       if (!requests(account!)) return refused(429, "rate_limited");
       const listed = await platform.consents.list(organizationOf(account!));
       if (!listed.ok) { log("platform_consents_failed", { owner: account, ...failure(listed) }); return unavailable(); }
-      return ok({ account, agents: agentsOf(listed.value.consents, account!) });
+      const agents = await treasuriesOf(listed.value.consents, account!, platform);
+      return agents ? ok({ account, agents }) : unavailable();
     },
   },
   {
@@ -554,7 +570,8 @@ export const routes: Route[] = [
       const settled = open && await context.settle(open);
       const listed = await context.platform.consents.list(organization);
       if (!listed.ok) { log("platform_consents_failed", { dao: member.owner, ...failure(listed) }); return unavailable(); }
-      const agents = agentsOf(listed.value.consents, member.owner);
+      const agents = await treasuriesOf(listed.value.consents, member.owner, context.platform);
+      if (!agents) return unavailable();
       if (settled?.result === "reserved" && !agents.includes(settled.agent)) agents.push(settled.agent);
       const request = open && settled?.result === "pending" ? await daoView(open, member, context) : null;
       const ended = !request && !agents.length ? context.daoRequests.setupEnded(organization) : undefined;
@@ -574,7 +591,9 @@ export const routes: Route[] = [
       if (!mayCall(member.access, "owner/prepare")) return refused(403, "not_permitted");
       const listed = await context.platform.consents.list(organizationOf(member.owner));
       if (!listed.ok) { log("platform_consents_failed", { dao: member.owner, ...failure(listed) }); return unavailable(); }
-      if (agentsOf(listed.value.consents, member.owner).length) return refused(409, "already_set_up");
+      const agents = await treasuriesOf(listed.value.consents, member.owner, context.platform);
+      if (!agents) return unavailable();
+      if (agents.length) return refused(409, "already_set_up");
       return fileDao({ kind: "setup" }, account!, member, context);
     },
   },

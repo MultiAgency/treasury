@@ -9,7 +9,7 @@ import { setupConsents } from "../src/setup.ts";
 import { daoTransaction, fakePlatform, ORIGIN, wallet } from "./fakes.ts";
 import { testServer } from "./test-server.ts";
 
-const owner = wallet("owner.near"), other = wallet("other.near");
+const owner = wallet("owner.near"), other = wallet("other.near"), lapsed = wallet("lapsed.near");
 const council = wallet("council.near"), proposer = wallet("proposer.near"), reader = wallet("reader.near");
 const DAO = "agentic.sputnik-dao.near";
 const fake = fakePlatform({ "dao-new": DAO }, { daos: ["dao-new"], unborn: ["dao-new"] });
@@ -28,7 +28,7 @@ const chainProposals: Record<string, DaoProposal[]> = { [DAO]: [] };
 let server: Server, base: string, signIn: Awaited<ReturnType<typeof testServer>>["signIn"];
 
 before(async () => {
-  ({ server, base, signIn } = await testServer({ platform: fake.platform, wallets: [owner, other, council, proposer, reader], audited,
+  ({ server, base, signIn } = await testServer({ platform: fake.platform, wallets: [owner, other, lapsed, council, proposer, reader], audited,
     daos: standInDaos(policies, chainProposals) }));
 });
 after(() => server.close());
@@ -66,6 +66,37 @@ test("an owner sets up their Treasury: the server's text for the platform's host
   assert.deepEqual((await json(await call("GET", "/api/setup", { cookie }))).body, { ok: true, value: { account: "owner.near", agents: ["treasury-1"] } });
   // Another account's list doesn't show it.
   assert.deepEqual((await json(await call("GET", "/api/setup", { cookie: await signIn(other) }))).body, { ok: true, value: { account: "other.near", agents: [] } });
+});
+
+test("a setup that lapsed before its agent was created isn't listed, so the owner sets it up again; a created agent stays listed once its consents end", async t => {
+  const cookie = await signIn(lapsed);
+  const listed = async () => (await json(await call("GET", "/api/setup", { cookie }))).body.value.agents;
+  const lapse = (agent: string) => { for (const consent of fake.consents.filter(consent => consent.agent === agent)) consent.expiresAt = Date.now() - 1; };
+  await call("POST", "/api/setup", { cookie, body: (await signedSetup(lapsed, cookie)).submission });
+  const agent = fake.reservations["lapsed.near"]!;
+  assert.deepEqual(await listed(), [agent], "set up, within its hour");
+  lapse(agent);
+  assert.deepEqual(await listed(), [], "the setup lapsed and nothing was created");
+  // Whether it was created can't be read just now: unavailable, never a guess either way.
+  const unread = t.mock.method(fake.platform, "identity", async () => ({ answer: { ok: false, kind: "unavailable" }, cached: false }));
+  t.mock.method(console, "error", () => {});
+  const failed = await json(await call("GET", "/api/setup", { cookie }));
+  assert.deepEqual([failed.status, failed.body], [503, { ok: false, kind: "unavailable" }]);
+  unread.mock.restore();
+  const again = await json(await call("POST", "/api/setup", { cookie, body: (await signedSetup(lapsed, cookie)).submission }));
+  assert.deepEqual(again.body, { ok: true, value: { agent } }, "the platform finds the same reservation");
+  assert.deepEqual(await listed(), [agent]);
+  // Created, then its setup lapsed before the owner connected it: listed, to connect, never set up anew.
+  fake.create(agent);
+  lapse(agent);
+  assert.deepEqual(await listed(), [agent]);
+  // Connected, then the connection was revoked: listed, to connect again, without reading its identity.
+  const connection = { ...fake.consents.find(consent => consent.agent === agent)!, id: "r".padEnd(64, "0"), agentId: `id-${agent}`, scopes: ["read" as const, "treasury" as const],
+    expiresAt: Date.now() + 86_400_000, revoked: true, revokedAt: Date.now() };
+  fake.consents.push(connection);
+  fake.calls.length = 0;
+  assert.deepEqual(await listed(), [agent]);
+  assert.deepEqual(fake.calls.filter(made => made.startsWith("identity")), []);
 });
 
 test("a setup text other than the one the server asks for is refused before the platform sees it", async () => {
@@ -262,6 +293,20 @@ test("a DAO's setup whose vote didn't pass in time, or that the platform refused
     assert.deepEqual({ agents, request, ended: why }, { agents: [], request: null, ended });
   }
   assert.equal(fake.daoSetups.filter(setup => setup.dao === dao).length, 2, "each was filed anew");
+});
+
+test("a DAO's setup that lapsed before its agent was created isn't listed, and the DAO may file its setup again", async () => {
+  clean();
+  const { dao } = freshDao("fifth.sputnik-dao.near");
+  const path = `/api/setup/dao/${dao}`, cookie = await signIn(council);
+  await call("POST", path, { cookie, body: {} });
+  fake.daoSetups.at(-1)!.signed = true;
+  const agent = (await json(await call("GET", path, { cookie }))).body.value.agents[0];
+  assert.equal(agent, fake.reservations[dao]);
+  for (const consent of fake.consents.filter(consent => consent.agent === agent)) consent.expiresAt = Date.now() - 1;
+  assert.deepEqual((await json(await call("GET", path, { cookie }))).body.value.agents, []);
+  const again = await json(await call("POST", path, { cookie, body: {} }));
+  assert.equal(again.status, 200, JSON.stringify(again.body));
 });
 
 test("a thrown DAO setup filing is recorded and answers unavailable, storing nothing", async t => {
