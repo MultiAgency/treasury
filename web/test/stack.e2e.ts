@@ -1,4 +1,4 @@
-// The owner UI on a fresh simulated stack (the platform at ce5fec6) that serves this build: `pnpm test:stack`.
+// The owner UI on a fresh simulated stack (the platform at 49b8d51) that serves this build: `pnpm test:stack`.
 // The stack's browser starts the owner signed in; these tests attach to it over CDP, as the platform's specs' clients do.
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
@@ -335,12 +335,13 @@ test("a strategy-bound grant is listed under its label, as the current grant", a
   await visible(home.getByRole("region", { name: "Current policy and grant observations" }).getByText(`${bound.label} · expires `));
 });
 
-test("revoking the current grant: reviewed in the dialog, prepared once; the stack's provider fails it and the grant stays live", async () => {
-  // The stack's simulated provider has no grant_revoke (platform ce5fec6, test/e2e/provider.mjs): owner/prepare answers
-  // 500 there, so this follows the revoke up to that failure. A signed revoke can't be tested on this stack.
+test("revoking the current grant: reviewed in the dialog, signed once in the owner's page, and the grant ends; a new one is issued after", async () => {
   await home.goto(`${dashboard}/a/portfolio/policy`);
-  const current = home.getByRole("list", { name: "Live grants" }).getByRole("listitem").filter({ hasText: "Current" });
-  const grantsBefore = (await rpc<Overview>(home, "overview")).grants;
+  const live = home.getByRole("list", { name: "Live grants" });
+  const current = live.getByRole("listitem").filter({ hasText: "Current" });
+  const before = (await rpc<Overview>(home, "overview")).grants;
+  const bound = before.find(g => g.label.startsWith("treasury:") && !g.revoked_at);
+  assert.ok(bound, "the strategy-bound grant from the test before");
   const sent: string[] = [];
   const onRequest = (request: { url(): string }) => {
     const path = new URL(request.url()).pathname.split("/rpc/")[1];
@@ -348,25 +349,29 @@ test("revoking the current grant: reviewed in the dialog, prepared once; the sta
   };
   home.on("request", onRequest);
   try {
-    const actions = await recorded(home, async () => {
+    const [action, ...others] = await recorded(home, async () => {
       await current.getByRole("button", { name: "Revoke", exact: true }).click();
       const dialog = home.getByRole("dialog", { name: "Revoke the current grant?" });
       await visible(dialog);
       assert.deepEqual(await axe(home), []);
       assert.deepEqual(sent, [], "nothing is prepared before the review is confirmed");
-      const answered = home.waitForResponse(response => response.url().endsWith("/rpc/owner/prepare"));
       await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
-      assert.equal((await answered).ok(), false);
-      // A 500 to an action is an unknown outcome to the SDK; for a prepare, nothing was signed, so nothing took effect.
-      await visible(home.getByRole("alert").filter({ hasText: "Preparing was interrupted. Nothing was signed, so nothing took effect; any intent already prepared expires unsigned. Prepare again." }));
+      // The revoked grant leaves the live list once its outcome is read.
+      await until(async () => (await live.getByRole("listitem").filter({ has: home.getByText(bound.label, { exact: true }) }).count()) === 0, 60_000);
     });
-    assert.deepEqual(sent, ["owner/prepare"], "prepared once, never submitted");
-    assert.deepEqual(actions, [], "no owner action was recorded");
-    assert.deepEqual((await rpc<Overview>(home, "overview")).grants, grantsBefore, "the grants are unchanged");
-    await visible(current.getByRole("button", { name: "Revoke", exact: true }));
+    assert.equal(others.length, 0, "one owner action");
+    assert.equal(action?.type, "grant_revoke");
+    assert.deepEqual(sent, ["owner/prepare", "owner/submit"], "prepared once, submitted once");
+    assert.deepEqual(await status(home, action!.correlationId), { stage: "submitted", status: "SUCCESS" });
+    const after = (await rpc<Overview>(home, "overview")).grants.find(g => g.grant_id === bound.grant_id);
+    assert.ok(after?.revoked_at, "the grant is revoked");
+    assert.equal(await home.getByRole("alert").filter({ hasText: /\S/ }).count(), 0, "no error shown");
   } finally {
     home.off("request", onRequest);
   }
+  // The tests after this one act under a grant: issue a new one bound to the same strategy.
+  await authorizeStrategy(target);
+  assert.ok((await rpc<Overview>(home, "overview")).grants.some(g => g.label.startsWith("treasury:") && !g.revoked_at), "a new strategy-bound grant");
 });
 
 test("a policy edit drafted, reviewed and signed in the owner's page: one policy_update, applied as the next revision", async () => {

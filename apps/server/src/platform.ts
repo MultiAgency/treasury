@@ -189,17 +189,25 @@ export type Platform = {
  * an hour (`hourlyLimit(1_200)` in its `app-routes.ts`), about 20 a minute for the whole deployment, owners' pages,
  * `watch` and proposals together, so reading it on every request would spend that on ownership checks alone.
  */
-export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000, now = Date.now, fetch: send = fetch }: {
-  origin: string; credential: Credential; timeoutMs: number; cacheMs?: number; now?: () => number; fetch?: typeof fetch;
+export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs = timeoutMs, cacheMs = 60_000, now = Date.now, fetch: send = fetch }: {
+  origin: string; credential: Credential; timeoutMs: number;
+  /** For `proposals/execute` only: the platform answers once the plan's swaps have run, which takes longer than any other call. */
+  executeTimeoutMs?: number;
+  cacheMs?: number; now?: () => number; fetch?: typeof fetch;
 }): Platform & { watch: WatchPlatform } {
-  const timed: typeof fetch = (input, init) =>
-    send(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs) });
-  let current: { secret: Awaited<ReturnType<Credential["get"]>>; client: ReturnType<typeof appClient> } | undefined;
-  const client = async () => {
+  const timed = (ms: number): typeof fetch => (input, init) =>
+    send(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(ms)]) : AbortSignal.timeout(ms) });
+  type Clients = { secret: Awaited<ReturnType<Credential["get"]>>; client: ReturnType<typeof appClient>; executing: ReturnType<typeof appClient> };
+  let current: Clients | undefined;
+  const clients = async (): Promise<Clients> => {
     const secret = await credential.get();
-    if (current?.secret !== secret) current = { secret, client: appClient({ base: origin as AppBase, credential: secret.reveal(), fetch: timed }) };
-    return current.client;
+    if (current?.secret !== secret) {
+      const of = (ms: number) => appClient({ base: origin as AppBase, credential: secret.reveal(), fetch: timed(ms) });
+      current = { secret, client: of(timeoutMs), executing: of(executeTimeoutMs) };
+    }
+    return current;
   };
+  const client = async () => (await clients()).client;
   const kept = new Map<string, { answer: IdentityAnswer; until: number }>();
   const reading = new Map<string, Promise<IdentityAnswer>>();
   const newest = new Map<string, number>();
@@ -231,7 +239,7 @@ export function createPlatform({ origin, credential, timeoutMs, cacheMs = 60_000
     get: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/get", { id }) as Promise<ProposalAnswer>,
     approve: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/approve", input) as Promise<ProposalAnswer>,
     reject: async (organization, agent, input) => (await client()).agent(organization, agent).call("proposals/reject", input) as Promise<ProposalAnswer>,
-    execute: async (organization, agent, id) => (await client()).agent(organization, agent).call("proposals/execute", { id }) as Promise<ProposalAnswer>,
+    execute: async (organization, agent, id) => (await clients()).executing.agent(organization, agent).call("proposals/execute", { id }) as Promise<ProposalAnswer>,
   };
   const consents: Platform["consents"] = {
     list: async organization => (await client()).consents.list(organization),

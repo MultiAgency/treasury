@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { chmod, writeFile } from "node:fs/promises";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { OwnerOutput, ProposalView } from "@multiagency/sdk";
-import { createBallast, createEngineState, createPriceHistory, type BallastSettings } from "../src/ballast.ts";
+import { createBallast, createEngineState, createPriceHistory, type BallastSettings, type DecisionEntry } from "../src/ballast.ts";
+import { chainedFileAudit, verifyChain } from "../src/chain.ts";
+import { replayAuditLog } from "../../../packages/core/src/index.ts";
 import type { ProposalAnswer, WatchPlatform } from "../src/platform.ts";
 import { createHolds, createRequests } from "../src/requests.ts";
 import { loadWatchConfig } from "../src/watch-config.ts";
@@ -38,7 +40,7 @@ function overview(price: number | null, now: number, change: Partial<OwnerOutput
   } as unknown as OwnerOutput<"overview">;
 }
 
-async function world({ seeded = true }: { seeded?: boolean } = {}) {
+async function world({ seeded = true, failAudit = false }: { seeded?: boolean; failAudit?: boolean } = {}) {
   const dir = tempDir("treasury-ballast-");
   const clock = { now: T0 };
   const requests = await createRequests(join(dir, "requests.json"));
@@ -66,9 +68,13 @@ async function world({ seeded = true }: { seeded?: boolean } = {}) {
     identity: async agent => ({ answer: { ok: true, value: { agent, owner: "owner.near", agentId: "id-portfolio", created: true, host: "platform.test", deployment: "treasury" } }, cached: false }),
     consents: async () => ({ ok: true, value: { consents: [] } }) as Awaited<ReturnType<WatchPlatform["consents"]>>,
   };
-  const ballast = createBallast({ history, states, now: () => clock.now });
+  // The server's own audit store, so every record passes its checks (canonical JSON, no secret-shaped fields).
+  const audit = chainedFileAudit<DecisionEntry>(join(dir, "audit.jsonl"), () => clock.now,
+    failAudit ? async () => { throw new Error("disk full"); } : undefined);
+  await audit.check();
+  const ballast = createBallast({ history, states, audit, now: () => clock.now });
   const watch = createWatch({ platform, requests, holds: await createHolds(join(dir, "requests.json.holds")), publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
-  return { dir, clock, answers, stored, sent, history, states, requests, tick: (agent = WATCHED) => watch.tick(agent) };
+  return { dir, clock, answers, stored, sent, history, states, requests, audit, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent) };
 }
 
 test("a warmed-up history 22% under its reference proposes one DCA buy of explicit legs, stored before it's sent", async () => {
@@ -214,4 +220,47 @@ test("a history 24% over its reference proposes a trim: wNEAR sold for USDC, wit
   // trim-1 sells 5% of the 15,000 USD of wNEAR: 750 USD at 4.96, in wNEAR's 24 decimals, rounded down.
   assert.equal(leg!.amount, String(750n * 10n ** 24n * 100n / 496n));
   assert.equal(w.states.find(ORG, AGENT).proposed[0]!.dcaUnits, 0, "a sell spends no DCA units");
+});
+
+test("every decision is recorded with its inputs before it's acted on, and the log replays to the same decisions (#54)", async () => {
+  const w = await world();
+  const proposed = await w.tick();
+  assert.ok("proposed" in proposed, JSON.stringify(proposed));
+  const log = await w.log();
+  assert.equal(verifyChain(log).ok, true);
+  const entries = log.trim().split("\n").map(line => (JSON.parse(line) as { entry: DecisionEntry }).entry);
+  assert.deepEqual(entries.map(e => [e.kind, e.organization, e.agent, e.intent.action]), [["decision", ORG, AGENT, "buy-volatile"]]);
+  // The record is the proposal that was sent: its legs, and the policy's result that let it through.
+  const proposal = entries[0]!.proposal;
+  assert.deepEqual(proposal?.sizeUsd != null && proposal.legs, { ok: true, legs: (w.sent[0] as { legs: unknown }).legs });
+  assert.notEqual(entries[0]!.policy?.result.ok, false);
+  assert.deepEqual(replayAuditLog(log), { ok: true, count: 1 });
+});
+
+test("a hold is a decision too: recorded with its frozen reading, and it replays (#54)", async () => {
+  const w = await world({ seeded: false });
+  const held = await w.tick();
+  assert.equal((held as { skipped?: string }).skipped, "ballast holds", JSON.stringify(held));
+  const log = await w.log();
+  const [entry] = log.trim().split("\n").map(line => (JSON.parse(line) as { entry: DecisionEntry }).entry);
+  assert.deepEqual([entry!.intent.action, entry!.reading.frozen, entry!.policy, entry!.proposal], ["hold", true, undefined, undefined]);
+  assert.deepEqual(replayAuditLog(log), { ok: true, count: 1 });
+});
+
+test("a changed input in the recorded log is named by the replay at its sequence number (#54)", async () => {
+  const w = await world();
+  await w.tick();
+  const lines = (await w.log()).trim().split("\n");
+  const record = JSON.parse(lines[0]!) as { seq: number; entry: DecisionEntry };
+  record.entry.input.portfolio.reserveUsd /= 2; // the DCA unit is sized from the reserve
+  const result = replayAuditLog(JSON.stringify(record));
+  assert.equal(result.ok, false);
+  assert.deepEqual(!result.ok && [result.seq, result.part], [1, "intent"]);
+});
+
+test("a decision that can't be recorded is never proposed: the tick fails and nothing is sent (#54)", async () => {
+  const w = await world({ failAudit: true });
+  await assert.rejects(w.tick(), /disk full/);
+  assert.equal(w.sent.length, 0);
+  assert.deepEqual(w.states.find(ORG, AGENT).proposed, []);
 });

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createCredential } from "../src/credential.ts";
 import { createPlatform } from "../src/platform.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { proposal } from "./fakes.ts";
 
 const tap = (fill: string) => `tap_00000000-0000-4000-8000-000000000000.${fill.repeat(43)}`;
 const identity = { agent: "portfolio", owner: "owner.near", agentId: "id-1", created: true, host: "platform.test", deployment: "treasury" };
@@ -132,4 +133,22 @@ test("a platform that doesn't answer in time is unavailable", async () => {
   // Its own deadline: without a timeout the call would never settle, and a test that never settles is cancelled, not failed.
   const settled = await Promise.race([platform.identity("portfolio"), new Promise(resolve => setTimeout(resolve, 1_000, "never settled"))]);
   assert.deepEqual(settled, { answer: { ok: false, kind: "unavailable" }, cached: false });
+});
+
+test("an execute may take longer than other calls: it waits out its own deadline, and only then is lost", async () => {
+  const file = join(tempDir("platform-"), "app-credential");
+  writeFileSync(file, tap("a"), { mode: 0o600 });
+  // Answers after 80 ms, as a plan's swaps take longer than a read; every other call would be abandoned at 30 ms.
+  const slow = (after: number) => recording(signal => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(Response.json({ json: proposal({ state: "executed" }) })), after);
+    signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); });
+  }));
+  const platformOf = (fetch: typeof globalThis.fetch, executeTimeoutMs: number) =>
+    createPlatform({ origin: "https://platform.test", credential: createCredential(file), timeoutMs: 30, executeTimeoutMs, fetch });
+  const answered = await platformOf(slow(80).fetch, 1_000).proposals.execute("owner--near", "portfolio", "p1");
+  assert.equal(answered.ok, true, JSON.stringify(answered));
+  const read = await platformOf(slow(80).fetch, 1_000).proposals.get("owner--near", "portfolio", "p1");
+  assert.equal(read.ok, false, "a read still has the short deadline");
+  const lost = await platformOf(slow(80).fetch, 30).proposals.execute("owner--near", "portfolio", "p1");
+  assert.deepEqual([lost.ok, !lost.ok && lost.kind], [false, "unknown"]);
 });
