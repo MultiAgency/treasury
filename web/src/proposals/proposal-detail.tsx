@@ -53,7 +53,14 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   /** Shows `view` as the proposal's current state, here and in the list; the DAO's vote shown with it is kept. */
   const show = (view: ProposalView) => {
     client.setQueryData(options.queryKey, read => ({ ...read, proposal: view }));
-    void client.invalidateQueries({ queryKey: reads.proposals.queryKey, exact: true });
+    // The list is told what this page has just seen, so the Home (which does not poll) never shows the proposal in its
+    // earlier state; it is read again only when it has not got this proposal at all.
+    let listed = false;
+    client.setQueryData(reads.proposals.queryKey, (list: ProposalView[] | undefined) => {
+      listed = list?.some(item => item.id === view.id) ?? false;
+      return list?.map(item => item.id === view.id ? view : item);
+    });
+    if (!listed) void client.invalidateQueries({ queryKey: reads.proposals.queryKey, exact: true });
   };
   /** Reads the proposal again; only a read that answers releases a held Execute. */
   const recheck = async () => {
@@ -72,6 +79,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
     setNotice(undefined);
     setVerdict({ verdict: kind, phase: "reading" });
     const filed = await reads.agent.fileVote(id, kind);
+    void client.invalidateQueries({ queryKey: reads.daoRequests.queryKey });
     setVerdict(undefined);
     if (filed.ok) {
       client.setQueryData(options.queryKey, read => read && { ...read, vote: filed.value.request });

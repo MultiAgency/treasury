@@ -159,6 +159,16 @@ test("a council member asks the DAO to approve a proposal, files the vote from t
   await visible(region.getByRole("status").filter({ hasText: `${dao} votes to approve this proposal.` }));
   assert.deepEqual(await axe(), [], "the DAO's vote waiting");
 
+  // The open vote is on the home with its deadline, linking to the proposal where it is filed (#130).
+  await page.getByRole("navigation", { name: "Agent pages" }).getByRole("link", { name: "Home" }).click();
+  const needs = page.getByRole("region", { name: "Needs your decision" });
+  const waiting = needs.getByRole("listitem").filter({ hasText: "Waiting for the DAO's vote to approve a proposal" });
+  await visible(waiting);
+  await visible(waiting.getByText(/^Expires /));
+  assert.deepEqual(await axe(), [], "the home, with the DAO's vote waiting");
+  await waiting.getByRole("link", { name: /^Review proposal / }).click();
+  await visible(region.getByRole("status").filter({ hasText: `${dao} votes to approve this proposal.` }));
+
   await fileButton(region).click();
   await visible(region.getByText("Approved", { exact: true }));
   assert.equal(sent.length, 2);

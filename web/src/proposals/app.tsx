@@ -7,6 +7,7 @@ import { AgentContext, useAgent } from "./agent-context";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
 import { Funding } from "./funding";
+import { NeedsDecision, Standing } from "./home";
 import { PageLink } from "./nav";
 import { AGENT_PAGES, agentAddress, isProposalId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
@@ -132,9 +133,15 @@ export function HomePage() {
   const { reads, identity } = useAgent();
   const consent = useQuery(reads.consent);
   if (identity.agentId === null) return <CreateAgent reads={reads} identity={identity} />;
+  const connected = Boolean(consent.data?.consent);
+  // What needs the owner comes first (#130), then where the agent stands and its portfolio, and the connection last. It
+  // stays at one position in the list, whether or not the agent is connected: moved, it would remount and lose the notice
+  // that says it just connected. Not connected, it is the only thing on the page, and what needs doing.
   return <>
+    <NeedsDecision reads={reads} identity={identity} connected={connected} />
+    {connected ? <Standing reads={reads} identity={identity} /> : null}
+    {connected ? <Portfolio reads={reads} /> : null}
     <Connection reads={reads} identity={identity} />
-    {consent.data?.consent ? <Portfolio reads={reads} /> : null}
   </>;
 }
 
