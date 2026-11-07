@@ -69,3 +69,10 @@ test("an operation's or request's equal deadlines keep the order they were given
   const need = needsDecision({ proposals: [], unresolved: [], daoRequests: [{ ...same, id: "1".repeat(64), proposal: "a".repeat(32) }, { ...same, id: "2".repeat(64), proposal: "b".repeat(32) }], now: NOW });
   assert.deepEqual(need.map(item => item.key), [`dao-${"1".repeat(64)}`, `dao-${"2".repeat(64)}`]);
 });
+
+test("a proposal whose verdict waits for the DAO's vote is listed as the vote only, not twice", () => {
+  const id = "p".repeat(32);
+  const need = needsDecision({ proposals: [view(id, "proposed", HOUR), view("other", "proposed", 2 * HOUR)], unresolved: [],
+    daoRequests: [{ id: "v".repeat(64), kind: "vote", proposal: id, verdict: "approve", votingUntil: NOW + HOUR }], now: NOW });
+  assert.deepEqual(need.map(item => [item.kind, item.target]), [["dao-vote", { page: "proposal", id }], ["open-proposal", { page: "proposal", id: "other" }]]);
+});
