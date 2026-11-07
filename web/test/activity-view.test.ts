@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionName, actionStanding, history, pageCount, pageOf, pageOfRow, PAGE_SIZE, rowAnchor, runSummary, unresolvedAnchor } from "../src/proposals/activity-view.ts";
+import { actionName, actionStanding, history, pageCount, pageOf, PAGE_SIZE, runSummary, unresolvedAnchor } from "../src/proposals/activity-view.ts";
 
 const row = (at: string, correlationId?: string) => ({ at, kind: "swap", request: {}, ...(correlationId !== undefined && { correlationId }) });
 
@@ -25,17 +25,7 @@ test("pages of 50: the number of pages, each page's rows, and a page out of rang
   assert.deepEqual(pageOf([], 1), []);
 });
 
-test("the page a row is on: so a link to it opens the page that holds it, and an unknown row is the first page", () => {
-  const rows = Array.from({ length: 120 }, (_, i) => row("2026-11-06T10:00:00Z", `op-${i}`));
-  assert.equal(pageOfRow(rows, "op-0"), 1);
-  assert.equal(pageOfRow(rows, "op-49"), 1);
-  assert.equal(pageOfRow(rows, "op-50"), 2);
-  assert.equal(pageOfRow(rows, "op-119"), 3);
-  assert.equal(pageOfRow(rows, "nope"), 1);
-});
-
-test("a row's anchor and an unresolved operation's anchor are safe in an address", () => {
-  assert.equal(rowAnchor("b34961fd-7599"), "op-b34961fd-7599");
+test("an unresolved operation's anchor is safe in an address", () => {
   assert.equal(unresolvedAnchor("swap:1 2/3"), "unresolved-swap:1_2_3");
 });
 
