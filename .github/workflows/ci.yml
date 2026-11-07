@@ -57,9 +57,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: The platform's stack and its browser
+      - name: The platform's stack, its confirm page and its browser
         working-directory: platform
-        run: pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
+        # The stack serves the platform's confirm page from web/dist but doesn't build it; unbuilt, the page is blank.
+        run: pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web && pnpm exec playwright install --with-deps chromium
       - name: The app server on the stack
         run: pnpm --filter @treasury/server test:stack
       - name: The owner UI and the proposals page on the stack

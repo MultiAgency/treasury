@@ -34,7 +34,8 @@ export async function signOnConfirmPage({ browser, target, platform, url, owner 
     });
     await context.exposeFunction("__localSignDelegate", (payload: Parameters<typeof signOwnerDelegate>[1]) => {
       asked.push({ delegate: true });
-      return signOwnerDelegate(target, payload);
+      // near-connect's transport form: the signed delegate itself, base64. The page refuses anything else as an older form.
+      return signOwnerDelegate(target, payload).then(signed => signed.signedDelegate);
     });
     await context.addInitScript(({ account, publicKey, origin }) => {
       if (location.origin !== origin) return;

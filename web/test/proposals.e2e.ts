@@ -627,7 +627,7 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
 });
 
-test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000, todo: "with --on-chain-policy-edits (platform 49b8d51) the stack holds the edit for its confirm page (NEP-366), but signing it there times out in the full run: the helper against this stack is unfinished" }, async () => {
+test("the owner signs a policy edit the platform holds for its confirm page: the helper connects the wallet, signs the link and the delegate, and the new revision reads (#140)", { timeout: 150_000 }, async () => {
   const show = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === "bigint" ? item.toString() : item);
   const state = stack.state();
   const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });

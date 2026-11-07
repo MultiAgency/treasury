@@ -19,7 +19,7 @@ Everything runs against the platform's simulated stack at [`49b8d51`](https://gi
 
 ```sh
 git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 49b8d51
-(cd ../platform && pnpm install --frozen-lockfile)
+(cd ../platform && pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web)  # the confirm page the stack serves
 pnpm install
 ```
 
