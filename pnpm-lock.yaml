@@ -164,7 +164,14 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      railway:
+        specifier: 3.16.0
+        version: 3.16.0
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
 
   apps/server:
     dependencies:
@@ -172,8 +179,8 @@ importers:
         specifier: 1.0.3
         version: 1.0.3(zod@4.6.7)
       '@multiagency/sdk':
-        specifier: 0.5.2
-        version: 0.5.2(zod@4.6.7)
+        specifier: 0.5.3
+        version: 0.5.3(zod@4.6.7)
       near-kit:
         specifier: 0.20.2
         version: 0.20.2
@@ -215,8 +222,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@multiagency/sdk':
-        specifier: 0.5.2
-        version: 0.5.2(zod@4.6.7)
+        specifier: 0.5.3
+        version: 0.5.3(zod@4.6.7)
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -474,6 +481,11 @@ packages:
   '@fontsource-variable/inter@5.3.0':
     resolution: {integrity: sha512-OupL48va4JNofb97w6NYeF9S7W/kHNKM0Er8Dem5nqi4jeOLrVJDoE8tZEpnMJmtkvNbB1EIPPwHcdkF6b1oUA==}
 
+  '@graphql-typed-document-node/core@3.2.0':
+    resolution: {integrity: sha512-mB9oAsNCm9aM3/SOv4YtBMqZbYj10R7dkq8byBqxGY/ncFwhf2oQzMV+LCRlWoDSEBJ3COiR1yeDvMtsoOsuFQ==}
+    peerDependencies:
+      graphql: ^0.8.0 || ^0.9.0 || ^0.10.0 || ^0.11.0 || ^0.12.0 || ^0.13.0 || ^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0
+
   '@isaacs/fs-minipass@4.0.1':
     resolution: {integrity: sha512-wgm9Ehl2jpeqP3zw/7mo3kRHFp5MEDhqAdwy1fTGkHAwnkGOVsgpvQhL8B5n1qlb01jV3n/bI0ZfZp5lWA1k4w==}
     engines: {node: '>=18.0.0'}
@@ -502,8 +514,8 @@ packages:
     resolution: {integrity: sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==}
     engines: {node: '>=20'}
 
-  '@multiagency/sdk@0.5.2':
-    resolution: {integrity: sha512-zqJE3rln3JMfQ7e2NvtAeAgt8jRLbG8OtDoVJxC1bMJyw+9tUUxdAmJGxm/me7RW01sF++siJp/9HExb5c/LCQ==}
+  '@multiagency/sdk@0.5.3':
+    resolution: {integrity: sha512-ywMf+cewYeyiKlqAKhxZYcfawGpziAPciUySztOVP3ZXMu/QiwGKTjmqM6yF6JSRfb7HteT3j6495UXttOUrxA==}
     hasBin: true
     peerDependencies:
       zod: ^4.6.5
@@ -2065,6 +2077,10 @@ packages:
   graceful-fs@4.2.11:
     resolution: {integrity: sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ==}
 
+  graphql@16.15.0:
+    resolution: {integrity: sha512-32kz9FecohDiC/tgcViwnRXM7HFBVTPiW7pHO+DikKOI5KjhU/jNULOReXsrFqt2WAYbE9xFXsTffJw6iTO8qw==}
+    engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
+
   human-signals@2.1.0:
     resolution: {integrity: sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==}
     engines: {node: '>=10.17.0'}
@@ -2477,6 +2493,11 @@ packages:
         optional: true
       '@types/react-dom':
         optional: true
+
+  railway@3.16.0:
+    resolution: {integrity: sha512-//vKXubZpO07iJgNyoS+9Ee3pKk+3wE+0KAJPI28GuSKqXG30UeWT4xBkkd6TYuZ4HNh7QPvkVR72Swbmq5kXw==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   react-dom@19.3.1:
     resolution: {integrity: sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ==}
@@ -3037,6 +3058,10 @@ snapshots:
 
   '@fontsource-variable/inter@5.3.0': {}
 
+  '@graphql-typed-document-node/core@3.2.0(graphql@16.15.0)':
+    dependencies:
+      graphql: 16.15.0
+
   '@isaacs/fs-minipass@4.0.1':
     dependencies:
       minipass: 7.1.3
@@ -3069,7 +3094,7 @@ snapshots:
       '@modelcontextprotocol/core': 2.4.0
       zod: 4.6.7
 
-  '@multiagency/sdk@0.5.2(zod@4.6.7)':
+  '@multiagency/sdk@0.5.3(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47
@@ -4541,6 +4566,8 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
+  graphql@16.15.0: {}
+
   human-signals@2.1.0: {}
 
   human-signals@8.0.1: {}
@@ -4904,6 +4931,11 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
       '@types/react-dom': 19.3.0(@types/react@19.3.0)
+
+  railway@3.16.0:
+    dependencies:
+      '@graphql-typed-document-node/core': 3.2.0(graphql@16.15.0)
+      graphql: 16.15.0
 
   react-dom@19.3.1(react@19.3.1):
     dependencies:

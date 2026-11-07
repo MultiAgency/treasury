@@ -45,6 +45,15 @@ export const setupConsents = (consents: readonly ConsentRecord[], owner: string,
   consents.filter(consent => consent.agent === agent && consent.owner === owner && consent.agentId === UNBORN && !consent.revoked && consent.expiresAt > now)
     .sort((a, b) => b.expiresAt - a.expiresAt);
 
-/** The agents an owner's consents name under their Organization, set up or created: what "Your treasuries" lists. */
-export const agentsOf = (consents: readonly ConsentRecord[], owner: string) =>
-  [...new Set(consents.filter(consent => consent.owner === owner).map(consent => consent.agent))].sort();
+/**
+ * The agents an owner's consents name under their Organization, for "Your treasuries": `listed`, named by a created
+ * agent's consent, live or ended (connecting it again is the owner's next step), or by a setup still within its time
+ * (creating it is); and `lapsed`, named only by setups that lapsed or were revoked. A setup consent names `unborn` even
+ * once its agent is created, so only the agent's identity tells whether a lapsed one was: one that wasn't is set up again.
+ */
+export function agentsOf(consents: readonly ConsentRecord[], owner: string, now = Date.now()) {
+  const mine = consents.filter(consent => consent.owner === owner);
+  const listed = new Set(mine.filter(consent => consent.agentId !== UNBORN || (!consent.revoked && consent.expiresAt > now)).map(consent => consent.agent));
+  const lapsed = new Set(mine.map(consent => consent.agent).filter(agent => !listed.has(agent)));
+  return { listed: [...listed].sort(), lapsed: [...lapsed].sort() };
+}

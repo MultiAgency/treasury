@@ -53,13 +53,16 @@ test("a malformed digest is refused unasked; the platform's refusal is autopilot
   reset();
   assert.deepEqual((await call("POST", "autopilot/enable", { expectedDigest: "abc" })).body, { ok: false, kind: "refused", code: "bad_request" });
   fake.autopilotAnswers.enable = [{ ok: false, kind: "refused", status: 409, error: "The saved strategy changed: secret detail" }];
-  fake.autopilotAnswers.tick = [new Error("socket hang up")];
+  fake.autopilotAnswers.tick = [new Error("socket hang up"), { ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }];
   const refusedOn = await call("POST", "autopilot/enable", { expectedDigest: DIGEST });
   assert.deepEqual([refusedOn.status, refusedOn.body], [409, { ok: false, kind: "refused", code: "autopilot_refused" }]);
   assert.ok(!refusedOn.text.includes("secret detail"));
   assert.deepEqual((await call("POST", "autopilot/tick")).status, 503);
+  const limited = await call("POST", "autopilot/tick");
+  assert.deepEqual([limited.status, limited.body], [429, { ok: false, kind: "refused", code: "platform_rate_limited" }]);
   assert.deepEqual(audit.filter(entry => entry.stage === "result").map(entry => "answer" in entry ? entry.answer : undefined),
-    [{ ok: false, kind: "refused", status: 409, code: "autopilot_refused" }, { ok: false, kind: "unavailable" }]);
+    [{ ok: false, kind: "refused", status: 409, code: "autopilot_refused" }, { ok: false, kind: "unavailable" },
+      { ok: false, kind: "rate_limited", status: 429, code: "platform_rate_limited" }]);
 });
 
 test("disconnecting turns autopilot off first, then revokes; a schedule not confirmed off, or unread, revokes nothing", async () => {

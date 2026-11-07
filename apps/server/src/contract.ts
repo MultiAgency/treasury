@@ -115,7 +115,7 @@ export const consent = z.strictObject({
   ended: z.enum(["expired", "stopped", "rejected", "changed"]).optional(),
 });
 
-/** The signed-in account, and its own Treasury agents: set up or created under its Organization (`agentsOf`). */
+/** The signed-in account, and its own Treasury agents under its Organization: created, or set up within its time (`agentsOf`). */
 export const setups = z.strictObject({ account: z.string(), agents: z.array(agentName) });
 /**
  * A DAO's Treasury setup, for a member: the member's access by the DAO's roles, the agents its consents name (set up
@@ -269,9 +269,9 @@ export const operationRead = z.strictObject({ correlationId: z.string(), at: z.s
  * - `not_owner` (403): the session's account doesn't own this agent, or no such agent exists: the same answer for both,
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
- *   `too_large`, `rate_limited`, `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
+ *   `too_large`, `rate_limited`, `platform_rate_limited` (the platform's limit on the deployment's calls: nothing was done), `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
- *   `not_set_up`, `already_created`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
+ *   `not_set_up`, `already_created`, `creation_refused`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
  *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, a funding code: `dao_funding_fixed`, `funding_refused`, an autopilot code: `autopilot_refused`, `autopilot_not_stopped`, a strategy code: `strategy_refused`, or a grant code: `strategy_changed`, `autopilot_on`, `approve_only`, `grant_pending`, `owner_not_allowed`, `grant_refused`, `no_grant`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later
  *   may work.

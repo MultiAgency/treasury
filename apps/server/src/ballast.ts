@@ -1,12 +1,12 @@
 import { PROPOSAL_TOKENS, type OwnerOutput } from "@multiagency/sdk";
 import { z } from "zod";
 import {
-  centsDown, checkPolicy, ENGINE_DEFAULTS, checkQuotes, compileMandate, deviationPct, detectFaults, detectMarketMoves, evaluateBands, highestFaultLevel,
-  highestLevel, legsFor, nextState, ORACLE_DEFAULTS, policyConfigOf, PROPOSAL_ASSETS, readOracle, regimeFrom, weightBoundsOf,
-  type Intent, type Level, type OracleLimits, type ProfileName, type Sample, type WhipsawState,
+  ENGINE_DEFAULTS, checkQuotes, compileMandate, decide, deviationPct, detectFaults, detectMarketMoves, highestFaultLevel,
+  highestLevel, nextState, ORACLE_DEFAULTS, policyConfigOf, PROPOSAL_ASSETS, readOracle, regimeFrom, weightBoundsOf,
+  type DecisionRecord, type Intent, type Level, type OracleLimits, type ProfileName, type Sample, type WhipsawState,
 } from "../../../packages/core/src/index.ts";
 import { createRecords } from "./records.ts";
-import type { Body } from "./requests.ts";
+import { newRequestId, type Body } from "./requests.ts";
 
 /**
  * What the owner chose for an agent `watch` runs Ballast for (#47): a profile and the mandate answers the platform can't
@@ -122,9 +122,15 @@ export type EngineStates = Awaited<ReturnType<typeof createEngineState>>;
 const decimalOf = (price: number) => price.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
 
 type Holding = OwnerOutput<"overview">["book"][number];
-/** What one tick decided: a proposal to make, with what to record once it's stored, or why not. */
+/**
+ * A Ballast decision as the audit log records it (A7.2, #54): the engines' record, the agent it was made for, and for
+ * one that proposes, the `requestId` its request is stored and sent under (#172). A recorded `requestId` with no
+ * request or proposal under it was never stored (the store was full, or the server stopped first).
+ */
+export type DecisionEntry = DecisionRecord & { organization: string; agent: string; requestId?: string };
+/** What one tick decided: a proposal to make under its `requestId`, with what to record once it's stored, or why not. */
 export type Decision =
-  | { body: Body; intent: Intent; level: Level; detail: Record<string, unknown> }
+  | { requestId: string; body: Body; intent: Intent; level: Level; detail: Record<string, unknown> }
   | { skipped: string; [detail: string]: unknown };
 
 /**
@@ -138,7 +144,12 @@ export type Decision =
  * quote is worse, so the policy's own slippage rule is given 0 and thin liquidity isn't a detection here. Unresolved
  * operations already hold `watch` before this runs; reconciliation is A19's.
  */
-export function createBallast({ history, states, now = Date.now }: { history: PriceHistory; states: EngineStates; now?: () => number }) {
+export function createBallast({ history, states, audit, now = Date.now }: {
+  history: PriceHistory; states: EngineStates;
+  /** Where every decision is recorded with its inputs (A7.2, #54): the server's hash-chained audit log. */
+  audit: { append(entry: DecisionEntry): Promise<void> };
+  now?: () => number;
+}) {
   return {
     async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number): Promise<Decision> {
       const at = now();
@@ -177,41 +188,50 @@ export function createBallast({ history, states, now = Date.now }: { history: Pr
       const state = states.find(organization, agent);
       // Sized to the mandate's own order cap, halved at L1 as the level gate halves it, so a sized order passes both.
       const orderCapPct = m.limits.policy.maxOrderPctOfTreasury * (level === 1 ? m.limits.l1OrderCapFactor : 1);
-      const intent = evaluateBands(reading, {
+      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
+      // One decision through the engines (A7.2, #54), recorded with every input before anything acts on it, so replaying
+      // the audit log makes the same one. A record that can't be appended stops the tick: nothing is proposed unrecorded.
+      const record = decide(reading, {
         portfolio: { volatileUsd: volatile.usd!, reserveUsd, cashUsd }, bounds: weightBoundsOf(m),
         sizing: { dcaUnitsUsed: state.dcaUnitsUsed }, whipsaw: state.whipsaw as WhipsawState, regime: regimeFrom([...market, ...faults]),
-      }, { ...ENGINE_DEFAULTS, sizing: { ...ENGINE_DEFAULTS.sizing, maxOrderPctOfTreasury: orderCapPct } });
+      }, { ...ENGINE_DEFAULTS, sizing: { ...ENGINE_DEFAULTS.sizing, maxOrderPctOfTreasury: orderCapPct } }, {
+        ctx: {
+          treasuryValueUsd: total, turnoverTodayUsd: recent.reduce((sum, p) => sum + p.sizeUsd, 0),
+          ordersLastHour: recent.filter(p => p.at > at - HOUR_MS).length, quotedSlippageBps: 0,
+          venueExposureUsd: volatile.usd!, cashUsd: stable.usd!, spendsCashUsd: 0, level,
+        },
+        config: policyConfigOf(m),
+      }, {
+        volatile: VOLATILE, reserve: STABLE,
+        prices: { [VOLATILE]: decimalOf(volatile.price!), [STABLE]: decimalOf(stable.price!) },
+        decimals: Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals])),
+        maxSlippageBps: m.limits.policy.maxSlippageBps,
+      });
+      const { intent, policy: verdict, proposal } = record;
       const detail = { zone: intent.zone, level, ...(reading.frozen ? { frozen: reading.reason } : { twap: reading.twap15m, ema: reading.ema30d }) };
+      const decision = ((): Decision => {
+        if (intent.action === "hold") return { skipped: "ballast holds", reason: intent.reason, ...detail };
+        if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
+        if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
+        const { sizeUsd, legs } = proposal;
+        if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
+        const approval = verdict?.result.ok === "needs-approval" ? `; ${verdict.result.reason}` : "";
+        return {
+          requestId: newRequestId(agent),
+          body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of wNEAR${approval}`.slice(0, 280) },
+          intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
+        };
+      })();
+      // A proposal is recorded under the requestId its request will be stored and sent with (#172).
+      await audit.append({ ...record, organization, agent, ...("skipped" in decision ? {} : { requestId: decision.requestId }) });
+
       if (intent.action === "hold") {
         // A hold may re-arm a disarmed zone: written only when it changes.
         const deviation = reading.frozen ? null : deviationPct(reading.twap15m, reading.ema30d);
         const next = nextState(state.whipsaw as WhipsawState, intent, deviation, at);
         if (JSON.stringify(next) !== JSON.stringify(state.whipsaw)) await states.change(organization, agent, s => ({ ...s, whipsaw: next }));
-        return { skipped: "ballast holds", reason: intent.reason, ...detail };
       }
-
-      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
-      const verdict = checkPolicy(intent, {
-        treasuryValueUsd: total, turnoverTodayUsd: recent.reduce((sum, p) => sum + p.sizeUsd, 0),
-        ordersLastHour: recent.filter(p => p.at > at - HOUR_MS).length, quotedSlippageBps: 0,
-        venueExposureUsd: volatile.usd!, cashUsd: stable.usd!, spendsCashUsd: 0, level,
-      }, policyConfigOf(m));
-      if (verdict.ok === false) return { skipped: "policy refused", rule: verdict.rule, reason: verdict.detail, ...detail };
-
-      const sizeUsd = centsDown(intent.sizeUsd);
-      if (sizeUsd === undefined) return { skipped: "below a cent", ...detail };
-      const legs = legsFor({
-        decision: { action: intent.action, sizeUsd }, volatile: VOLATILE, reserve: STABLE,
-        prices: { [VOLATILE]: decimalOf(volatile.price!), [STABLE]: decimalOf(stable.price!) },
-        decimals: Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals])),
-        maxSlippageBps: m.limits.policy.maxSlippageBps,
-      });
-      if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
-      const approval = verdict.ok === "needs-approval" ? `; ${verdict.reason}` : "";
-      return {
-        body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of wNEAR${approval}`.slice(0, 280) },
-        intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
-      };
+      return decision;
     },
 
     /**

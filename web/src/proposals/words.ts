@@ -19,6 +19,7 @@ const SETUP: Record<string, string> = {
   setup_refused: "The platform didn't accept the setup. Nothing was set up.",
   not_set_up: "The setup this agent was reserved with has lapsed: it's good for an hour. Set it up again, then create it.",
   already_created: "This agent is already created.",
+  creation_refused: "The platform refused the creation. Nothing was prepared. If one is already waiting for a signature or a vote, sign that one, or wait for it to expire, in minutes.",
   no_creation: "The platform has no record of that creation. Create the agent again.",
   not_a_dao: "The platform doesn't read that account as a DAO. A wallet owner sets up their own Treasury.",
   not_permitted: "Your roles in the DAO don't allow this: a member who may file proposals does.",
@@ -78,6 +79,11 @@ const FUNDING: Record<string, string> = {
 };
 
 /** A failure in words for the owner, from its kind and code only. */
+/** Codes that read the same in every context. */
+const ANY: Record<string, string> = {
+  platform_rate_limited: "The platform is limiting this app's requests for now. Nothing was done; try again in a few minutes.",
+};
+
 export function failureText(failure: Failure, context: Context): string {
   switch (failure.kind) {
     case "not_signed_in": return "You're not signed in, or your session has ended. Sign in again.";
@@ -90,7 +96,7 @@ export function failureText(failure: Failure, context: Context): string {
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
       const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : context === "autopilot" ? AUTOPILOT : context === "owner-action" ? OWNER_ACTION : {};
-      return table[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
+      return table[failure.code] ?? ANY[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }
 }

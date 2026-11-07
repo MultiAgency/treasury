@@ -93,6 +93,10 @@ export function fromUnits(raw: string, decimals: number) {
   return `${digits.slice(0, digits.length - decimals)}${fraction ? `.${fraction}` : ""}`;
 }
 
+/** A linked account's balances from `treasury/get`, which sends both raw: NEAR in yoctoNEAR (24 decimals), USDC at 6. */
+export const linkedBalances = (balances: { near: string; usdc: string }) =>
+  ({ near: fromUnits(balances.near, 24), usdc: fromUnits(balances.usdc, 6) });
+
 const ASSET_COLOR: Record<string, string> = {
   USDC: "bg-chart-3",
   wNEAR: "bg-chart-2",
