@@ -26,7 +26,7 @@ function NeedLink({ need, agent }: { need: Need; agent: string }) {
  * read, so only they show (and nothing, when there are none: the connection says what is wrong).
  */
 export function NeedsDecision({ reads, identity, connected }: { reads: Reads; identity: Identity; connected: boolean }) {
-  const proposals = useQuery({ ...reads.glance.proposals, enabled: connected });
+  const proposals = useQuery({ ...reads.proposals, refetchInterval: false, enabled: connected });
   const unresolved = useQuery({ ...reads.unresolved, enabled: connected });
   const dao = useQuery({ ...reads.daoRequests, enabled: identity.signer === "dao" });
   const failing = [[proposals, "proposals"], [unresolved, "unresolved operations"], [dao, "the DAO's requests"]] as const;
@@ -56,8 +56,8 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
 /** Where the agent stands, one line each (#130): the policy, whether the grant binds the saved strategy, and autopilot. */
 export function Standing({ reads, identity }: { reads: Reads; identity: Identity }) {
   const overview = useQuery(reads.overview);
-  const strategy = useQuery(reads.glance.strategy);
-  const autopilot = useQuery(reads.glance.autopilot);
+  const strategy = useQuery(reads.strategy);
+  const autopilot = useQuery(reads.autopilot);
   const line = (label: string, read: { isPending: boolean; isError: boolean }, text: string | undefined, to?: string) => <li className="flex flex-wrap gap-x-2">
     <span className="font-medium">{label}</span>
     {read.isPending ? <span className="text-muted-foreground">Reading…</span> : read.isError || text === undefined ? <span role="alert">Couldn't be read.</span> : <span>{text}</span>}

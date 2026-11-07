@@ -86,6 +86,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
     setError(undefined);
     setReview({ phase: "reading" });
     const filed = await reads.agent.fileConsent();
+    void client.invalidateQueries({ queryKey: reads.daoRequests.queryKey });
     setReview(undefined);
     if (filed.ok) return client.setQueryData(reads.consent.queryKey, { consent: null, request: filed.value.request });
     setError(failureText(filed, "consent"));
