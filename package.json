@@ -7,10 +7,14 @@
     "node": ">=24.22.0"
   },
   "scripts": {
-    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck": "tsc -p .railway && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
     "check": "pnpm typecheck && pnpm test"
   },
-  "packageManager": "pnpm@12.16.1"
+  "packageManager": "pnpm@12.16.1",
+  "devDependencies": {
+    "railway": "3.16.0",
+    "typescript": "7.0.2"
+  }
 }

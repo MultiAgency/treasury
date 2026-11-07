@@ -2,10 +2,10 @@ packages:
   - web
   - apps/*
   - packages/*
-# Published 2026-11-05T20:55:15Z, inside pnpm's minimum release age (24 hours here).
-# Remove after 2026-11-06T20:56Z, once 0.5.2 is past it.
+# Published 2026-11-07T04:20:53Z, inside pnpm's minimum release age (24 hours here).
+# Remove after 2026-11-08T04:21Z, once 0.5.3 is past it.
 minimumReleaseAgeExclude:
-  - '@multiagency/sdk@0.5.2'
+  - '@multiagency/sdk@0.5.3'
 permissions:
   '@multiagency/sdk':
     skills: true

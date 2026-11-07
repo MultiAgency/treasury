@@ -12,11 +12,12 @@
     "test": "node --test test/*.test.ts",
     "test:stack": "node --test --test-concurrency=1 test/stack.e2e.ts test/dao-stack.e2e.ts",
     "test:sandbox": "node --test test/sandbox.e2e.ts",
-    "check:anchors": "node src/anchor-check.ts"
+    "check:anchors": "node src/anchor-check.ts",
+    "check:replay": "node src/replay-check.ts"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.3",
-    "@multiagency/sdk": "0.5.2",
+    "@multiagency/sdk": "0.5.3",
     "near-kit": "0.20.2",
     "zod": "^4.6.6"
   },
