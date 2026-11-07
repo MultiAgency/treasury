@@ -82,8 +82,9 @@ before(async () => {
     const accounts = [{ accountId: account, publicKey }];
     const wallet = { manifest: { id: "local-test-wallet", name: "Local test wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
       signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => {},
-      signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) =>
-        (window as unknown as { __localSign: (p: unknown) => Promise<unknown> }).__localSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
+      signMessage: (payload: { message: string; recipient: string; nonce: Uint8Array }) => (window as unknown as { __refuseNext?: boolean }).__refuseNext
+        ? (delete (window as unknown as { __refuseNext?: boolean }).__refuseNext, Promise.reject(new Error("The wallet refused the signature")))
+        : (window as unknown as { __localSign: (p: unknown) => Promise<unknown> }).__localSign({ ...payload, nonce: btoa(String.fromCharCode(...new Uint8Array(payload.nonce))) }),
       signAndSendTransaction: (transaction: unknown) => (window as unknown as { __localSend: (t: unknown) => Promise<unknown> }).__localSend(transaction) };
     window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet })));
     localStorage.setItem("proposals:selected-wallet:mainnet", "local-test-wallet");
@@ -127,6 +128,20 @@ async function connectWithoutOwner() {
   const text = consentText({ identity: { agent: target.agent, owner, agentId: state.treasury.agentId, host: new URL(state.dashboard).host }, deployment: state.app!.deployment });
   const signed = await signOwner(target, text);
   assert.equal(await call("/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }), 200, "the older connection is stored");
+}
+
+/** Connects the agent when an earlier test left it disconnected (the strategy test ends by disconnecting it), and signs in. */
+async function ensureConnected() {
+  await page.goto(here());
+  const connection = page.getByRole("region", { name: "Connection" });
+  await signInIfAsked(connection);
+  const status = connection.getByRole("status").first();
+  await visible(status);
+  if (/^Not connected/.test(await status.innerText())) {
+    await connection.getByRole("button", { name: "Connect", exact: true }).click();
+    await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
+    await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  }
 }
 
 /** The stack's portfolio proposes a swap through the app route, as the app's proposer does (#20 PR 4). */
@@ -214,6 +229,11 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   const run = dialog("Execute this proposal?");
   await visible(run);
   assert.deepEqual(await axe(), [], "the execute dialog");
+  // Recorded from the execute on: the frame (#133) reads the overview on every page, so it is read again the moment the
+  // swap invalidates it, not when the Home is next shown.
+  const reread: string[] = [];
+  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
+  page.on("request", read);
   await run.getByRole("button", { name: "Execute now" }).click();
   await visible(state.getByRole("status").filter({ hasText: "Executed. Every swap succeeded." }));
   await visible(state.getByText("Executed", { exact: true }));
@@ -222,9 +242,6 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   assert.deepEqual(await axe(), [], "an executed proposal");
   // What the swap changed is read again when it is next shown: never the book from before it. The Home shows the book, the
   // held payouts and what needs a decision; the history and the books are on the Activity page (#136), read when it is.
-  const reread: string[] = [];
-  const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
-  page.on("request", read);
   await nav("Home").click();
   await visible(portfolio.getByRole("button", { name: "Check again", disabled: false }));
   for (const changed of ["overview", "held", "unresolved"])
@@ -597,14 +614,129 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   assert.deepEqual(unexpected, []);
 });
 
-test("each of the agent's pages opens by its address, with its own heading and the navigation marking it, and passes an axe scan", { timeout: 120_000 }, async () => {
-  // Disconnecting ended the last test with the agent not connected: connect it again, so every page has what it shows.
+test("the emergency stop is in the frame of every page, with its own region and controls, and passes an axe scan", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  for (const path of ["", "/proposals", "/strategy", "/funding", "/activity"]) {
+    await page.goto(here(path));
+    const stop = page.getByRole("region", { name: "Emergency stop" });
+    await visible(stop.getByRole("button", { name: "Freeze" }));
+    await visible(stop.getByText("Not frozen."));
+    assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true, `${path || "home"}: offered and enabled`);
+  }
+  assert.deepEqual(await axe(), [], "the stop, on a page");
+  assert.deepEqual(unexpected, []);
+});
+
+/**
+ * Signs the stop's prepared action on the platform's confirm page: with `--on-chain-policy-edits` the provider enforces
+ * the freeze itself, so it comes back NEP-366, as it does in production.
+ */
+async function signStopOnConfirmPage(stop: ReturnType<Page["getByRole"]>) {
+  const link = stop.getByRole("link", { name: "open the confirm page" });
+  await visible(link);
+  const signed = await signOnConfirmPage({ browser, target, platform: PLATFORM, url: (await link.getAttribute("href"))!,
+    owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
+  assert.equal(signed.asked.filter(item => item.delegate).length, 1, "one delegate signed");
+  assert.deepEqual(signed.unexpected, []);
+}
+
+test("the owner freezes by keyboard, told first what it does, signs on the platform's confirm page, and unfreezes; the agent's state follows (#140)", { timeout: 150_000 }, async () => {
+  await page.goto(here("/strategy"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await stop.getByRole("button", { name: "Freeze" }).focus();
+  await page.keyboard.press("Enter");
+  const confirm = dialog("Freeze this agent?");
+  await visible(confirm);
+  const text = await confirm.innerText();
+  assert.match(text, /refuses every send/);
+  assert.match(text, /does not move funds/);
+  assert.match(text, /Your wallet signs it/);
+  assert.deepEqual(await axe(), [], "the freeze dialog");
+  await confirm.getByRole("button", { name: "Sign and freeze" }).click();
+  await signStopOnConfirmPage(stop);
+  await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 45_000 });
+  await visible(stop.getByRole("button", { name: "Unfreeze" }));
+  assert.equal(await stop.getByRole("button", { name: "Freeze", exact: true }).count(), 0, "one control at a time");
+  assert.deepEqual(await axe(), [], "frozen");
+
+  await stop.getByRole("button", { name: "Unfreeze" }).click();
+  const back = dialog("Unfreeze this agent?");
+  await visible(back);
+  await back.getByRole("button", { name: "Sign and unfreeze" }).click();
+  await signStopOnConfirmPage(stop);
+  await stop.getByText("Not frozen.").waitFor({ timeout: 45_000 });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  assert.deepEqual(unexpected, []);
+});
+
+test("a wallet that refuses the freeze's signature leaves Freeze enabled again, with nothing to wait for", { timeout: 90_000 }, async () => {
+  await page.goto(here("/proposals"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  // This stack prepares a freeze for the confirm page; the wallet's refusal is of an intent, so the freeze is answered as one.
+  const intent = { standard: "nep413", payload: { message: "Freeze the agent", recipient: new URL(origin).host, nonce: Buffer.alloc(32).toString("base64") } };
+  const asIntent = (route: Route) => route.fulfill({ json: { ok: true, value: { correlationId: "refused-freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), intent } } });
+  await page.route("**/api/agents/*/freeze", asIntent);
+  try {
+    await stop.getByRole("button", { name: "Freeze" }).click();
+    await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
+    await visible(stop.getByText(/The wallet didn't sign: .*Nothing took effect/));
+  } finally {
+    await page.unroute("**/api/agents/*/freeze", asIntent);
+  }
+  assert.equal(await stop.getByText(/outcome isn't known yet/).count(), 0, "nothing to wait for");
+  await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true);
+  assert.deepEqual(unexpected, []);
+});
+
+test("a freeze whose outcome is unknown holds both controls, after a reload too, until the platform's record settles it", { timeout: 120_000 }, async () => {
+  await page.goto(here("/proposals"));
+  const stop = page.getByRole("region", { name: "Emergency stop" });
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  // The platform's own record, as it reads when a freeze was submitted and its outcome isn't recorded yet.
+  const submitted = { correlationId: "held-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), signer: "wallet", stage: "submitted", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [submitted] } }));
+  await page.reload();
+  await visible(stop.getByText(/outcome isn't known yet/));
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "held after a reload");
+  assert.deepEqual(await axe(), [], "held");
+  await page.goto(here("/funding"));
+  // The fresh page reads the platform's record before it holds: wait for that, then check.
+  await visible(stop.getByText(/outcome isn't known yet/));
+  assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "and on another page");
+  // The platform records it settled: the hold ends.
+  await page.unroute("**/api/agents/*/owner/actions");
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [{ ...submitted, stage: "settled", ownerSucceeded: true, status: "SUCCESS" }] } }));
+  await page.reload();
+  await visible(stop.getByRole("button", { name: "Freeze" }));
+  await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 30_000 });
+  await page.unroute("**/api/agents/*/owner/actions");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the home lists an owner action waiting for the DAO's vote, until it expires, with a link to where it is voted on", { timeout: 120_000 }, async () => {
   await page.goto(here());
-  const connection = page.getByRole("region", { name: "Connection" });
-  await signInIfAsked(connection);
-  await connection.getByRole("button", { name: "Connect" }).click();
-  await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
-  await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  const needs = page.getByRole("region", { name: "Needs your decision" });
+  await visible(needs);
+  const waiting = { correlationId: "pending-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), signer: "dao", stage: "prepared", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [waiting] } }));
+  await page.reload();
+  const item = needs.getByRole("listitem").filter({ hasText: "Freeze is waiting for the DAO's vote" });
+  await visible(item);
+  await visible(item.getByText(/^Expires /));
+  assert.deepEqual(await axe(), [], "the home, an owner action waiting for the vote");
+  await item.getByRole("link", { name: "Open where it is signed or voted on" }).click();
+  await page.waitForFunction(() => location.hash === "#emergency-stop");
+  await page.unroute("**/api/agents/*/owner/actions");
+  assert.deepEqual(unexpected, []);
+});
+
+test("each of the agent's pages opens by its address, with its own heading and the navigation marking it, and passes an axe scan", { timeout: 120_000 }, async () => {
+  // An earlier test may have left the agent disconnected: connect it, so every page has what it shows.
+  await ensureConnected();
   const made = await propose(`page-${Date.now()}-pages`);
   const pages: [string, string, string][] = [["", "Home", "Home"], ["/", "Home", "Home"], ["/proposals", "Proposals", "Proposals"],
     [`/proposals/${made.id}`, "Proposal", "Proposals"], ["/strategy", "Strategy", "Strategy"], ["/funding", "Funding", "Funding"], ["/activity", "Activity", "Activity"]];

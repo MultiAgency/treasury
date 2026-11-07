@@ -7,18 +7,22 @@ import { legText } from "./terms.ts";
 /** What an item asks of the owner, and where it leads (the page decides the link). */
 export type Need = {
   key: string;
-  kind: "open-proposal" | "approved-proposal" | "unresolved" | "dao-consent" | "dao-vote";
+  kind: "open-proposal" | "approved-proposal" | "unresolved" | "dao-consent" | "dao-vote" | "owner-action";
   /** What is waiting, in words. */
   text: string;
   /** When it lapses (ms since the epoch), or null for an item with no deadline. */
   deadline: number | null;
   /** The ISO time an item happened, for those with no deadline (an unresolved operation). */
   at?: string;
-  target: { page: "proposal"; id: string } | { page: "connection" } | { page: "activity"; key: string };
+  target: { page: "proposal"; id: string } | { page: "connection" } | { page: "activity"; key: string } | { page: "owner-action"; type: string };
 };
 
 type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
 type Unresolved = { key: string; kind: string; at: string };
+/** An owner action as `owner/actions` records it. */
+type OwnerAction = { correlationId: string; type: string; stage: string; signer: string; expiresAt: string };
+
+const ACTION_WORDS: Record<string, string> = { agent_freeze: "Freeze", agent_unfreeze: "Unfreeze", grant_issue: "Strategy grant", grant_revoke: "Revoke a grant", policy_update: "Policy change" };
 
 const byDeadline = (a: ProposalView, b: ProposalView) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt);
 const live = (view: ProposalView, now: number) => Date.parse(view.expiresAt) > now;
@@ -38,8 +42,8 @@ const swaps = (view: ProposalView) => view.legs.map(legText).join("; ");
  * proposals not executed, the DAO's requests waiting for a vote, and operations without a proven outcome (nothing to sign,
  * but nothing new runs until they're resolved). Held payouts aren't here: they're approved under a scope this app doesn't ask for.
  */
-export function needsDecision({ proposals, unresolved, daoRequests, now }: {
-  proposals: readonly ProposalView[]; unresolved: readonly Unresolved[]; daoRequests: readonly DaoWaiting[]; now: number;
+export function needsDecision({ proposals, unresolved, daoRequests, ownerActions = [], now }: {
+  proposals: readonly ProposalView[]; unresolved: readonly Unresolved[]; daoRequests: readonly DaoWaiting[]; ownerActions?: readonly OwnerAction[]; now: number;
 }): Need[] {
   // A proposal whose verdict waits for the DAO's vote is listed as that vote only.
   const voting = new Set(daoRequests.flatMap(request => request.kind === "vote" && request.proposal ? [request.proposal] : []));
@@ -52,6 +56,10 @@ export function needsDecision({ proposals, unresolved, daoRequests, now }: {
       ? { key: `dao-${request.id}`, kind: "dao-consent", text: "Waiting for the DAO's vote to connect the agent", deadline: request.votingUntil, target: { page: "connection" } }
       : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal`, deadline: request.votingUntil,
         target: { page: "proposal", id: request.proposal ?? "" } }),
+    // A freeze, unfreeze, revocation or grant waiting for the DAO's vote, until it expires (#133). A wallet owner's intent that
+    // was only prepared is not waited on: it was never signed.
+    ...ownerActions.filter(item => item.stage === "prepared" && item.signer === "dao" && Date.parse(item.expiresAt) > now).map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
+      text: `${ACTION_WORDS[item.type] ?? item.type} is waiting for the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
       text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
   ];

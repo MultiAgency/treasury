@@ -3,7 +3,7 @@ import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
-export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding" | "autopilot";
+export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding" | "autopilot" | "owner-action";
 
 const SIGN_IN: Record<string, string> = {
   rate_limited: "Too many sign-in attempts from this address. Wait a minute, then sign in again.",
@@ -53,6 +53,14 @@ const PROPOSAL: Record<string, string> = {
   request_conflict: "That request was already used for another proposal. Nothing was proposed. Ask again.",
 };
 
+/** The owner actions the frame offers (#133): a freeze, an unfreeze. */
+const OWNER_ACTION: Record<string, string> = {
+  action_pending: "A freeze or unfreeze is already waiting for its vote or its outcome. Follow it rather than sending another: nothing new was prepared.",
+  owner_not_allowed: "Your connection doesn't allow owner actions. Allow them in Connection, on the agent's Home page, first. Nothing was sent.",
+  action_refused: "The platform refused it, so nothing took effect. It may already be in the state you asked for: read the agent's state again.",
+  no_action: "The platform has no record of that action.",
+  not_connected: "The agent isn't connected to this app: connect it first. Nothing was sent.",
+};
 const AUTOPILOT: Record<string, string> = {
   strategy_changed: "The saved strategy changed since you saw it. Nothing was changed. Review it again.",
   strategy_refused: "The platform refused that strategy. Nothing was saved.",
@@ -87,7 +95,7 @@ export function failureText(failure: Failure, context: Context): string {
       ? "The answer was lost or couldn't be read. Reading again is safe."
       : "The answer was lost, so the outcome isn't known. Read the current state before trying again.";
     case "refused": {
-      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : context === "autopilot" ? AUTOPILOT : {};
+      const table = context === "sign-in" ? SIGN_IN : context === "setup" ? SETUP : context === "consent" ? CONSENT : context === "proposal" ? PROPOSAL : context === "funding" ? FUNDING : context === "autopilot" ? AUTOPILOT : context === "owner-action" ? OWNER_ACTION : {};
       return table[failure.code] ?? ANY[failure.code] ?? PROPOSAL[failure.code] ?? `The server refused the request (${failure.code}).`;
     }
   }

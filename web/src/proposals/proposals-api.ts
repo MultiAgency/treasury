@@ -123,6 +123,14 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** A wallet owner's signed grant intent, relayed once: never sent again for a lost answer; its status says what happened. */
         submitGrant: (id: string, signedData: z.input<typeof contract.grantSubmission>["signedData"]) =>
           call(contract.grantSubmitted, `${base}/grant/${correlation.parse(id)}/submit`, { method: "POST", body: contract.grantSubmission.parse({ signedData }) }),
+        /** Freezes the agent, or unfreezes it (#133): prepared for the owner to sign here, on the platform's confirm page, or for the DAO's vote. Sent once. */
+        freeze: () => call(contract.ownerActionPrepared, `${base}/freeze`, { method: "POST", body: {} }),
+        unfreeze: () => call(contract.ownerActionPrepared, `${base}/unfreeze`, { method: "POST", body: {} }),
+        /** A wallet owner's signed intent for any owner action (the grant has its own call), relayed once. */
+        submitOwnerAction: (id: string, signedData: z.input<typeof contract.ownerActionSubmission>["signedData"]) =>
+          call(contract.grantSubmitted, `${base}/owner/actions/${correlation.parse(id)}/submit`, { method: "POST", body: contract.ownerActionSubmission.parse({ signedData }) }),
+        /** Where an owner action stands, by its correlation ID: read, never sent again. */
+        ownerActionStatus: (id: string) => call(contract.ownerActionStatus, `${base}/owner/actions/${correlation.parse(id)}`),
         grantStatus: (id: string) => call(contract.ownerActionStatus, `${base}/grant/${correlation.parse(id)}`),
         /** The saved strategy and whether the held grant binds it; the schedule. */
         strategy: () => call(contract.strategyRead, `${base}/strategy`),
@@ -174,6 +182,7 @@ export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
 export type RecordingRead = z.output<typeof contract.recordingRead>;
+export type OwnerActionPrepared = z.output<typeof contract.ownerActionPrepared>;
 export type OwnerActionsRead = z.output<typeof contract.ownerActionsRead>;
 export type OperationRead = z.output<typeof contract.operationRead>;
 export type TreasuryRead = z.output<typeof contract.treasuryRead>["treasury"];

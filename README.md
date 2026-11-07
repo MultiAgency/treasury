@@ -2,7 +2,7 @@
 
 The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.3, against the platform's app route (`/apps/v1`).
 
-Freeze is the stop that halts every send. A wallet owner can freeze the agent from the owner-session UI, which runs only on the simulated stack, and from the app's pages once #133 lands. A DAO-owned agent has no such stop through the app yet: its freeze vote must pass within the provider intent's 600 seconds, which most DAOs can't do (MultiAgency/platform#20). Until then, `autopilot/stop` ends its schedule and the strategy engine proposes nothing at L4, but other apps' access and approved proposals are untouched.
+Freeze is the stop that halts every send. A wallet owner can freeze the agent from the owner-session UI, which runs only on the simulated stack, and from the app's pages (#133). A DAO-owned agent has no such stop through the app yet: its freeze vote must pass within the provider intent's 600 seconds, which most DAOs can't do (MultiAgency/platform#20). Until then, `autopilot/stop` ends its schedule and the strategy engine proposes nothing at L4, but other apps' access and approved proposals are untouched.
 
 | Path | What |
 | --- | --- |

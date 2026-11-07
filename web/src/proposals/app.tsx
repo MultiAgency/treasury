@@ -7,6 +7,7 @@ import { AgentContext, useAgent } from "./agent-context";
 import { Activity, Run } from "./activity";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
+import { EmergencyStop } from "./freeze";
 import { Funding } from "./funding";
 import { NeedsDecision, Standing } from "./home";
 import { PageLink } from "./nav";
@@ -114,6 +115,8 @@ function Gate({ name, title, home }: { name: string; title: string; home: boolea
     {heading}
     {signedIn}
     <AgentNav agent={name} />
+    {/* The emergency stop is in the frame of every page of an agent that exists, and never hidden by what the page is doing. */}
+    {agentId !== null && <EmergencyStop reads={reads} identity={identity.data} />}
     {/* An agent set up but not created yet: its creation comes first, on its home, and nothing else reaches it until then. */}
     {agentId === null && !home ? <p role="status">This agent hasn't been created yet. <PageLink to={agentAddress(name)} className="underline">Create it on its home page</PageLink>.</p> : <Outlet />}
   </AgentContext.Provider>;

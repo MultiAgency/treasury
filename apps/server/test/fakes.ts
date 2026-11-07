@@ -119,8 +119,10 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
    * Grants as the platform keeps them, by correlation ID: `prepared` until signed (or, for a DAO, voted), `submitted`
    * after. A submitted grant binds the strategy. `grantAnswers` queues answers a grant call gives instead; an Error is thrown.
    */
-  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown }[] = [];
-  const grantAnswers: Partial<Record<"prepare" | "submit", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
+  const grants: { correlationId: string; agent: string; signer: "wallet" | "dao"; digest: string; stage: "prepared" | "submitted"; expiresAt: string; signedData?: unknown; type?: "grant_issue" | "agent_freeze" | "agent_unfreeze" }[] = [];
+  const ownerActionsOf = (agent: string) => grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: item.type ?? "grant_issue", expiresAt: item.expiresAt,
+    signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null }));
+  const grantAnswers: Partial<Record<"prepare" | "submit" | "ownerPrepare", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
@@ -341,7 +343,11 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       unresolved: (organization, agent) => read("unresolved", organization, agent),
       runs: (organization, agent) => read("runs", organization, agent),
       ledgerCsv: (organization, agent) => read("ledgerCsv", organization, agent),
-      ownerActions: (organization, agent) => read("ownerActions", organization, agent),
+      // The same platform procedure as `grant.actions` (`owner/actions`): what a test set, else the actions prepared so far.
+      ownerActions: async (organization, agent) => {
+        const answered = await read("ownerActions", organization, agent);
+        return !answered.ok || (answered.value as unknown[]).length > 0 ? answered : { ok: true, value: ownerActionsOf(agent) } as never;
+      },
       recording: (organization, agent, tickId) => read("recording", organization, agent, tickId),
     },
     grant: {
@@ -358,8 +364,27 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         const dao = owners[agent]!, hash = correlationId.padStart(64, "c");
         return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
       },
+      async actions(organization, agent) {
+        calls.push(`grant.actions ${organization} ${agent}`);
+        return { ok: true, value: ownerActionsOf(agent) } as never;
+      },
+    },
+    owner: {
+      async prepare(organization, agent, input) {
+        calls.push(`owner.prepare ${organization} ${agent} ${input.signer} ${input.action.type}`);
+        const queued = grantAnswers.ownerPrepare?.shift();
+        if (queued instanceof Error) throw queued;
+        if (queued) return queued as PreparedAnswer;
+        const correlationId = `action-${grants.length + 1}`, expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+        grants.push({ correlationId, agent, signer: input.signer, digest: "", stage: "prepared", expiresAt, type: input.action.type });
+        const common = { correlationId, expiresAt, digest: null, preview: { summary: input.action.type === "agent_freeze" ? "Freeze the agent" : "Unfreeze the agent" } };
+        if (input.signer === "wallet") return { ok: true, value: { ...common,
+          intent: { standard: "nep413", payload: { message: `${input.action.type} ${correlationId}`, recipient: "provider.test", nonce: Buffer.alloc(32, 1).toString("base64") } } } } as PreparedAnswer;
+        const dao = owners[agent]!, hash = correlationId.padStart(64, "d");
+        return { ok: true, value: { ...common, dao: { owner: dao, transaction: daoTransaction(dao, hash), proposal: daoTransaction(dao, hash), proposalAndVote: daoTransaction(dao, hash, daoNext(dao)) } } } as PreparedAnswer;
+      },
       async submit(organization, agent, input) {
-        calls.push(`grant.submit ${organization} ${agent} ${input.correlationId}`);
+        calls.push(`owner.submit ${organization} ${agent} ${input.correlationId}`);
         const queued = grantAnswers.submit?.shift();
         if (queued instanceof Error) throw queued;
         if (queued) return queued as never;
@@ -367,16 +392,11 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as never;
         found.stage = "submitted";
         found.signedData = input.signedData;
-        schedule(agent).unbound = false;
+        if ((found.type ?? "grant_issue") === "grant_issue") schedule(agent).unbound = false;
         return { ok: true, value: { status: "SUCCESS", failureCode: null } } as never;
       },
-      async actions(organization, agent) {
-        calls.push(`grant.actions ${organization} ${agent}`);
-        return { ok: true, value: grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: "grant_issue", expiresAt: item.expiresAt,
-          signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null })) } as never;
-      },
       async status(_organization, agent, correlationId) {
-        calls.push(`grant.status ${agent} ${correlationId}`);
+        calls.push(`owner.status ${agent} ${correlationId}`);
         const found = grants.find(item => item.correlationId === correlationId && item.agent === agent);
         if (!found) return { ok: false, kind: "refused", status: 404, error: "No such owner action" } as StatusAnswer;
         return { ok: true, value: { stage: found.stage === "submitted" ? "submitted" : found.signer === "dao" ? "voting" : "submitting" } } as StatusAnswer;
