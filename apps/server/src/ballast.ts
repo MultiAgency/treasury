@@ -93,7 +93,9 @@ const whipsawState = z.strictObject({
   lastAction: z.enum(["buy-volatile", "sell-volatile"]).optional(),
   disarmed: z.enum(["trim-3", "trim-2", "trim-1", "hold", "dca-1", "dca-2", "dca-3", "buy-halt"]).optional(),
 });
-const proposed = z.strictObject({ requestId: z.string().min(1), at: z.number(), sizeUsd: z.number().positive(), dcaUnits: z.number().min(0), settled: z.boolean() });
+/** A proposal Ballast made, with the anti-whipsaw state from before it (`whipsawBefore`), so one never stored can be undone. */
+const proposed = z.strictObject({ requestId: z.string().min(1), at: z.number(), sizeUsd: z.number().positive(), dcaUnits: z.number().min(0), settled: z.boolean(),
+  whipsawBefore: whipsawState.optional() });
 const engineState = z.strictObject({
   organization: z.string().min(1), agent: z.string().regex(/^[a-z0-9-]{1,32}$/),
   whipsaw: whipsawState, dcaUnitsUsed: z.number().min(0), proposed: z.array(proposed),
@@ -237,12 +239,26 @@ export function createBallast({ history, states, audit, now = Date.now }: {
     /**
      * Records a proposal before its request is stored or sent: it counts towards turnover and the order rate, and it
      * disarms its zone and starts the cooldown, whatever the owner answers. A crash after this and before the request is
-     * stored leaves a proposal counted that was never made, which only holds back more.
+     * stored leaves a proposal counted that was never made, which only holds back more. One the platform refuses without
+     * storing it is undone (`unmade`).
      */
     proposed: (organization: string, agent: string, requestId: string, intent: Intent) => states.change(organization, agent, s => ({
       ...s, whipsaw: nextState(s.whipsaw as WhipsawState, intent, null, intent.at),
-      proposed: [...s.proposed.filter(p => p.at > now() - PROPOSED_MS), { requestId, at: intent.at, sizeUsd: intent.sizeUsd, dcaUnits: intent.dcaUnits, settled: false }],
+      proposed: [...s.proposed.filter(p => p.at > now() - PROPOSED_MS),
+        { requestId, at: intent.at, sizeUsd: intent.sizeUsd, dcaUnits: intent.dcaUnits, settled: false, whipsawBefore: s.whipsaw }],
     })),
+
+    /**
+     * A proposal the platform refused without storing it (#190): it was never made, so it's as if it hadn't been decided.
+     * The zone and the cooldown go back to what they were before it, and it no longer counts towards turnover or the order
+     * rate. `watch` sends nothing else for the agent while a request is unanswered, so nothing changed the state in between.
+     * A proposal recorded before its state was kept (`whipsawBefore`) only stops counting.
+     */
+    unmade: (organization: string, agent: string, requestId: string) => states.change(organization, agent, s => {
+      const p = s.proposed.find(x => x.requestId === requestId);
+      if (!p || p.settled) return null;
+      return { ...s, ...(p.whipsawBefore && { whipsaw: p.whipsawBefore }), proposed: s.proposed.filter(x => x.requestId !== requestId) };
+    }),
 
     /** A proposal of Ballast's ended: an executed buy spends its DCA units, once; any other end spends none. */
     settled: (organization: string, agent: string, requestId: string, state: string) => states.change(organization, agent, s => {

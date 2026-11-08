@@ -47,7 +47,7 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
   const history = await createPriceHistory(join(dir, "requests.json.history"));
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
-  const answers = { overview: overview(3.12, T0) };
+  const answers: { overview: OwnerOutput<"overview">; refuse?: string } = { overview: overview(3.12, T0) };
   const stored = new Map<string, ProposalView>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
@@ -61,6 +61,7 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
     },
     create: async (_o, _a, input) => {
       sent.push(input);
+      if (answers.refuse) return { ok: false, kind: "refused", status: 409, code: answers.refuse, error: answers.refuse } as unknown as ProposalAnswer;
       const view = stored.get(input.requestId) ?? proposal({ id: String(stored.size).padStart(32, "0"), requestId: input.requestId, expiresAt: input.expiresAt, state: "proposed" });
       stored.set(input.requestId, view);
       return { ok: true, value: view };
@@ -128,6 +129,28 @@ test("a rejected or expired proposal spends no DCA units, but still counts towar
     assert.equal(state.dcaUnitsUsed, 0, ended);
     assert.deepEqual(state.proposed.map(p => p.settled), [true], ended);
   }
+});
+
+test("a create the platform refuses stored nothing, so its proposal is undone: the zone armed again, nothing counted (#190)", async () => {
+  for (const code of ["not_proposable", "nothing_to_propose", "too_many_proposals"]) {
+    const w = await world();
+    w.answers.refuse = code;
+    await w.tick();
+    assert.equal(w.sent.length, 1, code);
+    assert.equal(w.requests.of(ORG, AGENT).length, 0, `${code}: the request is dropped`);
+    const state = w.states.find(ORG, AGENT);
+    assert.deepEqual(state.proposed, [], `${code}: no proposal counted`);
+    assert.deepEqual(state.whipsaw, {}, `${code}: the zone is armed, as before the decision`);
+  }
+});
+
+test("a withdrawn proposal was made, under a consent since replaced, so it stays counted and its zone disarmed", async () => {
+  const w = await world();
+  w.answers.refuse = "withdrawn";
+  await w.tick();
+  const state = w.states.find(ORG, AGENT);
+  assert.equal(state.proposed.length, 1);
+  assert.equal(state.whipsaw.disarmed, "dca-1");
 });
 
 test("with no history the oracle warms up: a hold, and every reading joins the history", async () => {

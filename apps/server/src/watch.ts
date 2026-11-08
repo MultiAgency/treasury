@@ -198,8 +198,10 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       return { ...proposed, notified };
     }
     if (answer.kind === "refused") {
-      // A refusal stores nothing, so the request can go.
+      // A refusal stores nothing, so the request can go, and a Ballast proposal under it was never made (#190). A
+      // withdrawn one was made, under a consent since replaced, so it stays counted.
       await requests.drop(request);
+      if (answer.code !== "withdrawn") await ballast?.unmade(watched.organization, watched.agent, request.requestId);
       switch (answer.code) {
         // Nothing worth proposing at these quotes, which drift() can't see: quote again later.
         case "not_proposable":
