@@ -262,6 +262,7 @@ test("a council member adopts a proposed strategy, shown beside the saved one wi
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
   assert.equal(sent.length, filedBefore + 1, "the grant filed once, from the member's wallet");
   await visible(autopilot.getByText("Authorized: the agent's grant binds this strategy."));
+  assert.equal(await autopilot.getByText("Authorize it next.", { exact: false }).count(), 0, "the prompt to authorize goes once the grant binds");
   assert.deepEqual(await axe(), [], "adopted and authorized");
   assert.deepEqual(unexpected, []);
 });
