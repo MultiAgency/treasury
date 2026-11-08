@@ -81,6 +81,11 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         connect: (submission: z.input<typeof contract.consentSubmission>) =>
           call(contract.consent, `${base}/consent`, { method: "POST", body: contract.consentSubmission.parse(submission) }),
         disconnect: () => call(contract.revoked, `${base}/consent/revoke`, { method: "POST" }),
+        /** The tokens issued to software acting for the owner (#139): never their secrets. */
+        tokens: () => call(contract.tokensRead, `${base}/tokens`),
+        /** Issues a token for this agent, answered once with its secret. */
+        issueToken: (input: z.input<typeof contract.tokenRequest>) => call(contract.tokenIssued, `${base}/tokens`, { method: "POST", body: contract.tokenRequest.parse(input) }),
+        revokeToken: (id: string) => call(z.strictObject({}), `${base}/tokens/${readId.parse(id)}/revoke`, { method: "POST" }),
         proposals: () => call(proposalList, `${base}/proposals`),
         /**
          * Asks for a rebalance to the saved strategy, proposed for approval under `requestId`. Never asked again for a lost

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "../shared/ui";
+import { AgentAccess } from "./agent-access";
 import { DaoRequestView } from "./dao-request";
 import type { ConsentText, Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
@@ -102,6 +103,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
         : live ? <div className="flex flex-col gap-2">
           <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {when(new Date(live.expiresAt).toISOString())}.</p>
           <p className="text-sm">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
+          <AgentAccess reads={reads} identity={identity} />
         </div>
         : consent.data.request ? <div className="flex flex-col gap-3">
           <p role="status">Waiting for the vote of {owner} to connect this agent.</p>
@@ -136,6 +138,7 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
               {disconnecting === "busy" ? "Disconnecting…" : "Disconnect"}
             </Button>
           </div>
+          <AgentAccess reads={reads} identity={identity} />
         </div>
         : <div className="flex flex-col items-start gap-3">
           <p role="status">Not connected. The app can't read or act on this agent's proposals until you connect it.</p>

@@ -36,6 +36,11 @@ const Settings = z.object({
    * answers a request's transactions only once. Created on first use, so a deployment without DAOs only names it.
    */
   TREASURY_DAO_REQUESTS_FILE: z.string().min(1),
+  /**
+   * Where the tokens issued to owners' agents are kept (`agent-tokens.ts`, #139), owner-only and hashed. Without it, tokens
+   * last only as long as the process, and a restart ends them all.
+   */
+  TREASURY_AGENT_TOKENS_FILE: z.string().min(1).optional(),
   /** This server's own origin: the sign-in recipient and the only `Origin` accepted on writes. */
   TREASURY_PUBLIC_ORIGIN: publicOrigin,
   /**
@@ -58,6 +63,10 @@ const Settings = z.object({
   CHALLENGES_PER_MINUTE: z.coerce.number().int().positive().default(10),
   /** Owner-route requests per signed-in account a minute; each may cost a call against the platform's shared quota. */
   OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  /** Calls per agent token an hour, apart from the account's own: each costs a call against the platform's hourly budget. */
+  TOKEN_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(60),
+  /** Calls every agent token together may make an hour: a quarter of the platform's 1,200, so software can't spend the rest. */
+  TOKEN_BUDGET_PER_HOUR: z.coerce.number().int().positive().default(300),
   /** New consents per signed-in account a day: the platform caps a deployment's live consents at 1,024, every owner's together. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
   /**
