@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Signature } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Button, ErrorBox, errorMessage, Spinner } from "../shared/ui";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
@@ -98,13 +99,13 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
 
   const final = stage !== undefined && FINAL.has(stage);
   const canStart = (!grant || (final && stage !== "submitted")) && !busy && (dao ? identity.access.canPropose : ownerAllowed);
-  return <div className="flex flex-col items-start gap-2">
-    {!dao && !ownerAllowed && <p>Your connection doesn't allow owner actions yet: allow them in <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connection, on the agent's Home page</PageLink>, then authorize the strategy here.</p>}
-    <Button disabled={!canStart} onClick={() => setReviewing(true)}>{busy && <Spinner />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
-    {grant?.confirm && <p>Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
+  return <div className="flex w-full flex-col items-start gap-2">
+    {!dao && !ownerAllowed && <p className="text-xs text-muted-foreground">Your connection doesn't allow owner actions yet: allow them in <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connection, on the agent's Home page</PageLink>, then authorize the strategy here.</p>}
+    <Button size="sm" disabled={!canStart} onClick={() => setReviewing(true)}>{busy ? <Spinner /> : <Signature aria-hidden="true" />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
+    {grant?.confirm && <p className="text-xs text-muted-foreground">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
       It expires {when(grant.confirm.expiresAt)}.</p>}
-    {grant && <p role="status">{!stage ? "Reading its status…" : STAGE_WORDS[stage] ?? stage}</p>}
-    {notice && <p role="status">{notice}</p>}
+    {grant && <p role="status" className="text-xs">{!stage ? "Reading its status…" : STAGE_WORDS[stage] ?? stage}</p>}
+    {notice && <p role="status" className="text-xs">{notice}</p>}
     <ErrorBox error={error} />
     <ReviewDialog open={reviewing} busy={busy} onClose={() => setReviewing(false)} title="Authorize this saved strategy?"
       description={`A grant bound to this strategy lets the agent act on it within the signed policy for 30 days: on autopilot once you turn it on, and on Run now. It doesn't turn autopilot on. ${dao

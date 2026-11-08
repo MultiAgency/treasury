@@ -58,3 +58,9 @@ export function policyComparison(current: Record<string, unknown>, requested: Re
     .filter(field => JSON.stringify(current[field]) !== JSON.stringify(requested[field]))
     .map(field => ({ field, was: show(current[field]), now: show(requested[field]) }));
 }
+
+export type CapRow = { window: (typeof WINDOWS)[number][0]; period: string; asset: string; symbol: string; amount: string };
+
+/** The signed per-asset caps, one row per window and asset. */
+export const capRows = (policy: AgentPolicy, book: readonly AssetInfo[]): CapRow[] => WINDOWS.flatMap(([window, period]) =>
+  Object.entries(policy.limits?.[window] ?? {}).map(([asset, raw]) => ({ window, period, asset, symbol: symbolOf(asset, book), amount: amountOf(raw, asset, book) })));
