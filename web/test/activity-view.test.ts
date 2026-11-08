@@ -30,7 +30,8 @@ test("an unresolved operation's anchor is safe in an address", () => {
 });
 
 test("owner actions are named in the owner's words, and a kind the page doesn't know is shown as the platform names it", () => {
-  assert.deepEqual(["grant_issue", "agent_freeze", "agent_unfreeze", "grant_revoke", "something_new"].map(actionName), ["Strategy grant", "Freeze", "Unfreeze", "Revoke a grant", "something_new"]);
+  assert.deepEqual(["grant_issue", "agent_freeze", "agent_unfreeze", "grant_revoke", "policy_update", "agent_create", "something_new"].map(actionName),
+    ["Strategy grant", "Freeze", "Unfreeze", "Revoke a grant", "Policy change", "Agent creation", "something_new"]);
 });
 
 test("where an owner action stands is decided by its stage and outcome", () => {

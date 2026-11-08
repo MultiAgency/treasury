@@ -26,6 +26,7 @@ type OwnerAction = { type: string; stage: "settled" | "submitted" | "expired" | 
 
 const ACTIONS: Record<string, string> = {
   grant_issue: "Strategy grant", grant_revoke: "Revoke a grant", agent_freeze: "Freeze", agent_unfreeze: "Unfreeze", policy_update: "Policy change",
+  agent_create: "Agent creation",
 };
 /** What an owner action is, in the owner's words; a kind this page doesn't know is shown as the platform names it. */
 export const actionName = (type: string) => ACTIONS[type] ?? type;
