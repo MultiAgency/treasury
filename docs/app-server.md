@@ -46,6 +46,26 @@ pnpm --filter @treasury/server test:stack    # against fresh stacks started with
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check against near-kit's local NEAR node; not run in CI
 ```
 
+## Tokens for an owner's agent (#139)
+
+Software acting for the owner (an agent reading the portfolio, proposing a rebalance) has no browser session, so the owner issues it a token from the agent's page. `GET /api/agent-api` describes what a token may call, from `contract.ts`.
+
+- **Issue and manage:** from the owner's session (`owner-fresh`, for whoever may propose for the agent), for one agent, for 1 to 30 days; at most ten live per agent. Shown once. Listed with when each was made, lapses and was last used; revocable there. `POST /api/agents/:agent/tokens`, `GET …/tokens`, `POST …/tokens/:id/revoke`.
+- **What a token may call** (`TOKEN_ROUTES` in `http.ts`): the agent's `overview`, `activity`, `unresolved`, `strategy`, `autopilot`, `proposals` and one proposal, and `POST …/proposals` under a `requestId` it names. Never a verdict, an execution, an owner action, funding, a sweep, a strategy or autopilot change, a consent, or a token.
+
+Threat model:
+
+| Risk | What holds |
+| --- | --- |
+| Theft of the file | Only the SHA-256 of each secret is stored (`TREASURY_AGENT_TOKENS_FILE`, owner-only like the credential file: a file others can read is refused). A secret is 256 random bits, so the hash can't be searched for it. Without the setting, tokens live in memory and a restart ends them. |
+| A leaked token | It can read the agent and make proposals the owner then rejects; it can't move funds, sign, approve or change anything. It lapses within 30 days and is revoked from the agent's page; a revocation answers once it is on disk and every call reads the records, so it holds from the next call. |
+| A route it shouldn't reach | An `Authorization` header is accepted on the routes above only, for the agent it was issued for; any other route answers `token_not_allowed` before anything else runs. A cookie sent beside it is ignored. |
+| Ownership changes | A call is admitted as its issuing account would be (still the agent's owner, or still a DAO member who may propose), read anew for a write; so a transfer ends a token's use without anyone revoking it. |
+| Spending the platform's budget | Each token has its own hourly limit (`TOKEN_REQUESTS_PER_HOUR`, 60), not counted against the account's, so software gone wrong can't lock the owner out. Every token together has one more (`TOKEN_BUDGET_PER_HOUR`, 300): a quarter of the platform's 1,200 calls an hour, which every owner and `watch` share, so tokens can't spend the rest. A read is one platform call; a proposal is two (the agent's identity, read fresh, then the proposal). |
+| Attribution | The audit trail names a token's call `token:<id>` (`who`), which the token's record ties to the account that issued it. Issuing and revoking are recorded before and after, by the account. |
+| Disconnecting | Revoking the agent's consent revokes every token for it. |
+| Browser attacks | A write by token needs no `Origin` (it is not a browser's), but carries a header a page can't add to a request it didn't make, and the cookie never rides on a token's call. |
+
 To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN`, `TREASURY_AUDIT_FILE` and `TREASURY_DAO_REQUESTS_FILE` (and optionally `TREASURY_PAGE_DIR`, `TREASURY_WATCH_FILE` with `TREASURY_REQUESTS_FILE`, `FASTNEAR_API_KEY`, `NEAR_RPC_URL`, `TREASURY_TRUSTED_PROXY_HOPS`, `OWNER_REQUESTS_PER_MINUTE`, `CONSENTS_PER_DAY`, or `TREASURY_ANCHOR_ACCOUNT` with `TREASURY_ANCHOR_KEY_FILE`, `TREASURY_ANCHOR_INTERVAL_S` and `TREASURY_ANCHOR_NETWORK`), then `pnpm --filter @treasury/server start`.
 
 On Railway it runs from the `Dockerfile`, with secrets as variables written to their 0600 files at startup: see [deploy.md](deploy.md).

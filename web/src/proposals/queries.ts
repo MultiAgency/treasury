@@ -32,6 +32,8 @@ export function agentReads(name: string) {
     /** The live consent, and for a DAO its consent request while one waits for the vote, read again every half minute. */
     consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()), retry: false,
       refetchInterval: query => query.state.data?.request ? 30_000 : false }),
+    /** The tokens issued to software acting for the owner (#139), with when each was last used. */
+    tokens: queryOptions({ queryKey: [...key, "tokens"], queryFn: async () => answered(await agent.tokens()), retry: false }),
     /**
      * The owner reads (#61), read when the page shows them and not again on their own: each is a call from the
      * deployment's shared 1,200 an hour, so "Check again" reads them anew.

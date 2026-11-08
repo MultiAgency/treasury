@@ -83,6 +83,8 @@ const FUNDING: Record<string, string> = {
 /** Codes that read the same in every context. */
 const ANY: Record<string, string> = {
   platform_rate_limited: "The platform is limiting this app's requests for now. Nothing was done; try again in a few minutes.",
+  too_many_tokens: "This agent already has as many access tokens as it may. Revoke one you no longer use, then create another.",
+  no_token: "That token has already ended, so there is nothing to revoke.",
 };
 
 export function failureText(failure: Failure, context: Context): string {

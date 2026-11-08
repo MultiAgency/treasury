@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
 import { ANCHOR_NETWORKS, anchorKey, createAnchorer, nearAnchorChain, readAnchorKey, runAnchor, type AnchorEntry } from "./anchor.ts";
 import type { AuditEntry } from "./audit.ts";
+import { createAgentTokens, fileTokenRecords, memoryTokenRecords } from "./agent-tokens.ts";
 import { chainedFileAudit, movePlainLogAside } from "./chain.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
@@ -66,6 +67,9 @@ const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
 // Refuse to start with the DAO requests unreadable.
 const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE);
 
+// Refuse to start with the agent tokens unreadable; without a file they last as long as the process.
+const agentTokens = createAgentTokens(settings.TREASURY_AGENT_TOKENS_FILE ? await fileTokenRecords(settings.TREASURY_AGENT_TOKENS_FILE) : memoryTokenRecords());
+
 // One platform client for the routes and watch, so they share the identity cache and the credential's reads.
 const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS,
   executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
@@ -90,6 +94,9 @@ const handler = createServer({
   keyLookup,
   daos,
   daoRequests,
+  agentTokens,
+  tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
+  tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),

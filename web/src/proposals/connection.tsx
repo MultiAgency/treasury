@@ -3,6 +3,7 @@ import { Plugs, PlugsConnected } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { IconTile, InfoTip } from "@/components/ui/stat";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "../shared/ui";
+import { AgentAccess } from "./agent-access";
 import { DaoRequestView } from "./dao-request";
 import type { ConsentText, Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
@@ -116,10 +117,13 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
     <Card className="gap-3">
       {consent.isPending ? row("neutral", <Loading label="Reading the connection…" />)
         : consent.isError ? <>{row("neutral", null)}<QueryError error={consent.error} retry={() => consent.refetch()} /></>
-        : live ? row("success", <>
-          <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {until}.</p>
-          <p className="text-xs">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
-        </>)
+        : live ? <>
+          {row("success", <>
+            <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {until}.</p>
+            <p className="text-xs">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
+          </>)}
+          <AgentAccess reads={reads} identity={identity} />
+        </>
         : consent.data.request ? <>
           {row("warning", <p role="status">Waiting for the vote of {owner} to connect this agent.</p>,
             <Button variant="ghost" size="sm" disabled={consent.isFetching} onClick={refresh}>{consent.isFetching ? "Checking…" : "Check again"}</Button>)}
@@ -143,13 +147,16 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
     <Card className="gap-3">
       {consent.isPending ? row("neutral", <Loading label="Reading the connection…" />)
         : consent.isError ? <>{row("neutral", null)}<QueryError error={consent.error} retry={() => consent.refetch()} /></>
-        : live ? row("success", <p role="status">Connected: {scopeList(live.scopes)}, until {until}.</p>, <>
-          {!live.scopes.includes("owner") && <Button variant="outline" size="sm" disabled={review !== undefined} onClick={() => prepare({ upgrade: true })}>
-            {review?.phase === "reading" ? "Preparing…" : "Allow owner actions"}</Button>}
-          <Button variant="outline" size="sm" disabled={disconnecting === "busy"} onClick={() => setDisconnecting("review")}>
-            {disconnecting === "busy" ? "Disconnecting…" : "Disconnect"}
-          </Button>
-        </>)
+        : live ? <>
+          {row("success", <p role="status">Connected: {scopeList(live.scopes)}, until {until}.</p>, <>
+            {!live.scopes.includes("owner") && <Button variant="outline" size="sm" disabled={review !== undefined} onClick={() => prepare({ upgrade: true })}>
+              {review?.phase === "reading" ? "Preparing…" : "Allow owner actions"}</Button>}
+            <Button variant="outline" size="sm" disabled={disconnecting === "busy"} onClick={() => setDisconnecting("review")}>
+              {disconnecting === "busy" ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          </>)}
+          <AgentAccess reads={reads} identity={identity} />
+        </>
         : row("neutral", <p role="status">Not connected. The app can't read or act on this agent's proposals until you connect it.</p>,
           <Button disabled={review !== undefined} onClick={() => prepare({ upgrade: false })}>{review?.phase === "reading" ? "Preparing…" : "Connect"}</Button>,
           "Connecting lets this app read the agent, work with its Treasury proposals and relay owner actions you sign, such as a strategy grant. Each takes effect only with your own signature.")}
