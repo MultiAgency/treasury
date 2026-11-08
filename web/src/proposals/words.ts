@@ -65,6 +65,7 @@ const OWNER_ACTION: Record<string, string> = {
 const AUTOPILOT: Record<string, string> = {
   strategy_changed: "The saved strategy changed since you saw it. Nothing was changed. Review it again.",
   strategy_refused: "The platform refused that strategy. Nothing was saved.",
+  no_proposal: "That proposal was already adopted, declined or replaced. Nothing was changed.",
   autopilot_on: "Turn autopilot off before authorizing a strategy. Nothing was prepared.",
   approve_only: "This host only approves: strategies are authorized on the agent's executor. Nothing was prepared.",
   grant_pending: "A grant is already waiting for its signature, vote or outcome. Follow it rather than signing another.",

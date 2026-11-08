@@ -50,6 +50,7 @@ export function agentReads(name: string) {
     /** One operation's status by its `correlationId`, asked for by a click on its row. */
     operation: (correlationId: string) => queryOptions({ queryKey: [...key, "operations", correlationId], queryFn: async () => answered(await agent.operation(correlationId)), retry: false }),
     strategy: queryOptions({ queryKey: [...key, "strategy"], queryFn: async () => answered(await agent.strategy()), retry: false }),
+    strategyProposals: queryOptions({ queryKey: [...key, "strategy-proposals"], queryFn: async () => answered(await agent.strategyProposals()), retry: false }),
     autopilot: queryOptions({ queryKey: [...key, "autopilot"], queryFn: async () => answered(await agent.autopilot()), retry: false }),
     books: queryOptions({ queryKey: [...key, "books"], queryFn: async () => answered(await agent.books()), retry: false }),
     /** The funding account and the agent's own account, read as the owner reads above. */

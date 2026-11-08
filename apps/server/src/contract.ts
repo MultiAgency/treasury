@@ -233,21 +233,43 @@ export const enableRequest = z.strictObject({ expectedDigest: z.string().regex(/
 /** What a run now reported, in the agent's words: what it executed or why it didn't. */
 export const tickRead = z.strictObject({ summary: z.string() });
 export const autopilotChanged = z.strictObject({});
+const managedAsset = z.enum(Object.values(ASSETS) as [string, ...string[]]);
 /**
  * A strategy as the platform takes one (its `Strategy`): every managed asset's target in basis points, adding up to
- * 10 000; the smallest swap worth making and the most a swap may cost; and autopilot's interval and ceiling a run.
+ * 10 000; the smallest swap worth making and the most a swap may cost; autopilot's interval and ceiling a run; and the
+ * cash its swaps may not take it under (platform#23). The platform saves the strategy whole, so a save without the
+ * floor removes it: the page sends the saved one's floor with every save it makes over it.
  */
 export const strategyInput = z.strictObject({
-  targetBps: z.record(z.enum(Object.values(ASSETS) as [string, ...string[]]), z.number().int().min(0).max(10_000))
+  targetBps: z.record(managedAsset, z.number().int().min(0).max(10_000))
     .refine(targets => Object.values(targets).reduce((sum, bps) => sum + bps, 0) === 10_000, "targets must add up to 10 000 bps"),
   minLegUsd: z.number().int().min(1),
   maxCostBps: z.number().int().min(1).max(1_000),
   autopilot: z.strictObject({ everyMin: z.number().int().min(5).max(1_440), maxUsd: z.number().int().min(0).max(1_000_000) }),
+  cashFloor: z.strictObject({
+    usd: z.number().int().min(1),
+    assets: z.array(managedAsset).min(1).refine(list => new Set(list).size === list.length, "cash floor assets must not repeat"),
+  }).optional(),
 });
 /** A strategy saved over the one the owner saw, by its digest: refused if it has changed since. */
 export const strategySaveRequest = z.strictObject({ strategy: strategyInput, expectedDigest: enableRequest.shape.expectedDigest });
 /** The saved strategy's digest, which a grant then binds. */
 export const strategySaved = z.strictObject({ digest: z.string() });
+/** The longest reasons a strategy proposal may give. */
+export const MAX_PROPOSAL_REASONS = 2_000;
+/**
+ * A strategy an agent proposed and the owner hasn't answered (#206): who proposed it (Ballast's `mandate` compiler, or
+ * `token:<id>`), why, and the digest of the saved strategy it was compared against, which adopting it saves over.
+ */
+export const strategyProposal = z.strictObject({
+  id: z.string().regex(/^[a-f0-9]{16}$/),
+  source: z.string().regex(/^(mandate|token:[a-f0-9]{16})$/),
+  strategy: strategyInput,
+  reasons: z.string().min(1).max(MAX_PROPOSAL_REASONS),
+  against: enableRequest.shape.expectedDigest,
+  createdAt: z.number().int(),
+});
+export const strategyProposalsRead = z.array(strategyProposal);
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
 /** The NEP-413 intent a wallet owner signs in their wallet, exactly as the platform prepared it. */

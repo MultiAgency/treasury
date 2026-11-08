@@ -4,44 +4,24 @@ import { z } from "zod";
 import { compileMandate, PROPOSAL_ASSETS, type ProfileName } from "../../../packages/core/src/index.ts";
 import type { Audit } from "./audit.ts";
 import type { BallastSettings } from "./ballast.ts";
-import { strategyInput } from "./contract.ts";
+import { MAX_PROPOSAL_REASONS, strategyInput, strategyProposal } from "./contract.ts";
 import { createRecords, memoryRecords } from "./records.ts";
 
-/** The longest reasons a proposal may give. */
-export const MAX_REASONS = 2_000;
 /** Records kept in all: the open proposals, and the last closed one of each agent's source. */
 const MAX_RECORDS = 1_024;
 
-/** Who proposed: Ballast's mandate compiler, or an agent outside the server by one of its tokens (#139). */
-const source = z.string().regex(/^(mandate|token:[a-f0-9]{16})$/);
+const source = strategyProposal.shape.source;
 export type ProposalSource = z.output<typeof source>;
-/**
- * A strategy as a proposal carries one: the Strategy page's fields, and the cash floor the platform keeps with them
- * (platform#23), so a proposal that leaves the floor as saved doesn't drop it when adopted.
- */
-export const proposedStrategy = strategyInput.extend({
-  cashFloor: z.strictObject({
-    usd: z.number().int().min(1),
-    assets: z.array(z.enum(Object.values(ASSETS) as [string, ...string[]])).min(1).refine(list => new Set(list).size === list.length, "cash floor assets must not repeat"),
-  }).optional(),
-});
-export type ProposedStrategy = z.output<typeof proposedStrategy>;
+export type ProposedStrategy = z.output<typeof strategyInput>;
 
-const stored = z.strictObject({
-  id: z.string().regex(/^[a-f0-9]{16}$/),
+const stored = strategyProposal.extend({
   agent: z.string().regex(/^[a-z0-9-]{1,32}$/),
-  source,
-  strategy: proposedStrategy,
-  reasons: z.string().min(1).max(MAX_REASONS),
-  /** The digest of the saved strategy it was compared against: adopting saves it over that one, or not at all. */
-  against: z.string().regex(/^sha256:[0-9a-f]{64}$/),
-  createdAt: z.number().int(),
   /** Adopted or declined by the owner; superseded by a later proposal from its source, or by a change to the saved strategy. */
   closed: z.strictObject({ at: z.number().int(), outcome: z.enum(["adopted", "declined", "superseded"]) }).nullable(),
 });
 export type StrategyProposal = z.output<typeof stored>;
 /** A proposal as the owner is shown it. */
-export type StrategyProposalView = Omit<StrategyProposal, "agent" | "closed">;
+export type StrategyProposalView = z.output<typeof strategyProposal>;
 
 export type ProposalRecords = Pick<Awaited<ReturnType<typeof createRecords<typeof stored>>>, "all" | "commit">;
 export const memoryProposalRecords = (): ProposalRecords => memoryRecords<StrategyProposal>();
@@ -50,10 +30,10 @@ export const fileProposalRecords = (path: string) => createRecords(path, "propos
 
 /**
  * What's wrong with a strategy proposed for an agent whose policy allows `policyAssets` (`"any"`, or the assets it may
- * move): the Strategy page's bounds (`strategyInput`), and targets only over the policy's assets. Empty when it may be stored.
+ * move): the Strategy page's bounds (`strategyInput`, with the cash floor the platform keeps beside them), and targets only over the policy's assets. Empty when it may be stored.
  */
 export function strategyProblems(strategy: unknown, policyAssets: "any" | readonly string[]): string[] {
-  const parsed = proposedStrategy.safeParse(strategy);
+  const parsed = strategyInput.safeParse(strategy);
   if (!parsed.success) return parsed.error.issues.map(issue => `${issue.path.join(".") || "strategy"}: ${issue.message}`);
   if (policyAssets === "any") return [];
   return Object.entries(parsed.data.targetBps).filter(([asset, bps]) => bps > 0 && !policyAssets.includes(asset))
@@ -96,10 +76,10 @@ export function createStrategyProposals(records: ProposalRecords, { audit, now =
       agent: string; from: ProposalSource; strategy: unknown; reasons: string; against: string; policyAssets: "any" | readonly string[];
     }): Promise<{ ok: true; id: string } | { ok: false; problems: string[] } | { ok: false; full: true }> {
       const problems = strategyProblems(strategy, policyAssets);
-      if (reasons.trim().length === 0 || reasons.length > MAX_REASONS) problems.push(`reasons: 1 to ${MAX_REASONS} characters`);
+      if (reasons.trim().length === 0 || reasons.length > MAX_PROPOSAL_REASONS) problems.push(`reasons: 1 to ${MAX_PROPOSAL_REASONS} characters`);
       if (problems.length > 0) return { ok: false, problems };
       const at = now(), id = randomBytes(8).toString("hex");
-      const proposal: StrategyProposal = { id, agent, source: from, strategy: proposedStrategy.parse(strategy), reasons, against, createdAt: at, closed: null };
+      const proposal: StrategyProposal = { id, agent, source: from, strategy: strategyInput.parse(strategy), reasons, against, createdAt: at, closed: null };
       await audit.append({ who: from, action: "strategy-propose", agent, subject: id, stage: "attempt" });
       const written = await records.commit(current => {
         const kept = prune(current.map(p => p.agent === agent && p.source === from && !p.closed ? close(p, "superseded", at) : p));
@@ -164,7 +144,7 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
     strategy: { ...aim, minLegUsd: now.minLegUsd, autopilot: { everyMin: now.autopilot.everyMin, maxUsd: now.autopilot.maxUsd },
       ...(now.cashFloor && { cashFloor: { usd: now.cashFloor.usd, assets: now.cashFloor.assets } }) },
     reasons: (`Ballast's ${settings.profile} profile: ${weights.volatilePct}% volatile in wNEAR, and ${weights.reservePct}% reserve and ${weights.cashPct}% operating cash in USDC; `
-      + `every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%. The owner's answers: ${answers}.`).slice(0, MAX_REASONS),
+      + `every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%. The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
   });
   if (proposed.ok) return { proposed: proposed.id };
   return "full" in proposed ? { skipped: "proposals full" } : { skipped: "invalid", problems: proposed.problems };
