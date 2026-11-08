@@ -93,6 +93,13 @@ test("executePlan: a swap not sent after its shield was is partial", () => {
   assert.equal(kindOf(executed([leg(0, "NOT_SENT", { shield: { amount: "5", status: "SUCCESS" } })])), "partial");
 });
 
+test("executePlan: a swap refused after its shield was sent ends with the leg and rejected (0.5.4): partial, with why", () => {
+  const refused = leg(0, "NOT_SENT", { shield: { amount: "5", status: "SUCCESS" }, failureCode: "per_transaction_exceeded" });
+  const { outcome, offerAgain } = settle(executed([refused, rejected("per_transaction_exceeded: the swap was refused before it was sent")]));
+  assert.deepEqual([outcome, offerAgain],
+    [{ ok: false, kind: "partial", sends: [refused], problems: ["per_transaction_exceeded: the swap was refused before it was sent"] }, false]);
+});
+
 test("executePlan: a leg or shield the provider hasn't settled is unknown", () => {
   for (const events of [[leg(0, "PENDING")], [leg(0, "SUCCESS"), leg(1, "PROCESSING")], [leg(0, "NOT_SENT", { shield: { amount: "5", status: "PENDING" } })]])
     assert.deepEqual(settle(executed(events)), { outcome: lost("executePlan", { planId }), offerAgain: false }, JSON.stringify(events));
