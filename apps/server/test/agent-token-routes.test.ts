@@ -11,6 +11,8 @@ import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
 import { createSignIn } from "../src/signin.ts";
+import { createStrategyProposals, memoryProposalRecords } from "../src/strategy-proposals.ts";
+import { OVERVIEW } from "./fakes.ts";
 import { fakePlatform, HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
@@ -21,6 +23,7 @@ const audit: AuditEntry[] = [];
 const time = { now: Date.now() };
 const cookies: Record<string, string> = {};
 let server: Server, base: string;
+const strategyProposals = createStrategyProposals(memoryProposalRecords(), { audit: { append: async entry => { audit.push(entry); } } });
 
 before(async () => {
   server = createHttpServer(createServer({
@@ -30,7 +33,7 @@ before(async () => {
     publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
     daos: standInDaos({}, {}), daoRequests: await createDaoRequests(join(tempDir("treasury-token-routes-"), "dao-requests.json")),
-    agentTokens: createAgentTokens(memoryTokenRecords(), { now: () => time.now }), tokenRequestsPerHour: 8, tokenBudgetPerHour: 1_000,
+    agentTokens: createAgentTokens(memoryTokenRecords(), { now: () => time.now }), tokenRequestsPerHour: 8, tokenBudgetPerHour: 1_000, strategyProposals,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -166,9 +169,10 @@ test("the API description is public and lists exactly the routes a token may cal
   assert.equal(answer.ok, true);
   assert.deepEqual(answer.value.routes.map((route: { method: string; path: string }) => `${route.method} ${route.path}`).sort(), [
     "GET /api/agents/:agent/activity", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/overview", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
-    "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/unresolved", "POST /api/agents/:agent/proposals"]);
-  const propose = answer.value.routes.find((route: { method: string }) => route.method === "POST");
-  assert.ok(propose.request.properties.requestId, "the request schema is described");
+    "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/unresolved", "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"]);
+  const posted = (path: string) => answer.value.routes.find((route: { method: string; path: string }) => route.method === "POST" && route.path === path);
+  assert.ok(posted("/api/agents/:agent/proposals").request.properties.requestId, "the request schema is described");
+  assert.deepEqual(Object.keys(posted("/api/agents/:agent/strategy-proposals").request.properties).sort(), ["expectedDigest", "reasons", "strategy"]);
 });
 
 test("all tokens together stay within their share of the platform's hourly budget, whichever token makes the calls", async () => {
@@ -198,4 +202,67 @@ test("all tokens together stay within their share of the platform's hourly budge
   } finally {
     small.close();
   }
+});
+
+const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near";
+const DIGEST = `sha256:${"a".repeat(64)}`;
+const strategy = { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, minLegUsd: 2, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } };
+/** The agent's overview under a policy that may move `assets`. */
+const policyOf = (assets: "any" | string[]) => ({ ...OVERVIEW, policy: { ...OVERVIEW.policy, policy: { frozen: false, actions: ["swap"], confidential: true, owner_approval: true, assets,
+  limits: {}, budget: {}, max_actions_per_hour: null } } }) as typeof OVERVIEW;
+
+test("a token proposes a strategy with its reasons: stored for the owner under the token's ID, recorded by it, and its next one replaces it (#206)", async () => {
+  reset();
+  fake.reads.overview = policyOf([USDC, WNEAR]);
+  const { token, view } = await issue();
+  fake.calls.length = 0; audit.length = 0;
+  const made = await bearer(token, "POST", "strategy-proposals", { strategy, reasons: "Hold more NEAR while it's cheap.", expectedDigest: DIGEST });
+  assert.equal(made.status, 200, JSON.stringify(made.body));
+  assert.deepEqual(fake.calls.filter(call => !call.startsWith("identity")), ["reads.overview owner--near portfolio"], "one read, for the policy's assets");
+  assert.deepEqual(audit.map(entry => [entry.who, entry.action, entry.stage, entry.subject]),
+    [[`token:${view.id}`, "strategy-propose", "attempt", made.body.value.id], [`token:${view.id}`, "strategy-propose", "result", made.body.value.id]]);
+  const listed = await session("GET", "strategy-proposals");
+  assert.deepEqual(listed.body.value.map((p: { id: string; source: string; reasons: string; against: string }) => [p.id, p.source, p.reasons, p.against]),
+    [[made.body.value.id, `token:${view.id}`, "Hold more NEAR while it's cheap.", DIGEST]]);
+
+  const again = await bearer(token, "POST", "strategy-proposals", { strategy: { ...strategy, maxCostBps: 60 }, reasons: "A tighter cost limit.", expectedDigest: DIGEST });
+  assert.equal(again.status, 200);
+  assert.deepEqual((await session("GET", "strategy-proposals")).body.value.map((p: { id: string }) => p.id), [again.body.value.id], "one open per token");
+  fake.reads.overview = OVERVIEW;
+});
+
+test("a token's malformed proposal, or one targeting an asset outside the policy, is refused and nothing is stored (#206)", async () => {
+  reset();
+  fake.reads.overview = policyOf([USDC]);
+  const { token } = await issue();
+  const before = (await session("GET", "strategy-proposals")).body.value.length;
+  audit.length = 0;
+  const malformed: unknown[] = [
+    { strategy, reasons: "", expectedDigest: DIGEST },
+    { strategy, reasons: "x".repeat(2_001), expectedDigest: DIGEST },
+    { strategy: { ...strategy, maxCostBps: 1_001 }, reasons: "why", expectedDigest: DIGEST },
+    { strategy, reasons: "why", expectedDigest: "abc" },
+    { strategy, reasons: "why", expectedDigest: DIGEST, extra: 1 },
+  ];
+  for (const body of malformed) assert.deepEqual((await bearer(token, "POST", "strategy-proposals", body)).body, { ok: false, kind: "refused", code: "bad_request" }, JSON.stringify(body).slice(0, 80));
+  assert.deepEqual((await bearer(token, "POST", "strategy-proposals", { strategy, reasons: "why", expectedDigest: DIGEST })).body,
+    { ok: false, kind: "refused", code: "strategy_not_allowed" }, "wNEAR is outside a policy of USDC");
+  assert.equal((await session("GET", "strategy-proposals")).body.value.length, before);
+  assert.deepEqual(audit.filter(entry => entry.action === "strategy-propose"), [], "nothing recorded");
+  fake.reads.overview = OVERVIEW;
+});
+
+test("the owner's own session can't propose a strategy: the owner changes it on the Strategy page (#206)", async () => {
+  reset();
+  assert.deepEqual((await session("POST", "strategy-proposals", { strategy, reasons: "why", expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "token_only" });
+});
+
+test("a token's strategy proposals count against its hourly limit like any of its calls (#206)", async () => {
+  reset();
+  fake.reads.overview = policyOf("any");
+  const { token } = await issue();
+  const answers: number[] = [];
+  for (let i = 0; i < 9; i++) answers.push((await bearer(token, "POST", "strategy-proposals", { strategy, reasons: `Proposal ${i}`, expectedDigest: DIGEST })).status);
+  assert.deepEqual(answers, [200, 200, 200, 200, 200, 200, 200, 200, 429], "8 an hour in this server's settings");
+  fake.reads.overview = OVERVIEW;
 });

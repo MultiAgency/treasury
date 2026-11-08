@@ -35,7 +35,7 @@ export const COOKIE = "__Host-treasury_session";
  */
 const TOKEN_ROUTES = ["GET /api/agents/:agent/overview", "GET /api/agents/:agent/activity", "GET /api/agents/:agent/unresolved",
   "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
-  "POST /api/agents/:agent/proposals"] as const;
+  "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"] as const;
 const BEARER = /^Bearer (\S+)$/;
 const MAX_BODY = 16 * 1024;
 
@@ -1107,6 +1107,29 @@ export const routes: Route[] = [
   },
   {
     /**
+     * A strategy proposed by software holding one of the agent's tokens (#206), for the owner to adopt or decline: checked
+     * against the Strategy page's bounds and the policy's assets (one `overview` read), then stored and recorded by the
+     * token. A token's next proposal supersedes its open one. The owner changes the strategy themselves, so a session's
+     * call is refused (`token_only`).
+     */
+    method: "POST", path: "/api/agents/:agent/strategy-proposals", access: "owner-fresh", needs: "propose",
+    async handle({ body, identity, viaToken }, { platform, strategyProposals }) {
+      if (!viaToken) return refused(403, "token_only");
+      const { agent, owner } = identity!;
+      const input = parse(contract.strategyProposalRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      const overview = await relay(() => platform.reads.overview(organizationOf(owner), agent), agent);
+      if (!overview.ok) return readFailure(overview, agent, "overview");
+      const policy = overview.value.policy.policy;
+      if (!policy) return refused(409, "policy_not_in_force");
+      const proposed = await strategyProposals.propose({ agent, from: `token:${viaToken.id}`, strategy: input.strategy, reasons: input.reasons,
+        against: input.expectedDigest, policyAssets: policy.assets }).catch(() => undefined);
+      return proposed === undefined ? unavailable() : proposed.ok ? ok({ id: proposed.id })
+        : "full" in proposed ? refused(409, "too_many_proposals") : refused(409, "strategy_not_allowed");
+    },
+  },
+  {
+    /**
      * Adopts a proposed strategy: saved over the strategy it was compared against, by that one's digest, as the owner's
      * own save is. The page then asks for the grant that binds it (`/grant`, with the digest answered): saving comes
      * first, since the grant binds the saved strategy's digest. A strategy saved since it was proposed refuses it
@@ -1374,8 +1397,9 @@ function agentApi() {
       route("GET /api/agents/:agent/proposals", "The agent's proposals", proposalList),
       route("GET /api/agents/:agent/proposals/:id", "One proposal", contract.proposalRead),
       route("POST /api/agents/:agent/proposals", "Proposes a rebalance to the saved strategy for the owner to approve or reject. Name a `requestId`: after a lost answer, ask again with the same one and the proposal made is returned, never a second", contract.rebalanceMade, contract.rebalanceRequest),
+      route("POST /api/agents/:agent/strategy-proposals", "Proposes a strategy, with your reasons, for the owner to adopt or decline. Name the digest of the saved strategy you read (`GET …/strategy`): adopting it saves over that one, or not at all. Targets may name only the policy's assets (`strategy_not_allowed`). Your next proposal replaces your open one, so a lost answer is safe to send again", contract.strategyProposed, contract.strategyProposalRequest),
     ],
-    refused: "Verdicts, execution, owner actions, funding, sweeps, strategy and autopilot changes and consents are not available to a token: the owner does those in the app.",
+    refused: "Verdicts, execution, owner actions, funding, sweeps, strategy and autopilot changes and consents are not available to a token: the owner does those in the app, and adopts or declines the strategies a token proposes.",
   };
 }
 
