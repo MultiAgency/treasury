@@ -270,6 +270,12 @@ export const strategyProposal = z.strictObject({
   createdAt: z.number().int(),
 });
 export const strategyProposalsRead = z.array(strategyProposal);
+/**
+ * A strategy proposed by an agent's token (#206): the strategy, why, and the digest of the saved strategy it was read
+ * against (`GET …/strategy`), which adopting it saves over.
+ */
+export const strategyProposalRequest = z.strictObject({ strategy: strategyInput, reasons: strategyProposal.shape.reasons, expectedDigest: enableRequest.shape.expectedDigest });
+export const strategyProposed = z.strictObject({ id: strategyProposal.shape.id });
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
 /** The NEP-413 intent a wallet owner signs in their wallet, exactly as the platform prepared it. */
