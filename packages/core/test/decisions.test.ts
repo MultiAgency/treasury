@@ -88,6 +88,16 @@ test("a value JSON can't hold is decided on as the log will store it, so the rep
   assert.deepEqual(replayDecisions([record]).ok, true);
 });
 
+test("an intent's reason isn't compared: a reworded reason replays the same, a changed zone doesn't (#208)", () => {
+  const records = run();
+  const reworded = structuredClone(records);
+  reworded[0]!.intent.reason = "worded before #208";
+  assert.deepEqual(replayDecisions(reworded), { ok: true, count: records.length });
+  const rezoned = structuredClone(records);
+  rezoned[0]!.intent.zone = "dca-3";
+  assert.equal((replayDecisions(rezoned) as { part?: string }).part, "intent");
+});
+
 test("a broken record counts as a mismatch, not a pass", () => {
   const broken = { ...run()[1]!, input: undefined } as unknown as DecisionRecord;
   assert.equal(replayDecisions([broken]).ok, false);

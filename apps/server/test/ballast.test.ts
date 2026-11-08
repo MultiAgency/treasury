@@ -122,8 +122,21 @@ test("an executed buy spends its DCA units once; afterwards its zone waits to re
   const event = await w.tick();
   assert.equal(w.states.find(ORG, AGENT).dcaUnitsUsed, 1);
   assert.equal(event.skipped, "ballast holds");
-  assert.match(String(event.reason), /dca-1 already traded/);
+  assert.match(String(event.reason), /already proposed in dca-1: dca-1 waits to re-arm/);
   assert.equal(w.requests.of(ORG, AGENT).length, 0, "the ended request is dropped");
+});
+
+test("a rejected buy traded nothing, but its zone still waits to re-arm, and the hold says it was proposed in (#208)", async () => {
+  const w = await world();
+  await w.tick();
+  const [requestId, view] = [...w.stored][0]!;
+  w.stored.set(requestId, { ...view, state: "rejected" });
+  w.clock.now += 30 * 60_000;
+  w.answers.overview = overview(3.12, w.clock.now);
+  const event = await w.tick();
+  assert.equal(w.states.find(ORG, AGENT).dcaUnitsUsed, 0);
+  assert.equal(event.skipped, "ballast holds");
+  assert.equal(event.reason, "a trade was already proposed in dca-1: dca-1 waits to re-arm");
 });
 
 test("a rejected or expired proposal spends no DCA units, but still counts towards the day's turnover", async () => {

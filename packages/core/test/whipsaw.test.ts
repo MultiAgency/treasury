@@ -35,7 +35,7 @@ test("the opposite direction is locked out for a day, then free", () => {
 
 test("the same zone doesn't trade again until it re-arms", () => {
   const state = { lastActionAt: NOW - 48 * HOUR, lastAction: "buy-volatile" as const, disarmed: "dca-1" as const };
-  assert.match(gate(buy("dca-1"), state, "normal", NOW).reason, /re-arm/);
+  assert.equal(gate(buy("dca-1"), state, "normal", NOW).reason, "a trade was already proposed in dca-1: dca-1 waits to re-arm");
   assert.equal(gate(buy("dca-2"), state, "normal", NOW).action, "buy-volatile");
 });
 

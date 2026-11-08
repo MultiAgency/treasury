@@ -81,7 +81,7 @@ export function gate(p: Intent, state: WhipsawState, regime: Regime, now: number
   if (regime !== "normal") return hold(p, `regime ${regime}: not trading`);
   const badState = stateProblems(state);
   if (badState.length > 0) return hold(p, `unusable anti-whipsaw state: ${badState.join("; ")}`);
-  if (heldBy(p.zone, state.disarmed)) return hold(p, `${state.disarmed} already traded: ${p.zone} waits to re-arm`);
+  if (heldBy(p.zone, state.disarmed)) return hold(p, `a trade was already proposed in ${state.disarmed}: ${p.zone} waits to re-arm`);
   if (state.lastActionAt !== undefined) {
     const since = now - state.lastActionAt;
     if (!(since >= 0)) return hold(p, "last action is dated in the future");
