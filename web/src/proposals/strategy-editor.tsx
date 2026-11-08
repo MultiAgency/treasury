@@ -58,14 +58,17 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
     heading.current?.focus();
   };
 
-  return <form noValidate className="flex flex-col gap-4" aria-label="Edit strategy" onSubmit={event => {
+  return <form noValidate className="flex flex-col gap-5" aria-label="Edit strategy" onSubmit={event => {
     event.preventDefault();
     const parsed = parseStrategyDraft(draft);
     setErrors(parsed.errors);
     if (parsed.strategy) void save(parsed.strategy);
     else focusInvalid(event.currentTarget);
   }}>
-    <h3 ref={heading} tabIndex={-1} className="text-base font-semibold">Edit strategy</h3>
+    <div className="flex flex-col gap-0.5">
+      <h3 ref={heading} tabIndex={-1} className="text-base font-semibold">Edit strategy</h3>
+      <p className="text-sm text-muted-foreground">Saving turns autopilot off, and the new strategy needs authorizing before autopilot or Run now can act on it. It doesn't change the signed policy.</p>
+    </div>
     <FieldSet className="gap-3">
       <FieldLegend variant="label">Target allocation · total 100%</FieldLegend>
       <FieldGroup className="grid gap-3 sm:grid-cols-3">
@@ -73,23 +76,25 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
           value={value} error={errors[asset] ?? errors.targets} onChange={event => setDraft({ ...draft, targets: { ...draft.targets, [asset]: event.target.value } })} />)}
       </FieldGroup>
     </FieldSet>
-    <FieldGroup className="grid gap-3 sm:grid-cols-2">
-      {field("everyMin", "Run every (minutes)")}
-      {field("maxUsd", "Automatic rebalance ceiling (USD)")}
-    </FieldGroup>
-    <p className="text-sm text-muted-foreground">$0 leaves swaps for proposals you approve. With a grant for the strategy, scheduled runs can still shield public balances.</p>
-    <Details summary="Swap limits">
+    <FieldSet className="gap-3">
+      <FieldLegend variant="label">Schedule</FieldLegend>
+      <FieldGroup className="grid gap-3 sm:grid-cols-2">
+        {field("everyMin", "Run every (minutes)")}
+        {field("maxUsd", "Automatic rebalance ceiling (USD)")}
+      </FieldGroup>
+      <p className="text-xs text-muted-foreground">$0 leaves swaps for proposals you approve. With a grant for the strategy, scheduled runs can still shield public balances.</p>
+    </FieldSet>
+    <Details summary="Swap limits" className="rounded-lg border border-border px-3">
       <FieldGroup className="grid gap-3 sm:grid-cols-2">{field("minLegUsd", "Minimum swap (USD)")}{field("maxCost", "Maximum swap cost (%)")}</FieldGroup>
-      <p className="text-sm text-muted-foreground">The cost limit applies at the minimum received shown in each swap's quote.</p>
+      <p className="pb-3 text-xs text-muted-foreground">The cost limit applies at the minimum received shown in each swap's quote.</p>
     </Details>
-    <p className="text-sm">Saving turns autopilot off, and the new strategy needs authorizing before autopilot or Run now can act on it. It doesn't change the signed policy.</p>
-    {stale && <div role="alert" className="flex flex-col gap-3 rounded-md border p-4 text-sm">
+    {stale && <div role="alert" className="flex flex-col gap-3 rounded-lg border border-warning/40 bg-warning-muted p-4 text-sm">
       <p>{maybeSaved ? "The saved strategy changed, and your save's answer was lost: this may be your own save. Your draft is kept. Review the current strategy before saving again."
         : "The saved strategy changed since you began editing. Your draft is kept. Review the current strategy before saving over it."}</p>
       <StrategyTerms strategy={strategy.strategy} label="Current strategy targets" />
       <Button type="button" variant="outline" className="self-start" onClick={review}>Review against the current strategy</Button>
     </div>}
-    <div className="flex flex-wrap justify-end gap-3">
+    <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
       <Button type="button" variant="ghost" disabled={busy} onClick={() => { if (!dirty || confirmDiscard()) onDone(false); }}>Cancel</Button>
       <Button type="submit" disabled={busy || stale}>{busy && <Spinner />} Save with autopilot off</Button>
     </div>
