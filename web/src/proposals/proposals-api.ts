@@ -26,6 +26,7 @@ const LOST: Lost = { ok: false, kind: "lost" };
 const correlation = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 /** A run's tick, a proposal's `requestId` or an operation's `correlationId`, as the server takes one in a path. */
 const readId = z.string().regex(/^[A-Za-z0-9_.:-]{1,128}$/);
+const proposalRecordId = contract.strategyProposal.shape.id;
 /** Sign-out answers nothing but that it happened. */
 const nothing = z.strictObject({});
 
@@ -148,6 +149,12 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** Saves a strategy over the one the owner saw, once: autopilot turns off, and it needs authorizing again. */
         saveStrategy: (strategy: z.input<typeof contract.strategyInput>, expectedDigest: string) =>
           call(contract.strategySaved, `${base}/strategy`, { method: "POST", body: contract.strategySaveRequest.parse({ strategy, expectedDigest }) }),
+        /** The strategies agents proposed and the owner hasn't answered (#206), from the server's own records. */
+        strategyProposals: () => call(contract.strategyProposalsRead, `${base}/strategy-proposals`),
+        /** Adopts one: saved over the strategy it was compared against, once. The grant that binds it is asked for after. */
+        adoptStrategyProposal: (id: string) => call(contract.strategySaved, `${base}/strategy-proposals/${proposalRecordId.parse(id)}/adopt`, { method: "POST" }),
+        /** Declines one: closed, and not proposed again by its source. */
+        declineStrategyProposal: (id: string) => call(z.strictObject({}), `${base}/strategy-proposals/${proposalRecordId.parse(id)}/decline`, { method: "POST" }),
         autopilot: () => call(contract.autopilotRead, `${base}/autopilot`),
         /** Autopilot on for the strategy digest the owner saw, off, or one run now: each sent once, never again for a lost answer. */
         enableAutopilot: (expectedDigest: string) =>
@@ -202,6 +209,7 @@ export type DepositRead = z.output<typeof contract.depositRead>["deposit"];
 export type SweepRun = z.output<typeof contract.sweepRun>;
 export type BooksRead = z.output<typeof contract.booksRead>;
 export type StrategyRead = z.output<typeof contract.strategyRead>;
+export type StrategyProposal = z.output<typeof contract.strategyProposal>;
 export type GrantPrepared = z.output<typeof contract.grantPrepared>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */

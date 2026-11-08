@@ -11,6 +11,7 @@ import type { Identity } from "./proposals-api";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
+import { StrategyProposals } from "./strategy-proposals";
 import { TargetAllocation } from "./strategy-terms";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
@@ -43,7 +44,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const [busy, setBusy] = useState<"enable" | "stop" | "tick">();
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
-  const refresh = () => [reads.strategy, reads.autopilot, reads.runs].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
+  const refresh = () => [reads.strategy, reads.strategyProposals, reads.autopilot, reads.runs].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const fetching = strategy.isFetching || schedule.isFetching;
 
   const act = async (what: "enable" | "stop" | "tick") => {
@@ -84,6 +85,12 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
     setReturnFocus(true);
     refresh();
     if (saved) { setError(undefined); setNotice("Strategy saved. Authorize it next."); }
+  };
+  /** A proposal adopted is a save like the editor's: the Authorize step then asks for the grant that binds it. */
+  const adopted = () => {
+    refresh();
+    setError(undefined);
+    setNotice("Proposal adopted and saved. Authorize it next.");
   };
 
   const stepTwo: StepState = bound ? "done" : editing || !s?.executor ? "pending" : "current";
@@ -127,6 +134,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             </div> : <p className="text-xs text-muted-foreground">Autopilot and Run now need a member who may both file and vote on proposals.</p>}
           </Step>
         </Stepper>
+        {!editing && <StrategyProposals reads={reads} identity={identity} strategy={s!} onAdopted={adopted} />}
         {editing ? <Card><StrategyEditor reads={reads} strategy={s!} onDone={doneEditing} /></Card>
           : <div className="grid gap-4 lg:grid-cols-5">
             <Card className="lg:col-span-3">

@@ -50,6 +50,16 @@ test("a strategy saved over the one the owner saw: autopilot off, the grant no l
   assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["strategy-save", "attempt"], ["strategy-save", "result"]]);
 });
 
+test("a cash floor saved with the strategy is kept: the platform saves a strategy whole, so one left out is removed (platform#23)", async () => {
+  reset();
+  const floored = { ...strategy, cashFloor: { usd: 500, assets: [USDC] } };
+  const saved = await call("POST", { strategy: floored, expectedDigest: DIGEST });
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(contract.strategyRead.parse((await call("GET")).body.value).strategy.cashFloor, floored.cashFloor);
+  for (const cashFloor of [{ usd: 0, assets: [USDC] }, { usd: 500, assets: [] }, { usd: 500, assets: [USDC, USDC] }, { usd: 500, assets: ["nep141:usdt.tether-token.near"] }])
+    assert.deepEqual((await call("POST", { strategy: { ...strategy, cashFloor }, expectedDigest: DIGEST })).body, { ok: false, kind: "refused", code: "bad_request" }, JSON.stringify(cashFloor));
+});
+
 test("a strategy the platform wouldn't take is refused before anything is asked or recorded", async () => {
   reset();
   const cases: [string, unknown][] = [

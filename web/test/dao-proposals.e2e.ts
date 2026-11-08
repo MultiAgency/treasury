@@ -22,6 +22,7 @@ import { loadPage } from "../../apps/server/src/page.ts";
 import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
+import { createStrategyProposals, memoryProposalRecords } from "../../apps/server/src/strategy-proposals.ts";
 import { wallet } from "../../apps/server/test/fakes.ts";
 import { daoVote, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
@@ -29,6 +30,8 @@ import { tempDir } from "../../scripts/temp-dirs.ts";
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, dao: string, council: ReturnType<typeof wallet>;
 let server: Server, origin: string, browser: Browser, page: Page;
+/** The strategies proposed for the agent, as the server keeps them: a test proposes one here, as Ballast's mandate would. */
+let strategyProposals: ReturnType<typeof createStrategyProposals>;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
 const unexpected: string[] = [];
 /** What the member's wallet was asked to send, in order. */
@@ -58,6 +61,7 @@ before(async () => {
   // The store the server records through (`main.ts`): a hash chain, checked before the first append.
   const audit = chainedFileAudit(join(tempDir("treasury-dao-proposals-"), "audit.jsonl"));
   await audit.check();
+  strategyProposals = createStrategyProposals(memoryProposalRecords(), { audit });
   handle = createServer({
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
@@ -66,6 +70,7 @@ before(async () => {
     audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
     daos: chainDaos({ rpcUrl: state.chain.rpc, apiKey: undefined, timeoutMs: 5_000 }),
     daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+    strategyProposals,
     page: await loadPage(join(import.meta.dirname, "..", "dist-proposals")),
   });
 
@@ -217,6 +222,48 @@ test("a council member asks the DAO to authorize the saved strategy: filed from 
   assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
   assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
   assert.deepEqual(await axe(), [], "authorized");
+});
+
+test("a council member adopts a proposed strategy, shown beside the saved one with its source and reasons; the DAO's grant vote is filed, and the strategy reads bound (#206)", { timeout: 150_000 }, async () => {
+  await page.goto(`${origin}/agents/${target.agent}/strategy`);
+  const autopilot = page.getByRole("region", { name: "Autopilot" });
+  await visible(autopilot);
+  // The saved strategy, read as the page reads it, and a proposal against it: 60% USDC, 40% wNEAR, as the balanced profile compiles.
+  const saved = await page.evaluate(async agent => (await (await fetch(`/api/agents/${agent}/strategy`)).json()).value, target.agent) as
+    { digest: string; strategy: { minLegUsd: number; autopilot: { everyMin: number; maxUsd: number } } };
+  const proposed = await strategyProposals.propose({ agent: target.agent, from: "mandate", against: saved.digest, policyAssets: "any",
+    strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, "nep141:eth.omft.near": 0 }, minLegUsd: saved.strategy.minLegUsd, maxCostBps: 50, autopilot: saved.strategy.autopilot },
+    reasons: "Ballast's balanced profile: 40% volatile in wNEAR, and 35% reserve and 25% operating cash in USDC." });
+  assert.ok(proposed.ok);
+
+  await autopilot.getByRole("button", { name: "Check again" }).click();
+  const proposals = autopilot.getByRole("region", { name: "Proposed strategies" });
+  await visible(proposals);
+  await visible(proposals.getByRole("heading", { name: "Ballast's mandate" }));
+  await visible(proposals.getByText("Ballast's balanced profile: 40% volatile in wNEAR"));
+  const wnear = proposals.getByRole("row", { name: /wNEAR target/ });
+  assert.match(await wnear.innerText(), /40%/);
+  assert.deepEqual(await axe(), [], "a proposal listed");
+
+  await proposals.getByRole("button", { name: "Adopt" }).click();
+  const adopt = dialog("Adopt this strategy?");
+  await visible(adopt);
+  assert.match(await adopt.innerText(), /by the DAO's vote on its grant/);
+  await adopt.getByRole("button", { name: "Adopt and save" }).click();
+  await visible(autopilot.getByRole("status").filter({ hasText: "Proposal adopted and saved. Authorize it next." }));
+  await proposals.waitFor({ state: "detached", timeout: 20_000 });
+  await visible(autopilot.getByRole("list", { name: "Strategy targets" }).getByRole("listitem").filter({ hasText: /^\s*wNEAR\s*:\s*40%/ }));
+
+  const filedBefore = sent.length;
+  await autopilot.getByRole("button", { name: "Ask the DAO to authorize this strategy" }).click();
+  const authorize = dialog("Authorize this saved strategy?");
+  await visible(authorize);
+  await authorize.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
+  assert.equal(sent.length, filedBefore + 1, "the grant filed once, from the member's wallet");
+  await visible(autopilot.getByText("Authorized: the agent's grant binds this strategy."));
+  assert.deepEqual(await axe(), [], "adopted and authorized");
+  assert.deepEqual(unexpected, []);
 });
 
 test("a council member proposes to freeze the DAO's agent from the frame: filed from their wallet, its vote shown; then proposes to unfreeze", { timeout: 180_000 }, async () => {

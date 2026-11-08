@@ -6,7 +6,7 @@ import type { AuditEntry } from "../src/audit.ts";
 import type { BallastSettings } from "../src/ballast.ts";
 import * as contract from "../src/contract.ts";
 import { standInDaos, type Policy } from "../src/dao.ts";
-import { createStrategyProposals, fileProposalRecords, MAX_REASONS, memoryProposalRecords, proposeMandate } from "../src/strategy-proposals.ts";
+import { createStrategyProposals, fileProposalRecords, memoryProposalRecords, proposeMandate } from "../src/strategy-proposals.ts";
 import { fakePlatform, ORIGIN, wallet } from "./fakes.ts";
 import { testServer } from "./test-server.ts";
 import { join } from "node:path";
@@ -33,7 +33,7 @@ test("a proposal is validated before it's stored: the Strategy page's bounds, th
     ["a target outside the policy's assets", strategy, "why", [USDC]],
     ["a cash floor in an asset it doesn't manage", { ...strategy, cashFloor: { usd: 100, assets: ["nep141:usdt.tether-token.near"] } }, "why", "any"],
     ["no reasons", strategy, " ", "any"],
-    ["reasons too long", strategy, "x".repeat(MAX_REASONS + 1), "any"],
+    ["reasons too long", strategy, "x".repeat(contract.MAX_PROPOSAL_REASONS + 1), "any"],
   ];
   for (const [label, proposed, reasons, policyAssets] of cases) {
     const answer = await proposals.propose({ agent: "portfolio", from: "mandate", strategy: proposed, reasons, against: DIGEST, policyAssets });
@@ -176,6 +176,7 @@ test("the owner lists the open proposals with their source and reasons, and adop
   reset();
   const id = await proposeFor("portfolio");
   const listed = await call("GET", "strategy-proposals");
+  contract.strategyProposalsRead.parse(listed.body.value);
   assert.deepEqual(listed.body.value.map((p: { id: string; source: string; reasons: string; against: string }) => [p.id, p.source, p.reasons, p.against]),
     [[id, "mandate", "Ballast's balanced profile", DIGEST]]);
 

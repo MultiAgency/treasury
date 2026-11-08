@@ -43,7 +43,9 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
   const save = async (next: NonNullable<ReturnType<typeof parseStrategyDraft>["strategy"]>) => {
     setBusy(true);
     setError(undefined);
-    const saved = await reads.agent.saveStrategy(next, base.digest);
+    // The platform saves a strategy whole: the cash floor this form doesn't edit is sent as saved, or the save removes it.
+    const floor = base.strategy.cashFloor;
+    const saved = await reads.agent.saveStrategy({ ...next, ...(floor && { cashFloor: { usd: floor.usd, assets: floor.assets } }) }, base.digest);
     setBusy(false);
     if (saved.ok) return onDone(true);
     const lost = saved.kind === "lost" || saved.kind === "unavailable";
