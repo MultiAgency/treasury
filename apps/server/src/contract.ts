@@ -212,6 +212,14 @@ export const sweepRun = z.strictObject({
 export const rebalanceRequest = z.strictObject({ requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/) });
 export const rebalanceMade = z.strictObject({ proposal: proposalView });
 /**
+ * A token the app server issues to an owner's agent (#139): how long it lasts (1 to 30 days) and a name to tell it by. The
+ * secret is answered once, with the view; later reads show only the view.
+ */
+export const tokenRequest = z.strictObject({ days: z.number().int().min(1).max(30), label: z.string().trim().max(40).optional() });
+export const tokenView = z.strictObject({ id: z.string(), label: z.string(), createdAt: z.string(), expiresAt: z.string(), lastUsedAt: z.string().nullable() });
+export const tokenIssued = z.strictObject({ token: z.string(), view: tokenView });
+export const tokensRead = z.array(tokenView);
+/**
  * What a consent text is asked for with. A wallet owner's text carries `owner` whatever the body says (#135); `{ owner: true }`
  * is what an older page sent at connect, and still how a connection without `owner` is asked to add it.
  */
