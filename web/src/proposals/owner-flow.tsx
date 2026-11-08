@@ -6,6 +6,7 @@ import type { Identity, OwnerActionPrepared, Result } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
+import { filedText } from "./dao-filing";
 import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
@@ -69,7 +70,7 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
           ? "The answer was lost: it may have been submitted. Its status below says; nothing is sent again." : failureText(submitted, "owner-action"));
       } else if (prepared.dao) {
         const outcome = await file(prepared.dao.transaction, identity.account);
-        setNotice(outcome.kind === "succeeded" ? `Filed. The DAO's vote must pass by ${when(prepared.expiresAt)}, or it expires and nothing takes effect.`
+        setNotice(outcome.kind === "succeeded" ? filedText(prepared.dao.transaction, when(prepared.expiresAt), "or it expires and nothing takes effect")
           : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Ask again."
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }

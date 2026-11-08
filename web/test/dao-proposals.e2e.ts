@@ -217,9 +217,11 @@ test("a council member asks the DAO to authorize the saved strategy: filed from 
   await ask.click();
   const authorize = dialog("Authorize this saved strategy?");
   await visible(authorize);
-  await authorize.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await authorize.getByRole("button", { name: "File in your wallet" }).click();
+  await visible(autopilot.getByText(/^Filed with your approval\. If the DAO needs more votes/));
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
   assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
+  assert.ok((sent.at(-1)!.actions as { params: { methodName: string } }[]).some(action => action.params.methodName === "act_proposal"), "the filing casts the member's approval");
   assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
   assert.deepEqual(await axe(), [], "authorized");
 });
@@ -258,7 +260,7 @@ test("a council member adopts a proposed strategy, shown beside the saved one wi
   await autopilot.getByRole("button", { name: "Ask the DAO to authorize this strategy" }).click();
   const authorize = dialog("Authorize this saved strategy?");
   await visible(authorize);
-  await authorize.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await authorize.getByRole("button", { name: "File in your wallet" }).click();
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
   assert.equal(sent.length, filedBefore + 1, "the grant filed once, from the member's wallet");
   await visible(autopilot.getByText("Authorized: the agent's grant binds this strategy."));
@@ -277,10 +279,10 @@ test("a council member proposes to freeze the DAO's agent from the frame: filed 
   await stop.getByRole("button", { name: "Propose to freeze" }).click();
   const confirm = dialog("Freeze this agent?");
   await visible(confirm);
-  assert.match(await confirm.innerText(), /the DAO's vote must pass within minutes/);
+  assert.match(await confirm.innerText(), /with your approval if your roles let you vote; the vote must pass within minutes/);
   assert.deepEqual(await axe(), [], "the freeze dialog, for a DAO");
-  await confirm.getByRole("button", { name: "File for the DAO's vote" }).click();
-  await visible(stop.getByText(/^Filed\. The DAO's vote must pass by /).or(stop.getByText("Frozen: the agent refuses every send.")));
+  await confirm.getByRole("button", { name: "File in your wallet" }).click();
+  await visible(stop.getByText(/^Filed with your approval\. If the DAO needs more votes, they must come by /).or(stop.getByText("Frozen: the agent refuses every send.")));
   assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
   assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
   await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 60_000 });
@@ -289,7 +291,7 @@ test("a council member proposes to freeze the DAO's agent from the frame: filed 
   await stop.getByRole("button", { name: "Propose to unfreeze" }).click();
   const back = dialog("Unfreeze this agent?");
   await visible(back);
-  await back.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await back.getByRole("button", { name: "File in your wallet" }).click();
   await stop.getByText("Not frozen.").waitFor({ timeout: 60_000 });
   assert.equal(sent.length, filedBefore + 2);
   assert.deepEqual(unexpected, []);
@@ -308,7 +310,7 @@ test("a council member sees the DAO's grants on the policy page, told the vote w
   await page.keyboard.press("Enter");
   const confirm = dialog("Revoke this grant?");
   await visible(confirm);
-  assert.match(await confirm.innerText(), /the DAO's vote has about 5 minutes \(290 seconds\) to pass; until then the grant stays live/);
+  assert.match(await confirm.innerText(), /with your approval if your roles let you vote; the vote has about 5 minutes \(290 seconds\) to pass, and until then the grant stays live/);
   assert.deepEqual(await axe(), [], "the revoke dialog, for a DAO");
   await confirm.getByRole("button", { name: "Cancel" }).click();
   assert.deepEqual(await axe(), [], "the policy page, for a DAO");
@@ -336,7 +338,7 @@ test("a council member proposes a policy edit: told the vote windows first, show
   assert.equal(sent.length, filedBefore, "nothing filed until the member has compared");
   await visible(compare.getByRole("table").or(compare.getByText("The platform reported no terms to compare.")));
   assert.deepEqual(await axe(), [], "the comparison");
-  await compare.getByRole("button", { name: "File for the DAO's vote" }).click();
+  await compare.getByRole("button", { name: "File and vote" }).click();
   await terms.getByText(`${next} actions an hour`).waitFor({ timeout: 90_000 });
   assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
   assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);

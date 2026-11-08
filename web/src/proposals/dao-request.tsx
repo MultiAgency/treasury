@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { TransactionOutcome } from "./wallet-transaction";
-import { filingHeld } from "./dao-filing";
+import { fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { Button, errorMessage } from "../shared/ui";
 import type { DaoRequest } from "./proposals-api";
 import { when } from "./ui";
@@ -52,8 +52,8 @@ export function DaoRequestView({ request, account, onChanged }: { request: DaoRe
       : offer.state === "file" ? (offer.transaction
         ? held ? <p role="status">Waiting for the DAO's proposal to show here. Check again shortly; nothing is offered for filing meanwhile, so it isn't filed twice.</p>
         : <div className="flex flex-col items-start gap-2">
-          <p role="status">No DAO proposal is filed for this yet. Your wallet files it{offer.transaction.actions.length > 1 ? " and casts your approval" : ""}; the DAO's threshold still applies.</p>
-          <Button disabled={filing} onClick={send}>{filing ? "Waiting for the wallet…" : offer.transaction.actions.length > 1 ? "File and vote" : "File the DAO proposal"}</Button>
+          <p role="status">No DAO proposal is filed for this yet. Your wallet files it{filesAndVotes(offer.transaction) ? " and casts your approval" : ""}; the DAO's threshold still applies.</p>
+          <Button disabled={filing} onClick={send}>{filing ? "Waiting for the wallet…" : fileLabel(offer.transaction)}</Button>
         </div>
         : <p role="status">No DAO proposal is filed for this yet, and your roles in the DAO can't file one: a member who may file proposals does.</p>)
       : offer.state === "filed" ? <p role="status">Filed as the DAO's proposal #{offer.proposal}. <a className="underline" href={offer.vote}>Vote on it in Trezu</a>.</p>

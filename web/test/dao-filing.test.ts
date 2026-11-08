@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filingHeld, signerProblem } from "../src/proposals/dao-filing.ts";
+import { filedText, fileLabel, filesAndVotes, filingHeld, signerProblem } from "../src/proposals/dao-filing.ts";
 
 test("after a member files, the transaction isn't offered again until the offer changes, unless the wallet says it failed", () => {
   assert.equal(filingHeld(undefined), false, "nothing filed from this page yet");
@@ -13,4 +13,15 @@ test("a member files only from the account they signed in as: another account in
   assert.equal(signerProblem("alice.near", "alice.near"), null);
   assert.equal(signerProblem("bob.near", "alice.near"), "Your wallet is connected as bob.near, but you signed in as alice.near. Nothing was filed. Switch the wallet to alice.near.");
   assert.equal(signerProblem(undefined, "alice.near"), "No wallet account is connected. Nothing was filed. Connect alice.near.");
+});
+
+const call = (methodName: string) => ({ params: { methodName } });
+
+test("a filing votes when the platform added the member's approval (`act_proposal`), and the page words it so", () => {
+  const filing = { actions: [call("add_proposal")] }, voting = { actions: [call("add_proposal"), call("act_proposal")] };
+  assert.deepEqual([filesAndVotes(filing), filesAndVotes(voting)], [false, true]);
+  assert.deepEqual([fileLabel(filing), fileLabel(voting)], ["File the DAO proposal", "File and vote"]);
+  assert.equal(filedText(filing, "5:00 PM", "or the grant expires unsigned"), "Filed. The DAO's vote must pass by 5:00 PM, or the grant expires unsigned.");
+  assert.equal(filedText(voting, "5:00 PM", "or the grant expires unsigned"),
+    "Filed with your approval. If the DAO needs more votes, they must come by 5:00 PM, or the grant expires unsigned. Its status below says when it passes.");
 });

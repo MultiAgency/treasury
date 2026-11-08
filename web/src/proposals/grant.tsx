@@ -9,6 +9,7 @@ import type { GrantPrepared, Identity, StrategyRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
+import { filedText } from "./dao-filing";
 import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
@@ -84,7 +85,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
           ? "The answer was lost: the grant may have been submitted. Its status below says; nothing is sent again." : failureText(submitted, "autopilot"));
       } else if (prepared.value.dao) {
         const outcome = await file(prepared.value.dao.transaction, identity.account);
-        setNotice(outcome.kind === "succeeded" ? `Filed. The DAO's vote must pass by ${when(prepared.value.expiresAt)}, or the grant expires unsigned.`
+        setNotice(outcome.kind === "succeeded" ? filedText(prepared.value.dao.transaction, when(prepared.value.expiresAt), "or the grant expires unsigned")
           : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Authorize the strategy again."
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }
@@ -109,9 +110,9 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
     <ErrorBox error={error} />
     <ReviewDialog open={reviewing} busy={busy} onClose={() => setReviewing(false)} title="Authorize this saved strategy?"
       description={`A grant bound to this strategy lets the agent act on it within the signed policy for 30 days: on autopilot once you turn it on, and on Run now. It doesn't turn autopilot on. ${dao
-        ? "Your wallet files it as the DAO's proposal; the vote must pass within minutes, before the grant's intent expires."
+        ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the grant's intent expires."
         : "Your wallet signs it; nothing takes effect without your signature."}`}
-      actions={<Button disabled={busy} onClick={() => void authorize()}>{dao ? "File for the DAO's vote" : "Sign in wallet"}</Button>}>
+      actions={<Button disabled={busy} onClick={() => void authorize()}>{dao ? "File in your wallet" : "Sign in wallet"}</Button>}>
       <p className="text-sm">Strategy digest <code className="break-all text-xs">{strategy.digest}</code></p>
     </ReviewDialog>
   </div>;

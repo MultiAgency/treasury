@@ -235,8 +235,8 @@ function Grants({ reads, identity, grants, ownerScope }: { reads: Reads; identit
       </Details>
     </Card>}
     <ReviewDialog open={review !== undefined} busy={flow.busy} onClose={() => setReview(undefined)} title="Revoke this grant?"
-      description={`The grant "${review?.label ?? ""}" stops acting at once: the agent can't send under it, and autopilot stops if it relied on it. It does not move funds or undo what was already sent. Issue a new one from the Strategy page. ${dao ? `A DAO member proposes it, and the DAO's vote has ${DAO_WINDOW_WORDS} to pass; until then the grant stays live.` : "Your wallet signs it; nothing takes effect without your signature."}`}
-      actions={<Button variant="destructive" className={confirmDanger} disabled={flow.busy} onClick={() => review && revoke(review)}>{dao ? "File for the DAO's vote" : "Sign and revoke"}</Button>} />
+      description={`The grant "${review?.label ?? ""}" stops acting at once: the agent can't send under it, and autopilot stops if it relied on it. It does not move funds or undo what was already sent. Issue a new one from the Strategy page. ${dao ? `Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote has ${DAO_WINDOW_WORDS} to pass, and until then the grant stays live.` : "Your wallet signs it; nothing takes effect without your signature."}`}
+      actions={<Button variant="destructive" className={confirmDanger} disabled={flow.busy} onClick={() => review && revoke(review)}>{dao ? "File in your wallet" : "Sign and revoke"}</Button>} />
   </section>;
 }
 

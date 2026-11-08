@@ -81,9 +81,9 @@ function Stop({ reads, identity, inPage }: { reads: Reads; identity: Identity; i
     <ReviewDialog open={review !== undefined} busy={busy} onClose={() => setReview(undefined)}
       title={review === "unfreeze" ? "Unfreeze this agent?" : "Freeze this agent?"}
       description={review === "unfreeze"
-        ? `The agent may send again: autopilot, rebalances you approve, shielding and transfers within the signed policy. ${dao ? "A DAO member proposes it, and the DAO's vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`
-        : `A frozen agent refuses every send: swaps, shields, transfers and autopilot runs, until it is unfrozen. It does not move funds, and it does not undo an operation already sent: check Activity for any without a proven outcome. Proposals approved earlier are invalidated, and new ones can't be approved while it is frozen. ${dao ? "A DAO member proposes it, and the DAO's vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`}
+        ? `The agent may send again: autopilot, rebalances you approve, shielding and transfers within the signed policy. ${dao ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`
+        : `A frozen agent refuses every send: swaps, shields, transfers and autopilot runs, until it is unfrozen. It does not move funds, and it does not undo an operation already sent: check Activity for any without a proven outcome. Proposals approved earlier are invalidated, and new ones can't be approved while it is frozen. ${dao ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`}
       actions={<Button variant={review === "unfreeze" ? "default" : "destructive"} className={review === "unfreeze" ? undefined : confirmDanger} disabled={busy} onClick={() => review && start(review)}>
-        {dao ? "File for the DAO's vote" : review === "unfreeze" ? "Sign and unfreeze" : "Sign and freeze"}</Button>} />
+        {dao ? "File in your wallet" : review === "unfreeze" ? "Sign and unfreeze" : "Sign and freeze"}</Button>} />
   </section>;
 }
