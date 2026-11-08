@@ -6,6 +6,7 @@ import { reviewedPolicyOf, sameReviewedPolicy } from "./policy-review";
 import { useOwnerFlow } from "./owner-flow";
 import type { Identity, OverviewRead } from "./proposals-api";
 import type { agentReads } from "./queries";
+import { fileLabel } from "./dao-filing";
 import { ReviewDialog } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
@@ -112,7 +113,7 @@ export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads:
           <h3 className="font-medium">Compare before you file</h3>
           <p className="text-muted-foreground">The DAO's proposal is public and names only the fields. These are the terms. Its vote must pass within {daoVoteWords()}.</p>
         </div>
-        <div className="flex gap-2"><Button variant="ghost" onClick={flow.dropFiling}>Don't file</Button><Button onClick={() => void flow.fileNow()}>File for the DAO's vote</Button></div>
+        <div className="flex gap-2"><Button variant="ghost" onClick={flow.dropFiling}>Don't file</Button><Button onClick={() => void flow.fileNow()}>{flow.toFile.dao ? fileLabel(flow.toFile.dao.transaction) : "File the DAO proposal"}</Button></div>
       </div>
       {comparison.length ? <div className="overflow-x-auto rounded-lg border border-border"><table className="w-full text-left text-xs">
         <thead><tr className="border-b border-border text-muted-foreground"><th scope="col" className="px-3 py-2 font-medium">Field</th><th scope="col" className="px-3 py-2 font-medium">Now</th><th scope="col" className="px-3 py-2 font-medium">Requested</th></tr></thead>

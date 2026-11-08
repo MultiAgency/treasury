@@ -7,7 +7,7 @@ import type { ConsentText, Creation, CreationStatus, Identity } from "./proposal
 import { api, failureOf, setupReads, type agentReads } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { ReviewDialog, SignedText, when } from "./ui";
-import { filingHeld } from "./dao-filing";
+import { filedText, fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { file, sign, WrongAccount } from "./wallet";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
@@ -264,7 +264,7 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
     try {
       const outcome = await file(filing.dao!.transaction, identity.account);
       setLast({ outcome: outcome.kind, correlationId: filing.correlationId });
-      setNotice(outcome.kind === "succeeded" ? "Filed. The DAO's members vote on it now; the agent is created once the vote passes."
+      setNotice(outcome.kind === "succeeded" ? filedText(filing.dao!.transaction, when(filing.expiresAt), "or the creation expires unsigned")
         : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Create the agent again."
         : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
     } catch (problem) {
@@ -287,9 +287,9 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
           : <>
             {created.confirm && <p>Sign the creation on the platform's own page, which shows exactly what you sign: <a className="underline" href={created.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>. It expires {when(created.confirm.expiresAt)}.</p>}
             {created.dao && <>
-              <p>Your wallet files the DAO's proposal to create the agent{created.dao.transaction.actions.length > 1 ? " and casts your approval" : ""}. The vote must pass by {when(created.expiresAt)}, or the creation expires unsigned.</p>
+              <p>Your wallet files the DAO's proposal to create the agent{filesAndVotes(created.dao.transaction) ? " and casts your approval" : ""}. The vote must pass by {when(created.expiresAt)}, or the creation expires unsigned.</p>
               <p className="text-sm">The DAO's proposal and every vote on it are public and permanent.</p>
-              {held ? null : <Button disabled={busy} onClick={() => fileDao(created)}>{busy ? "Waiting for the wallet…" : created.dao.transaction.actions.length > 1 ? "File and vote" : "File the DAO proposal"}</Button>}
+              {held ? null : <Button disabled={busy} onClick={() => fileDao(created)}>{busy ? "Waiting for the wallet…" : fileLabel(created.dao.transaction)}</Button>}
             </>}
             <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly."
               : !stage ? "Reading its status…" : STAGE_WORDS[stage]}</p>

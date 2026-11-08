@@ -1,5 +1,22 @@
 import type { TransactionOutcome } from "./wallet-transaction.ts";
 
+type Filing = { actions: readonly { params: { methodName: string } }[] };
+
+/**
+ * Whether a member's filing also casts their approval: the platform adds the vote (`act_proposal`) for a member who may
+ * vote (`proposalAndVote`, platform `src/dao-owner.ts`). With a one-vote threshold the proposal then passes at once.
+ */
+export const filesAndVotes = (transaction: Filing) => transaction.actions.some(action => action.params.methodName === "act_proposal");
+/** The button that files it, once the transaction is known. */
+export const fileLabel = (transaction: Filing) => filesAndVotes(transaction) ? "File and vote" : "File the DAO proposal";
+/**
+ * What the page says once the wallet sent a filing: whose votes are still needed, by when, and `otherwise`, what happens
+ * if they don't come. One that voted may already have passed; its status, read next, says.
+ */
+export const filedText = (transaction: Filing, until: string, otherwise: string) => filesAndVotes(transaction)
+  ? `Filed with your approval. If the DAO needs more votes, they must come by ${until}, ${otherwise}. Its status below says when it passes.`
+  : `Filed. The DAO's vote must pass by ${until}, ${otherwise}.`;
+
 /**
  * Whether filing stays held after the member's wallet answered `last`. Only a failure proves nothing was filed. After
  * a success, or an answer that didn't say, the DAO's proposal may not be readable yet (the server reads the DAO's
