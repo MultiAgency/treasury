@@ -186,6 +186,16 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
     return event({ stopped: state.stopped.reason, note: "the owner's consent for this app has ended: they connect again on the proposals page" });
   };
 
+  /**
+   * Drops a request the platform never stored, and undoes a Ballast proposal under it (#190): it was never made, so it
+   * mustn't disarm a zone. The disarm spaces out trades that were proposed; pacing the retries is this loop's own job (the
+   * backoff, or a stop until the owner reconnects or the server restarts).
+   */
+  const dropUnstored = async (watched: WatchedAgent, request: StoredRequest) => {
+    await requests.drop(request);
+    await ballast?.unmade(watched.organization, watched.agent, request.requestId);
+  };
+
   /** Sends `request` and records what its answer says. A lost answer keeps it, to be sent again unchanged. */
   const send = async (watched: WatchedAgent, request: StoredRequest, event: Eventer, points?: number) => {
     const { organization, agent } = watched, state = stateOf(watched);
@@ -201,10 +211,9 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       return { ...proposed, notified };
     }
     if (answer.kind === "refused") {
-      // A refusal stores nothing, so the request can go, and a Ballast proposal under it was never made (#190). A
-      // withdrawn one was made, under a consent since replaced, so it stays counted.
-      await requests.drop(request);
-      if (answer.code !== "withdrawn") await ballast?.unmade(watched.organization, watched.agent, request.requestId);
+      // A refusal stores nothing, so the request can go. A withdrawn proposal was made, under a consent since replaced,
+      // so it stays counted.
+      if (answer.code === "withdrawn") await requests.drop(request); else await dropUnstored(watched, request);
       switch (answer.code) {
         // Nothing worth proposing at these quotes, which drift() can't see: quote again later.
         case "not_proposable":
@@ -217,10 +226,10 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       state.stopped = { reason: `refused: ${answer.code ?? answer.error}`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
     }
-    if (answer.kind === "forbidden") { await requests.drop(request); return stop(watched, event); }
+    if (answer.kind === "forbidden") { await dropUnstored(watched, request); return stop(watched, event); }
     // The gateway answers a request it refuses with a plain 4xx, which the SDK reports as unknown: nothing reached the agent.
     if (answer.kind === "unknown" && answer.httpStatus !== undefined && answer.httpStatus >= 400 && answer.httpStatus < 500 && answer.httpStatus !== 408 && answer.httpStatus !== 429) {
-      await requests.drop(request);
+      await dropUnstored(watched, request);
       state.stopped = { reason: `refused by the gateway (${answer.httpStatus})`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
     }
