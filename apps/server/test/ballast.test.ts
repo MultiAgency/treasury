@@ -8,13 +8,14 @@ import { chainedFileAudit, verifyChain } from "../src/chain.ts";
 import { replayAuditLog } from "../../../packages/core/src/index.ts";
 import type { ProposalAnswer, WatchPlatform } from "../src/platform.ts";
 import { createHolds, createRequests } from "../src/requests.ts";
+import { createStrategyProposals, memoryProposalRecords } from "../src/strategy-proposals.ts";
 import { loadWatchConfig } from "../src/watch-config.ts";
 import { createWatch, type WatchedAgent } from "../src/watch.ts";
 import { proposal } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const ORG = "owner--near", AGENT = "portfolio";
-const WNEAR = "nep141:wrap.near", USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
+const WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near", USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 const HOUR = 3_600_000, DAY = 24 * HOUR;
 const T0 = Date.parse("2026-11-06T12:00:00.000Z");
 const SETTINGS: BallastSettings = { profile: "balanced", monthlySpendUsd: 2_000, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"] };
@@ -36,11 +37,11 @@ function overview(price: number | null, now: number, change: Partial<OwnerOutput
     ({ asset, symbol, decimals, public: 0n, confidential: 0n, price: rowPrice, priceUpdatedAt: new Date(now - 60_000).toISOString(), priceExpiresAt: new Date(now + 240_000).toISOString(), usd });
   return {
     agentId: "id-portfolio", book: [row(USDC, "USDC", 6, 1, 85_000), row(WNEAR, "wNEAR", 24, price, price === null ? null : 15_000)], unmanaged: [],
-    target: { [USDC]: 0.85, [WNEAR]: 0.15 }, rebalance: { minLegUsd: 1, maxCostBps: 50 }, notInForce: null, ...change,
+    target: { [USDC]: 0.85, [WNEAR]: 0.15 }, rebalance: { minLegUsd: 1, maxCostBps: 50 }, policy: { policy: { assets: "any" } }, notInForce: null, ...change,
   } as unknown as OwnerOutput<"overview">;
 }
 
-async function world({ seeded = true, failAudit = false, max }: { seeded?: boolean; failAudit?: boolean; max?: number } = {}) {
+async function world({ seeded = true, failAudit = false, max, proposals = false }: { seeded?: boolean; failAudit?: boolean; max?: number; proposals?: boolean } = {}) {
   const dir = tempDir("treasury-ballast-");
   const clock = { now: T0 };
   const requests = await createRequests(join(dir, "requests.json"), max === undefined ? {} : { max });
@@ -54,6 +55,8 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
     overview: async () => ({ ok: true, value: answers.overview }),
     unresolved: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["unresolved"]>>,
     autopilot: async () => ({ ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
+    strategy: async () => ({ ok: true, value: { strategy: { targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 }, minLegUsd: 1, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } },
+      digest: `sha256:${"c".repeat(64)}` } }) as unknown as Awaited<ReturnType<WatchPlatform["strategy"]>>,
     list: async () => ({ ok: true, value: { proposals: [...stored.values()] } }),
     get: async (_o, _a, id) => {
       const found = [...stored.values()].find(view => view.id === id);
@@ -74,8 +77,10 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
     failAudit ? async () => { throw new Error("disk full"); } : undefined);
   await audit.check();
   const ballast = createBallast({ history, states, audit, now: () => clock.now });
-  const watch = createWatch({ platform, requests, holds: await createHolds(join(dir, "requests.json.holds")), publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
-  return { dir, clock, answers, stored, sent, history, states, requests, audit, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent) };
+  const strategyProposals = proposals ? createStrategyProposals(memoryProposalRecords(), { audit: { append: async () => {} }, now: () => clock.now }) : undefined;
+  const watch = createWatch({ platform, requests, holds: await createHolds(join(dir, "requests.json.holds")), publicOrigin: "https://treasury.test", now: () => clock.now, ballast,
+    ...(strategyProposals && { strategyProposals }) });
+  return { dir, clock, answers, stored, sent, history, states, requests, audit, strategyProposals, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent) };
 }
 
 test("a warmed-up history 22% under its reference proposes one DCA buy of explicit legs, stored before it's sent", async () => {
@@ -309,4 +314,20 @@ test("a decision that can't be recorded is never proposed: the tick fails and no
   await assert.rejects(w.tick(), /disk full/);
   assert.equal(w.sent.length, 0);
   assert.deepEqual(w.states.find(ORG, AGENT).proposed, []);
+});
+
+test("the mandate proposer runs on Ballast's tick beside its decision: one strategy proposed, the tick's trade unchanged (#206)", async () => {
+  const w = await world({ proposals: true });
+  const event = await w.tick();
+  assert.ok("proposed" in event, "the DCA buy is still proposed");
+  const [open] = w.strategyProposals!.open(AGENT);
+  assert.deepEqual(event.strategy, { proposed: open!.id });
+  assert.deepEqual([open!.source, open!.strategy.targetBps, open!.against], ["mandate", { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, `sha256:${"c".repeat(64)}`]);
+  // Once the trade has ended and the tick reads the agent again, its strategy proposal is still open: no second one.
+  const [requestId, view] = [...w.stored][0]!;
+  w.stored.set(requestId, { ...view, state: "rejected" });
+  w.clock.now += 30 * 60_000;
+  w.answers.overview = overview(3.12, w.clock.now);
+  assert.deepEqual((await w.tick()).strategy, { skipped: "open", id: open!.id });
+  assert.equal(w.strategyProposals!.open(AGENT).length, 1);
 });

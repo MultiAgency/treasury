@@ -8,7 +8,8 @@ import { createHash } from "node:crypto";
 export type AuditEntry = {
   /**
    * The signed-in NEAR account the action was relayed for; for a call by an agent's token (#139), `token:<id>`, which
-   * names the token and so, in the token's own records, the account that issued it.
+   * names the token and so, in the token's own records, the account that issued it; for a strategy Ballast's mandate
+   * compiler proposed (`strategy-propose`, #206), `mandate`.
    */
   who: string;
   /**
@@ -18,7 +19,8 @@ export type AuditEntry = {
    * result, for the DAO (`who`).
    */
   action: "setup" | "create" | "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-setup" | "dao-setup-reserved" | "dao-consent"
-    | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose" | "autopilot-on" | "autopilot-off" | "run-now" | "grant" | "grant-submit" | "strategy-save" | "freeze" | "unfreeze" | "grant-revoke" | "policy-update" | "owner-submit" | "token-issue" | "token-revoke";
+    | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose" | "autopilot-on" | "autopilot-off" | "run-now" | "grant" | "grant-submit" | "strategy-save" | "freeze" | "unfreeze" | "grant-revoke" | "policy-update" | "owner-submit" | "token-issue" | "token-revoke"
+    | "strategy-propose" | "strategy-adopt" | "strategy-decline";
   /**
    * The agent the action concerns. A setup's attempt has none: the platform names the agent it reserves in its answer.
    * `setup`: a wallet owner's signed setup text relayed (`subject`: the setup consent); `create`: an agent's creation

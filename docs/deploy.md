@@ -33,6 +33,7 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 | `TREASURY_AUDIT_FILE` | `/data/audit.jsonl` |
 | `TREASURY_DAO_REQUESTS_FILE` | `/data/dao-requests.json` |
 | `TREASURY_AGENT_TOKENS_FILE` | `/data/agent-tokens.json`: the tokens issued to owners' agents (hashed). Without it they last as long as the process |
+| `TREASURY_STRATEGY_PROPOSALS_FILE` | `/data/strategy-proposals.json`: the strategies agents proposed, until the owner answers. Without it they last as long as the process, and a declined one may be proposed again after a restart |
 | `TREASURY_TRUSTED_PROXY_HOPS` | `1`: Railway's edge appends the client's address last (checked 2026-11-05, below). With `0` the server sees whichever edge node forwarded the request, which varies, so the per-address challenge limit doesn't hold |
 | `FASTNEAR_API_KEY` | FastNEAR's key (secret): sign-in's key lookups and DAO policy reads, at its keyed rate |
 

@@ -47,6 +47,8 @@ export type WatchPlatform = {
   overview(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"overview">>>;
   unresolved(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"unresolved">>>;
   autopilot(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"autopilot/get">>>;
+  /** The saved strategy: read only when the mandate proposer has a strategy to propose (#206). */
+  strategy(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"strategy/get">>>;
   list(organization: string, agent: string): Promise<ProposalListAnswer>;
   get(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
   create(organization: string, agent: string, input: AppInputs["proposals/create"]): Promise<ProposalAnswer>;
@@ -343,6 +345,7 @@ export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
       autopilot: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/get"),
+      strategy: async (organization, agent) => (await client()).agent(organization, agent).call("strategy/get"),
       list: proposals.list,
       get: proposals.get,
       create: proposals.create,

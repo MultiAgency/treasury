@@ -32,6 +32,7 @@ export default defineRailway(() => {
       TREASURY_PUBLIC_ORIGIN: preserve(),
       TREASURY_REQUESTS_FILE: preserve(),
       TREASURY_REQUIRED_MOUNT: preserve(),
+      TREASURY_STRATEGY_PROPOSALS_FILE: preserve(),
       TREASURY_TRUSTED_PROXY_HOPS: preserve(),
       TREASURY_WATCH_FILE: preserve(),
     },
