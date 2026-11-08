@@ -7,7 +7,9 @@ import type { ConsentText, Creation, CreationStatus, Identity } from "./proposal
 import { api, failureOf, setupReads, type agentReads } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { ReviewDialog, SignedText, when } from "./ui";
+import { filingHeld } from "./dao-filing";
 import { file, sign, WrongAccount } from "./wallet";
+import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
 import { failureText } from "./words";
 
@@ -224,6 +226,13 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
   const [notice, setNotice] = useState<string>();
   /** The setup consent lapsed: only setting it up again lets the agent be created. */
   const [lapsed, setLapsed] = useState(false);
+  /**
+   * The wallet's last answer to filing, and the creation it answered. Filed (or it may have been), the button isn't
+   * offered again for that creation: a second filing is a second proposal, and the creation's status reads the same
+   * before and after filing. Creating it again starts a new one, which may be filed.
+   */
+  const [last, setLast] = useState<{ outcome: TransactionOutcome["kind"]; correlationId: string }>();
+  const held = last !== undefined && last.correlationId === created?.correlationId && filingHeld(last.outcome);
   const status = useQuery({
     queryKey: [...reads.identity.queryKey.slice(0, 2), "creation", created?.correlationId],
     queryFn: async (): Promise<CreationStatus> => {
@@ -249,11 +258,12 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
     if (prepared.kind === "refused" && prepared.code === "already_created") void client.invalidateQueries({ queryKey: reads.identity.queryKey });
   };
 
-  const fileDao = async (transaction: NonNullable<Creation["dao"]>["transaction"]) => {
+  const fileDao = async (filing: Creation) => {
     setBusy(true);
     setNotice(undefined);
     try {
-      const outcome = await file(transaction, identity.account);
+      const outcome = await file(filing.dao!.transaction, identity.account);
+      setLast({ outcome: outcome.kind, correlationId: filing.correlationId });
       setNotice(outcome.kind === "succeeded" ? "Filed. The DAO's members vote on it now; the agent is created once the vote passes."
         : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Create the agent again."
         : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
@@ -279,7 +289,7 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
             {created.dao && <>
               <p>Your wallet files the DAO's proposal to create the agent{created.dao.transaction.actions.length > 1 ? " and casts your approval" : ""}. The vote must pass by {when(created.expiresAt)}, or the creation expires unsigned.</p>
               <p className="text-sm">The DAO's proposal and every vote on it are public and permanent.</p>
-              <Button disabled={busy} onClick={() => fileDao(created.dao!.transaction)}>{busy ? "Waiting for the wallet…" : created.dao.transaction.actions.length > 1 ? "File and vote" : "File the DAO proposal"}</Button>
+              {held ? null : <Button disabled={busy} onClick={() => fileDao(created)}>{busy ? "Waiting for the wallet…" : created.dao.transaction.actions.length > 1 ? "File and vote" : "File the DAO proposal"}</Button>}
             </>}
             <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly."
               : !stage ? "Reading its status…" : STAGE_WORDS[stage]}</p>
