@@ -43,6 +43,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState<"enable" | "stop" | "tick">();
   const [notice, setNotice] = useState<string>();
+  /** What was just saved, by the editor or by adopting a proposal: it's said until the grant binds it, then it's done. */
+  const [saved, setSaved] = useState<"edited" | "adopted">();
   const [error, setError] = useState<string>();
   const refresh = () => [reads.strategy, reads.strategyProposals, reads.autopilot, reads.runs].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const fetching = strategy.isFetching || schedule.isFetching;
@@ -80,17 +82,18 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const editButton = useRef<HTMLButtonElement>(null);
   const [returnFocus, setReturnFocus] = useState(false);
   useEffect(() => { if (returnFocus && !editing) { editButton.current?.focus(); setReturnFocus(false); } }, [returnFocus, editing, strategy.data]);
-  const doneEditing = (saved: boolean) => {
+  const doneEditing = (didSave: boolean) => {
     setEditing(false);
     setReturnFocus(true);
     refresh();
-    if (saved) { setError(undefined); setNotice("Strategy saved. Authorize it next."); }
+    if (didSave) { setError(undefined); setNotice(undefined); setSaved("edited"); }
   };
   /** A proposal adopted is a save like the editor's: the Authorize step then asks for the grant that binds it. */
   const adopted = () => {
     refresh();
     setError(undefined);
-    setNotice("Proposal adopted and saved. Authorize it next.");
+    setNotice(undefined);
+    setSaved("adopted");
   };
 
   const stepTwo: StepState = bound ? "done" : editing || !s?.executor ? "pending" : "current";
@@ -115,7 +118,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
           <Step number={1} title="Configure the strategy" state={editing ? "current" : "done"}
             detail={editing ? "Editing a draft. Saving turns autopilot off." : `${Object.values(s!.strategy.targetBps).filter(bps => bps > 0).length} targets saved`}>
             {editing ? null : canSave
-              ? <Button ref={editButton} variant="outline" size="sm" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setEditing(true); }}><PencilSimple aria-hidden="true" /> Edit strategy</Button>
+              ? <Button ref={editButton} variant="outline" size="sm" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setSaved(undefined); setEditing(true); }}><PencilSimple aria-hidden="true" /> Edit strategy</Button>
               : identity.signer === "dao" && <p className="text-xs text-muted-foreground">Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
           </Step>
           <Step number={2} title="Authorize it" state={stepTwo}
@@ -167,7 +170,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             </div>
           </div>}
       </>}
-    <p role="status" className="text-sm empty:hidden">{notice}</p>
+    <p role="status" className="text-sm empty:hidden">{notice ?? (saved && !bound
+      ? `${saved === "adopted" ? "Proposal adopted and saved" : "Strategy saved"}. Authorize it next.` : null)}</p>
     <ErrorBox error={error} />
     {s && <ReviewDialog open={confirm !== undefined} busy={busy !== undefined} onClose={() => setConfirm(undefined)}
       title={confirm === "enable" ? "Let the agent act on its own?" : "Run the strategy once now?"}
