@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventType } from "@ag-ui/core";
 import { PROTOCOL_VERSION } from "@ag-ui/core/schemas";
-import { accessOf, mayCall, proposalId, type ProposalView } from "@multiagency/sdk";
+import { accessOf, mayCall, proposalId, proposalList, type ProposalView } from "@multiagency/sdk";
 import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
+import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
 import { sha256, type Audit } from "./audit.ts";
 import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
 import { offerFor } from "./dao-offer.ts";
@@ -26,6 +27,15 @@ import type { Sessions } from "./sessions.ts";
 import type { SignIn } from "./signin.ts";
 
 export const COOKIE = "__Host-treasury_session";
+/**
+ * What an agent's token may call (#139): the owner's reads of the agent, and a proposal for the owner to decide. Never a
+ * verdict, an execution, an owner action, funding, a sweep, a change to the strategy or autopilot, or a consent: those stay
+ * in the owner's session and wallet. Every other route refuses a token, whatever it carries.
+ */
+const TOKEN_ROUTES = ["GET /api/agents/:agent/overview", "GET /api/agents/:agent/activity", "GET /api/agents/:agent/unresolved",
+  "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
+  "POST /api/agents/:agent/proposals"] as const;
+const BEARER = /^Bearer (\S+)$/;
 const MAX_BODY = 16 * 1024;
 
 export type Deps = {
@@ -61,6 +71,15 @@ export type Deps = {
    * background reader passes the one it shares, so their reads of the same request at once share one.
    */
   settle?: Settle;
+  /** The tokens issued to owners' agents (#139); without it, tokens last as long as the process. */
+  agentTokens?: AgentTokens;
+  /**
+   * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
+   * and each of its calls is a call against the platform's hourly budget, which every owner shares.
+   */
+  tokenRequestsPerHour?: number;
+  /** Calls every token together may make an hour: the part of the platform's budget that software may spend. */
+  tokenBudgetPerHour?: number;
   /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
   page?: Page;
 };
@@ -68,7 +87,7 @@ export type Deps = {
  * What a handler reads: the dependencies, the limits the server keeps across requests, and the DAO filings in flight
  * per agent, so two members' clicks file once.
  */
-type Context = Deps & { settle: Settle; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
+type Context = Deps & { settle: Settle; tokens: AgentTokens; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
   /** The account's owner-route requests a minute (`ownerRequestsPerMinute`), shared with the setup routes, which reach the platform too. */
   requests: RateLimit };
 
@@ -81,7 +100,9 @@ type Context = Deps & { settle: Settle; consentsToday: RateLimit; daoFilingsToda
  */
 export type Access = "public" | "session" | "owner" | "owner-fresh";
 /** A call as its handler sees it. `identity` is the agent's, as the owner check read it (see `Access`), on owner routes only. */
-type Call = { req: IncomingMessage; body: unknown; token: string | undefined; account: string | undefined; params: Record<string, string>; identity?: Admitted };
+type Call = { req: IncomingMessage; body: unknown; token: string | undefined; account: string | undefined; params: Record<string, string>; identity?: Admitted;
+  /** Who the audit trail names: the account, or `token:<id>` for a call by an agent's token (`account` is then the token's issuer). */
+  actor?: string; viaToken?: StoredAgentToken };
 /**
  * What a route answers: JSON, or (`csv`) a download: the text as the platform produced it, named for the browser to save.
  * The body of a download is never read as JSON, so it carries no value.
@@ -837,6 +858,8 @@ export const routes: Route[] = [
         }
       }
       const { revoked, complete } = await revokeAll(live, account!, agent, context);
+      // Disconnected: nothing acts for the agent any more, so the tokens issued for it end with its consent.
+      if (complete) await context.tokens.revokeAll(agent);
       return complete ? ok({ revoked }) : unavailable();
     },
   },
@@ -848,17 +871,58 @@ export const routes: Route[] = [
      * platform is asked and after. Nothing executes until it's approved.
      */
     method: "POST", path: "/api/agents/:agent/proposals", access: "owner-fresh", needs: "propose",
-    async handle({ body, account, identity }, { platform, audit }) {
-      const { agent, owner } = identity!;
+    async handle({ body, account, actor, identity }, { platform, audit }) {
+      const { agent, owner } = identity!, who = actor ?? account!;
       const input = parse(contract.rebalanceRequest, body);
       if (input === undefined) return refused(400, "bad_request");
-      await audit.append({ who: account!, action: "propose", agent, stage: "attempt" });
+      await audit.append({ who, action: "propose", agent, stage: "attempt" });
       const made = await relay(() => platform.proposals.create(organizationOf(owner), agent, { requestId: input.requestId, legs: "strategy",
-        expiresAt: new Date(Date.now() + REBALANCE_HOURS * 3_600_000).toISOString(), note: "Asked for on the proposals page" }), agent);
+        expiresAt: new Date(Date.now() + REBALANCE_HOURS * 3_600_000).toISOString(), note: actor ? "Asked for by the owner's agent" : "Asked for on the proposals page" }), agent);
       const reply = made.ok ? ok({ proposal: made.value }) : proposalFailure(made, agent);
-      await recordResult(audit, { who: account!, action: "propose", agent, subject: made.ok ? made.value.id : undefined, stage: "result", answer: audited(made, reply) });
+      await recordResult(audit, { who, action: "propose", agent, subject: made.ok ? made.value.id : undefined, stage: "result", answer: audited(made, reply) });
       return reply;
     },
+  },
+  {
+    /**
+     * Issues a token for software that acts for the owner (#139), for this agent and a lifetime the owner picks (at most 30
+     * days). Answered once: only its hash is kept. Issued by whoever may propose for the agent, from their session; a token
+     * can't issue another. Recorded before and after.
+     */
+    method: "POST", path: "/api/agents/:agent/tokens", access: "owner-fresh", needs: "propose",
+    async handle({ body, account, identity }, { audit, tokens }) {
+      const { agent } = identity!;
+      const input = parse(contract.tokenRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "token-issue", agent, stage: "attempt" });
+      const issued = await tokens.issue({ agent, account: account!, days: input.days, ...(input.label && { label: input.label }) }).catch(() => undefined);
+      const reply = issued === undefined ? unavailable() : issued === null ? refused(409, "too_many_tokens") : ok({ token: issued.token, view: tokenShown(issued.view) });
+      await recordResult(audit, { who: account!, action: "token-issue", agent, ...(issued && { subject: issued.view.id }), stage: "result", answer: reply.body.ok ? { ok: true } : { ok: false, kind: "refused", code: "code" in reply.body ? reply.body.code : "unavailable" } });
+      return reply;
+    },
+  },
+  {
+    // The agent's live tokens, never their secrets: when each was made, lapses and was last used.
+    method: "GET", path: "/api/agents/:agent/tokens", access: "owner", needs: "read",
+    handle: async ({ identity }, { tokens }) => ok(tokens.list(identity!.agent).map(tokenShown)),
+  },
+  {
+    // Revokes one token. It holds from the next call, since every call reads the records.
+    method: "POST", path: "/api/agents/:agent/tokens/:id/revoke", access: "owner-fresh", needs: "propose",
+    async handle({ account, identity, params }, { audit, tokens }) {
+      const { agent } = identity!;
+      if (!/^[a-f0-9]{16}$/.test(params.id ?? "")) return refused(400, "bad_request");
+      await audit.append({ who: account!, action: "token-revoke", agent, subject: params.id, stage: "attempt" });
+      const done = await tokens.revoke(agent, params.id!).catch(() => undefined);
+      const reply = done === undefined ? unavailable() : done ? ok({}) : refused(404, "no_token");
+      await recordResult(audit, { who: account!, action: "token-revoke", agent, subject: params.id, stage: "result", answer: reply.body.ok ? { ok: true } : { ok: false, kind: "refused", code: "code" in reply.body ? reply.body.code : "unavailable" } });
+      return reply;
+    },
+  },
+  {
+    // What a token may call, from this server's own schemas, so software that holds one needs nothing else to use it.
+    method: "GET", path: "/api/agent-api", access: "public",
+    handle: async () => ok(agentApi()),
   },
   {
     // The agent's proposals, under the owner's own Organization: an owner reaches only proposals made under their consent.
@@ -1230,6 +1294,35 @@ async function daoMember(account: string, dao: string, { daos, platform, request
   return access ? { owner: dao, host: platform.host, access } : notOwner();
 }
 
+/** A token as the owner is shown it: times as ISO strings. */
+const tokenShown = (view: { id: string; label: string; createdAt: number; expiresAt: number; lastUsedAt: number | null }) => ({ id: view.id, label: view.label,
+  createdAt: new Date(view.createdAt).toISOString(), expiresAt: new Date(view.expiresAt).toISOString(), lastUsedAt: view.lastUsedAt === null ? null : new Date(view.lastUsedAt).toISOString() });
+
+/** A schema as JSON Schema, or undefined when it can't be shown as one (an amount is a `bigint` string in the SDK's). */
+const described = (schema: z.ZodType) => { try { return z.toJSONSchema(schema, { unrepresentable: "any", io: "output" }); } catch { return undefined; } };
+/** The routes a token may call, with the schemas of what they answer and take (`GET /api/agent-api`). */
+function agentApi() {
+  const route = (call: (typeof TOKEN_ROUTES)[number], summary: string, response?: z.ZodType, request?: z.ZodType) => {
+    const [method, path] = call.split(" ") as [string, string];
+    return { method, path, summary, ...(request && { request: described(request) }), ...(response && { response: described(response) }) };
+  };
+  return {
+    version: 1,
+    authorization: "Send `Authorization: Bearer <token>`. A token is issued by the agent's owner from the app, for one agent and at most 30 days. Every route answers `{ ok: true, value }` or `{ ok: false, kind, code? }`.",
+    routes: [
+      route("GET /api/agents/:agent/overview", "The book against its targets, the policy and what is left of its budget", contract.overviewRead),
+      route("GET /api/agents/:agent/activity", "Everything the agent did, and how each ended", contract.activityRead),
+      route("GET /api/agents/:agent/unresolved", "Operations without a proven outcome", contract.unresolvedRead),
+      route("GET /api/agents/:agent/strategy", "The saved strategy and whether the agent's grant binds it", contract.strategyRead),
+      route("GET /api/agents/:agent/autopilot", "Whether autopilot is on, and its last run", contract.autopilotRead),
+      route("GET /api/agents/:agent/proposals", "The agent's proposals", proposalList),
+      route("GET /api/agents/:agent/proposals/:id", "One proposal", contract.proposalRead),
+      route("POST /api/agents/:agent/proposals", "Proposes a rebalance to the saved strategy for the owner to approve or reject. Name a `requestId`: after a lost answer, ask again with the same one and the proposal made is returned, never a second", contract.rebalanceMade, contract.rebalanceRequest),
+    ],
+    refused: "Verdicts, execution, owner actions, funding, sweeps, strategy and autopilot changes and consents are not available to a token: the owner does those in the app.",
+  };
+}
+
 /** A route's parameters for `pathname`; `malformed` when a parameter's percent-encoding is broken. */
 function match(route: Route, method: string, pathname: string): Record<string, string> | "malformed" | undefined {
   if (route.method !== method) return undefined;
@@ -1278,7 +1371,9 @@ async function readBody(req: IncomingMessage): Promise<{ ok: true; body: unknown
  */
 async function admit(route: Route, call: Call, deps: Deps, admissions: RateLimit): Promise<Reply | Admitted | undefined> {
   if (route.method !== "GET") {
-    if (call.req.headers.origin !== deps.publicOrigin) return refused(403, "origin");
+    // A browser's write must come from this server's own page. A token's isn't a browser's: it carries a credential no page
+    // can add to a request it didn't make, so there is no origin to check.
+    if (!call.viaToken && call.req.headers.origin !== deps.publicOrigin) return refused(403, "origin");
     // A body must be JSON; a DELETE without one (sign-out) needs no content type.
     const bodyless = route.method === "DELETE" && call.body === undefined;
     if (!bodyless && !/^application\/json(;|$)/.test(call.req.headers["content-type"] ?? "")) return refused(415, "content_type");
@@ -1288,11 +1383,14 @@ async function admit(route: Route, call: Call, deps: Deps, admissions: RateLimit
   if (route.access === "session") return undefined;
   const agent = call.params.agent!;
   if (!parse(contract.agentName, agent)) return refused(400, "bad_request");
-  if (!admissions(call.account)) return refused(429, "rate_limited");
+  // A token's calls are counted against the token (in the handler), not against the account that issued it: software
+  // gone wrong must not lock the owner out of their own page.
+  const within = (account: string) => call.viaToken ? true : admissions(account);
+  if (!within(call.account)) return refused(429, "rate_limited");
   const first = await deps.platform.identity(agent, { fresh: route.access === "owner-fresh" });
   let decided = await decide(first.answer, agent, call.account, deps, first.cached);
   if (first.cached && "status" in decided && !decided.body.ok && decided.body.kind === "not_owner") {
-    if (!admissions(call.account)) return refused(429, "rate_limited");
+    if (!within(call.account)) return refused(429, "rate_limited");
     decided = await decide((await deps.platform.identity(agent, { fresh: true })).answer, agent, call.account, deps, false);
   }
   if ("status" in decided) return decided;
@@ -1331,7 +1429,9 @@ async function decide(answer: IdentityAnswer, agent: string, account: string, de
 /** The server's request handler, built from its dependencies so tests can run it in-process with fakes. */
 export function createServer(deps: Deps) {
   const admissions = createRateLimit({ limit: deps.ownerRequestsPerMinute });
-  const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
+  const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? 60, windowMs: 3_600_000 });
+  const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
+  const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = ({ status, body, cookie, csv }: Reply) => {
@@ -1367,9 +1467,22 @@ export function createServer(deps: Deps) {
       const read = found.route.method === "GET" ? { ok: true as const, body: undefined } : await readBody(req);
       if (!read.ok) return send(read.reply);
       const token = tokenOf(req);
-      const call: Call = { req, body: read.body, token, account: deps.sessions.account(token), params: found.params };
+      let call: Call = { req, body: read.body, token, account: deps.sessions.account(token), params: found.params };
+      // An agent's token (#139): only on the routes it may call, for the agent it was issued for, and counted on its own.
+      if (req.headers.authorization !== undefined) {
+        if (!TOKEN_ROUTES.includes(`${found.route.method} ${found.route.path}` as (typeof TOKEN_ROUTES)[number])) return send(refused(403, "token_not_allowed"));
+        const presented = BEARER.exec(req.headers.authorization);
+        const record = presented ? context.tokens.find(presented[1]!) : undefined;
+        if (!record) return send(refused(401, "invalid_token"));
+        if (found.params.agent !== record.agent) return send(refused(403, "token_not_allowed"));
+        // Its own hourly limit, then the one all tokens share, so tokens never spend more than their part of the platform's budget.
+        if (!tokenRequests(record.id) || !tokenBudget("tokens")) return send(refused(429, "rate_limited"));
+        // Admitted as the account that issued it would be: still the agent's owner, or still a DAO member who may propose.
+        call = { req, body: read.body, token: undefined, account: record.account, params: found.params, actor: `token:${record.id}`, viaToken: record };
+      }
       const admitted = await admit(found.route, call, deps, admissions);
       if (admitted && "status" in admitted) return send(admitted);
+      if (call.viaToken) void context.tokens.used(call.viaToken.id);
       send(await found.route.handle({ ...call, ...(admitted && { identity: admitted }) }, context));
     } catch (error) {
       log("internal_error", { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), path: req.url?.split("?")[0] });

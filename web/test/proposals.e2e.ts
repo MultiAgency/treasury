@@ -1067,3 +1067,45 @@ test("the stack's owner signs a delegate action through its control, as the conf
   assert.match(signed.signedDelegate, /^[A-Za-z0-9+/]+=*$/, "a signed delegate, base64");
   await assert.rejects(() => signOwnerDelegate(target, { receiverId: "outlayer.near", actions: [] }), "no actions is refused");
 });
+
+test("the owner issues a token for software acting for them: it reads and proposes, and once revoked its next call is refused (#139)", { timeout: 120_000 }, async () => {
+  await ensureConnected();
+  const access = page.getByRole("region", { name: "Access for your agent" });
+  await visible(access);
+  assert.deepEqual(await axe(), [], "the access section");
+  await access.getByLabel("Name (optional)").fill("e2e rebalancer");
+  await access.getByRole("button", { name: "Create a token" }).click();
+  const shown = access.getByTestId("new-token");
+  await visible(shown);
+  const token = (await shown.innerText()).trim();
+  assert.match(token, /^tre1\.[a-f0-9]{16}\.[A-Za-z0-9_-]{43}$/);
+  await visible(access.getByRole("list", { name: "Access tokens" }).getByText(/^e2e rebalancer · ends .* · never used$/));
+  assert.deepEqual(await axe(), [], "a token shown once");
+
+  // Software with the token: no cookie, no origin. It reads, and proposes under a requestId it names.
+  const call = (method: "GET" | "POST", path: string, body?: unknown, as = token) => fetch(`${origin}/api/agents/${target.agent}/${path}`,
+    { method, headers: { authorization: `Bearer ${as}`, ...(body !== undefined && { "content-type": "application/json" }) }, ...(body !== undefined && { body: JSON.stringify(body) }) });
+  for (const path of ["overview", "strategy", "proposals"]) assert.equal((await call("GET", path)).status, 200, path);
+  const proposed = await call("POST", "proposals", { requestId: `agent-${Date.now()}` });
+  const answer = await proposed.json() as { ok: boolean; value?: { proposal: { id: string; state: string } }; code?: string };
+  if (answer.ok) {
+    assert.equal(answer.value!.proposal.state, "proposed");
+    assert.equal((await call("GET", `proposals/${answer.value!.proposal.id}`)).status, 200, "one proposal");
+  } else assert.ok(["nothing_to_propose", "too_many_proposals"].includes(answer.code ?? ""), `relayed and refused by the platform, not by auth: ${JSON.stringify(answer)}`);
+  // What the owner decides stays the owner's.
+  const approve = await call("POST", "proposals/abc/approve", {});
+  assert.deepEqual([approve.status, await approve.json()], [403, { ok: false, kind: "refused", code: "token_not_allowed" }]);
+  assert.equal((await call("POST", "freeze", {})).status, 403);
+
+  // The listing says it was used; the owner revokes it, and the next call is refused.
+  await page.reload();
+  await signInIfAsked(access);
+  const row = access.getByRole("list", { name: "Access tokens" }).getByRole("listitem").filter({ hasText: "e2e rebalancer" });
+  await visible(row.getByText(/last used /));
+  await row.getByRole("button", { name: "Revoke" }).click();
+  await dialog("Revoke this token?").getByRole("button", { name: "Revoke the token" }).click();
+  await visible(access.getByText("No tokens yet."));
+  const refused = await call("GET", "overview");
+  assert.deepEqual([refused.status, await refused.json()], [401, { ok: false, kind: "refused", code: "invalid_token" }]);
+  assert.deepEqual(unexpected, []);
+});
