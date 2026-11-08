@@ -1,19 +1,23 @@
+import { HandCoins, WarningCircle } from "@phosphor-icons/react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { describeRequest, usd } from "../shared/format";
-import { Button, Card, Loading, QueryError } from "../shared/ui";
-import { Book } from "./book";
+import { PanelTitle } from "@/components/ui/stat";
+import { describeRequest } from "../shared/format";
+import { Badge, Button, Card, Loading, QueryError } from "../shared/ui";
+import { Allocation, BookFigures } from "./book";
+import { PageLink } from "./nav";
+import { agentAddress } from "./pages";
 import { holdingsOf } from "./portfolio-view";
 import { refreshPortfolio, type agentReads } from "./queries";
 
 type Reads = ReturnType<typeof agentReads>;
 
 /**
- * The agent's portfolio as its owner reads it under the app's consent (#7, read-only): the book and its allocation
- * (#130), holdings and policy, and held payouts. Nothing here acts: rebalancing is a proposal the owner approves on the
- * Proposals page. What needs the owner's decision is above it (`NeedsDecision`); the history, the owner's actions, the
- * autopilot's runs and the books are on the Activity page (#136). Shown once the agent is connected, since every read needs the consent.
+ * The agent's portfolio as its owner reads it under the app's consent (#7, read-only): the book's figures, its
+ * allocation with every holding (#130, #195), and held payouts. Nothing here acts: rebalancing is a proposal the owner
+ * approves on the Proposals page. What needs the owner's decision is above it (`NeedsDecision`); the history, the owner's
+ * actions, the autopilot's runs and the books are on the Activity page (#136). Shown once the agent is connected, since every read needs the consent.
  */
-export function Portfolio({ reads }: { reads: Reads }) {
+export function Portfolio({ reads, agent }: { reads: Reads; agent: string }) {
   const client = useQueryClient();
   const overview = useQuery(reads.overview);
   const [held] = useQueries({ queries: [reads.held] });
@@ -22,40 +26,35 @@ export function Portfolio({ reads }: { reads: Reads }) {
   const refresh = () => refreshPortfolio(client, reads);
   const book = overview.data?.book ?? [];
 
-  return <section id="portfolio" aria-labelledby="portfolio-title" className="flex flex-col gap-4">
+  return <section id="portfolio" aria-labelledby="portfolio-title" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 id="portfolio-title" className="text-xl font-semibold">Portfolio</h2>
+      <h2 id="portfolio-title" className="text-base font-medium">Portfolio</h2>
       <Button variant="ghost" size="sm" disabled={fetching} onClick={refresh}>{fetching ? "Checking…" : "Check again"}</Button>
     </div>
 
-    {overview.data && <Book overview={overview.data} now={overview.dataUpdatedAt} />}
+    {overview.isPending ? <Card><Loading label="Reading the portfolio…" /></Card>
+      : overview.isError ? <Card><QueryError error={overview.error} retry={() => overview.refetch()} /></Card>
+      : <>
+        {overview.data.notInForce && <p role="status" className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-muted px-3 py-2 text-sm text-warning-muted-foreground">
+          <WarningCircle aria-hidden="true" className="size-4 shrink-0" />
+          <span>The policy isn't in force: {overview.data.notInForce} <PageLink to={agentAddress(agent, "policy")} className="underline">Open the policy</PageLink></span>
+        </p>}
+        <BookFigures overview={overview.data} />
+        <Allocation overview={overview.data} now={overview.dataUpdatedAt} holdings={holdingsOf(overview.data)} />
+      </>}
 
-    <Card>
-      {overview.isPending ? <Loading label="Reading the portfolio…" />
-        : overview.isError ? <QueryError error={overview.error} retry={() => overview.refetch()} />
-        : <div className="flex flex-col gap-3">
-          <table className="w-full text-sm">
-            <caption className="sr-only">Holdings</caption>
-            <thead><tr className="text-left text-muted-foreground"><th scope="col" className="py-1 font-medium">Asset</th><th scope="col" className="py-1 font-medium">Amount</th><th scope="col" className="py-1 text-right font-medium">Value</th></tr></thead>
-            <tbody>{holdingsOf(overview.data).map(row => <tr key={`${row.managed}-${row.asset}`} className="border-t">
-              <th scope="row" className="py-1 font-medium">{row.symbol}{!row.managed && <span className="text-muted-foreground"> (not managed)</span>}</th>
-              <td className="py-1 font-mono break-all">{row.amount}</td>
-              <td className="py-1 text-right">{usd(row.usd)}</td>
-            </tr>)}</tbody>
-          </table>
-          <p className="text-sm" role="status">{overview.data.notInForce ? `The policy isn't in force: ${overview.data.notInForce}`
-            : `Policy revision ${overview.data.policy.revision ?? "—"}, ${overview.data.policy.status.toLowerCase()}.`}</p>
-        </div>}
-    </Card>
-
-    <Card>
-      <h3 className="text-base font-semibold">Held payouts</h3>
-      <p className="text-sm text-muted-foreground">Held for approval under the payout scope, which this app doesn't ask for: nothing here can act on them.</p>
+    <Card className="gap-3">
+      <PanelTitle level={3} title="Held payouts" icon={<HandCoins weight="duotone" />} tone="other" infoLabel="About held payouts"
+        info="Held for approval under the payout scope, which this app doesn't ask for: nothing here can act on them.">
+        {held.data && (held.data.length === 0 ? <p className="text-sm text-muted-foreground" role="status">No payouts are held.</p> : <Badge tone="warning">{held.data.length} held</Badge>)}
+      </PanelTitle>
       {held.isPending ? <Loading label="Reading held payouts…" />
         : held.isError ? <QueryError error={held.error} retry={() => held.refetch()} />
-        : held.data.length === 0 ? <p className="text-sm" role="status">No payouts are held.</p>
-        : <ul aria-label="Held payouts" className="flex flex-col gap-1 text-sm">
-          {held.data.map(item => <li key={item.correlationId}>Held for approval: {describeRequest(item.request, book)}</li>)}
+        : held.data.length === 0 ? null
+        : <ul aria-label="Held payouts" className="flex flex-col divide-y divide-border text-sm">
+          {held.data.map(item => <li key={item.correlationId} className="flex items-center gap-2 py-2 first:pt-0 last:pb-0">
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />Held for approval: {describeRequest(item.request, book)}
+          </li>)}
         </ul>}
     </Card>
   </section>;

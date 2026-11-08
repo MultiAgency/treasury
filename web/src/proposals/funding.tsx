@@ -1,57 +1,151 @@
 import { fundingTransaction, mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, Bank, Coins, Eye, QrCode, ShieldCheck } from "@phosphor-icons/react";
 import { useState } from "react";
+import { DataTable, td, th, tr, TokenChip, ValuePill } from "@/components/ui/data-table";
+import { Meter, SplitBar } from "@/components/ui/meter";
+import { PanelTitle, StatCard } from "@/components/ui/stat";
 import { blockFunding, useFundingBlock } from "./funding-block";
 import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "./funding-transaction";
 import { Field, focusInvalid } from "../shared/form";
 import { accountError } from "../shared/form-validation";
-import { ago, fromUnits, linkedBalances, toUnits } from "../shared/format";
-import { Button, Card, CopyButton, ErrorBox, errorMessage, input, Loading, QueryError, Spinner } from "../shared/ui";
-import type { DepositRead, Identity, TreasuryRead } from "./proposals-api";
+import { ago, fromUnits, linkedBalances, toUnits, units, usd } from "../shared/format";
+import { totalUsd } from "../shared/prices";
+import { Badge, Button, Card, CopyButton, ErrorBox, errorMessage, input, Loading, QueryError, Spinner } from "../shared/ui";
+import { assetColors } from "./book";
+import type { DepositRead, Identity, OverviewRead, TreasuryRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { Sweep } from "./sweep";
-import { ReviewDialog } from "./ui";
+import { ReviewDialog, when } from "./ui";
 import { fund, WrongAccount } from "./wallet";
 import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
 type Linked = NonNullable<TreasuryRead>;
 
+/** A raw amount at its decimals as a figure for a table, rounded as `amount` rounds it; the exact amount is its title. */
+function Figure({ raw, decimals, tone }: { raw: string; decimals: number; tone?: "warning" }) {
+  const n = units(raw, decimals);
+  const text = n.toLocaleString("en-US", { maximumFractionDigits: n === 0 ? 0 : n < 1 ? 5 : n < 100 ? 3 : 2 });
+  if (n === 0) return <span className="text-muted-foreground">0</span>;
+  return tone ? <ValuePill tone={tone}><span title={fromUnits(raw, decimals)}>{text}</span></ValuePill> : <span title={fromUnits(raw, decimals)}>{text}</span>;
+}
+
+/** What is in public view and what is shielded, at the book's prices; with a price missing, neither is shown in dollars. */
+function FundingFigures({ overview }: { overview: OverviewRead | undefined }) {
+  const colors = assetColors(overview?.book.map(h => h.symbol) ?? []);
+  const total = overview ? totalUsd(overview.book) : null;
+  const worth = (side: "public" | "confidential") => !overview || total === null ? null
+    : overview.book.reduce((sum, h) => sum + units(h[side], h.decimals) * (h.price ?? 0), 0);
+  const open = worth("public"), shielded = worth("confidential");
+  return <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+    <StatCard className="col-span-2 sm:col-span-1" label="In public view" icon={<Eye weight="duotone" />} tone="warning" value={usd(open)}
+      chip={open !== null && <Badge tone={open > 0.005 ? "warning" : "success"}>{open > 0.005 ? "To shield" : "None"}</Badge>}>
+      <span>{open !== null && total ? `${Math.round((open / total) * 100)}% of the book` : "At API prices"}</span>
+    </StatCard>
+    <StatCard label="Shielded" icon={<ShieldCheck weight="duotone" />} tone="eth" value={usd(shielded)}>
+      <Meter value={shielded !== null && total ? shielded / total : 0} tone="bg-asset-eth" />
+      <span>{shielded !== null && total ? `${Math.round((shielded / total) * 100)}% of the book, confidential` : "At API prices"}</span>
+    </StatCard>
+    <StatCard label="Managed assets" icon={<Coins weight="duotone" />} tone="usdc" value={overview ? overview.book.length : "—"}
+      chip={overview && overview.unmanaged.length > 0 ? <Badge tone="neutral">{overview.unmanaged.length} other</Badge> : undefined}>
+      {overview && <SplitBar parts={overview.book.map((h, i) => ({ key: h.asset, share: total ? (h.usd ?? 0) / total : 1 / overview.book.length, tone: colors[i]! }))} />}
+      <span>{overview ? overview.book.map(h => h.symbol).join(" · ") || "None held" : "Reading…"}</span>
+    </StatCard>
+  </div>;
+}
+
+/** Public and confidential balances per asset, as the overview reads them; an asset the strategy doesn't manage, in total. */
+function Balances({ reads }: { reads: Reads }) {
+  const overview = useQuery(reads.overview);
+  const colors = assetColors(overview.data?.book.map(h => h.symbol) ?? []);
+  return <Card className="gap-3">
+    <PanelTitle level={3} title="Balances" icon={<Coins weight="duotone" />} tone="usdc" infoLabel="About the balances"
+      info="Reported public and confidential amounts. Public balances are in view on chain; the sweep shields them. A balance doesn't establish what a new operation may spend.">
+      {overview.dataUpdatedAt > 0 && <span className="text-xs text-muted-foreground">Read <time dateTime={new Date(overview.dataUpdatedAt).toISOString()} title={when(new Date(overview.dataUpdatedAt).toISOString())}>{ago(new Date(overview.dataUpdatedAt).toISOString())}</time></span>}
+    </PanelTitle>
+    {overview.isPending ? <Loading label="Reading the balances…" />
+      : overview.isError ? <QueryError error={overview.error} retry={() => overview.refetch()} />
+      : <DataTable caption="Balances by asset" minWidth="32rem">
+        <thead><tr>
+          <th scope="col" className={th()}>Asset</th>
+          <th scope="col" className={th("right")}>Public</th>
+          <th scope="col" className={th("right")}>Confidential</th>
+          <th scope="col" className={th("right")}>Total</th>
+          <th scope="col" className={th("right")}>Value</th>
+        </tr></thead>
+        <tbody>
+          {overview.data.book.map((h, i) => <tr key={h.asset} className={tr()}>
+            <th scope="row" className={td("left", "font-normal")}><TokenChip symbol={h.symbol} color={colors[i]!} /></th>
+            <td className={td("right")}><Figure raw={h.public} decimals={h.decimals} tone={BigInt(h.public) > 0n ? "warning" : undefined} /></td>
+            <td className={td("right")}><Figure raw={h.confidential} decimals={h.decimals} /></td>
+            <td className={td("right")}><Figure raw={String(BigInt(h.public) + BigInt(h.confidential))} decimals={h.decimals} /></td>
+            <td className={td("right")}>{usd(h.usd)}</td>
+          </tr>)}
+          {overview.data.unmanaged.map(h => <tr key={`unmanaged-${h.asset}`} className={tr()}>
+            <th scope="row" className={td("left", "text-xs font-medium")}>{h.symbol} <span className="font-normal text-muted-foreground">(not managed)</span></th>
+            <td className={td("right", "text-muted-foreground")}>—</td>
+            <td className={td("right", "text-muted-foreground")}>—</td>
+            <td className={td("right")}>{h.decimals === null ? <span title={`${h.amount} raw units`}>{h.amount} raw</span> : <Figure raw={h.amount} decimals={h.decimals} />}</td>
+            <td className={td("right")}>{usd(h.usd)}</td>
+          </tr>)}
+        </tbody>
+      </DataTable>}
+  </Card>;
+}
+
 /**
  * Money into the agent, under the app's consent (its `treasury` scope): the account linked to fund it, a transfer from
  * that account to a fresh deposit address, and a deposit address anyone may pay. A wallet owner links the account;
- * a DAO agent's account is the DAO itself, fixed at setup. Shown once the agent is connected.
+ * a DAO agent's account is the DAO itself, fixed at setup. Above them, what the agent holds, public and confidential
+ * (#195), and below, shielding public balances. Shown once the agent is connected.
  */
 export function Funding({ reads, identity }: { reads: Reads; identity: Identity }) {
   const client = useQueryClient();
   const treasury = useQuery(reads.treasury);
-  const refresh = () => void client.invalidateQueries({ queryKey: reads.treasury.queryKey });
+  const overview = useQuery(reads.overview);
+  const refresh = () => [reads.treasury, reads.overview].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const linked = treasury.data ?? null;
+  const confidential = Boolean(linked?.dao && linked.confidential);
 
-  return <section id="funding" aria-labelledby="funding-title" className="flex flex-col gap-4">
+  return <section id="funding" aria-labelledby="funding-title" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 id="funding-title" className="text-xl font-semibold">Funding</h2>
-      <Button variant="ghost" size="sm" disabled={treasury.isFetching} onClick={refresh}>{treasury.isFetching ? "Checking…" : "Check again"}</Button>
+      <h2 id="funding-title" className="text-base font-medium">Balances and funding</h2>
+      <Button variant="ghost" size="sm" disabled={treasury.isFetching || overview.isFetching} onClick={refresh}>{treasury.isFetching || overview.isFetching ? "Checking…" : "Check again"}</Button>
     </div>
-    <Card>
-      <h3 className="text-base font-semibold">Funding account</h3>
-      {treasury.isPending ? <Loading label="Reading the funding account…" />
-        : treasury.isError ? <QueryError error={treasury.error} retry={() => treasury.refetch()} />
-        : <FundingAccount reads={reads} identity={identity} linked={linked} />}
-    </Card>
-    {linked && <Card>
-      <h3 className="text-base font-semibold">Money in: from {linked.accountId} to this agent</h3>
-      {linked.dao && linked.confidential ? <ConfidentialFund reads={reads} linked={linked} /> : <Fund reads={reads} identity={identity} linked={linked} />}
-    </Card>}
-    <Card>
-      <h3 className="text-base font-semibold">Receive funds</h3>
-      <Deposit reads={reads} identity={identity} />
-    </Card>
-    <Card>
-      <h3 className="text-base font-semibold">Shield public balances</h3>
+    <FundingFigures overview={overview.data} />
+    <Balances reads={reads} />
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+      <Card className="gap-3">
+        <PanelTitle level={3} title="Funding account" icon={<Bank weight="duotone" />} tone="info" />
+        {treasury.isPending ? <Loading label="Reading the funding account…" />
+          : treasury.isError ? <QueryError error={treasury.error} retry={() => treasury.refetch()} />
+          : <FundingAccount reads={reads} identity={identity} linked={linked} />}
+      </Card>
+      {linked ? <Card className="gap-3">
+        <PanelTitle level={3} title="Money in" icon={<ArrowDown weight="bold" />} tone="brand" description={<>From <span className="font-mono">{linked.accountId}</span> to this agent</>}
+          infoLabel="About money in" info={confidential ? "A confidential DAO pays from its private balance, in Trezu, to the near.com network: it never touches the public chain."
+            : linked.dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve. Funds land in the agent's private balance."
+            : "Sends from the funding account to a fresh deposit address. Funds land in the agent's private balance."} />
+        {confidential ? <ConfidentialFund reads={reads} linked={linked} /> : <Fund reads={reads} identity={identity} linked={linked} />}
+      </Card> : <ReceiveCard reads={reads} identity={identity} />}
+      {/* Beside the other two, it reads across the width: what it is on the left, the address on the right. */}
+      {linked && <ReceiveCard reads={reads} identity={identity} className="lg:col-span-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-center lg:gap-x-6" />}
+    </div>
+    <Card className="gap-4">
+      <PanelTitle level={3} title="Shield public balances" icon={<ShieldCheck weight="duotone" />} tone="eth" description="Preview what is in public view, then shield it into the private balance."
+        infoLabel="About shielding" info="Shields public USDC, wNEAR and ETH balances into the agent's private balance. Other assets aren't included. Shielding needs the agent to hold a treasury grant." />
       <Sweep reads={reads} identity={identity} />
     </Card>
   </section>;
+}
+
+function ReceiveCard({ reads, identity, className = "" }: { reads: Reads; identity: Identity; className?: string }) {
+  return <Card className={`gap-3 ${className}`}>
+    <PanelTitle level={3} title="Receive funds" icon={<QrCode weight="duotone" />} tone="usdc" description="USDC on NEAR, to a one-time deposit address"
+      infoLabel="About receiving funds" info="Anyone may pay a one-time deposit address, with no signature from here. It lands in the agent's private balance." />
+    <Deposit reads={reads} identity={identity} />
+  </Card>;
 }
 
 /** The linked account, and for a wallet owner the controls that change it: link, unlink, and a DAO's confidential setting. */
@@ -78,19 +172,21 @@ function FundingAccount({ reads, identity, linked }: { reads: Reads; identity: I
     : <p className="text-sm" role="status">No funding account is linked.</p>;
   const held = linkedBalances(linked.balances);
   return <div className="flex flex-col gap-3 text-sm">
-    <p role="status">Funded from <span className="font-mono break-all">{linked.accountId}</span>
-      {linked.dao ? `, a DAO with ${linked.dao.members.length} member${linked.dao.members.length === 1 ? "" : "s"}` : ""}.</p>
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-      <dt className="text-muted-foreground">NEAR</dt><dd className="font-mono">{held.near}</dd>
-      <dt className="text-muted-foreground">USDC</dt><dd className="font-mono">{held.usdc}</dd>
+    <p role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1"><span>Funded from <span className="font-mono break-all">{linked.accountId}</span>
+      {linked.dao ? `, a DAO with ${linked.dao.members.length} member${linked.dao.members.length === 1 ? "" : "s"}` : ""}.</span></p>
+    <dl className="grid grid-cols-2 gap-2">
+      {([["NEAR", held.near, "bg-asset-wnear"], ["USDC", held.usdc, "bg-asset-usdc"]] as const).map(([symbol, value, color]) =>
+        <div key={symbol} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
+          <dt><TokenChip symbol={symbol} color={color} /></dt><dd className="truncate font-mono" title={value}>{value}</dd>
+        </div>)}
     </dl>
-    {identity.signer === "dao" && <p className="text-muted-foreground">A DAO agent is funded by its DAO, fixed at setup.</p>}
+    {identity.signer === "dao" && <p className="text-xs text-muted-foreground">A DAO agent is funded by its DAO, fixed at setup.</p>}
     {canChange && linked.dao && <label className="flex items-center gap-2">
       <input type="checkbox" checked={linked.confidential} disabled={busy}
         onChange={event => void change(() => reads.agent.setConfidential(event.target.checked))} />
       Confidential in Trezu: it pays from its private balance, out of public view
     </label>}
-    {canChange && <Button variant="outline" className="self-start" disabled={busy} onClick={() => setUnlinking(true)}>Unlink</Button>}
+    {canChange && <Button variant="danger" size="sm" className="self-start" disabled={busy} onClick={() => setUnlinking(true)}>Unlink</Button>}
     <ErrorBox error={error} />
     <ReviewDialog open={unlinking} busy={busy} onClose={() => setUnlinking(false)} title="Unlink the funding account?"
       description={`${linked.accountId} no longer funds this agent from here. Money already in the agent stays.`}
@@ -103,7 +199,7 @@ function LinkAccount({ account, busy, error, onLink }: { account: string; busy: 
   const [submitted, setSubmitted] = useState(false);
   const problem = accountError(accountId);
   return <div className="flex flex-col gap-3">
-    <p className="text-sm" role="status">No funding account is linked. Link the NEAR account that funds this agent: your own, or a DAO's.</p>
+    <p className="text-sm text-muted-foreground" role="status">No funding account is linked. Link the NEAR account that funds this agent: your own, or a DAO's.</p>
     <Button variant="outline" className="self-start" disabled={busy} onClick={() => onLink(account)}>Use {account}</Button>
     <form noValidate className="flex flex-wrap items-end gap-3" onSubmit={event => {
       event.preventDefault();
@@ -195,13 +291,11 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
   };
 
   return <div className="flex flex-col gap-3 text-sm">
-    <p className="text-muted-foreground">{dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve."
-      : "Sends from the funding account to a fresh deposit address."} Funds land in the agent's private balance.</p>
-    {review ? <div role="group" aria-label="Funding transfer to sign" className="flex flex-col gap-3 rounded-xl border p-4">
+    {review ? <div role="group" aria-label="Funding transfer to sign" className="flex flex-col gap-3 rounded-lg border border-border-strong bg-background/40 p-4">
       <p>{dao ? "The proposal pays" : "Your wallet signs a transfer of"} exactly <span className="font-medium tabular-nums">{review.transfer.amount} {review.transfer.symbol}</span>
         {review.transfer.symbol === "NEAR" && " (wrapped as wNEAR)"} from <span className="break-all">{review.account}</span> to the deposit address:</p>
-      <code className="break-all rounded-xl bg-muted px-4 py-3">{review.transfer.address}</code>
-      <p className="text-muted-foreground">Through the <code className="break-all">{review.transfer.contract}</code> contract, with {review.transfer.storage} NEAR attached to
+      <code className="break-all rounded-lg bg-muted px-3 py-2 text-xs">{review.transfer.address}</code>
+      <p className="text-xs text-muted-foreground">Through the <code className="break-all">{review.transfer.contract}</code> contract, with {review.transfer.storage} NEAR attached to
         register the address.{review.transfer.expiresAt && ` The address expires ${ago(review.transfer.expiresAt)}.`}</p>
       {review.transfer.caveat && <p>{review.transfer.caveat}</p>}
       <div className="flex flex-wrap justify-end gap-3">
@@ -241,10 +335,9 @@ function ConfidentialFund({ reads, linked }: { reads: Reads; linked: Linked }) {
   if (!account.data.wallet) return <p className="text-sm" role="status">The agent has no wallet yet, so a confidential payment has nowhere to land.</p>;
   const recipient = `nearcom:${account.data.wallet}`;
   return <div className="flex flex-col gap-3 text-sm">
-    <p className="text-muted-foreground">Create a payment in Trezu from the confidential balance, to the near.com network. It never touches the public
-      chain and lands in the agent's private balance once the DAO approves.</p>
+    <p className="text-muted-foreground">Create a payment in Trezu from the confidential balance, to this recipient. It lands once the DAO approves.</p>
     <div className="flex items-center gap-2">
-      <code className="min-w-0 flex-1 truncate rounded-xl bg-muted px-4 py-3" title={recipient}>{recipient}</code>
+      <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-3 py-2 text-xs" title={recipient}>{recipient}</code>
       <CopyButton text={recipient} />
     </div>
     <p>Keep the <code>nearcom:</code> prefix. Without it the payment leaves the private side and lands publicly.</p>
@@ -267,18 +360,17 @@ function Deposit({ reads, identity }: { reads: Reads; identity: Identity }) {
     else setError(failureText(asked, "funding"));
   };
   return <div className="flex flex-col items-start gap-3 text-sm">
-    <p className="text-muted-foreground">Send USDC on NEAR to a one-time deposit address; it lands in the agent's private balance.</p>
     {deposit && <div className="flex w-full flex-col gap-2">
-      <span className="text-muted-foreground">Deposit address</span>
+      <span className="text-xs text-muted-foreground">Deposit address</span>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-xl bg-muted px-4 py-3">{deposit.address}</code>
+        <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-3 py-2 text-xs" title={deposit.address}>{deposit.address}</code>
         <CopyButton text={deposit.address} />
       </div>
       {deposit.memo && <p>Memo <code>{deposit.memo}</code> (required)</p>}
-      <p className="text-muted-foreground">{deposit.minAmount && `At least ${fromUnits(deposit.minAmount, 6)} USDC. `}
-        {deposit.expiresAt && `Expires ${ago(deposit.expiresAt)}. `}Do not send to an expired or already used address.</p>
+      <p className="text-xs text-muted-foreground">{deposit.minAmount && `At least ${fromUnits(deposit.minAmount, 6)} USDC. `}
+        {deposit.expiresAt && <>Expires <time dateTime={deposit.expiresAt} title={when(deposit.expiresAt)}>{ago(deposit.expiresAt)}</time>. </>}Do not send to an expired or already used address.</p>
     </div>}
-    <Button variant={deposit ? "outline" : "default"} disabled={busy || !canDeposit} onClick={() => void request()}>
+    <Button variant={deposit ? "outline" : "default"} size={deposit ? "sm" : "default"} disabled={busy || !canDeposit} onClick={() => void request()}>
       {busy && <Spinner />} {deposit ? "Get a new deposit address" : "Get a deposit address"}</Button>
     {!canDeposit && <p>A member who may file proposals asks for one.</p>}
     <ErrorBox error={error} />

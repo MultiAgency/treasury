@@ -170,9 +170,16 @@ test("creating the agent: under its setup consent, with the key that signed it, 
   assert.deepEqual(shape(audited), [["create", "attempt", "owner.near", agent, undefined], ["create", "result", "owner.near", agent, created.correlationId]]);
   const read = async () => json(await call("GET", `/api/agents/${agent}/creation/${created.correlationId}`, { cookie }));
   assert.deepEqual((await read()).body, { ok: true, value: { stage: "voting" } });
+  const freshReads = () => fake.calls.filter(made => made === `identity ${agent} (fresh)`).length;
+  const before = freshReads();
+  await read();
+  assert.equal(freshReads(), before, "a creation still voting changes nothing");
   fake.creations.at(-1)!.stage = "submitted";
   fake.create(agent);
   assert.deepEqual((await read()).body, { ok: true, value: { stage: "submitted" } });
+  // The agent now has an ID: its identity is read fresh, so the page's next read of the agent finds it created rather
+  // than the identity cached from before (a minute).
+  assert.equal(freshReads(), before + 1, "the created agent's identity is read again");
   const again = await json(await call("POST", `/api/agents/${agent}/creation`, { cookie, body: {} }));
   assert.deepEqual([again.status, again.body], [409, { ok: false, kind: "refused", code: "already_created" }]);
   assert.deepEqual((await json(await call("GET", `/api/agents/${agent}/creation/unknown`, { cookie }))).status, 404);

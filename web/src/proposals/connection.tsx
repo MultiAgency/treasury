@@ -1,5 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Plugs, PlugsConnected } from "@phosphor-icons/react";
+import { useState, type ReactNode } from "react";
+import { IconTile, InfoTip } from "@/components/ui/stat";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "../shared/ui";
 import { AgentAccess } from "./agent-access";
 import { DaoRequestView } from "./dao-request";
@@ -95,57 +97,70 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
   };
 
   const live = consent.data?.consent;
-  if (identity.signer === "dao") return <section id="connection" aria-labelledby="connection-title" className="flex flex-col gap-4">
-    <h2 id="connection-title" className="text-xl font-semibold">Connection</h2>
-    <Card>
-      {consent.isPending ? <Loading label="Reading the connection…" />
-        : consent.isError ? <QueryError error={consent.error} retry={() => consent.refetch()} />
-        : live ? <div className="flex flex-col gap-2">
-          <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {when(new Date(live.expiresAt).toISOString())}.</p>
-          <p className="text-sm">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
+  /** The connection as one compact row: a status tile, the title and where it stands, and its controls at the right. */
+  const row = (tone: "success" | "warning" | "neutral", status: ReactNode, controls?: ReactNode, info?: ReactNode) => <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex min-w-0 flex-1 items-center gap-3">
+      <IconTile tone={tone}>{tone === "success" ? <PlugsConnected weight="duotone" /> : <Plugs weight="duotone" />}</IconTile>
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="flex items-center gap-1.5">
+          <h2 id="connection-title" className="text-[15px] leading-6 font-medium">Connection</h2>
+          {info && <InfoTip label="What the app may do">{info}</InfoTip>}
+        </span>
+        <div className="text-sm text-muted-foreground [&_[role=status]]:break-words">{status}</div>
+      </div>
+    </div>
+    {controls && <div className="flex flex-wrap items-center gap-2">{controls}</div>}
+  </div>;
+  const until = live && <time dateTime={new Date(live.expiresAt).toISOString()}>{when(new Date(live.expiresAt).toISOString())}</time>;
+
+  if (identity.signer === "dao") return <section id="connection" aria-labelledby="connection-title">
+    <Card className="gap-3">
+      {consent.isPending ? row("neutral", <Loading label="Reading the connection…" />)
+        : consent.isError ? <>{row("neutral", null)}<QueryError error={consent.error} retry={() => consent.refetch()} /></>
+        : live ? <>
+          {row("success", <>
+            <p role="status">Connected by the vote of {owner}: {live.scopes.join(" and ")}, until {until}.</p>
+            <p className="text-xs">The DAO ends it by its own vote, not here: <a className="underline" href={`https://${identity.host}/confirm/dao/stop/${owner}/${identity.agent}`}>stop this agent</a>.</p>
+          </>)}
           <AgentAccess reads={reads} identity={identity} />
-        </div>
-        : consent.data.request ? <div className="flex flex-col gap-3">
-          <p role="status">Waiting for the vote of {owner} to connect this agent.</p>
+        </>
+        : consent.data.request ? <>
+          {row("warning", <p role="status">Waiting for the vote of {owner} to connect this agent.</p>,
+            <Button variant="ghost" size="sm" disabled={consent.isFetching} onClick={refresh}>{consent.isFetching ? "Checking…" : "Check again"}</Button>)}
           <DaoRequestView request={consent.data.request} account={identity.account} onChanged={refresh} />
-          <Button variant="ghost" className="self-start" disabled={consent.isFetching} onClick={refresh}>{consent.isFetching ? "Checking…" : "Check again"}</Button>
-        </div>
-        : <div className="flex flex-col items-start gap-3">
-          {consent.data.ended && <p role="alert">{consent.data.ended === "expired" ? "The DAO's vote didn't pass in time, so the agent wasn't connected."
+        </>
+        : <>
+          {row("neutral", <p role="status">Not connected. {owner} consents by its own vote before the app can read or act on this agent's proposals.</p>,
+            identity.access.canPropose
+              ? <Button disabled={review !== undefined} onClick={askDao}>{review?.phase === "reading" ? "Asking…" : "Ask the DAO to connect it"}</Button>
+              : <p className="text-sm">A member who may file proposals asks the DAO.</p>)}
+          {consent.data.ended && <p role="alert" className="text-sm">{consent.data.ended === "expired" ? "The DAO's vote didn't pass in time, so the agent wasn't connected."
             : consent.data.ended === "rejected" ? "The DAO didn't approve its proposal, so the agent wasn't connected."
             : consent.data.ended === "changed" ? "The agent changed after the DAO's vote was asked for, so it wasn't connected. Ask again for the agent as it is now."
             : "A stop the DAO voted on ended the request."}</p>}
-          <p role="status">Not connected. {owner} consents by its own vote before the app can read or act on this agent's proposals.</p>
-          {identity.access.canPropose
-            ? <Button disabled={review !== undefined} onClick={askDao}>{review?.phase === "reading" ? "Asking…" : "Ask the DAO to connect it"}</Button>
-            : <p className="text-sm">A member who may file proposals asks the DAO.</p>}
-        </div>}
+        </>}
       <ErrorBox error={error} />
     </Card>
   </section>;
 
-  return <section id="connection" aria-labelledby="connection-title" className="flex flex-col gap-4">
-    <h2 id="connection-title" className="text-xl font-semibold">Connection</h2>
-    <Card>
-      {consent.isPending ? <Loading label="Reading the connection…" />
-        : consent.isError ? <QueryError error={consent.error} retry={() => consent.refetch()} />
-        : live ? <div className="flex flex-col gap-3">
-          <p role="status">Connected: {scopeList(live.scopes)}, until {when(new Date(live.expiresAt).toISOString())}.</p>
-          <div className="flex flex-wrap gap-3">
-            {!live.scopes.includes("owner") && <Button variant="outline" disabled={review !== undefined} onClick={() => prepare({ upgrade: true })}>
+  return <section id="connection" aria-labelledby="connection-title">
+    <Card className="gap-3">
+      {consent.isPending ? row("neutral", <Loading label="Reading the connection…" />)
+        : consent.isError ? <>{row("neutral", null)}<QueryError error={consent.error} retry={() => consent.refetch()} /></>
+        : live ? <>
+          {row("success", <p role="status">Connected: {scopeList(live.scopes)}, until {until}.</p>, <>
+            {!live.scopes.includes("owner") && <Button variant="outline" size="sm" disabled={review !== undefined} onClick={() => prepare({ upgrade: true })}>
               {review?.phase === "reading" ? "Preparing…" : "Allow owner actions"}</Button>}
-            <Button variant="outline" disabled={disconnecting === "busy"} onClick={() => setDisconnecting("review")}>
+            <Button variant="outline" size="sm" disabled={disconnecting === "busy"} onClick={() => setDisconnecting("review")}>
               {disconnecting === "busy" ? "Disconnecting…" : "Disconnect"}
             </Button>
-          </div>
+          </>)}
           <AgentAccess reads={reads} identity={identity} />
-        </div>
-        : <div className="flex flex-col items-start gap-3">
-          <p role="status">Not connected. The app can't read or act on this agent's proposals until you connect it.</p>
-          <p className="text-sm">Connecting lets this app read the agent, work with its Treasury proposals and relay owner actions you sign, such as a strategy grant. Each takes effect only with your own signature.</p>
-          <Button disabled={review !== undefined} onClick={() => prepare({ upgrade: false })}>{review?.phase === "reading" ? "Preparing…" : "Connect"}</Button>
-        </div>}
-      <p role="status" aria-atomic="true" className={notice ? "text-sm" : "sr-only"}>{notice}</p>
+        </>
+        : row("neutral", <p role="status">Not connected. The app can't read or act on this agent's proposals until you connect it.</p>,
+          <Button disabled={review !== undefined} onClick={() => prepare({ upgrade: false })}>{review?.phase === "reading" ? "Preparing…" : "Connect"}</Button>,
+          "Connecting lets this app read the agent, work with its Treasury proposals and relay owner actions you sign, such as a strategy grant. Each takes effect only with your own signature.")}
+      <p role="status" aria-atomic="true" className={notice ? "text-sm text-success-muted-foreground" : "sr-only"}>{notice}</p>
       <ErrorBox error={error} />
     </Card>
 

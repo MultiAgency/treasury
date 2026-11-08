@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, Card, input, Spinner } from "../shared/ui";
 import { daoVoteWords, policyComparison } from "./policy-view";
 import { allowsAsset, BUDGET, changesOf, type AgentPolicy, type Draft, differences, draftOf, WINDOWS } from "./policy-draft";
@@ -19,7 +19,22 @@ const STAGE_WORDS: Record<string, string> = {
 };
 
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: string }) {
-  return <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /> {children}</label>;
+  return <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-secondary/40 px-3 text-sm has-[:checked]:border-brand/45 md:min-h-9">
+    <input type="checkbox" className="size-4 accent-[var(--brand-mint)]" checked={checked} onChange={event => onChange(event.target.checked)} /> {children}</label>;
+}
+
+/** A group of the editor's fields: its legend, then its fields. */
+function Group({ legend, className = "", children }: { legend: string; className?: string; children: ReactNode }) {
+  return <fieldset className="flex min-w-0 flex-col gap-2.5"><legend className="mb-2.5 text-xs font-medium text-muted-foreground">{legend}</legend>
+    <div className={`grid gap-3 ${className}`}>{children}</div></fieldset>;
+}
+
+/** One change, "Field: before → after", with the before struck through and the after in green; the words are kept whole. */
+function ChangeLine({ line }: { line: string }) {
+  const match = /^(.*?): (.*) → (.*)$/.exec(line);
+  if (!match) return <>{line}</>;
+  const [, field, was, now] = match;
+  return <><span className="text-muted-foreground">{field}</span>: <span className="text-destructive line-through decoration-1">{was}</span> → <span className="font-medium text-success-muted-foreground">{now}</span></>;
 }
 
 /**
@@ -49,54 +64,67 @@ export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads:
   };
   const comparison = flow.toFile?.policy ? policyComparison(flow.toFile.policy.current, flow.toFile.policy.requested) : [];
 
+  const field = "flex flex-col gap-1.5 text-sm";
   return <Card>
-    <form noValidate className="flex min-w-0 flex-col gap-5" onSubmit={event => {
+    <form noValidate className="flex min-w-0 flex-col gap-6" onSubmit={event => {
       event.preventDefault();
       setSubmitted(true);
       if (!("invalid" in result) && dirty && !stale && !flow.busy && !flow.holding) setReviewing(true);
     }}>
-      <div className="flex flex-col gap-3">
+      <Group legend="Permissions" className="sm:grid-cols-3">
         <Toggle checked={draft.swap} onChange={swap => set({ swap })}>Swaps allowed</Toggle>
         <Toggle checked={draft.ownerApproval} onChange={ownerApproval => set({ ownerApproval })}>Owner approval for every payment</Toggle>
         <Toggle checked={draft.assets === "any"} onChange={any => set({ assets: any ? "any" : data.book.map(item => item.asset) })}>Any asset</Toggle>
-        {draft.assets !== "any" && <fieldset className="flex flex-col gap-2"><legend className="text-sm font-medium">Allowed assets</legend>
-          {data.book.map(item => <Toggle key={item.asset} checked={draft.assets.includes(item.asset)}
-            onChange={on => set({ assets: on ? [...draft.assets as string[], item.asset] : (draft.assets as string[]).filter(asset => asset !== item.asset) })}>{item.symbol}</Toggle>)}
-        </fieldset>}
+      </Group>
+      {draft.assets !== "any" && <fieldset className="flex flex-col gap-2"><legend className="mb-2.5 text-xs font-medium text-muted-foreground">Allowed assets</legend>
+        <div className="flex flex-wrap gap-2">{data.book.map(item => <Toggle key={item.asset} checked={draft.assets.includes(item.asset)}
+          onChange={on => set({ assets: on ? [...draft.assets as string[], item.asset] : (draft.assets as string[]).filter(asset => asset !== item.asset) })}>{item.symbol}</Toggle>)}</div>
+      </fieldset>}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-2.5"><span aria-hidden="true" className="mb-0 text-xs font-medium text-muted-foreground">Rate</span>
+          <label className={field}>Actions an hour (blank for no cap)
+            <input className={input} inputMode="numeric" value={draft.rate} aria-invalid={invalid === "actions an hour"} onChange={event => set({ rate: event.target.value })} /></label></div>
+        <Group legend="USD budget (blank for no limit)" className="grid-cols-3">
+          {BUDGET.map(([key, label]) => <label key={key} className={field}>{`USD ${label}`}
+            <input className={input} inputMode="decimal" value={draft.budget[key]} aria-invalid={invalid === `the budget ${label}`} onChange={event => set({ budget: { ...draft.budget, [key]: event.target.value } })} /></label>)}
+        </Group>
       </div>
-      <label className="flex flex-col gap-1 text-sm">Actions an hour (blank for no cap)
-        <input className={input} inputMode="numeric" value={draft.rate} aria-invalid={invalid === "actions an hour"} onChange={event => set({ rate: event.target.value })} /></label>
-      <fieldset className="grid gap-3 sm:grid-cols-3"><legend className="text-sm font-medium">USD budget (blank for no limit)</legend>
-        {BUDGET.map(([key, label]) => <label key={key} className="flex flex-col gap-1 text-sm">{`USD ${label}`}
-          <input className={input} inputMode="decimal" value={draft.budget[key]} aria-invalid={invalid === `the budget ${label}`} onChange={event => set({ budget: { ...draft.budget, [key]: event.target.value } })} /></label>)}
-      </fieldset>
-      {WINDOWS.map(([window, label]) => <fieldset key={window} className="grid gap-3 sm:grid-cols-2"><legend className="text-sm font-medium">{`Caps ${label.toLowerCase()} (blank for no cap)`}</legend>
-        {data.book.filter(item => allowsAsset(draft, item.asset)).map(item => <label key={item.asset} className="flex flex-col gap-1 text-sm">{`${item.symbol} ${label.toLowerCase()}`}
-          <input className={input} inputMode="decimal" value={draft.caps[window][item.asset] ?? ""} aria-invalid={invalid === `${item.symbol} ${label.toLowerCase()}`}
-            onChange={event => set({ caps: { ...draft.caps, [window]: { ...draft.caps[window], [item.asset]: event.target.value } } })} /></label>)}
-      </fieldset>)}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {WINDOWS.map(([window, label]) => <Group key={window} legend={`Caps ${label.toLowerCase()} (blank for no cap)`} className="grid-cols-3">
+          {data.book.filter(item => allowsAsset(draft, item.asset)).map(item => <label key={item.asset} className={field}>{`${item.symbol} ${label.toLowerCase()}`}
+            <input className={input} inputMode="decimal" value={draft.caps[window][item.asset] ?? ""} aria-invalid={invalid === `${item.symbol} ${label.toLowerCase()}`}
+              onChange={event => set({ caps: { ...draft.caps, [window]: { ...draft.caps[window], [item.asset]: event.target.value } } })} /></label>)}
+        </Group>)}
+      </div>
       {invalid && <p role="alert" className="text-sm text-destructive">The {invalid} isn't a valid amount.</p>}
       {stale && <p role="status" className="text-sm">The policy changed since this draft began. Close the editor and open it again to edit the new one.</p>}
       {!baseline.policy && <p role="status" className="text-sm">The policy's revision isn't reported, so it can't be edited from here.</p>}
-      <div className="flex flex-wrap gap-3">
-        <Button type="submit" disabled={!dirty || stale || flow.busy || flow.holding || !baseline.policy}>{flow.busy && <Spinner />} Review the changes</Button>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border pt-4">
+        {!dirty && <p className="mr-auto text-sm text-muted-foreground">Nothing is changed yet.</p>}
+        {dirty && <p className="mr-auto text-sm text-muted-foreground">{`${lines.length} change${lines.length === 1 ? "" : "s"}`}</p>}
         <Button type="button" variant="ghost" disabled={flow.busy} onClick={() => { if (!dirty || window.confirm("Discard your changes?")) onDone(); }}>Cancel</Button>
+        <Button type="submit" disabled={!dirty || stale || flow.busy || flow.holding || !baseline.policy}>{flow.busy && <Spinner />} Review the changes</Button>
       </div>
-      {!dirty && <p className="text-sm text-muted-foreground">Nothing is changed yet.</p>}
     </form>
-    {flow.toFile && <div role="region" aria-label="Terms before and after" className="mt-4 flex flex-col gap-2 text-sm">
-      <h3 className="font-medium">Compare before you file</h3>
-      <p>The DAO's proposal is public and names only the fields. These are the terms. Its vote must pass within {daoVoteWords()}.</p>
-      {comparison.length ? <table className="w-full text-left"><thead><tr><th scope="col">Field</th><th scope="col">Now</th><th scope="col">Requested</th></tr></thead>
-        <tbody>{comparison.map(row => <tr key={row.field}><th scope="row" className="font-normal">{row.field}</th><td className="break-all">{row.was}</td><td className="break-all">{row.now}</td></tr>)}</tbody></table>
+    {flow.toFile && <div role="region" aria-label="Terms before and after" className="flex flex-col gap-3 rounded-lg border border-border p-4 text-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="font-medium">Compare before you file</h3>
+          <p className="text-muted-foreground">The DAO's proposal is public and names only the fields. These are the terms. Its vote must pass within {daoVoteWords()}.</p>
+        </div>
+        <div className="flex gap-2"><Button variant="ghost" onClick={flow.dropFiling}>Don't file</Button><Button onClick={() => void flow.fileNow()}>File for the DAO's vote</Button></div>
+      </div>
+      {comparison.length ? <div className="overflow-x-auto rounded-lg border border-border"><table className="w-full text-left text-xs">
+        <thead><tr className="border-b border-border text-muted-foreground"><th scope="col" className="px-3 py-2 font-medium">Field</th><th scope="col" className="px-3 py-2 font-medium">Now</th><th scope="col" className="px-3 py-2 font-medium">Requested</th></tr></thead>
+        <tbody>{comparison.map(row => <tr key={row.field} className="border-b border-border align-top last:border-0"><th scope="row" className="px-3 py-2 font-mono font-normal">{row.field}</th>
+          <td className="break-all bg-destructive-muted px-3 py-2 font-mono">{row.was}</td><td className="break-all bg-success-muted px-3 py-2 font-mono">{row.now}</td></tr>)}</tbody></table></div>
         : <p>The platform reported no terms to compare.</p>}
-      <div className="flex gap-3"><Button onClick={() => void flow.fileNow()}>File for the DAO's vote</Button><Button variant="ghost" onClick={flow.dropFiling}>Don't file</Button></div>
     </div>}
-    <div className="mt-4 flex flex-col gap-2">{flow.progress}</div>
+    <div className="flex flex-col gap-2 empty:hidden">{flow.progress}</div>
     <ReviewDialog open={reviewing} busy={flow.busy} onClose={() => setReviewing(false)} title="Change this policy?"
       description={`${dao ? `A DAO member proposes it; you compare the terms, then file it, and the vote must pass within ${daoVoteWords()}.` : "Your wallet signs it, or you sign it on the platform's own page; nothing takes effect without your signature."} It replaces revision ${baseline.policy?.revision ?? "—"}.`}
       actions={<Button disabled={flow.busy} onClick={send}>{dao ? "Prepare for the DAO's vote" : "Sign and apply"}</Button>}>
-      <ul aria-label="Changes" className="flex flex-col gap-1 text-sm">{lines.map(line => <li key={line}>{line}</li>)}</ul>
+      <ul aria-label="Changes" className="flex flex-col divide-y divide-border rounded-lg border border-border text-sm">{lines.map(line => <li key={line} className="px-3 py-2"><ChangeLine line={line} /></li>)}</ul>
     </ReviewDialog>
   </Card>;
 }
