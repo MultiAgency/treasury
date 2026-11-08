@@ -749,7 +749,13 @@ export const routes: Route[] = [
   {
     // Where the agent's creation stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/creation/:id", access: "owner", needs: "read",
-    handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.creation.status, { missing: "no_creation", forbidden: "not_set_up" }),
+    async handle({ identity, params }, { platform }) {
+      const reply = await ownerStatus(identity!, params.id, platform.creation.status, { missing: "no_creation", forbidden: "not_set_up" });
+      // Created: the agent has an ID now, so its identity is read fresh. The page reads the agent next, and the identity
+      // cached from before (`platform.ts`, a minute) would still say it isn't created.
+      if (reply.body.ok && (reply.body.value as { stage: string }).stage === "submitted") await platform.identity(identity!.agent, { fresh: true });
+      return reply;
+    },
   },
   {
     method: "GET", path: "/api/agents/:agent", access: "owner", needs: "read",
