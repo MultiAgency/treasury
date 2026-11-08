@@ -1,6 +1,6 @@
 # treasury
 
-The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.3, against the platform's app route (`/apps/v1`).
+The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.4, against the platform's app route (`/apps/v1`).
 
 Freeze is the stop that halts every send. A wallet owner can freeze the agent from the app's pages (#133). A DAO-owned agent has no such stop through the app yet: its freeze vote must pass within the provider intent's 600 seconds, which most DAOs can't do (MultiAgency/platform#20). Until then, `autopilot/stop` ends its schedule and the strategy engine proposes nothing at L4, but other apps' access and approved proposals are untouched.
 
@@ -14,10 +14,10 @@ Freeze is the stop that halts every send. A wallet owner can freeze the agent fr
 
 ## Running it locally
 
-Everything runs against the platform's simulated stack at [`49b8d51`](https://github.com/MultiAgency/platform/commit/49b8d51), the commit SDK 0.5.3 was published from (tag `sdk-v0.5.3`). Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
+Everything runs against the platform's simulated stack at [`f2c7b7f`](https://github.com/MultiAgency/platform/commit/f2c7b7f), the commit SDK 0.5.4 was published from (tag `sdk-v0.5.4`). Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 49b8d51
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout f2c7b7f
 (cd ../platform && pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web)  # the confirm page the stack serves
 pnpm install
 ```
@@ -34,6 +34,6 @@ pnpm --filter @treasury/web test:stack       # the app's pages through the app s
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-kit's local node; not in CI
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `49b8d51` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `f2c7b7f` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
