@@ -256,13 +256,13 @@ const readRoute = (path: string, read: "account" | "overview" | "activity" | "he
 const DEPOSIT_ASSETS = { USDC: "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", NEAR: "nep141:wrap.near" } as const;
 /**
  * A wallet owner's change to the agent's funding account, relayed once and recorded before the platform is asked and
- * after: link an account, unlink it, or say whether it's a confidential DAO. A DAO agent's funding account is the DAO,
- * fixed at setup, and the platform refuses these under a DAO's consent: a member is refused here (`dao_funding_fixed`)
+ * after: link an account or unlink it. A DAO agent's funding account is the DAO, fixed at setup, and the platform
+ * refuses these under a DAO's consent: a member is refused here (`dao_funding_fixed`)
  * whatever their roles, since one with every DAO permission passes `mayCall`. The platform's refusal is
  * `funding_refused` (its text is logged, never forwarded); after a lost answer the page reads the account again before
  * anything else.
  */
-const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unlink" | "confidential", body: B,
+const fundingChange = <B extends z.ZodType>(path: string, action: "link" | "unlink", body: B,
   change: (platform: Platform, organization: string, agent: string, input: z.output<B>) => Promise<{ ok: true } | { ok: false; kind: string; status?: number }>): Route => ({
   method: "POST", path, access: "owner-fresh", needs: "link",
   async handle({ body: sent, account, identity }, { platform, audit }) {
@@ -1277,8 +1277,6 @@ export const routes: Route[] = [
     (platform, organization, agent, { accountId }) => platform.funding.link(organization, agent, accountId)),
   fundingChange("/api/agents/:agent/treasury/unlink", "unlink", contract.unlinkRequest,
     (platform, organization, agent) => platform.funding.unlink(organization, agent)),
-  fundingChange("/api/agents/:agent/treasury/confidential", "confidential", contract.confidentialRequest,
-    (platform, organization, agent, { confidential }) => platform.funding.setConfidential(organization, agent, confidential)),
   {
     // One recorded run of the autopilot, by its tick ID (`runs` lists them).
     method: "GET", path: "/api/agents/:agent/runs/:id", access: "owner", needs: "read",

@@ -186,7 +186,6 @@ export const depositRead = z.strictObject({ deposit: ownerOutputs.deposit });
 /** A wallet owner's changes to the agent's funding account. Each answers nothing; the page reads the account again. */
 export const linkRequest = z.strictObject({ accountId });
 export const unlinkRequest = z.strictObject({});
-export const confidentialRequest = z.strictObject({ confidential: z.boolean() });
 export const fundingChanged = z.strictObject({});
 /** Per asset, the provider's balances against the chain and against recorded executions (raw units as decimal strings). */
 export const booksRead = ownerOutputs.reconcileBooks;

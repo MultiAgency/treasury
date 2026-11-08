@@ -1,5 +1,5 @@
 // After a wallet error, a funding transfer may have gone out. The block on sending again outlives the component that
-// set it (an error read unmounts it, as does the confidential setting), for as long as the page is loaded.
+// set it (an error read unmounts it), for as long as the page is loaded.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { blockFunding, fundingBlock, subscribeFunding } from "../src/proposals/funding-block.ts";

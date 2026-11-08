@@ -16,7 +16,7 @@ A14's wording, from the plan and its task card: at L4, **no new sends**. One act
 
 ## H5: assets and price sources
 
-- **Volatile asset: wNEAR** (`nep141:wrap.near`). **Reserve and operating cash: USDC**, the reserve held confidential (`treasury/setConfidential`). There's no tokenized T-bill among the platform's proposal assets, so the "risk-free yield" profile is dropped.
+- **Volatile asset: wNEAR** (`nep141:wrap.near`). **Reserve and operating cash: USDC**, the reserve held confidential (`treasury/setConfidential`; that procedure only labeled the linked account and never held a balance confidential, and it's gone since SDK 0.5.5). There's no tokenized T-bill among the platform's proposal assets, so the "risk-free yield" profile is dropped.
 - **The three price sources**, each public, keyless and quoted in USD rather than USDT, and each independent of the platform's own price (the NEAR Intents token list, `price_updated_at`):
 
 | Source | Read | History |

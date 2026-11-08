@@ -588,7 +588,7 @@ test("every other relayed action answers what the platform did when its result c
   clean();
   const logged = t.mock.method(console, "error", () => {});
   const cookie = await signIn(owner);
-  const actions: [string, unknown][] = [["deposit", { asset: "USDC" }], ["treasury/confidential", { confidential: true }], ["treasury/unlink", {}],
+  const actions: [string, unknown][] = [["deposit", { asset: "USDC" }], ["treasury/unlink", {}],
     ["autopilot/stop", {}], ["autopilot/tick", {}], ["proposals", { requestId: "audit-result" }], ["sweep", { execute: true }]];
   auditFails.stage = "result";
   for (const [path, body] of actions)

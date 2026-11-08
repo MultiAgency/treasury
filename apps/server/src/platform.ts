@@ -32,7 +32,7 @@ export type SweepRun = { events: OwnerOutput<"sweep">[]; ended: OwnerFailure | n
 /** A read or action of the agent's strategy and autopilot, as the SDK answers it. */
 export type AutopilotAnswer<P extends "strategy/get" | "strategy/save" | "autopilot/get" | "autopilot/enable" | "autopilot/stop" | "autopilot/tick"> = OwnerResult<OwnerOutput<P>>;
 /** A call that funds the agent, or changes its funding account, as the SDK answers it. */
-export type FundingAnswer<P extends "treasury/get" | "deposit" | "treasury/link" | "treasury/unlink" | "treasury/setConfidential"> = OwnerResult<OwnerOutput<P>>;
+export type FundingAnswer<P extends "treasury/get" | "deposit" | "treasury/link" | "treasury/unlink"> = OwnerResult<OwnerOutput<P>>;
 /** The assets a deposit address takes: USDC, or wNEAR, which NEAR is wrapped into to fund it. */
 export type DepositAsset = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1" | "nep141:wrap.near";
 /** An identity answer, and whether it was reused rather than read from the platform for this request. */
@@ -153,7 +153,6 @@ export type Platform = {
     deposit(organization: string, agent: string, asset: DepositAsset): Promise<FundingAnswer<"deposit">>;
     link(organization: string, agent: string, accountId: string): Promise<FundingAnswer<"treasury/link">>;
     unlink(organization: string, agent: string): Promise<FundingAnswer<"treasury/unlink">>;
-    setConfidential(organization: string, agent: string, confidential: boolean): Promise<FundingAnswer<"treasury/setConfidential">>;
     /**
      * Shields the managed public balances (`execute`), or previews which are public: one stream, read to its end, never
      * sent again. A throw before any event is the caller's lost answer.
@@ -313,7 +312,6 @@ export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs
       deposit: async (organization, agent, asset) => (await client()).agent(organization, agent).call("deposit", { asset }),
       link: async (organization, agent, accountId) => (await client()).agent(organization, agent).call("treasury/link", { accountId }),
       unlink: async (organization, agent) => (await client()).agent(organization, agent).call("treasury/unlink"),
-      setConfidential: async (organization, agent, confidential) => (await client()).agent(organization, agent).call("treasury/setConfidential", { confidential }),
       async sweep(organization, agent, execute) {
         const events: OwnerOutput<"sweep">[] = [];
         const stream = (await client()).agent(organization, agent).stream("sweep", { execute });
