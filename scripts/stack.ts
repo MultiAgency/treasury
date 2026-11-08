@@ -20,9 +20,25 @@ export const ETH = "nep141:eth.omft.near";
 export type Stack = { directory: string; origin: string; agent: string; ca: string };
 
 export function stack(directory: string): Stack {
-  const state = JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as { dashboard: string; treasury?: { agent: string } };
+  const state = readSettledJson(join(directory, "state.json")) as { dashboard: string; treasury?: { agent: string } };
   if (!state.treasury) throw new Error("Start the stack with --treasury");
   return { directory, origin: new URL(state.dashboard).origin, agent: state.treasury.agent, ca: join(directory, "environment", "localhost.crt") };
+}
+
+/**
+ * A JSON file another process rewrites in place, read once it parses. The platform's stack rewrites `state.json`
+ * after every control (`test/e2e/stack.mjs`), not atomically, so a read can land on an empty or half-written file
+ * (seen in CI as "Unexpected end of JSON input"). It retries briefly, synchronously, since callers read it inline.
+ */
+function readSettledJson(file: string, attempts = 40): unknown {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return JSON.parse(readFileSync(file, "utf8"));
+    } catch (error) {
+      if (attempt >= attempts || !(error instanceof SyntaxError)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25); // 25 ms, without making the caller async
+    }
+  }
 }
 
 /**
@@ -56,7 +72,7 @@ export async function startStack({ args = ["--no-browser"], owner = "wallet", pl
     }
     await delay(250);
   }
-  const state = () => JSON.parse(readFileSync(join(directory, "state.json"), "utf8")) as {
+  const state = () => readSettledJson(join(directory, "state.json")) as {
     cdp: string | null; dashboard: string; ownerAccount: string; testPublicKey: string;
     treasury: { agent: string; agentId: string; owner: string; signer: "wallet" | "dao" };
     /** With `--app <deployment>`: the app's base and the 0600 file holding its `tap_` credential. */
@@ -93,7 +109,8 @@ async function control<T>({ directory }: Stack, command: Record<string, unknown>
     if (waited > 15_000) throw new Error(`The stack did not answer ${command.command}`);
     await delay(250);
   }
-  const result = JSON.parse(readFileSync(answer, "utf8")) as { ok: true; value: T } | { ok: false; error: string };
+  // The stack writes the answer in place, so it can exist before it is whole.
+  const result = readSettledJson(answer) as { ok: true; value: T } | { ok: false; error: string };
   writeFileSync(answer, JSON.stringify({ ok: result.ok }));
   if (!result.ok) throw new Error(`${command.command} failed: ${result.error}`);
   return result.value;
