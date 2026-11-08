@@ -1,8 +1,10 @@
 import { mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { fromUnits } from "../shared/format";
-import { Button, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
+import { CheckCircle, WarningCircle } from "@phosphor-icons/react";
+import type { ReactNode } from "react";
+import { assetColor, fromUnits } from "../shared/format";
+import { Badge, Button, ErrorBox, Loading, QueryError, Spinner, type Tone } from "../shared/ui";
 import { blockShield, useShieldBlock } from "./kept-outcomes";
 import type { Identity } from "./proposals-api";
 import { refreshPortfolio, type agentReads } from "./queries";
@@ -23,6 +25,34 @@ const FAILED: Record<string, string> = {
   unresolved: "Nothing was shielded: an earlier operation's outcome isn't proven yet.",
   unavailable: "The sweep didn't answer. Reading again is safe.",
 };
+
+type StepState = "done" | "active" | "next" | "waiting" | "blocked";
+const STEP: Record<StepState, { label: string; tone: Tone; ring: string }> = {
+  done: { label: "Done", tone: "success", ring: "border-border" },
+  active: { label: "Working", tone: "info", ring: "border-info/40" },
+  next: { label: "Next", tone: "brand", ring: "border-brand/40" },
+  waiting: { label: "Waiting", tone: "neutral", ring: "border-border" },
+  blocked: { label: "Check", tone: "destructive", ring: "border-destructive/40" },
+};
+
+/** One step of the sweep: its number (a check once done), title, what it does, its state, its action, and what it found. */
+function Step({ n, title, detail, state, action, children }: { n: number; title: string; detail: string; state: StepState; action: ReactNode; children?: ReactNode }) {
+  const look = STEP[state];
+  return <li className={`flex min-w-0 flex-col gap-3 rounded-lg border bg-background/40 p-3 ${look.ring}`}>
+    <div className="flex items-center gap-3">
+      <span aria-hidden="true" className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold ${state === "done" ? "bg-success text-black" : state === "blocked" ? "bg-[var(--status-danger)] text-black" : "bg-secondary text-foreground ring-1 ring-border-strong"}`}>
+        {state === "done" ? <CheckCircle weight="bold" className="size-4" /> : state === "blocked" ? <WarningCircle weight="bold" className="size-4" /> : n}
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span className="font-medium">{title}</span>
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      </div>
+      <Badge tone={look.tone}>{look.label}</Badge>
+    </div>
+    {children}
+    <div className="flex flex-wrap gap-2">{action}</div>
+  </li>;
+}
 
 /**
  * Previews, then shields, the agent's managed public balances into its confidential balance. Each sweep is sent once and
@@ -65,24 +95,33 @@ export function Sweep({ reads, identity }: { reads: Reads; identity: Identity })
 
   if (account.isPending) return <Loading label="Reading the agent's account…" />;
   if (account.isError) return <QueryError error={account.error} retry={() => account.refetch()} />;
-  return <div className="flex flex-col items-start gap-3 text-sm">
-    <p className="text-muted-foreground">Shield public USDC, wNEAR and ETH balances into the agent's private balance. Other assets aren't included.</p>
-    {!canShield && <p role="status">Shielding needs the agent to hold a treasury grant. Payout and invoice grants can't shield funds.</p>}
-    {read && (exposed.length === 0
-      ? <p role="status">No public USDC, wNEAR or ETH balances found.</p>
-      : <ul aria-label="Public balances" className="flex flex-col gap-1">
-        {exposed.map(holding => {
-          const shield = read.activity.shields.find(item => item.asset === holding.asset);
-          return <li key={holding.asset} className="font-mono">{fromUnits(holding.public, holding.decimals)} {holding.symbol} public{shield && ` · shield ${shield.status.toLowerCase()}`}</li>;
-        })}
-      </ul>)}
-    {read?.execute && read.outcome.ok && <p role="status">Shielded. The portfolio shows it in the private balance.</p>}
-    {unsettled && <p role="status">Shield isn't offered again from this page until its outcome is known.</p>}
-    <div className="flex flex-wrap gap-3">
-      <Button variant="outline" disabled={busy !== undefined || !canSweep} onClick={() => void run(false)}>{busy === "preview" && <Spinner />} Preview</Button>
-      <Button disabled={busy !== undefined || !canSweep || unsettled || !read || read.execute || exposed.length === 0} onClick={() => setReviewing(true)}>
-        {busy === "shield" && <Spinner />} Shield</Button>
-    </div>
+  const shielded = Boolean(read?.execute && read.outcome.ok);
+  const previewState: StepState = read ? "done" : busy === "preview" ? "active" : "next";
+  const shieldState: StepState = shielded ? "done" : read?.execute && !read.outcome.ok ? "blocked" : read && !read.execute && exposed.length > 0 ? "next" : "waiting";
+  return <div className="flex flex-col gap-3 text-sm">
+    {!canShield && <p role="status" className="rounded-lg border border-warning/30 bg-warning-muted px-3 py-2 text-warning-muted-foreground">Shielding needs the agent to hold a treasury grant. Payout and invoice grants can't shield funds.</p>}
+    <ol aria-label="Shield in two steps" className="grid gap-3 md:grid-cols-2">
+      <Step n={1} title="Preview" detail="Read what is in public view now" state={previewState}
+        action={<Button variant="outline" size="sm" disabled={busy !== undefined || !canSweep} onClick={() => void run(false)}>{busy === "preview" && <Spinner />} Preview</Button>}>
+        {read && (exposed.length === 0
+          ? <p role="status" className="text-muted-foreground">No public USDC, wNEAR or ETH balances found.</p>
+          : <ul aria-label="Public balances" className="flex flex-col divide-y divide-border">
+            {exposed.map(holding => {
+              const shield = read.activity.shields.find(item => item.asset === holding.asset);
+              return <li key={holding.asset} className="flex items-center gap-2 py-1.5 first:pt-0 last:pb-0">
+                <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${assetColor(holding.symbol)}`} />
+                <span className="font-mono">{fromUnits(holding.public, holding.decimals)} {holding.symbol} public{shield && ` · shield ${shield.status.toLowerCase()}`}</span>
+              </li>;
+            })}
+          </ul>)}
+      </Step>
+      <Step n={2} title="Shield" detail="Move them into the private balance, after a review" state={shieldState}
+        action={<Button size="sm" disabled={busy !== undefined || !canSweep || unsettled || !read || read.execute || exposed.length === 0} onClick={() => setReviewing(true)}>
+          {busy === "shield" && <Spinner />} Shield</Button>}>
+        {shielded && <p role="status" className="text-success-muted-foreground">Shielded. The portfolio shows it in the private balance.</p>}
+        {unsettled && <p role="status" className="text-warning-muted-foreground">Shield isn't offered again from this page until its outcome is known.</p>}
+      </Step>
+    </ol>
     <ErrorBox error={error} />
     <ReviewDialog open={reviewing} busy={busy !== undefined} onClose={() => setReviewing(false)} title="Shield these public balances?"
       description="Moves them into the agent's private balance: they stay in the account, out of public view. The agent reads its balances again when it runs, and shields each public USDC, wNEAR and ETH balance it then finds, so anything that arrived since this preview is shielded too."

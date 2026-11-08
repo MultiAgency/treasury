@@ -128,12 +128,12 @@ export function HomePage() {
   // What needs the owner comes first (#130), then where the agent stands and its portfolio, and the connection last. It
   // stays at one position in the list, whether or not the agent is connected: moved, it would remount and lose the notice
   // that says it just connected. Not connected, it is the only thing on the page, and what needs doing.
-  return <>
+  return <div className="flex flex-col gap-4">
     <NeedsDecision reads={reads} identity={identity} connected={connected} />
     {connected ? <Standing reads={reads} identity={identity} /> : null}
-    {connected ? <Portfolio reads={reads} /> : null}
+    {connected ? <Portfolio reads={reads} agent={identity.agent} /> : null}
     <Connection reads={reads} identity={identity} />
-  </>;
+  </div>;
 }
 
 /** Proposals (`/agents/<agent>/proposals`). */
