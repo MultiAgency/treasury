@@ -31,6 +31,8 @@ function reachable(entry: string, assets = false) {
     if (!code && !assets) continue;
     seen.add(file);
     if (code) queue.push(...runtimeImports(file));
+    // A stylesheet's own relative `@import`s (the theme's palette, `theme/tokens.css`) are part of it.
+    else for (const [, specifier] of readFileSync(file, "utf8").matchAll(/^@import\s+"(\.[^"]+)"/gm)) queue.push(resolve(dirname(file), specifier!));
   }
   return [...seen].map(file => relative(SRC, file));
 }

@@ -19,7 +19,3 @@ export function Logo({ className = "size-8 sm:size-9" }: { className?: string } 
     </svg>
   );
 }
-
-export function TreasuryBrand() {
-  return <div className="flex min-w-0 items-center gap-3"><Logo className="size-12 sm:size-14" /><span className="font-heading text-sm font-semibold tracking-tight">Agentic<span className="block sm:inline"> Treasury</span></span></div>;
-}

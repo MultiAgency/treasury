@@ -90,10 +90,18 @@ export function fromUnits(raw: string, decimals: number) {
 export const linkedBalances = (balances: { near: string; usdc: string }) =>
   ({ near: fromUnits(balances.near, 24), usdc: fromUnits(balances.usdc, 6) });
 
-const ASSET_COLOR: Record<string, string> = {
-  USDC: "bg-chart-3",
-  wNEAR: "bg-chart-2",
-  ETH: "bg-chart-1",
+/**
+ * One colour per asset (#193), the theme's `--asset-*` variables (`theme/tokens.css`): wNEAR teal, USDC blue, ETH
+ * violet. Any other asset is amber, and a second other pink: `other` counts the other assets before it in what's shown.
+ */
+const ASSET_TONE: Record<string, string> = { wNEAR: "wnear", NEAR: "wnear", USDC: "usdc", ETH: "eth" };
+const OTHER_TONES = ["other", "other-2"] as const;
+// Spelled out, so Tailwind finds each class in the source.
+const ASSET_BG: Record<string, string> = {
+  wnear: "bg-asset-wnear", usdc: "bg-asset-usdc", eth: "bg-asset-eth", other: "bg-asset-other", "other-2": "bg-asset-other-2",
 };
-/** Per-asset colour, used everywhere an asset appears in a chart; an asset without its own is neutral. */
-export const assetColor = (symbol: string) => ASSET_COLOR[symbol] ?? "bg-muted-foreground";
+const toneOf = (symbol: string, other: number) => ASSET_TONE[symbol] ?? OTHER_TONES[other % OTHER_TONES.length]!;
+/** An asset's colour as a CSS value, `var(--asset-…)`, for a style (a chart's fill, a swatch's border). */
+export const assetTone = (symbol: string, other = 0) => `var(--asset-${toneOf(symbol, other)})`;
+/** An asset's colour as a background class (`bg-asset-usdc`), for a swatch or a meter's segment. */
+export const assetColor = (symbol: string, other = 0) => ASSET_BG[toneOf(symbol, other)]!;

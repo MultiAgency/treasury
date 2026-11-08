@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { amountOf, describeRequest, exactAmountOf, exactPayment, linkedBalances, symbolOf } from "../src/shared/format.ts";
+import { amountOf, assetColor, assetTone, describeRequest, exactAmountOf, exactPayment, linkedBalances, symbolOf } from "../src/shared/format.ts";
 
 const usdc = { asset: ASSETS.USDC, symbol: "USDC", decimals: 6 } as Parameters<typeof amountOf>[2][number];
 
@@ -48,4 +48,15 @@ test("a linked account's balances, as both Funding views show them: treasury/get
   assert.deepEqual(linkedBalances({ near: "306132631859932448916007858", usdc: "305530000" }), { near: "306.132631859932448916007858", usdc: "305.53" });
   assert.deepEqual(linkedBalances({ near: "1000000000000000000000000", usdc: "0" }), { near: "1", usdc: "0" });
   assert.deepEqual(linkedBalances({ near: "1", usdc: "1" }), { near: "0.000000000000000000000001", usdc: "0.000001" });
+});
+
+test("each asset has its own colour, and any other is amber, then pink", () => {
+  assert.equal(assetColor("wNEAR"), "bg-asset-wnear");
+  assert.equal(assetColor("USDC"), "bg-asset-usdc");
+  assert.equal(assetColor("ETH"), "bg-asset-eth");
+  assert.equal(assetColor("BTC"), "bg-asset-other");
+  assert.equal(assetColor("SOL", 1), "bg-asset-other-2");
+  assert.equal(assetColor("USDC", 1), "bg-asset-usdc", "an asset with its own colour keeps it");
+  assert.equal(assetTone("ETH"), "var(--asset-eth)");
+  assert.equal(assetTone("BTC"), "var(--asset-other)");
 });

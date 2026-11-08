@@ -1,0 +1,58 @@
+/*
+ * Agentic Treasury's palette (#193): a pure black page, panels one step lighter with hairline borders, white and grey
+ * type, and colour only where it carries meaning: the mint brand (the active page, primary actions, focus), one colour
+ * per asset, and the four statuses. Dark only; there is no light theme.
+ *
+ * Unscoped on purpose: these are plain `:root` variables, gated on no class, so whatever imports `styles.css` (which
+ * imports this file) gets them, and every shared primitive reads them through Tailwind's theme (`styles.css`).
+ * Text colours on a tinted background (`--tint-*`) are the lighter `--*-ink` values, each at least 4.5:1 on a 14% tint
+ * over a panel.
+ */
+:root {
+  /* Surfaces */
+  --page: #000;
+  --panel: #121212;
+  --panel-raised: #1a1a1a;
+  --panel-hover: #1f1f1f;
+  --field: #1c1c1c;
+  --hairline: rgb(255 255 255 / 0.09);
+  --hairline-strong: rgb(255 255 255 / 0.16);
+  /* A control's edge, at 3:1 against the page and a panel. */
+  --control-edge: #6b6b6b;
+
+  /* Type */
+  --ink: #fafafa;
+  --ink-muted: #a3a3a3;
+
+  /* The brand: mint, with near-black text on it. */
+  --brand-mint: #5fd3a6;
+  --brand-mint-ink: #03140d;
+
+  /* One colour per asset; any other asset takes amber, then pink (`assetColor` in shared/format.ts). */
+  --asset-wnear: #3dd6b5;
+  --asset-usdc: #4c8df6;
+  --asset-eth: #8b7cf6;
+  --asset-other: #f5b44c;
+  --asset-other-2: #f472b6;
+
+  /* Status */
+  --status-success: #34c77b;
+  --status-warning: #f5a524;
+  --status-danger: #f2555a;
+  --status-info: #4c8df6;
+  --status-success-ink: #4fd68e;
+  --status-warning-ink: #f7b546;
+  --status-danger-ink: #ff7b7f;
+  --status-info-ink: #7aa9f9;
+
+  /* Tinted backgrounds: the colour at 14%, for badges, alerts and icon tiles. */
+  --tint-brand: color-mix(in oklab, var(--brand-mint) 14%, transparent);
+  --tint-success: color-mix(in oklab, var(--status-success) 14%, transparent);
+  --tint-warning: color-mix(in oklab, var(--status-warning) 14%, transparent);
+  --tint-danger: color-mix(in oklab, var(--status-danger) 14%, transparent);
+  --tint-info: color-mix(in oklab, var(--status-info) 14%, transparent);
+
+  /* Type families: Geist for the interface, Geist Mono (tabular figures) for amounts and identifiers. */
+  --font-ui: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-code: "Geist Mono Variable", ui-monospace, monospace;
+}
