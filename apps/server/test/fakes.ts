@@ -123,7 +123,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
   const ownerActionsOf = (agent: string) => grants.filter(item => item.agent === agent).map(item => ({ correlationId: item.correlationId, type: item.type ?? "grant_issue", expiresAt: item.expiresAt,
     signer: item.signer, stage: item.stage, ownerSucceeded: item.stage === "submitted", status: null, failureCode: null, payment: null }));
   const grantAnswers: Partial<Record<"prepare" | "submit" | "ownerPrepare", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
-  const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink" | "setConfidential", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
+  const fundingAnswers: Partial<Record<"treasury" | "deposit" | "link" | "unlink", ({ ok: false; kind: string; status?: number; error?: string } | Error)[]>> = {};
   const funding = <T,>(name: keyof typeof fundingAnswers, organization: string, agent: string, rest: string[], value: () => T) => {
     calls.push([`funding.${name}`, organization, agent, ...rest].join(" "));
     const queued = fundingAnswers[name]?.shift();
@@ -441,9 +441,6 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       }),
       link: async (organization, agent, accountId) => funding("link", organization, agent, [accountId], () => { treasuries[agent] = { accountId, confidential: false }; }),
       unlink: async (organization, agent) => funding("unlink", organization, agent, [], () => { delete treasuries[agent]; }),
-      setConfidential: async (organization, agent, confidential) => funding("setConfidential", organization, agent, [String(confidential)], () => {
-        if (treasuries[agent]) treasuries[agent].confidential = confidential;
-      }),
       async sweep(organization, agent, execute) {
         calls.push(`funding.sweep ${organization} ${agent} ${execute}`);
         const queued = sweepRuns.shift();

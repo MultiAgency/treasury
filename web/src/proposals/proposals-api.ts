@@ -172,8 +172,6 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** A wallet owner's changes to the funding account, each sent once; the account is read again after. */
         link: (accountId: string) => call(contract.fundingChanged, `${base}/treasury/link`, { method: "POST", body: contract.linkRequest.parse({ accountId }) }),
         unlink: () => call(contract.fundingChanged, `${base}/treasury/unlink`, { method: "POST" }),
-        setConfidential: (confidential: boolean) =>
-          call(contract.fundingChanged, `${base}/treasury/confidential`, { method: "POST", body: contract.confidentialRequest.parse({ confidential }) }),
         /** A proposal by the `requestId` it was proposed with; read only. */
         request: (requestId: string) => call(contract.requestRead, `${base}/requests/${readId.parse(requestId)}`),
         /** An operation's status by its `correlationId`, from its activity row: null until an outcome is recorded. */

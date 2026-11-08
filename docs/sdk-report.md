@@ -52,7 +52,7 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 |---|---|---|
 | `setup` (identity, instance, overview fields) | owner UI frame | owner session only |
 | `reconcileBooks` | portfolio | On the app route since 0.5.1 (`read`); the app server reads it |
-| `treasury/link`, `unlink`, `setConfidential` | funding page | On the app route since 0.5.1 (`treasury`, wallet owners only); the proposals page uses them (#121) |
+| `treasury/link`, `unlink` | funding page | On the app route since 0.5.1 (`treasury`, wallet owners only); the proposals page uses them (#121). `setConfidential` is gone in 0.5.5: `treasury/get` reads it from chain (platform#41) |
 | `treasury/fund` | funding page | Owner session only; on the app route, `deposit` and the SDK's `fundingTransaction` fund the agent instead (#121) |
 | `autopilot/tick` ("Run now") | automations (#7) | On the app route since 0.5.1 (`treasury`); the proposals page's Run now uses it (#126) |
 | `steward/propose` | steward page (#7) | owner session only |

@@ -50,20 +50,18 @@ test("the linked account reads null until the owner links one; linked, it reads 
   assert.deepEqual(audit.map(entry => [entry.action, entry.stage, entry.who, "answer" in entry ? entry.answer.ok : undefined]), [["link", "attempt", "owner.near", undefined], ["link", "result", "owner.near", true]]);
 });
 
-test("marking the account confidential and unlinking it are relayed once each, and recorded before and after", async () => {
+test("unlinking the account is relayed once, and recorded before and after", async () => {
   reset();
-  assert.equal((await call("POST", `${agent}/treasury/confidential`, owner, { confidential: true })).status, 200);
-  assert.equal(contract.treasuryRead.parse((await call("GET", `${agent}/treasury`)).body.value).treasury?.confidential, true);
   assert.equal((await call("POST", `${agent}/treasury/unlink`)).status, 200);
   assert.equal(contract.treasuryRead.parse((await call("GET", `${agent}/treasury`)).body.value).treasury, null);
   assert.deepEqual(fundingCalls().filter(made => !made.startsWith("funding.treasury")),
-    ["funding.setConfidential owner--near portfolio true", "funding.unlink owner--near portfolio"]);
-  assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["confidential", "attempt"], ["confidential", "result"], ["unlink", "attempt"], ["unlink", "result"]]);
+    ["funding.unlink owner--near portfolio"]);
+  assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["unlink", "attempt"], ["unlink", "result"]]);
 });
 
 test("a malformed change is refused before anything is asked or recorded", async () => {
   reset();
-  for (const [path, body] of [["link", { accountId: "Not An Account" }], ["link", {}], ["confidential", { confidential: "yes" }], ["unlink", { extra: 1 }]] as const)
+  for (const [path, body] of [["link", { accountId: "Not An Account" }], ["link", {}], ["unlink", { extra: 1 }]] as const)
     assert.deepEqual((await call("POST", `${agent}/treasury/${path}`, owner, body)).body, { ok: false, kind: "refused", code: "bad_request" }, path);
   assert.deepEqual([fundingCalls(), audit], [[], []]);
 });
@@ -108,17 +106,17 @@ test("a deposit address is asked for by asset, NEAR as wNEAR, each one fresh; an
 test("someone else's agent is not_owner for every funding route, and nothing is asked", async () => {
   reset();
   for (const [method, path, body] of [["GET", "treasury", undefined], ["POST", "deposit", { asset: "USDC" }], ["POST", "treasury/link", { accountId: "funds.near" }],
-    ["POST", "treasury/unlink", {}], ["POST", "treasury/confidential", { confidential: false }]] as const)
+    ["POST", "treasury/unlink", {}]] as const)
     assert.deepEqual((await call(method, `${agent}/${path}`, intruder, body)).body, { ok: false, kind: "not_owner" }, path);
   assert.deepEqual(fundingCalls(), []);
 });
 
-test("a DAO's council reads its funding account and asks for a deposit address, but its funding account is the DAO: no link, unlink or setting", async () => {
+test("a DAO's council reads its funding account and asks for a deposit address, but its funding account is the DAO: no link or unlink", async () => {
   reset();
   const dao = "/api/agents/daoagent";
   assert.equal((await call("GET", `${dao}/treasury`, council)).status, 200);
   assert.equal((await call("POST", `${dao}/deposit`, council, { asset: "USDC" })).status, 200);
-  for (const [path, body] of [["link", { accountId: "funds.near" }], ["unlink", {}], ["confidential", { confidential: true }]] as const) {
+  for (const [path, body] of [["link", { accountId: "funds.near" }], ["unlink", {}]] as const) {
     assert.deepEqual((await call("POST", `${dao}/treasury/${path}`, council, body)).body, { ok: false, kind: "refused", code: "not_permitted" }, path);
     // A member with every DAO permission passes the roles check, and is refused all the same.
     assert.deepEqual((await call("POST", `${dao}/treasury/${path}`, admin, body)).body, { ok: false, kind: "refused", code: "dao_funding_fixed" }, `${path}, every permission`);

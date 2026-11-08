@@ -148,7 +148,7 @@ function ReceiveCard({ reads, identity, className = "" }: { reads: Reads; identi
   </Card>;
 }
 
-/** The linked account, and for a wallet owner the controls that change it: link, unlink, and a DAO's confidential setting. */
+/** The linked account, and for a wallet owner the controls that change it: link and unlink. */
 function FundingAccount({ reads, identity, linked }: { reads: Reads; identity: Identity; linked: TreasuryRead }) {
   const client = useQueryClient();
   // A DAO agent's funding account is the DAO, fixed at setup: no member changes it, whatever their roles.
@@ -181,11 +181,6 @@ function FundingAccount({ reads, identity, linked }: { reads: Reads; identity: I
         </div>)}
     </dl>
     {identity.signer === "dao" && <p className="text-xs text-muted-foreground">A DAO agent is funded by its DAO, fixed at setup.</p>}
-    {canChange && linked.dao && <label className="flex items-center gap-2">
-      <input type="checkbox" checked={linked.confidential} disabled={busy}
-        onChange={event => void change(() => reads.agent.setConfidential(event.target.checked))} />
-      Confidential in Trezu: it pays from its private balance, out of public view
-    </label>}
     {canChange && <Button variant="danger" size="sm" className="self-start" disabled={busy} onClick={() => setUnlinking(true)}>Unlink</Button>}
     <ErrorBox error={error} />
     <ReviewDialog open={unlinking} busy={busy} onClose={() => setUnlinking(false)} title="Unlink the funding account?"
