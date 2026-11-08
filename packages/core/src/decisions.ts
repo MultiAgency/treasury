@@ -37,6 +37,9 @@ export type DecisionRecord = {
 /** The part of a record a replay compares. */
 export type DecisionPart = "intent" | "policy" | "proposal";
 
+/** What an intent decides: all of it but its reason, which only words the decision and may be reworded (#208). */
+const decided = (intent: unknown) => typeof intent === "object" && intent !== null ? { ...intent, reason: undefined } : intent;
+
 /** A value as it reads back from the log: JSON drops undefined fields and writes NaN and Infinity as null. */
 const asStored = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -72,9 +75,9 @@ export type DecisionReplay =
     part: DecisionPart; recorded: unknown; replayed: unknown };
 
 /**
- * Replays recorded decisions through the engines and compares each intent, policy result and proposal with the one
- * recorded, as canonical JSON. Stops at the first that differs and names it. A record whose shape is broken counts as
- * differing: a log that can't be replayed doesn't prove its decisions.
+ * Replays recorded decisions through the engines and compares each intent (all but its reason), policy result and
+ * proposal with the one recorded, as canonical JSON. Stops at the first that differs and names it. A record whose shape
+ * is broken counts as differing: a log that can't be replayed doesn't prove its decisions.
  */
 export function replayDecisions(records: readonly DecisionRecord[], seqs?: readonly number[]): DecisionReplay {
   for (let index = 0; index < records.length; index++) {
@@ -86,7 +89,7 @@ export function replayDecisions(records: readonly DecisionRecord[], seqs?: reado
     let intent: Intent;
     try { intent = asStored(evaluateBands(record.reading, record.input, record.engine)); }
     catch (error) { return differs("intent", record.intent, `the engine threw: ${String(error)}`); }
-    if (!same(intent, record.intent)) return differs("intent", record.intent, intent);
+    if (!same(decided(intent), decided(record.intent))) return differs("intent", record.intent, intent);
     if (intent.action === "hold") {
       if (record.policy !== undefined) return differs("policy", record.policy.result, "a hold isn't checked");
       if (record.proposal !== undefined) return differs("proposal", record.proposal, "a hold proposes nothing");
