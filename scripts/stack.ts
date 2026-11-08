@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at f2c7b7f), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 96a0bb6), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -7,11 +7,13 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 /**
- * The platform commit the stack runs from: the one `@multiagency/sdk` 0.5.4 was published from (tag `sdk-v0.5.4`), with
- * the stack's simulated DAO (`--dao-treasury`), proposals stored at a market price, the `signOwnerDelegate` control, and
- * `treasury/get`'s raw balances, which 0.5.3's schema requires.
+ * The platform commit the stack runs from: platform main after `@multiagency/sdk` 0.5.4 (tag `sdk-v0.5.4`), with #41
+ * (`treasury/get` reads a linked DAO's confidential setup from chain; the stack's `daoConfidentialSetup` control), #43 (a
+ * DAO vote on a proposal that ended answers `proposal_not_open`) and #44 (a read closes a proposal whose agent or
+ * strategy changed); with the stack's simulated DAO (`--dao-treasury`), proposals stored at a market price, the `signOwnerDelegate`
+ * control, and `treasury/get`'s raw balances, which the SDK's schema requires.
  */
-export const PLATFORM_COMMIT = "f2c7b7f";
+export const PLATFORM_COMMIT = "96a0bb6";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";
@@ -155,6 +157,12 @@ export const signOwner = (target: Stack, payload: { message: string; recipient: 
 export type DelegateAction = { type: "FunctionCall"; params: { methodName: string; args: unknown; gas: string; deposit: string } };
 export const signOwnerDelegate = (target: Stack, payload: { receiverId: string; actions: DelegateAction[] }) =>
   control<{ accountId: string; signedDelegate: string }>(target, { command: "signOwnerDelegate", ...payload });
+
+/**
+ * The simulated DAO is set up for confidential intents, as Trezu's confidential setup does: its key on its own path is
+ * registered on `intents.near`. `treasury/get` reads it fresh, so the next read says `confidential`. It can't be undone.
+ */
+export const daoConfidentialSetup = (target: Stack) => control(target, { command: "daoConfidentialSetup" });
 
 /** The DAO passes the proposal that signs `hash` (a DAO request's NEP-413 hash): the simulated MPC key signs it, as an executed proposal would. */
 export const daoVote = (target: Stack, hash: string) => control(target, { command: "daoVote", hash });

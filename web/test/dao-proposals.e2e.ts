@@ -24,7 +24,7 @@ import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
 import { createStrategyProposals, memoryProposalRecords } from "../../apps/server/src/strategy-proposals.ts";
 import { wallet } from "../../apps/server/test/fakes.ts";
-import { daoVote, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
+import { daoConfidentialSetup, daoVote, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
@@ -203,6 +203,36 @@ test("the DAO funds its agent from its own account: no link controls, and Trezu 
   const ft = filed[0]!.actions.find(action => action.params.methodName === "ft_transfer")!;
   assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "2000000"]);
   assert.deepEqual(await axe(), [], "filed");
+  assert.deepEqual(unexpected, []);
+});
+
+test("a confidential DAO is offered both ways to fund its agent, the confidential balance first; Trezu files exactly the reviewed transfer from the public one (#214)", { timeout: 90_000 }, async () => {
+  await daoConfidentialSetup(target);
+  await page.goto(`${origin}/agents/${target.agent}/funding`);
+  const funding = page.getByRole("region", { name: "Funding" });
+  const paths = funding.getByRole("region", { name: /^From the (confidential|public) balance$/ });
+  await visible(paths.nth(1));
+  assert.deepEqual(await paths.evaluateAll(sections => sections.map(section => section.getAttribute("aria-labelledby"))),
+    ["money-in-confidential", "money-in-public"], "the confidential path first");
+  const confidential = funding.getByRole("region", { name: "From the confidential balance" });
+  await visible(confidential.getByRole("link", { name: "Open payment in Trezu" }));
+  assert.match(await confidential.locator("code").first().innerText(), /^nearcom:\S+$/);
+  assert.deepEqual(await axe(), [], "both paths");
+
+  const open = funding.getByRole("region", { name: "From the public balance" });
+  await open.getByLabel("Funding amount").fill("3");
+  await open.getByRole("button", { name: "Review proposal" }).click();
+  const review = open.getByRole("group", { name: "Funding transfer to sign" });
+  await visible(review);
+  assert.match(await review.innerText(), new RegExp(`The proposal pays exactly 3 USDC from ${dao.replaceAll(".", "\\.")}`));
+  const address = (await review.locator("code").first().innerText()).trim();
+  const filedBefore = filed.length;
+  await review.getByRole("button", { name: "File funding proposal" }).click();
+  await visible(open.getByRole("status").filter({ hasText: /^Filed in Trezu\./ }));
+  assert.equal(filed.length, filedBefore + 1, "filed once");
+  assert.equal(filed.at(-1)!.signerId, dao, "as the DAO, through Trezu");
+  const ft = filed.at(-1)!.actions.find(action => action.params.methodName === "ft_transfer")!;
+  assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "3000000"]);
   assert.deepEqual(unexpected, []);
 });
 
