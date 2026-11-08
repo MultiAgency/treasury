@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, type ReactNode } from "react";
 import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
 import { Policy } from "./policy";
@@ -15,19 +15,42 @@ import { agentAddress, isProposalId, isRunId, MISSING_TITLE, place, ROOT_TITLE, 
 import { Portfolio } from "./portfolio";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
-import { agentReads, failureOf } from "./queries";
+import { agentReads, failureOf, setupReads } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { AppShell } from "./shell";
 import { CreateAgent, DaoSetup, Home } from "./setup";
 
+// The signed-out root's landing (#194) loads on its own chunk, with its styles and motion; its 3D vault on another. A
+// signed-in page loads neither.
+const Landing = lazy(() => import("./landing/landing"));
+
 /** Where the page is, from the router's address: the one reading of it (`pages.ts`). */
 export const usePlace = (): Place => place(useRouterState({ select: state => state.location.pathname }));
 
-/** The page's frame: the skip link, the shell (sidebar and top bar, `shell.tsx`) and the main region every page sits in. Sets the document's title to the page's. */
+/**
+ * What the root shows: `landing` signed out, `pending` while the session is checked, else the app (`Home`). The read
+ * is the root page's own (`setupReads.mine`), so this asks the server nothing more. Any other address is the app.
+ */
+function useRootView(here: Place): "app" | "pending" | "landing" {
+  const root = here.kind === "root";
+  const setups = useQuery({ ...setupReads.mine, enabled: root });
+  if (!root) return "app";
+  if (setups.isPending) return "pending";
+  return failureOf(setups.error)?.kind === "not_signed_in" ? "landing" : "app";
+}
+
+/**
+ * The page's frame: the skip link, the shell (sidebar and top bar, `shell.tsx`) and the main region every page sits in.
+ * Signed out, the root is the landing instead, full-bleed with its own nav: the shell is for the signed-in pages.
+ * Sets the document's title to the page's.
+ */
 export function Shell() {
   const here = usePlace();
+  const view = useRootView(here);
   const router = useRouter();
-  useEffect(() => { document.title = `Treasury proposals · ${here.title}`; }, [here.title]);
+  // The landing is the product's front page, titled with its name; every other page with its own title.
+  const title = view === "landing" ? "Agentic Treasury" : `Treasury proposals · ${here.title}`;
+  useEffect(() => { document.title = title; }, [title]);
   // A link followed from a page's content unmounts with that page, and the focus it held falls to <body>, so a keyboard
   // or screen reader user starts again from the top without being told the page changed. Once the new address has
   // rendered (the router's own event: its location changes before the old page's content is replaced), the focus goes to
@@ -44,11 +67,16 @@ export function Shell() {
       target.focus();
     });
   }, [router]);
+  // Until the root knows whether anyone is signed in, neither the shell nor the landing is drawn, so neither flashes
+  // before the other: only what is being checked.
+  const checking = <main id="main" tabIndex={-1} className="grid min-h-dvh place-items-center bg-background p-6"><Loading label="Checking your session…" /></main>;
   return <>
-    <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-background focus:p-3">Skip to main content</a>
-    <AppShell here={here}>
-      <main id="main" tabIndex={-1} className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 pt-6 pb-16 sm:px-6 md:px-8 md:pt-8"><Outlet /></main>
-    </AppShell>
+    <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:rounded-lg focus:bg-background focus:p-3">Skip to main content</a>
+    {view === "pending" ? checking
+      : view === "landing" ? <Suspense fallback={checking}><Landing /></Suspense>
+      : <AppShell here={here}>
+        <main id="main" tabIndex={-1} className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 pt-6 pb-16 sm:px-6 md:px-8 md:pt-8"><Outlet /></main>
+      </AppShell>}
   </>;
 }
 

@@ -13,6 +13,8 @@ function runtimeImports(file: string) {
   for (const [, clause, specifier] of source.matchAll(/^\s*(?:import|export)\s+(type\s+)?[^;]*?from\s+"([^"]+)"/gm))
     if (!clause && (specifier!.startsWith(".") || specifier!.startsWith("@/"))) found.push(specifier!);
   for (const [, specifier] of source.matchAll(/^\s*import\s+"([^"]+)"/gm)) if (specifier!.startsWith(".")) found.push(specifier!);
+  // A module loaded on demand (`import("./landing/landing")`, the landing and its 3D vault) is reached too, later.
+  for (const [, specifier] of source.matchAll(/\bimport\(\s*"([^"]+)"\s*\)/g)) if (specifier!.startsWith(".") || specifier!.startsWith("@/")) found.push(specifier!);
   return found.map(specifier => {
     const base = specifier.startsWith("@/") ? join(SRC, specifier.slice(2)) : resolve(dirname(file), specifier);
     const path = EXTENSIONS.map(extension => base + extension).find(candidate => existsSync(candidate) && !candidate.endsWith("/"));

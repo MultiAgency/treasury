@@ -106,9 +106,9 @@ const dialog = (name: string) => page.getByRole("dialog", { name });
 const nav = (name: string) => page.getByRole("navigation", { name: "Agent pages" }).getByRole("link", { name });
 /** The page `address` names, for the agent: its own `<h1>`, and the navigation marking it. */
 const here = (path = "") => `${origin}/agents/${target.agent}${path}`;
-/** Signs in when the page asks (a test before may have signed out), then waits for `shown`. */
+/** Signs in when the page asks (a test before may have signed out; signed out, the root is the landing), then waits for `shown`. */
 async function signInIfAsked(shown: ReturnType<Page["getByRole"]>) {
-  const signIn = page.getByRole("button", { name: "Sign in with wallet" });
+  const signIn = page.getByRole("button", { name: "Sign in with wallet" }).or(page.getByRole("main").getByRole("button", { name: "Connect wallet" })).first();
   await signIn.or(shown).first().waitFor({ timeout: 20_000 });
   if (await signIn.isVisible()) await signIn.click();
   await visible(shown);
@@ -284,6 +284,35 @@ test("signing out ends the server's session: the page asks to sign in again, and
   await page.reload();
   await visible(page.getByRole("heading", { level: 2, name: "Sign in" }));
   assert.equal(await page.getByRole("region", { name: "Connection" }).count(), 0, "nothing of the owner's is shown");
+});
+
+test("signed out, the root is the landing outside the app's shell, passes an axe scan, and its Connect wallet is the app's sign-in, refusal included (#194)", { timeout: 90_000 }, async () => {
+  // The test before signed out.
+  await page.goto(`${origin}/`);
+  await visible(page.getByRole("heading", { level: 1, name: "Your treasury. Your limits." }));
+  assert.equal(await page.getByRole("heading", { level: 1 }).count(), 1, "one h1");
+  assert.equal(await page.title(), "Agentic Treasury");
+  assert.equal(await page.getByRole("button", { name: "Toggle Sidebar" }).count(), 0, "the shell is for the signed-in pages");
+  assert.equal(await page.getByRole("list", { name: "Your treasuries" }).count(), 0, "nothing of the owner's is shown");
+  await visible(page.getByRole("navigation", { name: "Landing" }));
+  for (const name of ["Product", "How it works", "Security", "FAQ"]) await visible(page.getByRole("region", { name }));
+  // Decorative: the vault and the traces are hidden from assistive technology, so the hero's name is its heading.
+  assert.equal(await page.locator("canvas:not([aria-hidden=true] canvas)").count(), 0, "no canvas outside an aria-hidden host");
+  await page.waitForLoadState("networkidle");
+  assert.deepEqual(await axe(), [], "the landing");
+
+  const connect = page.getByRole("main").getByRole("button", { name: "Connect wallet" }).first();
+  // A wallet that refuses: the sign-in's own words, and the button offered again.
+  await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+  await connect.click();
+  await visible(page.getByRole("alert").filter({ hasText: "The wallet didn't sign: The wallet refused the signature" }));
+  assert.deepEqual(await axe(), [], "the landing, with the refusal");
+  await connect.click();
+  await visible(page.getByRole("list", { name: "Your treasuries" }));
+  await visible(page.getByRole("heading", { level: 1, name: "Your treasuries", exact: true }));
+  assert.equal(await page.getByRole("heading", { name: "Your treasury. Your limits." }).count(), 0, "signed in, the landing is gone");
+  assert.equal(await page.title(), "Treasury proposals · Your treasuries");
+  assert.deepEqual(unexpected, [], "the landing reached nothing but this server and the wallet's boundary");
 });
 
 test("the root lists the signed-in owner's treasuries, linked to each agent's page, and checks a DAO's account before opening its setup", { timeout: 60_000 }, async () => {
