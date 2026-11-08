@@ -103,6 +103,14 @@ const engineState = z.strictObject({
 type EngineState = z.output<typeof engineState>;
 
 /**
+ * The state as if proposal `p` had never been decided: its zone and cooldown as they were before it, and it no longer
+ * counts towards turnover or the order rate. `watch` decides nothing else for the agent while it's live, so nothing
+ * changed the state in between. One recorded before its state was kept (`whipsawBefore`) only stops counting.
+ */
+const undone = (s: EngineState, p: EngineState["proposed"][number]): EngineState =>
+  ({ ...s, ...(p.whipsawBefore && { whipsaw: p.whipsawBefore }), proposed: s.proposed.filter(x => x.requestId !== p.requestId) });
+
+/**
  * Ballast's state per agent, kept across restarts: the anti-whipsaw state, the DCA units its executed buys spent, and
  * the proposals it made, for the policy's turnover and order counts. A proposal counts from when it's made, whether or
  * not it's approved: an over-count only holds back more.
@@ -248,22 +256,22 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         { requestId, at: intent.at, sizeUsd: intent.sizeUsd, dcaUnits: intent.dcaUnits, settled: false, whipsawBefore: s.whipsaw }],
     })),
 
-    /**
-     * A proposal the platform refused without storing it (#190): it was never made, so it's as if it hadn't been decided.
-     * The zone and the cooldown go back to what they were before it, and it no longer counts towards turnover or the order
-     * rate. `watch` sends nothing else for the agent while a request is unanswered, so nothing changed the state in between.
-     * A proposal recorded before its state was kept (`whipsawBefore`) only stops counting.
-     */
+    /** A proposal the platform refused without storing it (#190): it was never made, so it's undone. */
     unmade: (organization: string, agent: string, requestId: string) => states.change(organization, agent, s => {
       const p = s.proposed.find(x => x.requestId === requestId);
-      if (!p || p.settled) return null;
-      return { ...s, ...(p.whipsawBefore && { whipsaw: p.whipsawBefore }), proposed: s.proposed.filter(x => x.requestId !== requestId) };
+      return !p || p.settled ? null : undone(s, p);
     }),
 
-    /** A proposal of Ballast's ended: an executed buy spends its DCA units, once; any other end spends none. */
+    /**
+     * A proposal of Ballast's ended: an executed buy spends its DCA units, once; any other end spends none. One the owner
+     * rejected or let expire still holds its zone and counts, so the same trade isn't put straight back to them. One the
+     * platform invalidated (the agent, its policy or the owner's strategy changed after it was made) is undone as an
+     * unmade one is (#217): nobody decided on it, so Ballast decides again under what changed.
+     */
     settled: (organization: string, agent: string, requestId: string, state: string) => states.change(organization, agent, s => {
       const p = s.proposed.find(x => x.requestId === requestId);
       if (!p || p.settled) return null;
+      if (state === "invalidated") return undone(s, p);
       return {
         ...s, dcaUnitsUsed: s.dcaUnitsUsed + (state === "executed" ? p.dcaUnits : 0),
         proposed: s.proposed.map(x => x.requestId === requestId ? { ...x, settled: true } : x),

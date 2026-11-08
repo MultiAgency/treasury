@@ -154,6 +154,22 @@ test("a rejected or expired proposal spends no DCA units, but still counts towar
   }
 });
 
+test("an invalidated proposal is undone: nobody decided on it, so Ballast decides again under what changed and proposes anew (#217)", async () => {
+  const w = await world();
+  await w.tick();
+  const [requestId, view] = [...w.stored][0]!;
+  w.stored.set(requestId, { ...view, state: "invalidated", reason: "the owner's strategy changed" });
+  w.clock.now += 30 * 60_000;
+  w.answers.overview = overview(3.12, w.clock.now);
+  const event = await w.tick();
+  assert.ok("proposed" in event, JSON.stringify(event));
+  assert.equal(w.sent.length, 2, "proposed again, in the zone the invalidated one was in");
+  const state = w.states.find(ORG, AGENT);
+  assert.equal(state.dcaUnitsUsed, 0);
+  assert.equal(state.proposed.length, 1, "the invalidated one no longer counts");
+  assert.notEqual(state.proposed[0]!.requestId, requestId);
+});
+
 test("a create the platform refuses stored nothing, so its proposal is undone: the zone armed again, nothing counted (#190)", async () => {
   for (const code of ["not_proposable", "nothing_to_propose", "too_many_proposals"]) {
     const w = await world();
