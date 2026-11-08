@@ -47,7 +47,7 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
   const history = await createPriceHistory(join(dir, "requests.json.history"));
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
-  const answers: { overview: OwnerOutput<"overview">; refuse?: string } = { overview: overview(3.12, T0) };
+  const answers: { overview: OwnerOutput<"overview">; refuse?: string; create?: ProposalAnswer; consented?: boolean } = { overview: overview(3.12, T0) };
   const stored = new Map<string, ProposalView>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
@@ -61,21 +61,27 @@ async function world({ seeded = true, failAudit = false, max }: { seeded?: boole
     },
     create: async (_o, _a, input) => {
       sent.push(input);
+      if (answers.create) return answers.create;
       if (answers.refuse) return { ok: false, kind: "refused", status: 409, code: answers.refuse, error: answers.refuse } as unknown as ProposalAnswer;
       const view = stored.get(input.requestId) ?? proposal({ id: String(stored.size).padStart(32, "0"), requestId: input.requestId, expiresAt: input.expiresAt, state: "proposed" });
       stored.set(input.requestId, view);
       return { ok: true, value: view };
     },
     identity: async agent => ({ answer: { ok: true, value: { agent, owner: "owner.near", agentId: "id-portfolio", created: true, host: "platform.test", deployment: "treasury" } }, cached: false }),
-    consents: async () => ({ ok: true, value: { consents: [] } }) as Awaited<ReturnType<WatchPlatform["consents"]>>,
+    consents: async () => ({ ok: true, value: { consents: answers.consented ? [{ agent: AGENT, owner: "owner.near", agentId: "id-portfolio", scopes: ["read", "treasury"],
+      revoked: false, expiresAt: clock.now + DAY }] : [] } }) as unknown as Awaited<ReturnType<WatchPlatform["consents"]>>,
   };
   // The server's own audit store, so every record passes its checks (canonical JSON, no secret-shaped fields).
   const audit = chainedFileAudit<DecisionEntry>(join(dir, "audit.jsonl"), () => clock.now,
     failAudit ? async () => { throw new Error("disk full"); } : undefined);
   await audit.check();
   const ballast = createBallast({ history, states, audit, now: () => clock.now });
-  const watch = createWatch({ platform, requests, holds: await createHolds(join(dir, "requests.json.holds")), publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
-  return { dir, clock, answers, stored, sent, history, states, requests, audit, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent) };
+  const holds = await createHolds(join(dir, "requests.json.holds"));
+  const start = () => createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
+  let watch = start();
+  return { dir, clock, answers, stored, sent, history, states, requests, audit, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent),
+    /** A restart: a new watch, with nothing in memory, over the same files. */
+    restart: () => { watch = start(); } };
 }
 
 test("a warmed-up history 22% under its reference proposes one DCA buy of explicit legs, stored before it's sent", async () => {
@@ -142,6 +148,50 @@ test("a create the platform refuses stored nothing, so its proposal is undone: t
     assert.deepEqual(state.proposed, [], `${code}: no proposal counted`);
     assert.deepEqual(state.whipsaw, {}, `${code}: the zone is armed, as before the decision`);
   }
+});
+
+/** Moves the clock past watch's backoff (6 ticks of 5 minutes), with the overview read anew. */
+function pastBackoff(w: Awaited<ReturnType<typeof world>>) {
+  w.clock.now += 31 * 60_000;
+  w.answers.overview = overview(3.12, w.clock.now);
+}
+
+test("after a not_proposable and the backoff, Ballast proposes again: an agent without a grant recovers once it has one (#190)", async () => {
+  const w = await world();
+  w.answers.refuse = "not_proposable";
+  await w.tick();
+  delete w.answers.refuse;
+  pastBackoff(w);
+  const event = await w.tick();
+  assert.ok("proposed" in event, JSON.stringify(event));
+  assert.equal(w.sent.length, 2);
+});
+
+test("after a forbidden with the owner's consent live, and the backoff, Ballast proposes again (#190)", async () => {
+  const w = await world();
+  w.answers.consented = true;
+  w.answers.create = { ok: false, kind: "forbidden", status: 403, error: "Access ended before forwarding" } as unknown as ProposalAnswer;
+  const held = await w.tick();
+  assert.equal(held.held, "forbidden with a live consent", JSON.stringify(held));
+  assert.deepEqual(w.states.find(ORG, AGENT).whipsaw, {}, "the zone is armed again");
+  delete w.answers.create;
+  pastBackoff(w);
+  const event = await w.tick();
+  assert.ok("proposed" in event, JSON.stringify(event));
+});
+
+test("after a plain gateway 4xx stops the agent, a restart lets Ballast propose again (#190)", async () => {
+  const w = await world();
+  w.answers.create = { ok: false, kind: "unknown", httpStatus: 400, error: "Bad Request" } as unknown as ProposalAnswer;
+  const stopped = await w.tick();
+  assert.match(String(stopped.stopped), /refused by the gateway \(400\)/);
+  assert.deepEqual(w.states.find(ORG, AGENT).whipsaw, {}, "the zone is armed again");
+  delete w.answers.create;
+  w.restart();
+  w.clock.now += 5 * 60_000;
+  w.answers.overview = overview(3.12, w.clock.now);
+  const event = await w.tick();
+  assert.ok("proposed" in event, JSON.stringify(event));
 });
 
 test("a withdrawn proposal was made, under a consent since replaced, so it stays counted and its zone disarmed", async () => {
