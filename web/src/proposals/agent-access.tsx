@@ -1,3 +1,4 @@
+import { mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, CopyButton, ErrorBox, input, Loading, QueryError, Spinner } from "../shared/ui";
@@ -25,7 +26,8 @@ export function AgentAccess({ reads, identity }: { reads: Reads; identity: Ident
   const [revoking, setRevoking] = useState<{ id: string; label: string }>();
   const [error, setError] = useState<string>();
   const refresh = () => client.invalidateQueries({ queryKey: reads.tokens.queryKey });
-  const mayIssue = identity.access.canPropose;
+  // The server's own rule for who may issue: whoever may propose for the agent (a wallet owner, or a DAO member who may file).
+  const mayIssue = mayCall(identity.access, "proposals/create");
 
   const create = async () => {
     setBusy(true);
