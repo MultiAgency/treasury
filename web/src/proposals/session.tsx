@@ -7,8 +7,12 @@ import { AccountSlot } from "./shell";
 import { sign } from "./wallet";
 import { failureText } from "./words";
 
-/** Signs in to this server: the owner's wallet signs the server's challenge, addressed to this server's own host. */
-export function SignIn() {
+/**
+ * Signing in to this server: the owner's wallet signs the server's challenge, addressed to this server's own host, and
+ * the signature opens the session. What went wrong is said in `error`. `SignIn` and the landing's Connect wallet
+ * buttons (`landing/connect.tsx`) both sign in through this, so they can't differ.
+ */
+export function useSignIn() {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -25,6 +29,12 @@ export function SignIn() {
       await client.resetQueries();
     } finally { setBusy(false); }
   };
+  return { busy, error, signIn };
+}
+
+/** Signs in to this server, where a page needs a session: the owner's wallet signs the server's challenge. */
+export function SignIn() {
+  const { busy, error, signIn } = useSignIn();
   return <section aria-labelledby="sign-in" className="flex max-w-md flex-col items-start gap-4">
     <h2 id="sign-in" className="text-xl font-semibold">Sign in</h2>
     <p className="text-sm text-muted-foreground">Sign in with the wallet of the account that owns the Treasury, or for one a DAO owns, your own account as one of its members. Your wallet signs a message addressed to this server; it moves nothing.</p>

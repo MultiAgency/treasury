@@ -1,0 +1,330 @@
+/*
+ * The signed-out landing ("the vault", #194): near-black with a sage glow, white type, and one hot light, the vault's
+ * mint-white core. Imported by the landing's module alone (`landing.tsx`) and scoped to `.landing`, so nothing shared
+ * (styles.css, components/ui, shared/ui.tsx) depends on it, and the signed-in pages never load it.
+ *
+ * Text is at least 4.5:1 on the page's near-black: no type is fainter than white at 60%. Text is never animated
+ * through opacity (`lp-rise` moves and unblurs it only), so it is never caught half-transparent.
+ */
+.landing {
+  --vault-bg: #050506;
+  --vault-border: rgb(255 255 255 / 0.08);
+  --vault-sage: #a9c4b7;
+  --vault-sage-deep: #5e7f72;
+  --vault-core: #e6fff4;
+  --vault-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --vault-font-display: var(--font-ui);
+  --vault-font-body: var(--font-ui);
+  --vault-font-mono: var(--font-code);
+  --lp-bg: var(--vault-bg);
+  --lp-sage: var(--vault-sage);
+  --lp-sage-deep: var(--vault-sage-deep);
+  --lp-core: var(--vault-core);
+  --lp-line: var(--vault-border);
+  position: relative;
+  min-height: 100dvh;
+  overflow-x: clip;
+  background: var(--lp-bg);
+  color: #fff;
+  font-family: var(--vault-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.landing ::selection { background: rgb(169 196 183 / 0.35); }
+
+/* Entrance: rise out of a blur. */
+@keyframes lp-rise { from { transform: translateY(22px); filter: blur(10px); } to { transform: none; filter: none; } }
+/* For what carries no reading of its own (the scroll counter, the hero's foot): it may fade in too. */
+@keyframes lp-appear { from { opacity: 0; transform: translateY(22px); filter: blur(10px); } to { opacity: 1; transform: none; filter: none; } }
+.lp-hero-foot.lp-rise { animation-name: lp-appear; }
+.lp-rise { animation: lp-rise 1.1s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* ---------- Nav: full width, part of the hero; a backdrop fades in only past it ---------- */
+.lp-nav {
+  position: fixed; inset: 0 0 auto; z-index: 50;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 24px;
+  padding: 18px clamp(16px, 3vw, 44px);
+  border-bottom: 1px solid transparent;
+  transition: background-color .5s var(--vault-ease), border-color .5s, backdrop-filter .5s, padding .4s var(--vault-ease);
+  animation: lp-rise 1s var(--vault-ease) both;
+}
+.lp-nav.is-scrolled {
+  padding-block: 12px;
+  background: rgb(5 5 6 / 0.62);
+  border-bottom-color: var(--vault-border);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+.lp-nav > :last-child { justify-self: end; }
+.landing .text-logo { color: var(--lp-sage); }
+.lp-nav-link { display: inline-flex; padding: 8px 14px; border-radius: 999px; font-size: 14px; color: rgb(255 255 255 / 0.82); transition: color .2s, background-color .2s; }
+.lp-nav-link:hover { color: #fff; background: rgb(255 255 255 / 0.07); }
+.lp-signin-nav { display: flex; flex-direction: column; align-items: flex-end; }
+.lp-signin { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+/* What went wrong signing in, under the button that was pressed. */
+.lp-signin [role="alert"], .lp-signin-nav [role="alert"] { max-width: 22rem; text-align: left; }
+.lp-signin-nav [role="alert"]:not(.sr-only) { position: absolute; top: calc(100% + 4px); right: clamp(16px, 3vw, 44px); }
+
+/* The real sign-in button, as a white pill. Beats the dashboard theme's square buttons. */
+.lp-btn {
+  display: inline-flex; align-items: center; justify-content: center; white-space: nowrap; cursor: pointer;
+  height: 50px; min-height: 50px; padding-inline: 26px; gap: 8px;
+  border-radius: 999px; border: 0;
+  background: #fff; color: #050506;
+  font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.7), 0 0 28px -2px rgb(201 255 233 / 0.55), 0 10px 50px -6px rgb(143 224 188 / 0.5), inset 0 -2px 6px rgb(94 127 114 / 0.25);
+  transition: transform .25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .25s;
+}
+.lp-btn:disabled { cursor: progress; opacity: 0.85; }
+.lp-btn:focus-visible, .lp-ghost:focus-visible { outline: 2px solid var(--brand-mint); outline-offset: 3px; }
+.lp-btn:hover:not(:disabled) { transform: translateY(-1px) scale(1.02); background: #fff; box-shadow: 0 0 0 1px #fff, 0 14px 50px -6px rgb(201 255 233 / 0.65), inset 0 -2px 6px rgb(94 127 114 / 0.25); }
+.lp-btn.lp-btn-sm { height: 40px; min-height: 40px; padding-inline: 16px; font-size: 13px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.6), 0 6px 24px -6px rgb(201 255 233 / 0.4); }
+.lp-btn.lp-btn-lg { height: 58px; min-height: 58px; padding-inline: 34px; font-size: 16px; }
+
+.lp-ghost {
+  display: inline-flex; align-items: center; gap: 8px; height: 50px; padding-inline: 24px; border-radius: 999px;
+  font-size: 14.5px; font-weight: 500; color: #fff;
+  background: rgb(10 13 12 / 0.45); border: 1px solid rgb(255 255 255 / 0.34);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  transition: background-color .2s, border-color .2s, color .2s;
+}
+.lp-ghost:hover { background: rgb(255 255 255 / 0.09); border-color: rgb(255 255 255 / 0.28); color: #fff; }
+.lp-ghost svg { transition: transform .25s; }
+.lp-ghost:hover svg { transform: translateX(3px); }
+
+/* ---------- Hero ---------- */
+.lp-hero { position: relative; isolation: isolate; height: 100svh; min-height: 680px; overflow: hidden; }
+.lp-hero > .absolute { z-index: 0; }
+.lp-hero-copy, .lp-hero-foot { z-index: 3; }
+
+/* Before WebGL arrives, or without it: the same glow in CSS. */
+.lp-fallback {
+  position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(38% 42% at 30% 34%, rgb(169 196 183 / 0.22), transparent 70%),
+    radial-gradient(40% 46% at 76% 38%, rgb(94 127 114 / 0.32), transparent 70%),
+    radial-gradient(30% 34% at 18% 80%, rgb(94 127 114 / 0.18), transparent 70%),
+    var(--lp-bg);
+}
+.lp-fallback span {
+  position: absolute; left: 50%; top: var(--lp-vault-y, 35%); width: 220px; height: 220px; translate: -50% -50%; border-radius: 28px; rotate: 45deg;
+  background: radial-gradient(circle, rgb(230 255 244 / 0.9) 0 8%, rgb(169 196 183 / 0.25) 30%, transparent 70%);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  filter: blur(1px);
+  animation: lp-breathe 3s ease-in-out infinite;
+}
+@keyframes lp-breathe { 50% { opacity: .7; scale: .96; } }
+
+.lp-hero-fade { position: absolute; inset: auto 0 0; height: 32%; z-index: 1; pointer-events: none; background: linear-gradient(to bottom, transparent, rgb(5 5 6 / 0.75) 60%, var(--lp-bg)); }
+
+.lp-hero-board { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.lp-circuit { position: absolute; inset: 0; }
+.lp-trace { fill: none; stroke-width: 1px; shape-rendering: geometricPrecision; }
+.lp-trace-pulse {
+  fill: none; stroke: #f2fff9; stroke-width: 1.5px; stroke-linecap: round;
+  stroke-dasharray: 7 93; stroke-dashoffset: 100; opacity: 0;
+  filter: drop-shadow(0 0 3px #c9ffe9) drop-shadow(0 0 8px rgb(143 224 188 / 0.8));
+  animation: lp-pulse 3.3s cubic-bezier(.55, 0, .35, 1) infinite;
+}
+@keyframes lp-pulse { 0% { stroke-dashoffset: 100; opacity: 0; } 8% { opacity: 1; } 88% { opacity: 1; } 100% { stroke-dashoffset: 7; opacity: 0; } }
+.lp-trace-dot { fill: var(--vault-bg); stroke: rgb(217 245 232 / 0.75); stroke-width: 1px; }
+.lp-trace-dot-end { fill: var(--vault-core); stroke: none; filter: drop-shadow(0 0 4px #c9ffe9); }
+.lp-chip {
+  position: absolute; display: flex; align-items: center; gap: 11px; padding: 0 16px 0 8px; border-radius: 999px;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.02)), rgb(8 11 10 / 0.6);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12), 0 12px 30px -16px rgb(0 0 0 / 0.9);
+  backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
+  animation: lp-rise 1s var(--vault-ease) both;
+}
+.lp-chip-mark {
+  display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: 999px;
+  font-family: var(--vault-font-display); font-size: 15px; font-weight: 600; color: var(--vault-core);
+  background: radial-gradient(circle at 35% 30%, rgb(255 255 255 / 0.16), rgb(63 163 124 / 0.12) 60%, transparent), #0b0f0d;
+  border: 1px solid rgb(201 255 233 / 0.4);
+  box-shadow: 0 0 16px -4px rgb(201 255 233 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.15);
+  text-shadow: 0 0 8px rgb(201 255 233 / 0.8);
+}
+
+/* ---------- Intro: the wireframe draws, the core swells, the count reaches 100 ---------- */
+.landing:not(.is-ready) .lp-hero .lp-rise,
+.landing:not(.is-ready) .lp-chip,
+.landing:not(.is-ready) .lp-scroll { animation-play-state: paused; }
+.landing:not(.is-ready) .lp-streaks, .landing:not(.is-ready) .lp-trace-pulse { visibility: hidden; }
+.lp-intro {
+  position: absolute; inset: 0; z-index: 20; pointer-events: none;
+  background: radial-gradient(40% 40% at 50% var(--lp-vault-y), rgb(63 163 124 / 0.12), transparent 70%), var(--vault-bg);
+  transition: opacity 1s var(--vault-ease), background-color 1s;
+}
+.lp-intro.is-leaving { opacity: 0; }
+.lp-intro-cube {
+  position: absolute; left: 50%; top: var(--lp-vault-y); width: clamp(220px, 46vh, 440px); aspect-ratio: 1; translate: -50% -50%; overflow: visible;
+  transition: scale 1.1s var(--vault-ease), filter 1.1s;
+}
+.lp-intro.is-leaving .lp-intro-cube { scale: 1.12; filter: blur(6px); }
+.lp-intro-line {
+  fill: none; stroke: #bff5dc; stroke-width: 1; vector-effect: non-scaling-stroke; stroke-linejoin: round;
+  stroke-dasharray: 1; stroke-dashoffset: 1; filter: drop-shadow(0 0 3px rgb(143 224 188 / 0.9));
+  animation: lp-draw 1s var(--vault-ease) forwards;
+}
+.lp-intro-hidden { stroke-dasharray: 0.02 0.02; opacity: 0.4; animation-name: lp-fade-in; }
+@keyframes lp-draw { to { stroke-dashoffset: 0; } }
+@keyframes lp-fade-in { from { opacity: 0; } to { opacity: 0.4; } }
+.lp-intro-core { fill: #f2fff9; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 10px #c9ffe9) drop-shadow(0 0 30px rgb(143 224 188 / 0.9)); animation: lp-core 1.4s var(--vault-ease) both, lp-core-beat 1.6s 1.4s ease-in-out infinite; }
+@keyframes lp-core { from { transform: scale(0.05); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes lp-core-beat { 50% { transform: scale(1.25); } }
+.lp-intro-readout {
+  position: absolute; left: 50%; top: calc(var(--lp-vault-y) + clamp(150px, 28vh, 270px)); translate: -50% 0;
+  display: flex; align-items: center; gap: 14px; font-family: var(--vault-font-mono); font-size: 11.5px; letter-spacing: 0.08em; color: rgb(255 255 255 / 0.65);
+  white-space: nowrap;
+}
+.lp-intro-bar { position: relative; width: 120px; height: 1px; background: rgb(255 255 255 / 0.14); overflow: hidden; }
+.lp-intro-bar i { position: absolute; inset: 0; transform-origin: left; background: var(--vault-core); box-shadow: 0 0 6px #c9ffe9; }
+
+/* Falling light, like rain on glass. */
+.lp-streaks { position: absolute; left: 36%; right: 36%; top: 56%; bottom: 0; z-index: 1; pointer-events: none; }
+.lp-streaks i { position: absolute; top: 0; width: 1px; height: 120px; background: linear-gradient(to bottom, transparent, rgb(230 255 244 / 0.85)); opacity: 0; animation: lp-fall 4.2s cubic-bezier(.4, 0, .6, 1) infinite; }
+.lp-streaks i:nth-child(1) { left: 6%; animation-delay: 0s; }
+.lp-streaks i:nth-child(2) { left: 22%; animation-delay: 1.7s; height: 80px; }
+.lp-streaks i:nth-child(3) { left: 38%; animation-delay: 0.6s; height: 160px; }
+.lp-streaks i:nth-child(4) { left: 50%; animation-delay: 2.4s; }
+.lp-streaks i:nth-child(5) { left: 63%; animation-delay: 1.1s; height: 90px; }
+.lp-streaks i:nth-child(6) { left: 79%; animation-delay: 3.1s; height: 140px; }
+.lp-streaks i:nth-child(7) { left: 94%; animation-delay: 2s; }
+@keyframes lp-fall { 0% { transform: translateY(-140px); opacity: 0; } 15% { opacity: .9; } 80% { opacity: .5; } 100% { transform: translateY(40vh); opacity: 0; } }
+
+.lp-hero-copy {
+  position: absolute; inset: auto 0 0; z-index: 3; display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 0 20px clamp(64px, 9vh, 110px);
+}
+/* A soft dark scrim behind the copy, so glow and streaks never wash out the text. */
+.lp-hero-copy::before {
+  content: ""; position: absolute; z-index: -1; left: 50%; bottom: 0; width: min(1500px, 170vw); height: 125%; translate: -50% 0; pointer-events: none;
+  background: radial-gradient(50% 50% at 50% 58%, rgb(5 5 6 / 0.82), rgb(5 5 6 / 0.55) 55%, transparent 100%);
+}
+.lp-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; margin-bottom: 22px; padding: 6px 14px 6px 10px; border-radius: 999px;
+  font-size: 12.5px; color: rgb(255 255 255 / 0.88);
+  background: rgb(10 13 12 / 0.55); border: 1px solid rgb(255 255 255 / 0.18);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.lp-eyebrow-dot { width: 7px; height: 7px; border-radius: 99px; background: var(--lp-core); box-shadow: 0 0 10px 2px rgb(201 255 233 / 0.65); }
+.lp-h1 {
+  font-family: var(--vault-font-display);
+  font-size: clamp(3.1rem, 6.5vw, 7rem); line-height: 0.96; font-weight: 600; letter-spacing: -0.05em;
+  color: #fff; text-wrap: balance;
+  text-shadow: 0 2px 30px rgb(0 0 0 / 0.6), 0 0 80px rgb(143 224 188 / 0.18);
+}
+.lp-fade-word {
+  background: linear-gradient(100deg, #fff 0%, rgb(255 255 255 / 0.92) 30%, rgb(255 255 255 / 0.46) 90%);
+  -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none;
+}
+.lp-sub { margin-top: 20px; max-width: 34rem; font-size: clamp(15px, 1.2vw, 17.5px); line-height: 1.55; color: rgb(255 255 255 / 0.8); text-wrap: balance; }
+.lp-get-started { margin-top: 30px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+
+.lp-hero-foot { position: absolute; z-index: 3; right: clamp(20px, 3vw, 44px); bottom: 30px; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; font-size: 13px; color: rgb(255 255 255 / 0.7); }
+.lp-hero-foot-bar { position: relative; display: block; width: 120px; height: 2px; border-radius: 2px; background: rgb(255 255 255 / 0.12); overflow: hidden; }
+.lp-hero-foot-bar i { position: absolute; inset: 0 auto 0 0; width: 30%; background: #fff; box-shadow: 0 0 8px #c9ffe9; animation: lp-bar 3.2s cubic-bezier(.6, 0, .2, 1) infinite; }
+@keyframes lp-bar { 0% { left: -30%; } 100% { left: 100%; } }
+
+/* "01/05 Scroll", fixed, counting the sections. */
+.lp-scroll {
+  position: fixed; z-index: 40; left: clamp(16px, 2.6vw, 40px); bottom: 26px;
+  display: inline-flex; align-items: center; gap: 10px; padding: 5px 14px 5px 5px; border-radius: 999px;
+  background: rgb(12 15 14 / 0.6); border: 1px solid rgb(255 255 255 / 0.09);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  animation: lp-appear 1s 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.lp-scroll-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 99px; background: #fff; color: #050506; }
+.lp-scroll-icon svg { animation: lp-bob 1.8s ease-in-out infinite; }
+@keyframes lp-bob { 50% { transform: translateY(2px); } }
+@media (max-width: 639px) {
+  .lp-scroll, .lp-hero-foot { display: none; }
+  .lp-hero-copy::before { height: 100%; background: radial-gradient(60% 46% at 50% 55%, rgb(5 5 6 / 0.8), rgb(5 5 6 / 0.4) 60%, transparent 100%); }
+}
+
+/* ---------- Sections ---------- */
+.lp-label { display: inline-flex; align-items: center; gap: 10px; font-family: var(--vault-font-mono); font-size: 11.5px; letter-spacing: 0.08em; color: rgb(255 255 255 / 0.62); }
+.lp-label::before { content: ""; width: 18px; height: 1px; background: rgb(255 255 255 / 0.35); }
+.lp-h2 { font-family: var(--vault-font-display); font-size: clamp(2.2rem, 4.4vw, 4.4rem); line-height: 1.02; font-weight: 500; letter-spacing: -0.04em; color: #fff; text-wrap: balance; }
+.lp-h2 .lp-dim { color: rgb(255 255 255 / 0.32); }
+.lp-container { width: min(100% - 32px, 1200px); margin-inline: auto; }
+
+.lp-marquee-mask { mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); -webkit-mask-image: linear-gradient(to right, transparent, #000 12%, #000 88%, transparent); }
+.lp-wordmark { font-family: var(--vault-font-display); font-size: clamp(22px, 2.4vw, 34px); font-weight: 600; letter-spacing: -0.035em; color: rgb(255 255 255 / 0.6); white-space: nowrap; transition: color .3s; }
+.lp-wordmark:hover { color: #fff; }
+
+/* Bento tiles. */
+.lp-tile { position: relative; border-radius: 26px; height: 100%; }
+.lp-tile .lp-tile-inner { position: relative; display: flex; flex-direction: column; height: 100%; padding: 26px; }
+.lp-tile-glass {
+  position: relative; border-radius: 26px; height: 100%; overflow: hidden;
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0.01));
+  border: 1px solid rgb(255 255 255 / 0.08);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+.lp-tile h3 { font-family: var(--vault-font-display); font-size: 21px; font-weight: 500; letter-spacing: -0.02em; color: #fff; }
+.lp-tile p { margin-top: 8px; font-size: 14px; line-height: 1.55; color: rgb(255 255 255 / 0.68); max-width: 30rem; }
+
+/* Confidential balance: a CSS glass cube with a glowing core. */
+.lp-cube-scene { perspective: 700px; width: 120px; height: 120px; }
+.lp-cube { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; animation: lp-cube-turn 14s linear infinite; }
+.lp-cube > span {
+  position: absolute; inset: 0; border-radius: 14px;
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.14), rgb(169 196 183 / 0.05) 60%, rgb(184 168 255 / 0.08));
+  border: 1px solid rgb(230 255 244 / 0.35);
+  box-shadow: inset 0 0 30px rgb(169 196 183 / 0.2);
+}
+.lp-cube > span:nth-child(1) { transform: translateZ(60px); }
+.lp-cube > span:nth-child(2) { transform: rotateY(180deg) translateZ(60px); }
+.lp-cube > span:nth-child(3) { transform: rotateY(90deg) translateZ(60px); }
+.lp-cube > span:nth-child(4) { transform: rotateY(-90deg) translateZ(60px); }
+.lp-cube > span:nth-child(5) { transform: rotateX(90deg) translateZ(60px); }
+.lp-cube > span:nth-child(6) { transform: rotateX(-90deg) translateZ(60px); }
+.lp-cube > b { position: absolute; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px; border-radius: 99px; background: radial-gradient(circle, #fff, #c9ffe9 40%, rgb(169 196 183 / 0) 72%); box-shadow: 0 0 40px 12px rgb(201 255 233 / 0.45); animation: lp-breathe 2.6s ease-in-out infinite; }
+@keyframes lp-cube-turn { from { transform: rotateX(-24deg) rotateY(0); } to { transform: rotateX(-24deg) rotateY(360deg); } }
+
+/* FAQ. */
+.lp-faq details { border-top: 1px solid var(--lp-line); }
+.lp-faq details:last-child { border-bottom: 1px solid var(--lp-line); }
+.lp-faq summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 22px 2px; font-size: clamp(16px, 1.4vw, 19px); color: #fff; letter-spacing: -0.01em; }
+.lp-faq summary::-webkit-details-marker { display: none; }
+.lp-faq summary i { position: relative; width: 14px; height: 14px; flex: none; }
+.lp-faq summary i::before, .lp-faq summary i::after { content: ""; position: absolute; left: 0; top: 6.5px; width: 14px; height: 1px; background: rgb(255 255 255 / 0.7); transition: transform .3s; }
+.lp-faq summary i::after { transform: rotate(90deg); }
+.lp-faq details[open] summary i::after { transform: rotate(0); }
+.lp-faq details p { padding: 0 2px 24px; max-width: 46rem; color: rgb(255 255 255 / 0.7); line-height: 1.65; font-size: 15px; }
+
+/* Security points around the turning vault. */
+.lp-point { position: absolute; width: min(300px, 40vw); }
+.lp-point-card {
+  padding: 18px 20px; border-radius: 20px;
+  background: rgb(12 15 14 / 0.6); border: 1px solid rgb(255 255 255 / 0.1);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 30px 60px -30px rgb(0 0 0 / 0.9);
+}
+.lp-point-card h3 { font-family: var(--vault-font-display); font-size: 18px; font-weight: 500; letter-spacing: -0.02em; }
+.lp-point-card p { margin-top: 6px; font-size: 13.5px; line-height: 1.55; color: rgb(255 255 255 / 0.72); }
+.lp-point-index { font-family: var(--vault-font-mono); font-size: 11px; color: var(--lp-sage); letter-spacing: .08em; }
+
+/* Final call to action. */
+.lp-final-glow {
+  position: absolute; left: 50%; top: 55%; width: min(1100px, 140vw); aspect-ratio: 2 / 1; translate: -50% -50%; pointer-events: none;
+  background: radial-gradient(closest-side, rgb(169 196 183 / 0.35), rgb(94 127 114 / 0.18) 45%, transparent 75%);
+  filter: blur(20px);
+}
+.lp-final-ring { position: absolute; left: 50%; top: 50%; border-radius: 999px; translate: -50% -50%; border: 1px solid rgb(230 255 244 / 0.08); pointer-events: none; }
+
+/* The fixed scroll counter sits bottom-left: the footer leaves it room. */
+@media (min-width: 640px) { .lp-footer { padding-bottom: 92px; } }
+
+/* Sections the nav or the scroll counter moves the focus to: not controls, so no ring. */
+.landing [data-lp-section]:focus { outline: none; }
+
+/*
+ * Reduced motion: styles.css already stops every animation and transition; here, what would only be a frozen streak of
+ * light (the falling streaks, the traces' travelling pulses, the hero's progress bar) is not drawn at all.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .lp-streaks, .lp-trace-pulse, .lp-hero-foot-bar { display: none; }
+}
