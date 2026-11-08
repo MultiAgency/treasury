@@ -73,8 +73,13 @@ export type Deps = {
   settle?: Settle;
   /** The tokens issued to owners' agents (#139); without it, tokens last as long as the process. */
   agentTokens?: AgentTokens;
-  /** Calls a single token may make a minute, apart from the account's own: a token is a credential the owner hands to software. */
-  tokenRequestsPerMinute?: number;
+  /**
+   * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
+   * and each of its calls is a call against the platform's hourly budget, which every owner shares.
+   */
+  tokenRequestsPerHour?: number;
+  /** Calls every token together may make an hour: the part of the platform's budget that software may spend. */
+  tokenBudgetPerHour?: number;
   /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
   page?: Page;
 };
@@ -1424,7 +1429,8 @@ async function decide(answer: IdentityAnswer, agent: string, account: string, de
 /** The server's request handler, built from its dependencies so tests can run it in-process with fakes. */
 export function createServer(deps: Deps) {
   const admissions = createRateLimit({ limit: deps.ownerRequestsPerMinute });
-  const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerMinute ?? 30 });
+  const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? 60, windowMs: 3_600_000 });
+  const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -1469,7 +1475,8 @@ export function createServer(deps: Deps) {
         const record = presented ? context.tokens.find(presented[1]!) : undefined;
         if (!record) return send(refused(401, "invalid_token"));
         if (found.params.agent !== record.agent) return send(refused(403, "token_not_allowed"));
-        if (!tokenRequests(record.id)) return send(refused(429, "rate_limited"));
+        // Its own hourly limit, then the one all tokens share, so tokens never spend more than their part of the platform's budget.
+        if (!tokenRequests(record.id) || !tokenBudget("tokens")) return send(refused(429, "rate_limited"));
         // Admitted as the account that issued it would be: still the agent's owner, or still a DAO member who may propose.
         call = { req, body: read.body, token: undefined, account: record.account, params: found.params, actor: `token:${record.id}`, viaToken: record };
       }

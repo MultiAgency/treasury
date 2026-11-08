@@ -30,7 +30,7 @@ before(async () => {
     publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
     daos: standInDaos({}, {}), daoRequests: await createDaoRequests(join(tempDir("treasury-token-routes-"), "dao-requests.json")),
-    agentTokens: createAgentTokens(memoryTokenRecords(), { now: () => time.now }), tokenRequestsPerMinute: 8,
+    agentTokens: createAgentTokens(memoryTokenRecords(), { now: () => time.now }), tokenRequestsPerHour: 8, tokenBudgetPerHour: 1_000,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -146,7 +146,7 @@ test("a token is counted on its own: the account's page is unaffected when it is
   const { token } = await issue();
   const statuses: number[] = [];
   for (let i = 0; i < 10; i++) statuses.push((await bearer(token, "GET", "overview")).status);
-  assert.deepEqual(statuses.slice(-2), [429, 429], "past 8 a minute");
+  assert.deepEqual(statuses.slice(-2), [429, 429], "past 8 an hour");
   assert.equal((await session("GET", "overview")).status, 200, "the owner's own page");
 });
 
@@ -169,4 +169,33 @@ test("the API description is public and lists exactly the routes a token may cal
     "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/unresolved", "POST /api/agents/:agent/proposals"]);
   const propose = answer.value.routes.find((route: { method: string }) => route.method === "POST");
   assert.ok(propose.request.properties.requestId, "the request schema is described");
+});
+
+test("all tokens together stay within their share of the platform's hourly budget, whichever token makes the calls", async () => {
+  reset();
+  // A server of its own, so the budget isn't spent by the other tests: 3 calls an hour per token, 5 for every token together.
+  const store = createAgentTokens(memoryTokenRecords());
+  const small = createHttpServer(createServer({
+    platform: fake.platform,
+    signIn: createSignIn({ recipient: HOST, ttlMs: 5 * 60_000, perMinute: 1_000, keyLookup: standInKeyLookup({}) }),
+    sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
+    publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
+    audit: { append: async () => {} }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
+    daos: standInDaos({}, {}), daoRequests: await createDaoRequests(join(tempDir("treasury-token-budget-"), "dao-requests.json")),
+    agentTokens: store, tokenRequestsPerHour: 3, tokenBudgetPerHour: 5,
+  }));
+  await new Promise<void>(resolve => small.listen(0, "127.0.0.1", resolve));
+  try {
+    const at = `http://127.0.0.1:${(small.address() as AddressInfo).port}`;
+    const read = async (token: string) => (await fetch(`${at}/api/agents/portfolio/overview`, { headers: { authorization: `Bearer ${token}` } })).status;
+    const [first, second] = [await store.issue({ agent: "portfolio", account: "owner.near", days: 7 }), await store.issue({ agent: "portfolio", account: "owner.near", days: 7 })];
+    const firstCalls = [await read(first!.token), await read(first!.token), await read(first!.token), await read(first!.token)];
+    assert.deepEqual(firstCalls, [200, 200, 200, 429], "one token: 3 an hour");
+    const secondCalls = [await read(second!.token), await read(second!.token), await read(second!.token)];
+    assert.deepEqual(secondCalls, [200, 200, 429], "every token together: 5 an hour, so the second gets what the first left");
+    const relayed = fake.calls.filter(call => call.startsWith("reads.overview")).length;
+    assert.equal(relayed, 5, "the platform was asked 5 times, not 7");
+  } finally {
+    small.close();
+  }
 });

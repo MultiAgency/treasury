@@ -95,7 +95,8 @@ const handler = createServer({
   daos,
   daoRequests,
   agentTokens,
-  tokenRequestsPerMinute: settings.TOKEN_REQUESTS_PER_MINUTE,
+  tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
+  tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
