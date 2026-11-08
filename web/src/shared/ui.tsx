@@ -1,4 +1,4 @@
-import { Copy } from "@phosphor-icons/react";
+import { CaretRight, Copy } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
@@ -9,11 +9,11 @@ export { Button };
 /** Native input/select callers share the same states as the Input component. */
 export { inputStyles as input } from "@/components/ui/input";
 
-/** Maia surface only; native dialog focus and each review's authorization remain with the caller. */
+/** The review dialog's surface only; native dialog focus and each review's authorization remain with the caller. */
 export const reviewDialog =
-  "m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-4xl border-0 bg-popover p-6 text-popover-foreground ring-1 ring-foreground/5 backdrop:bg-black/80 backdrop:backdrop-blur-xs";
+  "m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto overscroll-contain rounded-xl border border-border-strong bg-popover p-5 text-sm text-popover-foreground shadow-[0_24px_80px_rgb(0_0_0/0.7)] backdrop:bg-black/70";
 
-export type Tone = "neutral" | "success" | "warning" | "info" | "destructive";
+export type Tone = "neutral" | "success" | "warning" | "info" | "destructive" | "brand";
 
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return <BadgePrimitive variant={tone}>{children}</BadgePrimitive>;
@@ -23,7 +23,7 @@ export const statusTone = (status: string | undefined): Tone =>
   status === "SUCCESS" ? "success" : status === "FAILED" || status === "REFUNDED" ? "destructive" : status ? "warning" : "neutral";
 
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
-  return <div className={cn("flex min-w-0 flex-col gap-6 rounded-2xl bg-card p-6 text-base text-card-foreground ring-1 ring-foreground/10", className)}>{children}</div>;
+  return <div className={cn("flex min-w-0 flex-col gap-5 rounded-xl border border-border bg-card p-4 text-sm text-card-foreground sm:p-5", className)}>{children}</div>;
 }
 
 export function Note({ children }: { children: ReactNode }) {
@@ -91,7 +91,9 @@ export function CopyButton({ text }: { text: string }) {
 /** Detail most readers skip, such as identifiers and rare controls, folded under a one-line summary. */
 export function Details({ summary, open, className = "", children }: { summary: string; open?: boolean; className?: string; children: ReactNode }) {
   return <details open={open} className={cn("text-sm", className)}>
-    <summary className="min-h-11 cursor-pointer py-3 text-muted-foreground">{summary}</summary>
+    <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 py-2 text-muted-foreground hover:text-foreground md:min-h-8 [&::-webkit-details-marker]:hidden">
+      <CaretRight aria-hidden="true" className="size-3 shrink-0 transition-transform [details[open]>summary>&]:rotate-90" />{summary}
+    </summary>
     <div className="mt-2 flex flex-col gap-2">{children}</div>
   </details>;
 }

@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, type ReactNode } from "react";
-import { TreasuryBrand } from "./brand";
 import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
 import { Policy } from "./policy";
@@ -12,18 +11,19 @@ import { EmergencyStop } from "./freeze";
 import { Funding } from "./funding";
 import { NeedsDecision, Standing } from "./home";
 import { PageLink } from "./nav";
-import { AGENT_PAGES, agentAddress, isProposalId, isRunId, MISSING_TITLE, NAVIGATION, place, ROOT_TITLE, type Place } from "./pages";
+import { agentAddress, isProposalId, isRunId, MISSING_TITLE, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
 import { agentReads, failureOf } from "./queries";
 import { SignedIn, SignIn } from "./session";
+import { AppShell } from "./shell";
 import { CreateAgent, DaoSetup, Home } from "./setup";
 
 /** Where the page is, from the router's address: the one reading of it (`pages.ts`). */
 export const usePlace = (): Place => place(useRouterState({ select: state => state.location.pathname }));
 
-/** The page's frame: the skip link, the brand and the main region every page sits in. Sets the document's title to the page's. */
+/** The page's frame: the skip link, the shell (sidebar and top bar, `shell.tsx`) and the main region every page sits in. Sets the document's title to the page's. */
 export function Shell() {
   const here = usePlace();
   const router = useRouter();
@@ -45,9 +45,10 @@ export function Shell() {
     });
   }, [router]);
   return <>
-    <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:bg-background focus:p-3">Skip to main content</a>
-    <header className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-8"><TreasuryBrand /></header>
-    <main id="main" tabIndex={-1} className="mx-auto flex max-w-4xl flex-col gap-10 px-4 pb-16 sm:px-8"><Outlet /></main>
+    <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-lg focus:bg-background focus:p-3">Skip to main content</a>
+    <AppShell here={here}>
+      <main id="main" tabIndex={-1} className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 pt-6 pb-16 sm:px-6 md:px-8 md:pt-8"><Outlet /></main>
+    </AppShell>
   </>;
 }
 
@@ -71,21 +72,8 @@ export function DaoPage() {
   return here.kind === "dao" ? <DaoSetup dao={here.dao} /> : <Missing />;
 }
 
-/** The navigation between an agent's pages, the current one marked. Only pages that exist are listed. */
-function AgentNav({ agent }: { agent: string }) {
-  return <nav aria-label="Agent pages">
-    <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
-      {NAVIGATION.map(page => <li key={page}>
-        <PageLink to={agentAddress(agent, page)} exact={page === "home"} className="underline underline-offset-4 aria-[current=page]:font-semibold aria-[current=page]:no-underline">
-          {AGENT_PAGES[page].title}
-        </PageLink>
-      </li>)}
-    </ul>
-  </nav>;
-}
-
 /**
- * An agent's frame, around each of its pages: the agent's name, who is signed in, and the navigation. The identity check
+ * An agent's frame, around each of its pages: the agent's name and who is signed in; the navigation is the sidebar's. The identity check
  * gates every page of it, once the signed-in account is the agent's owner or a member of the DAO that owns it. Signing
  * in, and the answer for an account that isn't the owner, live here and not in each page.
  */
@@ -114,7 +102,6 @@ function Gate({ name, title, home }: { name: string; title: string; home: boolea
   return <AgentContext.Provider value={{ reads, identity: identity.data }}>
     {heading}
     {signedIn}
-    <AgentNav agent={name} />
     {/* The emergency stop is in the frame of every page of an agent that exists, and never hidden by what the page is doing. */}
     {agentId !== null && <EmergencyStop reads={reads} identity={identity.data} />}
     {/* An agent set up but not created yet: its creation comes first, on its home, and nothing else reaches it until then. */}

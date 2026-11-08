@@ -1,7 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Button, ErrorBox, errorMessage } from "../shared/ui";
 import { api } from "./queries";
+import { AccountSlot } from "./shell";
 import { sign } from "./wallet";
 import { failureText } from "./words";
 
@@ -31,9 +33,13 @@ export function SignIn() {
   </section>;
 }
 
-/** Who is signed in, and signing out, which ends the server's session whatever the wallet does. */
+/**
+ * Who is signed in, and signing out, which ends the server's session whatever the wallet does. Shown at the sidebar's
+ * foot when the frame offers it (`AccountSlot`), else where it sits in the page.
+ */
 export function SignedIn({ children }: { children: ReactNode }) {
   const client = useQueryClient();
+  const slot = useContext(AccountSlot);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const signOut = async () => {
@@ -44,10 +50,16 @@ export function SignedIn({ children }: { children: ReactNode }) {
     if (!ended.ok) return setError("Sign-out didn't complete, so you may still be signed in. Try again.");
     await client.resetQueries();
   };
+  const button = <Button variant="outline" size="sm" disabled={busy} onClick={signOut}>{busy ? "Signing out…" : "Sign out"}</Button>;
+  if (slot) return createPortal(<div className="flex flex-col gap-2.5 rounded-lg border border-border bg-card p-3">
+    {children && <p className="text-xs leading-relaxed break-words text-muted-foreground [&_.font-mono]:text-foreground">{children}</p>}
+    {button}
+    <ErrorBox error={error} />
+  </div>, slot);
   return <div className="flex flex-col gap-2">
     <div className="flex flex-wrap items-center gap-3 text-sm">
       {children && <p>{children}</p>}
-      <Button variant="outline" size="sm" disabled={busy} onClick={signOut}>{busy ? "Signing out…" : "Sign out"}</Button>
+      {button}
     </div>
     <ErrorBox error={error} />
   </div>;
