@@ -1,6 +1,6 @@
 # Contributing
 
-This repository holds the Treasury app: its pages (`web/`: the proposals page the app server serves, and the owner-session UI until it's retired), the app server (`apps/server/`) and the strategy engine (`packages/core/`), which `watch` runs for the agents configured with it. It moves money, so the rules below are about not losing track of it.
+This repository holds the Treasury app: its pages (`web/`, which the app server serves), the app server (`apps/server/`) and the strategy engine (`packages/core/`), which `watch` runs for the agents configured with it. It moves money, so the rules below are about not losing track of it.
 
 ## How changes land
 
@@ -38,7 +38,7 @@ This repository holds the Treasury app: its pages (`web/`: the proposals page th
 
 - **`docs/adr/`:** decisions that later work builds on.
 - **The feature's issue:** its design and plan (for example #20 for the app server).
-- **`web/PLATFORM-SESSION.md`:** every accessible name the owner UI changes, adds or removes, and each departure from the prototype.
+- **`web/PLATFORM-SESSION.md`:** every accessible name the app's pages change, add or remove.
 
 ## Versions
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { TransactionOutcome } from "../app/wallet-transaction";
+import type { TransactionOutcome } from "./wallet-transaction";
 import { filingHeld } from "./dao-filing";
 import { Button, errorMessage } from "../shared/ui";
 import type { DaoRequest } from "./proposals-api";

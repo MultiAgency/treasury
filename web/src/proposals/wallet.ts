@@ -1,14 +1,14 @@
 import { NearConnector } from "@fastnear/near-connect";
 import type { fundingTransaction } from "@multiagency/sdk";
-import { fromBase64, HOT_WALLETS, namespaced, walletSession } from "../app/wallet";
-import { transactionOutcome, type TransactionOutcome } from "../app/wallet-transaction";
+import { fromBase64, HOT_WALLETS, namespaced, walletSession } from "./wallet-session";
+import { transactionOutcome, type TransactionOutcome } from "./wallet-transaction";
 import { signerProblem } from "./dao-filing";
 import type { DaoRequest, GrantPrepared, SignRequest, Signed } from "./proposals-api";
 
 /**
  * The owner's wallet on the proposals page: NEP-413 messages (sign-in, the consent, verdicts), so any wallet that
- * signs messages is listed, and for a DAO's member the proposal they file. Its connection is kept apart from the owner
- * UI's (`proposals:` storage).
+ * signs messages is listed, and for a DAO's member the proposal they file. Its connection is kept in
+ * its own storage (`proposals:`).
  */
 const wallet = walletSession(() => new NearConnector({ network: "mainnet", manifest: HOT_WALLETS,
   features: { signMessage: true }, storage: namespaced("proposals") }));
@@ -53,7 +53,7 @@ export class WrongAccount extends Error {}
 
 /**
  * A DAO acting through Trezu, beside the owner's own wallet: what it's sent, it files as one proposal the DAO's members
- * vote on. Its connection is kept apart from the owner UI's (`proposals-dao:` storage).
+ * vote on. Its connection is kept in its own storage (`proposals-dao:`).
  */
 const trezu = walletSession(() => new NearConnector({ network: "mainnet", manifest: HOT_WALLETS, storage: namespaced("proposals-dao") }), "trezu-wallet");
 

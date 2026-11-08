@@ -28,8 +28,7 @@ export function stack(directory: string): Stack {
 /**
  * Starts a fresh stack with the Treasury agent (owned by the stack's owner, or with `owner: "dao"` by its simulated DAO) from a platform checkout at `PLATFORM_COMMIT` with its dependencies
  * installed (`../platform` by default, or TREASURY_PLATFORM), as the platform's own specs do, and answers it with a
- * `stop` that ends it. `args` are the stack's other flags: without a browser by default, or `--frontend <dist>` to serve
- * an owner build in the stack's browser, whose owner page starts signed in (`state().cdp` attaches to it).
+ * `stop` that ends it. `args` are the stack's other flags (without a browser by default).
  * `appCredential` runs the platform's operator command for app credentials (`pnpm app-credential …`) in the stack's
  * gateway, as the stack itself does to issue its first: `issue`, `list` or `revoke`.
  */

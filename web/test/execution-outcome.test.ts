@@ -4,7 +4,6 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { OwnerFailure, ProposalView } from "@multiagency/sdk";
 import { classify, settle, type Report } from "../src/shared/execution-outcome.ts";
-import { failureMessage } from "../src/platform.ts";
 
 const kindOf = (report: Report) => {
   const { outcome } = settle(report);
@@ -73,7 +72,6 @@ test("executePlan: every leg SUCCESS is ok", () => {
 test("executePlan: rejected before any leg: nothing was sent, with the platform's problems", () => {
   const { outcome, offerAgain } = settle(executed([rejected("the plan was already executed")]));
   assert.deepEqual([outcome, offerAgain], [{ ok: false, kind: "refused", code: "NOT_SENT", error: "the plan was already executed" }, true]);
-  assert.equal(failureMessage(outcome as OwnerFailure), "Nothing was sent: the plan was already executed");
 });
 
 test("executePlan: a swap not sent, with no shield before it, sent nothing", () => {
@@ -84,7 +82,6 @@ test("executePlan: leg 1 SUCCESS then rejected is partial, with the legs and the
   const first = leg(0, "SUCCESS");
   const { outcome, offerAgain } = settle(executed([first, rejected("the remaining plan is no longer feasible")]));
   assert.deepEqual([outcome, offerAgain], [{ ok: false, kind: "partial", sends: [first], problems: ["the remaining plan is no longer feasible"] }, false]);
-  assert.match(failureMessage(outcome as Extract<typeof outcome, { kind: "partial" }>), /Funds may have moved; .*: the remaining plan is no longer feasible$/);
 });
 
 test("executePlan: a FAILED or REFUNDED leg is partial, never ok", () => {
@@ -141,9 +138,4 @@ test("proposal: a state that can't be claimed for execution sent nothing", () =>
 test("classify: only NOT_SENT proves nothing was sent", () => {
   assert.deepEqual(["NOT_SENT", "SUCCESS", "FAILED", "REFUNDED", "PENDING", "PENDING_APPROVAL"].map(classify),
     ["unsent", "succeeded", "failed", "failed", "unsettled", "unsettled"]);
-});
-
-test("the wording is failureMessage's", () => {
-  assert.match(failureMessage({ ok: false, kind: "partial", sends: [] }), /Funds may have moved; review Activity and unresolved operations before acting again\.$/);
-  assert.equal(failureMessage({ ok: false, kind: "refused", code: "NOT_SENT", error: "" }), "Nothing was sent.");
 });

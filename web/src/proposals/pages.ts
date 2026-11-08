@@ -36,7 +36,7 @@ export const PROPOSAL_TITLE = "Proposal";
 export const RUN_TITLE = "Run";
 export const MISSING_TITLE = "Page not found";
 
-/** An agent page's address. The home keeps its trailing slash, as the owner UI's pages do. */
+/** An agent page's address. The home keeps its trailing slash. */
 export const agentAddress = (agent: string, page: AgentPage = "home") => `/agents/${agent}${AGENT_PAGES[page].path || "/"}`;
 export const proposalAddress = (agent: string, id: string) => `/agents/${agent}/proposals/${id}`;
 /** One recorded run of the autopilot, under the agent's Activity. */

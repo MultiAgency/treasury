@@ -4,12 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "audit:app-access": "node scripts/app-access-audit.ts",
     "dev": "rsbuild dev",
     "build": "rsbuild build",
     "typecheck": "tsc",
     "test": "node --test test/*.test.ts",
-    "test:stack": "rsbuild build && node --test --test-concurrency=1 test/stack.e2e.ts test/proposals.e2e.ts test/dao-proposals.e2e.ts"
+    "test:stack": "rsbuild build && node --test --test-concurrency=1 test/proposals.e2e.ts test/dao-proposals.e2e.ts"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.3",

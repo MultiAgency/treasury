@@ -1,5 +1,5 @@
 // The book as the home shows it (#130): value, the budget left, what is held privately, and the allocation against the
-// strategy's targets. Ported from the owner UI's overview (`features/portfolio/book.tsx`) to the server's read shapes, where
+// strategy's targets. Ported from the owner-session UI's overview to the server's read shapes, where
 // amounts are decimal strings, and kept pure so it's tested without a browser. Display only, never authorization.
 // With its extensions: test/book-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { bindingWindow, PERIOD } from "../shared/budget.ts";
@@ -55,5 +55,5 @@ export function allocationRows(overview: Book, now: number): AllocationRow[] {
   });
 }
 
-/** Whether a drift is worth marking: the owner UI marks a gap of 2 points of the book or more. */
+/** Whether a drift is worth marking: a gap of 2 points of the book or more. */
 export const DRIFT_MARK = 0.02;

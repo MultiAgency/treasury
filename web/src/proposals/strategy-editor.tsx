@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
-import { parseStrategyDraft, strategyDraft } from "../features/portfolio/strategy-form";
+import { parseStrategyDraft, strategyDraft } from "./strategy-form";
 import { confirmDiscard, useDirtyDraft } from "../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../shared/form";
 import { symbolOf } from "../shared/format";
@@ -12,7 +12,7 @@ import { StrategyTerms } from "./strategy-terms";
 import { failureText } from "./words";
 
 /**
- * Editing the saved strategy (the owner UI's form and its checks): targets adding up to 100%, the swap limits, and
+ * Editing the saved strategy (`strategy-form.ts`'s form and checks): targets adding up to 100%, the swap limits, and
  * autopilot's interval and ceiling. It's saved over the strategy the draft was reviewed against, by its digest, so a
  * strategy changed meanwhile isn't overwritten. A save refused as `strategy_changed`, or whose answer was lost, reads the
  * strategy again; while the strategy read differs from the reviewed one, the current one is shown and the draft is kept,

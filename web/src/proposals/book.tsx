@@ -19,7 +19,7 @@ function Meter({ value, className = "bg-brand" }: { value: number; className?: s
 
 /**
  * The book on the agent's home (#130): its value, the budget left, what is held privately, and the allocation against
- * the strategy's targets. Ported from the owner UI's overview to the server's read shapes (`book-view.ts`). Display
+ * the strategy's targets. Ported from the owner-session UI's overview to the server's read shapes (`book-view.ts`). Display
  * only: a value built from a missing or stale price says so and shows no total.
  */
 export function Book({ overview, now }: { overview: OverviewRead; now: number }) {

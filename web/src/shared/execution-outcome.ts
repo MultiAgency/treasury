@@ -21,7 +21,7 @@ export type Report =
 export const classify = (status: string) =>
   status === "NOT_SENT" ? "unsent" : status === "SUCCESS" ? "succeeded" : status === "FAILED" || status === "REFUNDED" ? "failed" : "unsettled";
 
-/** Nothing was sent: `error` carries the platform's problems or reason, and the wording is `failureMessage`'s. */
+/** Nothing was sent: `error` carries the platform's problems or reason. */
 const notSent = (error = ""): OwnerFailure => ({ ok: false, kind: "refused", code: "NOT_SENT", error });
 
 /**

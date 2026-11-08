@@ -18,10 +18,3 @@ export function priceState(value: PriceObservation, now: number): "fresh" | "sta
   return expires <= now ? "stale" : "fresh";
 }
 
-export function displayedUsd(value: PriceObservation & { public: bigint | string; confidential: bigint | string; decimals: number }, now: number): number | null {
-  const raw = BigInt(value.public) + BigInt(value.confidential);
-  if (raw === 0n) return 0;
-  if (priceState(value, now) !== "fresh") return null;
-  const usd = Number(raw) / 10 ** value.decimals * value.price!;
-  return Number.isFinite(usd) ? usd : null;
-}

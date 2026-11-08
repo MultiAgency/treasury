@@ -18,7 +18,7 @@ test("figures: the whole book, what is held privately and its share, and the num
   const f = bookFigures(overview([usdc, wnear]));
   assert.equal(f.total, 100);
   assert.equal(f.assets, 2);
-  // Display only, in floats as the owner UI's overview is: close, not exact.
+  // Display only, in floats: close, not exact.
   assert.ok(Math.abs(f.shieldedUsd! - 40) < 1e-9, String(f.shieldedUsd));
   assert.ok(Math.abs(f.shieldedShare! - 0.4) < 1e-9, String(f.shieldedShare));
   assert.equal(f.budget, null, "no USD budget set");
