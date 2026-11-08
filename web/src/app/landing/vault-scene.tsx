@@ -216,13 +216,14 @@ function Vault({ mobile, progress }: { mobile: boolean; progress?: RefObject<num
       tilt.current.rotation.x += (pointer.y * 0.28 - tilt.current.rotation.x) * k;
     }
     if (turn.current) turn.current.rotation.y = t * 0.16 + p * Math.PI * 1.5;
-    const pulse = 1 + Math.sin(t * 2.1) * 0.05 + p * 0.06;
+    // Scroll brightens the core only a little: scaled up, lit up and bloomed at once, it flares out of the glass.
+    const pulse = 1 + Math.sin(t * 2.1) * 0.05 + p * 0.02;
     core.current?.scale.setScalar(pulse);
     halo.current?.scale.setScalar(pulse * (1.9 + Math.sin(t * 1.3) * 0.08));
     glow.current?.scale.setScalar(0.95 * pulse);
     if (dialA.current) dialA.current.rotation.z = t * 0.6;
     if (dialB.current) dialB.current.rotation.z = -t * 0.45;
-    if (light.current) light.current.intensity = 6 + Math.sin(t * 2.1) * 1.5 + p * 2;
+    if (light.current) light.current.intensity = 6 + Math.sin(t * 2.1) * 1.5 + p * 0.5;
     state.camera.position.x += (pointer.x * 0.35 - state.camera.position.x) * k;
     state.camera.position.y += (-pointer.y * 0.2 - state.camera.position.y) * k;
     state.camera.lookAt(0, 0, 0);
@@ -271,7 +272,7 @@ function Vault({ mobile, progress }: { mobile: boolean; progress?: RefObject<num
         </sprite>
         <pointLight ref={light} color="#c8ffe6" intensity={9} distance={5} decay={1.6} />
       </group>
-      {TOKENS.map((token, index) => <Coin key={token.glyph} token={token} index={index} radius={mobile ? 1.2 : 2.35} mobile={mobile} />)}
+      {TOKENS.map((token, index) => <Coin key={token.glyph} token={token} index={index} radius={mobile ? 1.2 : 1.6} mobile={mobile} />)}
     </Float>
   </group>;
 }

@@ -37,7 +37,13 @@ function Scramble({ text, as: Tag = "h2", className, duration = 1300 }: { text: 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [inView, text, duration]);
-  return <Tag ref={ref} className={className} aria-label={text}><span aria-hidden="true">{shown}</span></Tag>;
+  // The final text, invisible, holds the heading's size; the scrambling text sits over it, so nothing reflows as it decodes.
+  return <Tag ref={ref} className={className} aria-label={text}>
+    <span aria-hidden="true" className="relative block">
+      <span className="invisible">{text}</span>
+      <span className="absolute inset-0">{shown}</span>
+    </span>
+  </Tag>;
 }
 
 function Label({ index, children }: { index: number; children: string }) {

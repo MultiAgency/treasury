@@ -15,7 +15,7 @@ type Chip = { name: string; mark: string; value: string; x: number; y: number; p
 
 function layout(w: number, h: number, cyRatio: number): Chip[] {
   const cy = snap(h * cyRatio);
-  const reach = snap(h * 0.205); // the vault's half-width on screen, roughly
+  const reach = snap(h * 0.4); // just outside the coins' orbit, so a coin never crosses a trace
   const gap = snap(h * 0.11); // the spacing between the left chips and the centre line
   const pad = snap(Math.max(48, w * 0.05));
   const leftEnd = snap(w / 2 - reach);
