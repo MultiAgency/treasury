@@ -68,3 +68,34 @@ test("a consent request's 409 is a stop only while the agent is still the DAO's 
   assert.deepEqual(await settle(unread), { result: "pending" });
   assert.equal(daoRequests.consent(ORG, "dao-treasury")?.id, unread.id);
 });
+
+test("a passed vote ends once the platform says its proposal isn't open; refused for now, it stays open and is read again", async () => {
+  const fake = fakePlatform({ "dao-treasury": DAO }, { daos: ["dao-treasury"] });
+  const daoRequests = await createDaoRequests(join(tempDir("treasury-dao-settle-"), "dao-requests.json"));
+  const audited: AuditEntry[] = [];
+  const settle = createSettle({ platform: fake.platform, daoRequests, audit: { append: async entry => { audited.push(entry); } } });
+  const open = async (id: string, state: string) => {
+    const made = { ...proposal({ id, organization: ORG, agentId: "id-dao-treasury" }), agent: "dao-treasury" };
+    fake.proposals.push(made);
+    const filed = await fake.platform.daoVotes.file({ organization: ORG, agent: "dao-treasury", proposal: id, verdict: "approve" });
+    assert.ok(filed.ok);
+    made.state = state as typeof made.state;
+    const request = { kind: "vote" as const, organization: ORG, agent: "dao-treasury", id: filed.value.request.id, description: "", votingUntil: Date.now() + 60_000,
+      proposal: id, verdict: "approve" as const, filed: { dao: DAO, next: 0, transactions: { proposal: daoTransaction(DAO, filed.value.request.id), proposalAndVote: null } } };
+    await daoRequests.add(request);
+    fake.daoVotes.at(-1)!.passed = true;
+    return request;
+  };
+
+  // Invalidated while the DAO voted (the owner's strategy changed): the agent will never take it.
+  const invalidated = await open("2".repeat(32), "invalidated");
+  assert.deepEqual(await settle(invalidated), { result: "ended", why: "closed" });
+  assert.equal(daoRequests.vote(ORG, "dao-treasury", invalidated.proposal), undefined, "closed");
+  assert.equal(audited.filter(entry => entry.action === "dao-vote-relayed").length, 0, "nothing was relayed");
+
+  // The agent refuses for now (`agent_refused`): read again.
+  const refusedForNow = await open("3".repeat(32), "proposed");
+  fake.daoVotes.at(-1)!.ended = 409;
+  assert.deepEqual(await settle(refusedForNow), { result: "pending" });
+  assert.equal(daoRequests.vote(ORG, "dao-treasury", refusedForNow.proposal)?.id, refusedForNow.id);
+});

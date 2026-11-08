@@ -273,7 +273,12 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         if (vote.ended) return { ok: false, kind: "refused", status: vote.ended, error: "Ended" };
         if (!vote.passed) return { ok: true, value: { state: "pending" as const, request } };
         const found = find(vote.organization, vote.agent, vote.proposal);
-        if (found && found.state === "proposed") found.state = vote.verdict === "approve" ? "approved" : "rejected";
+        const decided = vote.verdict === "approve" ? "approved" : "rejected";
+        // As the platform relays it: the agent applies the verdict to an open proposal, answers one it already carries as
+        // it is, and refuses any other, which the platform answers as `proposal_not_open`: it never will take the vote.
+        if (found && found.state !== "proposed" && found.state !== decided)
+          return { ok: false, kind: "refused", status: 409, code: "proposal_not_open", error: `This proposal is ${found.state}; the DAO's ${vote.verdict} can't apply to it. Nothing was relayed.` };
+        if (found && found.state === "proposed") found.state = decided;
         vote.relayed = found ? found.state : "unknown";
         return { ok: true, value: { state: "relayed" as const, request, proposalState: vote.relayed } };
       },

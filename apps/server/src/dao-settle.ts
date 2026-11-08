@@ -13,14 +13,15 @@ import { recordResult, revokeAll } from "./revoke.ts";
  * - `pending`: no vote has passed yet, or the platform couldn't complete it now; the request stays open;
  * - `ended`: it can't complete any more (`expired`: past its deadline, `stopped`: a DAO stop ended it, `changed`: the
  *   agent isn't the DAO's with the identity its consent names any more, `refused`: the platform wouldn't set up the
- *   agent the DAO voted for, `gone`: the platform no longer keeps it); the request is closed.
+ *   agent the DAO voted for, `gone`: the platform no longer keeps it, `closed`: the proposal a vote is on has ended, so
+ *   the agent will never take the vote); the request is closed.
  */
 export type Settled =
   | { result: "stored"; consent: ConsentRecord }
   | { result: "relayed"; proposalState: string }
   | { result: "reserved"; agent: string }
   | { result: "pending" }
-  | { result: "ended"; why: "expired" | "stopped" | "changed" | "refused" | "gone" };
+  | { result: "ended"; why: "expired" | "stopped" | "changed" | "refused" | "gone" | "closed" };
 
 type SettleDeps = { platform: Platform; daoRequests: DaoRequests; audit: Audit };
 /** Reads an open DAO request once, and completes it if its vote passed (`createSettle`). */
@@ -47,8 +48,9 @@ export function createSettle(deps: SettleDeps): Settle {
  *
  * A consent request's 409 is final, for one of two reasons the platform tells apart only in its message: a DAO stop
  * ended it, or the agent isn't the DAO's with the identity the consent names any more (`whyConsentEnded`). A vote's
- * 409 isn't final: the platform answers it both for a relay the agent refused for now (read again relays the same
- * signature) and for a consent that ended. So a vote stays open until it's relayed or its deadline passes (410).
+ * 409 is final only as `proposal_not_open`: the agent refused it once its proposal was no longer open, and always will.
+ * Otherwise (`agent_refused`, refused for now: reading again relays the same signature, or a consent that ended) a vote
+ * stays open until it's relayed or its deadline passes (410).
  */
 async function settleOnce(open: StoredDaoRequest, deps: SettleDeps): Promise<Settled> {
   return open.kind === "setup" ? settleSetup(open, deps) : settleAgent(open, deps);
@@ -99,9 +101,11 @@ async function settleAgent(open: StoredAgentRequest, { platform, daoRequests, au
   }
   const status = read.kind === "refused" ? read.status : undefined;
   const ended = status === 410 ? "expired" : status === 404 ? "gone"
-    : status === 409 && open.kind === "consent" ? await whyConsentEnded(open, platform) : undefined;
+    : status === 409 && open.kind === "consent" ? await whyConsentEnded(open, platform)
+    : status === 409 && read.kind === "refused" && read.code === "proposal_not_open" ? "closed" as const
+    : undefined;
   if (ended) {
-    await daoRequests.close(open.id, ended === "gone" ? undefined : ended);
+    await daoRequests.close(open.id, ended === "gone" || ended === "closed" ? undefined : ended);
     return { result: "ended", why: ended };
   }
   log(`platform_dao_${open.kind}_state_failed`, { agent, request: open.id, ...failure(read) });
