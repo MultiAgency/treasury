@@ -1,11 +1,9 @@
 import { Copy } from "@phosphor-icons/react";
-import { Link } from "@tanstack/react-router";
-import { useState, type ComponentProps, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge as BadgePrimitive } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { assetColor } from "./format";
 
 export { Button };
 /** Native input/select callers share the same states as the Input component. */
@@ -24,45 +22,13 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
 export const statusTone = (status: string | undefined): Tone =>
   status === "SUCCESS" ? "success" : status === "FAILED" || status === "REFUNDED" ? "destructive" : status ? "warning" : "neutral";
 
-/** A link styled as a small outline button that wraps its text rather than overflowing. */
-export function LinkButton(props: ComponentProps<typeof Link>) {
-  return <Button asChild variant="outline" size="sm" className="h-auto max-w-full self-start whitespace-normal"><Link {...props} /></Button>;
-}
-
-export function Section({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
-  return <section className="flex flex-col gap-6">
-    <div className="flex flex-wrap items-end justify-between gap-4">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        {description && <p className="text-sm text-muted-foreground">{description}</p>}
-      </div>
-      {action}
-    </div>
-    {children}
-  </section>;
-}
-
 export function Card({ className = "", children }: { className?: string; children: ReactNode }) {
   return <div className={cn("flex min-w-0 flex-col gap-6 rounded-2xl bg-card p-6 text-base text-card-foreground ring-1 ring-foreground/10", className)}>{children}</div>;
-}
-
-/** A card's icon, title (`h3`) and one-line description. */
-export function CardHeader({ icon, title, description }: { icon: ReactNode; title: string; description: string }) {
-  return <div className="flex gap-4">
-    <div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-brand-muted text-brand-strong">{icon}</div>
-    <div className="flex min-w-0 flex-col gap-1">
-      <h3 className="font-heading text-lg font-medium">{title}</h3>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </div>
-  </div>;
 }
 
 export function Note({ children }: { children: ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
-
-/** An asset's chart colour, as a dot beside its name. */
-export const Dot = ({ symbol }: { symbol: string }) => <span className={`size-2 rounded-full ${assetColor(symbol)}`} />;
 
 export function Spinner() {
   return <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />;

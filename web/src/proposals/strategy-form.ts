@@ -1,4 +1,6 @@
-import type { Strategy } from "../../platform";
+import type { OwnerInputs } from "@multiagency/sdk";
+
+type Strategy = OwnerInputs["strategy/save"]["strategy"];
 
 export type StrategyDraft = { targets: Record<string, string>; minLegUsd: string; maxCost: string; everyMin: string; maxUsd: string };
 

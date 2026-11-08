@@ -1,20 +1,13 @@
 import { PROPOSAL_TOKENS } from "@multiagency/sdk";
-import type { Overview } from "../platform";
-// With its extension, unlike the other app modules: test/format.test.ts loads this one under Node, which resolves only
-// explicit `.ts` paths.
-import { totalUsd } from "./prices.ts";
+import type { OwnerOutput } from "@multiagency/sdk";
+
+type Overview = OwnerOutput<"overview">;
 
 export type Holding = Overview["book"][number];
 /** What naming an asset's amount needs of a holding: its ID, symbol and decimals, whichever form its balances take. */
 export type AssetInfo = Pick<Holding, "asset" | "decimals" | "symbol">;
 
-/** Whether the policy lets the agent swap. The target allocation, rebalancing and the steward apply only then. */
-export const swaps = (data: Overview) => Boolean(data.policy.policy?.actions.includes("swap"));
-
 export const units = (raw: bigint | string, decimals: number) => Number(raw) / 10 ** decimals;
-
-/** The book's value at the API's prices. */
-export const bookValue = (data: Pick<Overview, "book">) => totalUsd(data.book);
 
 /**
  * A raw amount of `asset` in words: at the book's decimals, or the platform's for its own assets when the book doesn't

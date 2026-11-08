@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ASSETS } from "@multiagency/sdk";
-import { expiryProblem, fundingTransfer, type Funding, type FundingAsset } from "../src/features/funding/funding-transaction.ts";
+import { expiryProblem, fundingTransfer, type Funding, type FundingAsset } from "../src/proposals/funding-transaction.ts";
 
 const address = "a1b2c3.deposit.near";
 const call = (methodName: string, args: object, deposit: string) => ({ type: "FunctionCall" as const, params: { methodName, args, gas: "30000000000000", deposit } });

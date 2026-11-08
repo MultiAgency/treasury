@@ -6,7 +6,7 @@ import type { SweepRun } from "./proposals-api.ts";
 type Activity = ReturnType<typeof sweepActivity.parse>;
 
 /**
- * What a sweep's AG-UI run reported, decided as the owner UI decides a sweep (`settle`): its last activity snapshot, and
+ * What a sweep's AG-UI run reported, decided with `settle` (`shared/execution-outcome.ts`): its last activity snapshot, and
  * how it ended. `RUN_FINISHED` ended normally; `RUN_ERROR` failed, its `code` the failure's kind; no terminal event is a
  * truncated run, which the SDK reports as `unknown`: a shield may have gone out. `offerAgain` is false when funds may
  * have moved.

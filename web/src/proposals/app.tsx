@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useRouter, useRouterState } from "@tanstack/react-router";
 import { useEffect, useMemo, type ReactNode } from "react";
-import { TreasuryBrand } from "../app/brand";
+import { TreasuryBrand } from "./brand";
 import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
 import { Policy } from "./policy";
@@ -32,10 +32,9 @@ export function Shell() {
   // or screen reader user starts again from the top without being told the page changed. Once the new address has
   // rendered (the router's own event: its location changes before the old page's content is replaced), the focus goes to
   // what the address names: the section its hash names, else the page's heading. Focus that is somewhere else (a link of
-  // the navigation, which stays) is left alone. The router is typed against the owner UI's routes, hence the cast.
+  // the navigation, which stays) is left alone.
   useEffect(() => {
-    const events = router as unknown as { subscribe(type: "onRendered", listener: (event: { toLocation: { hash: string }; hrefChanged: boolean }) => void): () => void };
-    return events.subscribe("onRendered", ({ toLocation, hrefChanged }) => {
+    return router.subscribe("onRendered", ({ toLocation, hrefChanged }) => {
       if (!hrefChanged) return;
       const active = document.activeElement;
       if (active && active !== document.body) return;

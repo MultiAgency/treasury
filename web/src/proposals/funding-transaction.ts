@@ -1,6 +1,6 @@
 import { ASSETS } from "@multiagency/sdk";
 import type { OwnerOutput } from "@multiagency/sdk";
-import { fromUnits } from "../../shared/format.ts";
+import { fromUnits } from "../shared/format.ts";
 
 export type FundingAsset = "USDC" | "NEAR";
 export type Funding = OwnerOutput<"treasury/fund">;

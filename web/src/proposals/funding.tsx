@@ -1,8 +1,8 @@
 import { fundingTransaction, mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { blockFunding, useFundingBlock } from "../features/funding/funding-block";
-import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "../features/funding/funding-transaction";
+import { blockFunding, useFundingBlock } from "./funding-block";
+import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "./funding-transaction";
 import { Field, focusInvalid } from "../shared/form";
 import { accountError } from "../shared/form-validation";
 import { ago, fromUnits, linkedBalances, toUnits } from "../shared/format";

@@ -1,4 +1,4 @@
-import type { TransactionOutcome } from "../app/wallet-transaction.ts";
+import type { TransactionOutcome } from "./wallet-transaction.ts";
 
 /**
  * Whether filing stays held after the member's wallet answered `last`. Only a failure proves nothing was filed. After
