@@ -19,6 +19,7 @@ import { createPlatform } from "./platform.ts";
 import { createHolds, createRequests } from "./requests.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
+import { createStrategyProposals, fileProposalRecords, memoryProposalRecords } from "./strategy-proposals.ts";
 import { loadWatchConfig } from "./watch-config.ts";
 import { createWatch, runWatch } from "./watch.ts";
 
@@ -70,6 +71,9 @@ const daoRequests = await createDaoRequests(settings.TREASURY_DAO_REQUESTS_FILE)
 // Refuse to start with the agent tokens unreadable; without a file they last as long as the process.
 const agentTokens = createAgentTokens(settings.TREASURY_AGENT_TOKENS_FILE ? await fileTokenRecords(settings.TREASURY_AGENT_TOKENS_FILE) : memoryTokenRecords());
 
+// Refuse to start with the strategy proposals unreadable; without a file they last as long as the process.
+const strategyProposals = createStrategyProposals(settings.TREASURY_STRATEGY_PROPOSALS_FILE ? await fileProposalRecords(settings.TREASURY_STRATEGY_PROPOSALS_FILE) : memoryProposalRecords(), { audit });
+
 // One platform client for the routes and watch, so they share the identity cache and the credential's reads.
 const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, credential, timeoutMs: settings.PLATFORM_TIMEOUT_MS,
   executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
@@ -95,6 +99,7 @@ const handler = createServer({
   daos,
   daoRequests,
   agentTokens,
+  strategyProposals,
   tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
   tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,
@@ -111,7 +116,7 @@ const server = createHttpServer(handler).listen(settings.PORT, () => {
 const shutdown = new AbortController();
 const watching = watched
   ? runWatch({
-    watch: createWatch({ platform: platform.watch, requests: watched.requests, holds: watched.holds, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN, ...(ballast && { ballast }) }),
+    watch: createWatch({ platform: platform.watch, requests: watched.requests, holds: watched.holds, publicOrigin: settings.TREASURY_PUBLIC_ORIGIN, ...(ballast && { ballast }), strategyProposals }),
     agents: watched.agents,
     log: event => console.log(JSON.stringify({ event: "watch", ...event })),
     sleep: (ms, signal) => delay(ms, undefined, { signal }).catch(() => {}),

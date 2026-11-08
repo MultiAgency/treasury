@@ -41,6 +41,12 @@ const Settings = z.object({
    * last only as long as the process, and a restart ends them all.
    */
   TREASURY_AGENT_TOKENS_FILE: z.string().min(1).optional(),
+  /**
+   * Where the strategies agents propose are kept until the owner answers them (`strategy-proposals.ts`, #206),
+   * owner-only, with the last answered one of each source, so a declined strategy isn't proposed again. Without it, they
+   * last only as long as the process.
+   */
+  TREASURY_STRATEGY_PROPOSALS_FILE: z.string().min(1).optional(),
   /** This server's own origin: the sign-in recipient and the only `Origin` accepted on writes. */
   TREASURY_PUBLIC_ORIGIN: publicOrigin,
   /**

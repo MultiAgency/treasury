@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventType } from "@ag-ui/core";
 import { PROTOCOL_VERSION } from "@ag-ui/core/schemas";
-import { accessOf, mayCall, proposalId, proposalList, type ProposalView } from "@multiagency/sdk";
+import { accessOf, mayCall, proposalId, proposalList, type OwnerInputs, type ProposalView } from "@multiagency/sdk";
 import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
@@ -24,6 +24,7 @@ import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import { agentsOf, checkSetup, DAO_SETUP_MS, setupConsents, setupFor, setupText } from "./setup.ts";
 import { recordResult, revokeAll } from "./revoke.ts";
 import type { Sessions } from "./sessions.ts";
+import { createStrategyProposals, memoryProposalRecords, type StrategyProposals } from "./strategy-proposals.ts";
 import type { SignIn } from "./signin.ts";
 
 export const COOKIE = "__Host-treasury_session";
@@ -73,6 +74,8 @@ export type Deps = {
   settle?: Settle;
   /** The tokens issued to owners' agents (#139); without it, tokens last as long as the process. */
   agentTokens?: AgentTokens;
+  /** The strategies agents proposed and the owner hasn't answered (#206); without it, they last as long as the process. */
+  strategyProposals?: StrategyProposals;
   /**
    * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
    * and each of its calls is a call against the platform's hourly budget, which every owner shares.
@@ -87,7 +90,7 @@ export type Deps = {
  * What a handler reads: the dependencies, the limits the server keeps across requests, and the DAO filings in flight
  * per agent, so two members' clicks file once.
  */
-type Context = Deps & { settle: Settle; tokens: AgentTokens; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
+type Context = Deps & { settle: Settle; tokens: AgentTokens; strategyProposals: StrategyProposals; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
   /** The account's owner-route requests a minute (`ownerRequestsPerMinute`), shared with the setup routes, which reach the platform too. */
   requests: RateLimit };
 
@@ -331,6 +334,28 @@ const autopilotAction = <B extends z.ZodType>(path: string, action: "autopilot-o
     return reply;
   },
 });
+
+/**
+ * Saves a strategy over the one the owner saw, by its digest, recorded before the platform is asked and after: the
+ * owner's own save, or a proposal adopted (`strategy-adopt`, by its ID). A refusal is told apart by reading the strategy
+ * anew, never by the platform's text: changed since the owner saw it (`strategy_changed`), or refused (`strategy_refused`).
+ */
+async function saveStrategy({ platform, audit }: Context, { agent, owner }: Admitted,
+  record: { who: string; action: "strategy-save" | "strategy-adopt"; subject?: string }, input: OwnerInputs["strategy/save"]): Promise<Reply> {
+  const organization = organizationOf(owner);
+  await audit.append({ ...record, agent, stage: "attempt" });
+  const saved = await relay(() => platform.autopilot.save(organization, agent, input), agent);
+  let reply: Reply;
+  if (saved.ok) reply = ok({ digest: saved.value.digest });
+  else if (saved.kind === "forbidden") reply = refused(409, "not_connected");
+  else if (saved.kind === "refused") {
+    const now = await relay(() => platform.autopilot.strategy(organization, agent), agent);
+    reply = now.ok && now.value.digest !== input.expectedDigest ? refused(409, "strategy_changed") : refused(409, "strategy_refused");
+  } else reply = unavailable();
+  if (!saved.ok && saved.kind !== "forbidden") log("platform_strategy_failed", { agent, ...failure(saved) });
+  await recordResult(audit, { ...record, agent, stage: "result", answer: audited(saved, reply) });
+  return reply;
+}
 
 /**
  * Where an owner action stands (a creation, or a grant), by the correlation ID its preparation answered: the platform's
@@ -1069,22 +1094,47 @@ export const routes: Route[] = [
      * the page reads the strategy again before anything else.
      */
     method: "POST", path: "/api/agents/:agent/strategy", access: "owner-fresh", needs: "save",
-    async handle({ body, account, identity }, { platform, audit }) {
-      const { agent, owner } = identity!, organization = organizationOf(owner);
+    async handle({ body, account, identity }, context) {
       const input = parse(contract.strategySaveRequest, body);
       if (input === undefined) return refused(400, "bad_request");
-      await audit.append({ who: account!, action: "strategy-save", agent, stage: "attempt" });
-      const saved = await relay(() => platform.autopilot.save(organization, agent, input), agent);
-      let reply: Reply;
-      if (saved.ok) reply = ok({ digest: saved.value.digest });
-      else if (saved.kind === "forbidden") reply = refused(409, "not_connected");
-      else if (saved.kind === "refused") {
-        // Told apart by reading the strategy anew, never by the platform's text: changed since the owner saw it, or refused.
-        const now = await relay(() => platform.autopilot.strategy(organization, agent), agent);
-        reply = now.ok && now.value.digest !== input.expectedDigest ? refused(409, "strategy_changed") : refused(409, "strategy_refused");
-      } else reply = unavailable();
-      if (!saved.ok && saved.kind !== "forbidden") log("platform_strategy_failed", { agent, ...failure(saved) });
-      await recordResult(audit, { who: account!, action: "strategy-save", agent, stage: "result", answer: audited(saved, reply) });
+      return saveStrategy(context, identity!, { who: account!, action: "strategy-save" }, input);
+    },
+  },
+  {
+    // The strategies agents proposed for the agent and the owner hasn't answered (#206), from this server's own records.
+    method: "GET", path: "/api/agents/:agent/strategy-proposals", access: "owner", needs: "read",
+    handle: async ({ identity }, { strategyProposals }) => ok(strategyProposals.open(identity!.agent)),
+  },
+  {
+    /**
+     * Adopts a proposed strategy: saved over the strategy it was compared against, by that one's digest, as the owner's
+     * own save is. The page then asks for the grant that binds it (`/grant`, with the digest answered): saving comes
+     * first, since the grant binds the saved strategy's digest. A strategy saved since it was proposed refuses it
+     * (`strategy_changed`) and closes it: its source proposes again against the new one.
+     */
+    method: "POST", path: "/api/agents/:agent/strategy-proposals/:id/adopt", access: "owner-fresh", needs: "save",
+    async handle({ account, identity, params }, context) {
+      const { agent } = identity!;
+      const proposal = context.strategyProposals.find(agent, params.id ?? "");
+      if (!proposal) return refused(404, "no_proposal");
+      const reply = await saveStrategy(context, identity!, { who: account!, action: "strategy-adopt", subject: proposal.id },
+        { strategy: proposal.strategy, expectedDigest: proposal.against });
+      const code = "code" in reply.body ? reply.body.code : undefined;
+      if (reply.body.ok || code === "strategy_changed")
+        await context.strategyProposals.close(agent, proposal.id, reply.body.ok ? "adopted" : "superseded").catch(error => log("strategy_proposal_unclosed", { agent, id: proposal.id, error: String(error) }));
+      return reply;
+    },
+  },
+  {
+    // Declines a proposed strategy: closed, and recorded. Its source doesn't propose the same strategy again (#206).
+    method: "POST", path: "/api/agents/:agent/strategy-proposals/:id/decline", access: "owner-fresh", needs: "save",
+    async handle({ account, identity, params }, { audit, strategyProposals }) {
+      const { agent } = identity!;
+      if (!strategyProposals.find(agent, params.id ?? "")) return refused(404, "no_proposal");
+      await audit.append({ who: account!, action: "strategy-decline", agent, subject: params.id, stage: "attempt" });
+      const done = await strategyProposals.close(agent, params.id!, "declined").catch(() => undefined);
+      const reply = done === undefined ? unavailable() : done ? ok({}) : refused(404, "no_proposal");
+      await recordResult(audit, { who: account!, action: "strategy-decline", agent, subject: params.id, stage: "result", answer: reply.body.ok ? { ok: true } : { ok: false, kind: "refused", code: "code" in reply.body ? reply.body.code : "unavailable" } });
       return reply;
     },
   },
@@ -1437,7 +1487,7 @@ export function createServer(deps: Deps) {
   const admissions = createRateLimit({ limit: deps.ownerRequestsPerMinute });
   const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? 60, windowMs: 3_600_000 });
   const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
-  const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
+  const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), strategyProposals: deps.strategyProposals ?? createStrategyProposals(memoryProposalRecords(), { audit: deps.audit }), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = ({ status, body, cookie, csv }: Reply) => {

@@ -29,6 +29,25 @@ export async function createRecords<S extends z.ZodType>(path: string, key: stri
   };
 }
 
+/** Records that live only as long as the process, changed as `createRecords`' are: for tests, and when no file is configured. */
+export function memoryRecords<R>(): Pick<Awaited<ReturnType<typeof createRecords<z.ZodType<R>>>>, "all" | "commit"> {
+  let records: R[] = [];
+  let writing = Promise.resolve();
+  return {
+    all: () => records,
+    commit(change: (current: readonly R[]) => R[] | null) {
+      const done = writing.then(() => {
+        const next = change(records);
+        if (!next) return false;
+        records = next;
+        return true;
+      });
+      writing = done.then(() => {}, () => {});
+      return done;
+    },
+  };
+}
+
 async function load<T>(path: string, schema: z.ZodType<Record<string, unknown>>, key: string, what: string): Promise<T[]> {
   let text: string;
   try {

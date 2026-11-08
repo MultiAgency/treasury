@@ -3,6 +3,7 @@ import type { Ballast, BallastSettings } from "./ballast.ts";
 import { liveConsents } from "./consent.ts";
 import type { Notify } from "./notify.ts";
 import type { ProposalAnswer, WatchPlatform } from "./platform.ts";
+import { proposeMandate, type StrategyProposals } from "./strategy-proposals.ts";
 import { memoryHolds, type HoldReason, type Holds, type NoticeKind, type ProposalNotice, type Requests, type StoredRequest } from "./requests.ts";
 
 /**
@@ -34,7 +35,7 @@ export type WatchedAgent = {
 /** What a tick did, for the log: one line per agent per tick, with the notices it sent. */
 export type WatchEvent = { organization: string; agent: string; [detail: string]: unknown };
 /** One tick's event builder, which also collects the notices the tick sent, for its log line. */
-type Eventer = ((detail: Record<string, unknown>) => WatchEvent) & { notices: { kind: NoticeKind; ok: boolean; error?: string }[] };
+type Eventer = ((detail: Record<string, unknown>) => WatchEvent) & { notices: { kind: NoticeKind; ok: boolean; error?: string }[]; strategy?: unknown };
 
 const HOUR_MS = 3_600_000;
 /** An open proposal is expiring once it has less than this left, or `EXPIRING_SHARE` of its life if that is shorter. */
@@ -88,10 +89,12 @@ type Stop = { reason: string; resumable: boolean };
  * is still `proposed` or `approved` holds the agent. Otherwise it reads the agent, and proposes when it has drifted.
  * Every request is stored before it's sent (`Requests`), so a lost answer never becomes a second proposal.
  */
-export function createWatch({ platform, requests, publicOrigin, now = Date.now, holds = memoryHolds(), ballast }: {
+export function createWatch({ platform, requests, publicOrigin, now = Date.now, holds = memoryHolds(), ballast, strategyProposals }: {
   platform: WatchPlatform; requests: Requests;
   /** Decides for the agents configured with `ballast`; needed when any is. */
   ballast?: Ballast;
+  /** Where the mandate proposer keeps the strategies it proposes for the agents configured with `ballast` (#206); without it, none are. */
+  strategyProposals?: StrategyProposals;
   /** This server's origin, where the owner opens a proposal. */
   publicOrigin: string;
   now?: () => number;
@@ -244,7 +247,8 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
     async tick(watched: WatchedAgent): Promise<WatchEvent> {
       const { organization, agent } = watched, state = stateOf(watched);
       const event: Eventer = Object.assign(
-        (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail, ...(event.notices.length > 0 && { notices: event.notices }) }),
+        (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail, ...(event.notices.length > 0 && { notices: event.notices }),
+          ...(event.strategy !== undefined && { strategy: event.strategy }) }),
         { notices: [] as Eventer["notices"] });
 
       if (state.stopped) {
@@ -287,6 +291,9 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
         if (limited) backoff(watched);
         return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
       }
+      // The mandate proposer proposes a strategy, not a trade: whatever holds the trades below, it runs (#206).
+      if (watched.ballast && strategyProposals) event.strategy = await proposeMandate({ agent, settings: watched.ballast, overview: overview.value,
+        strategy: () => platform.strategy(organization, agent), proposals: strategyProposals });
       if (unresolved.value.length) { await settleHold(watched, "unresolved-operations", event); return event({ held: "unresolved", operations: unresolved.value.length }); }
       // Two proposers on one agent would race; turning autopilot off is the owner's call.
       if (autopilot.value.on) { await settleHold(watched, "autopilot-on", event); return event({ held: "autopilot" }); }

@@ -54,6 +54,7 @@ async function world({ max }: { max?: number } = {}) {
     overview: async () => { calls.push("overview"); return answers.overview; },
     unresolved: async () => { calls.push("unresolved"); return answers.unresolved; },
     autopilot: async () => { calls.push("autopilot/get"); return answers.autopilot; },
+    strategy: async () => { calls.push("strategy/get"); return { ok: false, kind: "unavailable" } as Awaited<ReturnType<WatchPlatform["strategy"]>>; },
     list: async () => { calls.push("proposals/list"); return { ok: true, value: { proposals: [...stored.values()] } }; },
     get: async (_o, _a, id) => {
       calls.push("proposals/get");

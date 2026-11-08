@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { createRecords } from "./records.ts";
+import { createRecords, memoryRecords } from "./records.ts";
 
 /** The longest an owner may let a token live (#139). */
 export const MAX_TOKEN_DAYS = 30;
@@ -42,23 +42,7 @@ const live = (token: StoredAgentToken, now: number) => token.revokedAt === null 
 export type TokenRecords = Pick<Awaited<ReturnType<typeof createRecords<typeof stored>>>, "all" | "commit">;
 
 /** Records that live only as long as the process: for tests, and the default when no file is configured. */
-export function memoryTokenRecords(): TokenRecords {
-  let records: StoredAgentToken[] = [];
-  let writing = Promise.resolve();
-  return {
-    all: () => records,
-    commit(change) {
-      const done = writing.then(() => {
-        const next = change(records);
-        if (!next) return false;
-        records = next;
-        return true;
-      });
-      writing = done.then(() => {}, () => {});
-      return done;
-    },
-  };
-}
+export const memoryTokenRecords = (): TokenRecords => memoryRecords<StoredAgentToken>();
 
 /** The tokens file: owner-only like the credential file, and only hashes in it. */
 export const fileTokenRecords = (path: string) => createRecords(path, "tokens", stored, "the agent tokens this server issued");
