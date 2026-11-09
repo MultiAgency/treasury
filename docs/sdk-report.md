@@ -2,7 +2,7 @@
 
 What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what would improve the SDK from here.
 
-Reviewed against SDK 0.5.0 and platform `6ba0831` on 4 November 2026, describing merged Treasury work through #109; held work from #104 is identified separately. Sections 3.1, 3.2, 3.3, 3.5 and 3.6 were rechecked on 5 November 2026 against SDK 0.5.1 (pinned since #119), the platform at `c671872`, and merged work through #143. Host availability is an operator check, not a guarantee from this SDK pin.
+Reviewed against SDK 0.5.0 and platform `6ba0831` on 4 November 2026, describing merged Treasury work through #109; held work from #104 is identified separately. Sections 3.1, 3.2, 3.3, 3.5 and 3.6 were rechecked on 5 November 2026 against SDK 0.5.1 (pinned since #119), the platform at `c671872`, and merged work through #143. On 9 November 2026 three rows of 3.2 were brought up to date (emergency stop, the floor in the signed policy, staging access); the rest isn't rechecked against SDK 0.5.4. Host availability is an operator check, not a guarantee from this SDK pin.
 
 ## Summary
 
@@ -64,10 +64,10 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 | Gap | Why the app needs it | Issue |
 |---|---|---|
 | Approving a held withdrawal to a NEAR account | Still reject-only at `c671872`: "approving a held withdrawal isn't available yet: its approval can't be verified" (the platform's `src/payment-approval.ts`). A candidate for #62's contracts | #62 |
-| Emergency-stop requirements | What the app route offers, for a wallet owner and for a DAO, is in 3.6; whether it meets A14 waits on A14's wording | #95, #62 |
-| Venue exposure and cash floor in the signed policy | Enforced app-side only; the platform would allow a trade they refuse | #49, #62 |
+| Emergency-stop requirements | Settled by ADR 3: the freeze meets A14. A wallet owner freezes from the app (#133); a DAO's freeze vote must pass within the intent's minutes | #95, platform#20 |
+| Venue exposure and cash floor in the signed policy | Venue exposure is enforced app-side only; the platform would allow a trade it refuses. The cash floor is the platform's since SDK 0.5.3, in the strategy (`cashFloor`), and this app doesn't set it yet | #49, #62, platform#23 |
 | Treasury setup on production and the simulated stack | Creation runs through the app server (#117), but at `c671872` only staging offers the `treasury` area; production and the stack offer payables only | #12 |
-| Staging access and production readiness | Request the staging host, deployment credential through a private channel, and network; SDK support does not establish access | #95 |
+| Staging access and production readiness | Staging is granted (#95): its host, the `multiagency-treasury` deployment and its network. Production readiness is still to confirm; SDK support does not establish access | #95 |
 | Budget visibility, `Retry-After`, and typed 429 | A shared deployment limit already exists (1,200 calls/hour); explicit budget and backoff signals are missing | platform#15 |
 | The consent cap counts revoked consents | A user who reconnects often can be locked out | #20 threat model |
 | Venue holdings and quoted slippage in reads | The policy needs venue exposure and slippage against the oracle median | A10.1 (#60) |
