@@ -1,9 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { parseArgs } from "node:util";
 import {
   ANCHOR_HEARTBEAT_MS, ANCHOR_NETWORKS, checkAnchors, isAnchorArgs, jsonRpc, readAnchorTx, recordedAnchors,
   type AnchorArgs, type AnchorNetwork, type AnchorTarget,
 } from "./anchor.ts";
+import { readAuditLog } from "./chain.ts";
 import { Secret } from "./config.ts";
 import { rpcHeaders } from "./keys.ts";
 
@@ -155,7 +155,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv, out: (line: s
   try {
     settings = checkSettings(env);
     const { values } = parseArgs({ args: argv, options: { log: { type: "string" } } });
-    log = values.log === undefined ? undefined : await readFile(values.log, "utf8");
+    log = values.log === undefined ? undefined : await readAuditLog(values.log);
   } catch (error) { annotate(`can't run: ${(error as Error).message}`); return 2; }
   const { target, network, kvUrl, archivalRpcUrl, maxAgeMs, since, apiKey } = settings;
   const rpc = jsonRpc({ rpcUrl: archivalRpcUrl, headers: rpcHeaders(archivalRpcUrl, apiKey), timeoutMs: 15_000 });

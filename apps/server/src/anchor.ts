@@ -1,7 +1,7 @@
 import { open, readFile } from "node:fs/promises";
 import { Near } from "near-kit";
 import { Secret } from "./config.ts";
-import { verifyChain, type ChainRecord } from "./chain.ts";
+import { auditSegments, verifyChain, type ChainRecord } from "./chain.ts";
 
 // A7.3 (#55): the audit log's head hash goes on NEAR once an hour, so a log that was cut short or rewritten after an
 // anchor can be told apart from the one that was anchored. Only the sequence number and hash leave the machine; the
@@ -64,6 +64,15 @@ export function recordedAnchors(text: string): (AnchorEntry & { recordSeq: numbe
   return records(text).flatMap(record => isAnchorEntry(record.entry) ? [{ ...record.entry, recordSeq: record.seq, recordedAt: record.at }] : []);
 }
 
+/** The last anchor the log records: the newest segment's, or, when it has none yet, the newest before it that does. */
+export async function lastRecordedAnchor(file: string) {
+  for (const segment of (await auditSegments(file)).reverse()) {
+    const last = recordedAnchors(await readFile(segment, "utf8").catch((error: NodeJS.ErrnoException) => error.code === "ENOENT" ? "" : Promise.reject(error))).at(-1);
+    if (last) return last;
+  }
+  return undefined;
+}
+
 /**
  * How long an idle log goes without an anchor: after a day with nothing recorded, the last anchored head is sent again,
  * unrecorded, so the outside check can tell a quiet deployment from one whose anchors stopped.
@@ -95,7 +104,7 @@ export type AnchorResult = { anchored: false } | { anchored: true; seq: number; 
 export function createAnchorer({ audit, file, chain, now = Date.now }: { audit: AnchorAudit; file: string; chain: AnchorChain; now?: () => number }) {
   let repeatedAt = -Infinity;
   return async (): Promise<AnchorResult> => {
-    const last = recordedAnchors(await readFile(file, "utf8")).at(-1);
+    const last = await lastRecordedAnchor(file);
     const sentAt = Math.max(repeatedAt, last ? Date.parse(last.recordedAt) : -Infinity);
     const due = anchorDue(audit.head(), last, now() - sentAt);
     if (!due) return { anchored: false };

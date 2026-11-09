@@ -3,7 +3,7 @@ import { mkdir, open, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** Flushes a directory, so a rename or a new file in it survives a crash. */
-async function syncDir(dir: string) {
+export async function syncDir(dir: string) {
   const handle = await open(dir, "r");
   try { await handle.sync(); } finally { await handle.close(); }
 }
