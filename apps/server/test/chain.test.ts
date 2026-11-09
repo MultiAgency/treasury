@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { AUDIT_KINDS, canonicalJson, chainedFileAudit, GENESIS, movePlainLogAside, recordHash, verifyChain } from "../src/chain.ts";
+import { AUDIT_KINDS, auditSegments, canonicalJson, chainedFileAudit, GENESIS, movePlainLogAside, readAuditLog, recordHash, verifyChain } from "../src/chain.ts";
 import type { Audit } from "../src/audit.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
@@ -286,4 +286,81 @@ test("a chained log whose first record was broken isn't taken for a plain log: i
   assert.equal(await movePlainLogAside(file), undefined);
   assert.ok(existsSync(file));
   await assert.rejects(open(file).check(), /broken at line 1/);
+});
+
+// Segments (#173). A segment of one byte closes the open segment before every append after the first.
+const segmented = (file: string) => chainedFileAudit<Record<string, unknown>>(file, () => T0, undefined, 1);
+const closedName = (file: string, seq: number) => `${file}.${String(seq).padStart(12, "0")}`;
+
+test("a full open segment is closed under its last record's sequence number, and the segments in order are one chain", async () => {
+  const file = fresh();
+  const audit = segmented(file);
+  await audit.check();
+  for (let i = 1; i <= 4; i++) await audit.append(entry(i));
+  assert.deepEqual(await auditSegments(file), [closedName(file, 1), closedName(file, 2), closedName(file, 3), file]);
+  assert.equal(lines(file).length, 1, "the open segment holds the newest record");
+  assert.equal(statSync(closedName(file, 1)).mode & 0o777, 0o600, "a closed segment stays owner-only");
+  assert.deepEqual(verifyChain(await readAuditLog(file)), { ok: true, count: 4, head: audit.head().hash, seq: 4, skipped: 0 });
+  const unsegmented = fresh();
+  const whole = open(unsegmented, () => T0);
+  await whole.check();
+  for (let i = 1; i <= 4; i++) await whole.append(entry(i));
+  assert.equal(await readAuditLog(file), readFileSync(unsegmented, "utf8"), "the same log as one file would hold");
+});
+
+test("after a restart the chain goes on from the open segment, and from the closed one when the open one is gone", async () => {
+  const file = fresh();
+  const audit = segmented(file);
+  await audit.check();
+  for (let i = 1; i <= 3; i++) await audit.append(entry(i));
+  const reopened = segmented(file);
+  await reopened.check();
+  assert.deepEqual(reopened.head(), audit.head());
+  // As a crash between closing the open segment and opening the next leaves it.
+  renameSync(file, closedName(file, 3));
+  const afterCrash = segmented(file);
+  await afterCrash.check();
+  assert.deepEqual(afterCrash.head(), audit.head());
+  await afterCrash.append(entry(4));
+  assert.equal(JSON.parse(lines(file)[0]!).prev, audit.head().hash);
+  assert.equal(verifyChain(await readAuditLog(file)).ok, true);
+});
+
+test("startup reads only the open and the last closed segment; the whole log's check still finds an older edit", async () => {
+  const file = fresh();
+  const audit = segmented(file);
+  await audit.check();
+  for (let i = 1; i <= 4; i++) await audit.append(entry(i));
+  const oldest = closedName(file, 1);
+  writeFileSync(oldest, readFileSync(oldest, "utf8").replace("owner.near", "intruder.near"), { mode: 0o600 });
+  await segmented(file).check();
+  assert.deepEqual(verifyChain(await readAuditLog(file)), { ok: false, line: 1, reason: "the record was changed: its hash doesn't match" });
+});
+
+test("an edit in the last closed segment, or an open segment that doesn't go on from it, is refused at startup", async () => {
+  const file = fresh();
+  const audit = segmented(file);
+  await audit.check();
+  for (let i = 1; i <= 3; i++) await audit.append(entry(i));
+  const last = closedName(file, 2);
+  const kept = readFileSync(last, "utf8");
+  writeFileSync(last, kept.replace("owner.near", "intruder.near"), { mode: 0o600 });
+  await assert.rejects(segmented(file).check(), /broken at line 1: the record was changed: its hash doesn't match \(.*0{11}2\)$/);
+  writeFileSync(last, kept, { mode: 0o600 });
+  writeFileSync(file, readFileSync(closedName(file, 1), "utf8"), { mode: 0o600 });
+  await assert.rejects(segmented(file).check(), /broken at line 1: sequence 1 follows 2 \(.*audit\.jsonl\)$/);
+});
+
+test("a closed segment that ends in a torn line doesn't run into the next", async () => {
+  const file = fresh();
+  const audit = segmented(file);
+  await audit.check();
+  await audit.append(entry(1));
+  appendFileSync(file, '{"seq":2,"at":"torn');
+  await audit.append(entry(2));
+  assert.deepEqual(verifyChain(await readAuditLog(file)), { ok: true, count: 2, head: audit.head().hash, seq: 2, skipped: 1 });
+});
+
+test("reading a log that isn't there throws, so a wrong path never reads as an empty log", async () => {
+  await assert.rejects(readAuditLog(fresh()), /ENOENT/);
 });

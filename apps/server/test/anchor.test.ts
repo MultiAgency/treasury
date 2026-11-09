@@ -269,3 +269,17 @@ test("a send that doesn't answer fails after its timeout instead of holding the 
     assert.ok(Date.now() - started < 5_000);
   } finally { server.closeAllConnections(); server.close(); }
 });
+
+test("the anchorer finds the last anchor in a closed segment when the open one has none yet (#173)", async () => {
+  const file = fresh();
+  const audit = chainedFileAudit<Record<string, unknown>>(file, () => T0, undefined, 1);
+  await audit.check();
+  const chain = fakeChain();
+  await audit.append(note(1));
+  assert.deepEqual(await anchorOnce({ audit, file, chain, now: () => T0 }), { anchored: true, seq: 1, txHash: "tx1" });
+  assert.equal(readFileSync(file, "utf8").trim().split("\n").length, 1, "the anchor's record opened a new segment");
+  assert.match(JSON.parse(readFileSync(file, "utf8")).entry.kind, /anchor/);
+  await audit.append(note(2));
+  assert.deepEqual(await anchorOnce({ audit, file, chain, now: () => T0 }), { anchored: true, seq: 3, txHash: "tx2" });
+  assert.deepEqual(await anchorOnce({ audit, file, chain, now: () => T0 }), { anchored: false }, "the last anchor is found, so nothing is due");
+});
