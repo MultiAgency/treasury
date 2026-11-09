@@ -17,3 +17,6 @@ export * from "./mandate.ts";
 export * from "./validate.ts";
 export * from "./legs.ts";
 export * from "./decisions.ts";
+export * from "./scenarios.ts";
+export * from "./projection.ts";
+export * from "./stabilization.ts";

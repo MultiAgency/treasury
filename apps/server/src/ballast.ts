@@ -1,12 +1,14 @@
 import { PROPOSAL_TOKENS, type OwnerOutput } from "@multiagency/sdk";
 import { z } from "zod";
 import {
-  ENGINE_DEFAULTS, checkQuotes, compileMandate, decide, deviationPct, detectFaults, detectMarketMoves, highestFaultLevel,
-  highestLevel, nextState, ORACLE_DEFAULTS, policyConfigOf, PROPOSAL_ASSETS, readOracle, regimeFrom, weightBoundsOf,
-  type DecisionRecord, type Intent, type Level, type OracleLimits, type ProfileName, type Sample, type WhipsawState,
+  assessRisk, ENGINE_DEFAULTS, checkQuotes, compileMandate, decide, deviationPct, detectFaults, detectMarketMoves, highestFaultLevel,
+  highestLevel, nextState, ORACLE_DEFAULTS, policyConfigOf, PROPOSAL_ASSETS, readOracle, regimeFrom, riskThresholdsOf, weightBoundsOf,
+  type Book, type DecisionRecord, type Intent, type Level, type OracleLimits, type ProfileName, type Recommendation, type RiskAssessment,
+  type RiskInput, type Sample, type WhipsawState,
 } from "../../../packages/core/src/index.ts";
 import { createRecords } from "./records.ts";
 import { newRequestId, type Body } from "./requests.ts";
+import { projectionOf, riskThresholdSettings, scenariosOf, VENUE_IDS, type RiskEntry, type RiskSettings } from "./risk.ts";
 
 /**
  * What the owner chose for an agent `watch` runs Ballast for (#47): a profile and the mandate answers the platform can't
@@ -19,6 +21,8 @@ export const ballastSettings = z.strictObject({
   operatingCashMonths: z.number().positive().max(36),
   destinations: z.array(z.string().min(2)).min(1),
   approvers: z.array(z.string().min(2)).min(1),
+  /** This mandate's own risk thresholds (#220); unset, its profile's (`RISK_PROFILE_DEFAULTS`), until a backtest calibrates them. */
+  risk: riskThresholdSettings.optional(),
 });
 export type BallastSettings = z.output<typeof ballastSettings>;
 
@@ -140,8 +144,30 @@ type Holding = OwnerOutput<"overview">["book"][number];
 export type DecisionEntry = DecisionRecord & { organization: string; agent: string; requestId?: string };
 /** What one tick decided: a proposal to make under its `requestId`, with what to record once it's stored, or why not. */
 export type Decision =
-  | { requestId: string; body: Body; intent: Intent; level: Level; detail: Record<string, unknown> }
-  | { skipped: string; [detail: string]: unknown };
+  | { requestId: string; body: Body; intent: Intent; level: Level; detail: Record<string, unknown>; risk?: RiskEvent }
+  | { skipped: string; risk?: RiskEvent; [detail: string]: unknown };
+
+/** What a tick's stabilization assessment found, for the watch event and the log line: its level, why, and its actions. */
+export type RiskEvent = {
+  /** The forward level, 0 to 4: the policy checks every trade at the higher of it and Ballast's own. */
+  level: Level;
+  reason: string;
+  recommendations: Recommendation["action"][];
+  derisk: { sizeUsd: number; blocked: string | null } | null;
+};
+
+/** The event a risk block adds to the tick: the level with its reasons, what the agent would do, and its de-risk size. */
+export function riskEventOf(assessment: RiskAssessment): RiskEvent {
+  const derisk = assessment.recommendations.find(r => r.action === "de-risk");
+  return {
+    level: assessment.level,
+    reason: assessment.detections.length > 0
+      ? assessment.detections.map(d => d.reason).join("; ")
+      : "no forward risk detected: the projection and every stress scenario are within their steps",
+    recommendations: assessment.recommendations.map(r => r.action),
+    derisk: derisk?.action === "de-risk" ? { sizeUsd: derisk.sizeUsd, blocked: derisk.blocked } : null,
+  };
+}
 
 /**
  * Ballast's step for `watch` (#47): the platform's price through the oracle, the band engine, the policy and `legsFor`,
@@ -156,12 +182,13 @@ export type Decision =
  */
 export function createBallast({ history, states, audit, now = Date.now }: {
   history: PriceHistory; states: EngineStates;
-  /** Where every decision is recorded with its inputs (A7.2, #54): the server's hash-chained audit log. */
-  audit: { append(entry: DecisionEntry): Promise<void> };
+  /** Where every decision and risk assessment is recorded with its inputs (A7.2, #54; #220): the server's hash-chained audit log. */
+  audit: { append(entry: DecisionEntry | RiskEntry): Promise<void> };
   now?: () => number;
 }) {
   return {
-    async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number): Promise<Decision> {
+    async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
+      risk?: RiskSettings, autopilotOn: boolean | null = null): Promise<Decision> {
       const at = now();
       const row = (asset: string) => overview.book.find(h => h.asset === asset) as Holding | undefined;
       const volatile = row(VOLATILE), stable = row(STABLE);
@@ -192,34 +219,72 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         oracleFrozen: reading.frozen ? reading.reason : null, quotedSlippageBps: null, venueUp: true,
         stablecoinPrices: { USDC: stable.price }, cashUsd: stable.usd, cashFloorUsd, unknownOutcomes: null, expectedUsd: null, reportedUsd: null,
       }).filter(d => !NOT_JUDGED_HERE.has(d.detector));
-      const level = Math.max(highestLevel(market), highestFaultLevel(faults), m.governance.startLevel) as Level;
+      const baseLevel = Math.max(highestLevel(market), highestFaultLevel(faults), m.governance.startLevel) as Level;
       const reserveUsd = Math.max(0, stable.usd! - cashFloorUsd), cashUsd = stable.usd! - reserveUsd;
 
       const state = states.find(organization, agent);
+      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
+      const prices = { [VOLATILE]: decimalOf(volatile.price!), [STABLE]: decimalOf(stable.price!) };
+      const decimals = Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals]));
+      const turnoverTodayUsd = recent.reduce((sum, p) => sum + p.sizeUsd, 0);
+      const ordersLastHour = recent.filter(p => p.at > at - HOUR_MS).length;
+
+      // The stabilization agent (#220), beside Ballast and on the same reads: the book, the mandate's spend terms, the
+      // price history this tick already keeps, and the policy context a de-risk sell would be checked under. Its record
+      // goes to the log with every input before anything acts on it, and a record that can't be appended stops the tick.
+      let riskAssessment: RiskAssessment | undefined, riskInput: RiskInput | undefined;
+      let riskIntent: Intent | undefined, riskRequestId: string | undefined;
+      if (risk) {
+        const projection = projectionOf(risk), scenarios = scenariosOf(risk);
+        const book: Book = [
+          { asset: VOLATILE, symbol: "wNEAR", class: "volatile", usd: volatile.usd!, venue: VENUE_IDS.intents },
+          { asset: STABLE, symbol: "USDC", class: "stable", usd: stable.usd!, venue: VENUE_IDS.intents },
+        ];
+        // The projection draws on the lookback only; a max-gap margin keeps the first return readable.
+        const from = at - projection.lookbackDays * DAY_MS - projection.maxGapMs;
+        riskInput = {
+          at, book,
+          terms: { monthlySpendUsd: settings.monthlySpendUsd, operatingCashMonths: settings.operatingCashMonths },
+          history: { [VOLATILE]: hourlySeen.filter(s => s.at >= from) },
+          thresholds: riskThresholdsOf(m, settings.risk),
+          projection, scenarios,
+          autopilotOn: autopilotOn ?? null,
+          trade: {
+            turnoverTodayUsd, ordersLastHour, quotedSlippageBps: 0, cashUsd: stable.usd!, config: policyConfigOf(m), bounds: weightBoundsOf(m),
+            baseLevel, lastActionAt: state.whipsaw.lastActionAt ?? null, cooldownMs: ENGINE_DEFAULTS.whipsaw.cooldownMs,
+            pricing: { prices, decimals, maxSlippageBps: m.limits.policy.maxSlippageBps },
+          },
+        };
+        riskAssessment = assessRisk(riskInput);
+        if (riskAssessment.derisk?.proposal) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
+          ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
+      }
+      // The forward detections join the regime and the level once: buys hold at L1+, and every policy check sees the
+      // higher of the forward level and Ballast's own. Without a risk block nothing changes.
+      const forward = riskAssessment?.detections ?? [];
+      const level = Math.max(baseLevel, riskAssessment?.level ?? 0) as Level;
+      const riskEvent = riskAssessment ? riskEventOf(riskAssessment) : undefined;
+
       // Sized to the mandate's own order cap, halved at L1 as the level gate halves it, so a sized order passes both.
       const orderCapPct = m.limits.policy.maxOrderPctOfTreasury * (level === 1 ? m.limits.l1OrderCapFactor : 1);
-      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
       // One decision through the engines (A7.2, #54), recorded with every input before anything acts on it, so replaying
       // the audit log makes the same one. A record that can't be appended stops the tick: nothing is proposed unrecorded.
       const record = decide(reading, {
         portfolio: { volatileUsd: volatile.usd!, reserveUsd, cashUsd }, bounds: weightBoundsOf(m),
-        sizing: { dcaUnitsUsed: state.dcaUnitsUsed }, whipsaw: state.whipsaw as WhipsawState, regime: regimeFrom([...market, ...faults]),
+        sizing: { dcaUnitsUsed: state.dcaUnitsUsed }, whipsaw: state.whipsaw as WhipsawState, regime: regimeFrom([...market, ...faults, ...forward]),
       }, { ...ENGINE_DEFAULTS, sizing: { ...ENGINE_DEFAULTS.sizing, maxOrderPctOfTreasury: orderCapPct } }, {
         ctx: {
-          treasuryValueUsd: total, turnoverTodayUsd: recent.reduce((sum, p) => sum + p.sizeUsd, 0),
-          ordersLastHour: recent.filter(p => p.at > at - HOUR_MS).length, quotedSlippageBps: 0,
+          treasuryValueUsd: total, turnoverTodayUsd, ordersLastHour, quotedSlippageBps: 0,
           venueExposureUsd: volatile.usd!, cashUsd: stable.usd!, spendsCashUsd: 0, level,
         },
         config: policyConfigOf(m),
       }, {
-        volatile: VOLATILE, reserve: STABLE,
-        prices: { [VOLATILE]: decimalOf(volatile.price!), [STABLE]: decimalOf(stable.price!) },
-        decimals: Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals])),
-        maxSlippageBps: m.limits.policy.maxSlippageBps,
+        volatile: VOLATILE, reserve: STABLE, prices, decimals, maxSlippageBps: m.limits.policy.maxSlippageBps,
       });
       const { intent, policy: verdict, proposal } = record;
       const detail = { zone: intent.zone, level, ...(reading.frozen ? { frozen: reading.reason } : { twap: reading.twap15m, ema: reading.ema30d }) };
-      const decision = ((): Decision => {
+      const ballastDecision = ((): Decision => {
         if (intent.action === "hold") return { skipped: "ballast holds", reason: intent.reason, ...detail };
         if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
         if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
@@ -232,8 +297,25 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
         };
       })();
-      // A proposal is recorded under the requestId its request will be stored and sent with (#172).
-      await audit.append({ ...record, organization, agent, ...("skipped" in decision ? {} : { requestId: decision.requestId }) });
+      // A de-risk sell the forward risk agent sized passes policy, needs no cooldown and has legs: it is the tick's one
+      // proposal, for the owner to approve. Ballast's own decision is still recorded, but names no request it never made.
+      const riskProposal = riskAssessment?.derisk?.proposal;
+      const riskLegs = riskProposal?.legs.ok ? riskProposal.legs.legs : null;
+      const riskWins = Boolean(riskLegs && riskIntent && riskRequestId);
+      const decision: Decision = riskWins
+        ? {
+          requestId: riskRequestId!, level,
+          body: { legs: riskLegs!, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(),
+            note: `Stabilization de-risk: sell ${riskProposal!.sizeUsd} USD of wNEAR into USDC${riskAssessment!.derisk!.policy.ok === "needs-approval" ? `; ${riskAssessment!.derisk!.policy.reason}` : ""}`.slice(0, 280) },
+          intent: riskIntent!, detail: { zone: riskIntent!.zone, level },
+          ...(riskEvent && { risk: riskEvent }),
+        }
+        : { ...ballastDecision, ...(riskEvent && { risk: riskEvent }) };
+      // A proposal is recorded under the requestId its request will be stored and sent with (#172); one risk won is named
+      // in its own `risk` record, so Ballast's decision names no request it isn't making.
+      const ballastRequestId: string | undefined = !riskWins && "requestId" in ballastDecision && typeof ballastDecision.requestId === "string"
+        ? ballastDecision.requestId : undefined;
+      await audit.append({ ...record, organization, agent, ...(ballastRequestId !== undefined && { requestId: ballastRequestId }) });
 
       if (intent.action === "hold") {
         // A hold may re-arm a disarmed zone: written only when it changes.

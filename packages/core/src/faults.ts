@@ -122,14 +122,16 @@ export const highestFaultLevel = (found: readonly FaultDetection[]): Level => hi
 /**
  * The regime for A4.3 from any mix of market-move and fault detections: `normal` only when there are none; every
  * detection holds trading. Source problems give `source-stress`, thin liquidity `thin-liquidity`, market moves
- * `fast-move`, and every other fault `system-fault`.
+ * `fast-move`, the stabilization agent's forward detections (#220) `forward-risk` (a projection that couldn't be made is
+ * a source problem), and every other fault, or an unusable configuration, `system-fault`.
  */
 export function regimeFrom(found: readonly { detector: string }[]): Regime {
   if (found.length === 0) return "normal";
   const names = new Set(found.map(d => d.detector));
-  if (names.has("faults-config") || names.has("config")) return "system-fault";
-  for (const n of ["source-disagreement", "source-unavailable", "history"]) if (names.has(n)) return "source-stress";
+  if (names.has("faults-config") || names.has("config") || names.has("risk-config")) return "system-fault";
+  for (const n of ["source-disagreement", "source-unavailable", "history", "projection"]) if (names.has(n)) return "source-stress";
   if (names.has("thin-liquidity")) return "thin-liquidity";
   for (const n of ["fast-rise", "fast-drop", "crash", "parabolic", "sideways-chop"]) if (names.has(n)) return "fast-move";
+  for (const n of ["projected-drawdown", "expected-shortfall", "floor-breach-probability", "runway", "stress"]) if (names.has(n)) return "forward-risk";
   return "system-fault";
 }

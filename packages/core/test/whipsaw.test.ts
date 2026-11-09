@@ -47,6 +47,15 @@ test("an action records its time, direction and zone", () => {
   assert.deepEqual(nextState(none, buy("dca-2"), -26, NOW), { lastActionAt: NOW, lastAction: "buy-volatile", disarmed: "dca-2" });
 });
 
+test("a trade outside the bands records its direction and time but disarms no zone, so the state stays readable", () => {
+  // The stabilization agent's de-risk sell is not a band trade: it has no trim zone to disarm (#220).
+  const derisk: Intent = { ...sell("trim-1"), action: "sell-volatile", zone: "hold" };
+  const state = nextState(none, derisk, null, NOW);
+  assert.deepEqual(state, { lastActionAt: NOW, lastAction: "sell-volatile" });
+  assert.deepEqual(stateProblems(state), []);
+  assert.equal(gate(buy("dca-2"), state, "normal", NOW + 2 * HOUR).action, "hold", "the cooldown still applies");
+});
+
 test("a disarmed buy zone re-arms 2 points back inside its line, not before", () => {
   const hold: Intent = { ...buy(), action: "hold", zone: "hold", sizeUsd: 0, dcaUnits: 0 };
   const state: WhipsawState = { lastActionAt: NOW, lastAction: "buy-volatile", disarmed: "dca-1" }; // line −20

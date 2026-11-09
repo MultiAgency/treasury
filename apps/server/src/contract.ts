@@ -310,6 +310,44 @@ export const requestRead = z.strictObject({ proposal: proposalView });
 export const operationRead = z.strictObject({ correlationId: z.string(), at: z.string(), kind: z.string(), status: z.string().nullable(), refused: z.string().nullable() });
 
 /**
+ * The stabilization agent's report (#220), as the audit log recorded it: the forward level and its reasons, the
+ * projection's figures, every stress scenario most severe first, and what the agent would do. `derisk` is the
+ * recommendation (its size, and why it isn't proposed when it isn't), never a promise that one was: only the record's
+ * own `requestId` in the log says a proposal was made, and only the owner can approve it.
+ */
+const riskProjectionRead = z.strictObject({
+  usable: z.boolean(), reasons: z.array(z.string()),
+  projectedDrawdownPct: z.number(), expectedShortfallPct: z.number(), breachProbabilityPct: z.number(),
+  runwayMonths: z.number(), monthsToFloor: z.number(), volatileSharePct: z.number(),
+});
+const riskScenarioRead = z.strictObject({
+  id: z.string(), label: z.string(), valueUsd: z.number(), lossUsd: z.number(), drawdownPct: z.number(),
+  stableUsd: z.number(), runwayMonths: z.number(), floorUsd: z.number(), floorBreached: z.boolean(), unfundedUsd: z.number(), tradable: z.boolean(),
+});
+const riskRecommendationRead = z.discriminatedUnion("action", [
+  z.strictObject({ action: z.literal("hold-buys"), reason: z.string() }),
+  z.strictObject({ action: z.literal("de-risk"), asset: z.string(), into: z.string(), sizeUsd: z.number(), reason: z.string(), blocked: z.string().nullable() }),
+  z.strictObject({ action: z.literal("pause-autopilot"), reason: z.string() }),
+  z.strictObject({ action: z.literal("recommend-freeze"), reason: z.string() }),
+]);
+export const riskReport = z.strictObject({
+  /** The time the assessment was recorded, and the log's sequence number for it. */
+  at: z.string(), seq: z.number().int(),
+  /** The forward level only: the policy checks trades at the higher of it and Ballast's own. */
+  level: z.number().int().min(0).max(4),
+  reason: z.string(),
+  projection: riskProjectionRead,
+  scenarios: z.array(riskScenarioRead),
+  recommendations: z.array(riskRecommendationRead),
+  derisk: z.strictObject({ sizeUsd: z.number(), blocked: z.string().nullable() }).nullable(),
+  /** Whether the de-risk sell in this record was proposed under its recorded `requestId`, for the owner to approve. */
+  proposed: z.boolean(),
+});
+export type RiskReport = z.infer<typeof riskReport>;
+/** The agent's latest recorded risk assessment, or null when none has been recorded yet. */
+export const riskRead = z.strictObject({ risk: riskReport.nullable() });
+
+/**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
  * - `not_signed_in` (401): no live session;
  * - `not_owner` (403): the session's account doesn't own this agent, or no such agent exists: the same answer for both,

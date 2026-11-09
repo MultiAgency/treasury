@@ -17,8 +17,9 @@ import { appendLine, ensureAppendable, syncDir } from "./files.ts";
 /**
  * The kinds of record the log holds. `approval` covers an owner's approve and reject, with a verdict; `order` covers an
  * execute. `decision` is one engine decision with every input it was made from, which a replay makes again (A7.2, #54).
+ * `risk` is one stabilization assessment with every input it was made from, which `check:replay` makes again too (#220).
  */
-export const AUDIT_KINDS = ["mandate", "oracle", "proposal", "policy", "decision", "approval", "order", "fill", "level", "payout", "note", "anchor", "consent", "revocation"] as const;
+export const AUDIT_KINDS = ["mandate", "oracle", "proposal", "policy", "decision", "risk", "approval", "order", "fill", "level", "payout", "note", "anchor", "consent", "revocation"] as const;
 export type AuditKind = (typeof AUDIT_KINDS)[number];
 
 /** The "previous hash" of the first record. */

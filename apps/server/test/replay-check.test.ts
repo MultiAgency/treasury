@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
-import { decide, ENGINE_DEFAULTS, POLICY_CONFIG_DEFAULTS, PROPOSAL_ASSETS, type OracleReading } from "../../../packages/core/src/index.ts";
+import { assessRisk, decide, ENGINE_DEFAULTS, POLICY_CONFIG_DEFAULTS, PROPOSAL_ASSETS, PROJECTION_DEFAULTS, RISK_PROFILE_DEFAULTS, SCENARIO_DEFAULTS,
+  type OracleReading, type RiskInput } from "../../../packages/core/src/index.ts";
 import { chainedFileAudit } from "../src/chain.ts";
 import { checkAuditLog } from "../src/replay-check.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
@@ -27,7 +28,43 @@ async function log() {
 test("a log whose chain holds and whose decisions replay passes, counting both", async () => {
   const result = checkAuditLog(await log());
   assert.equal(result.ok, true, result.message);
-  assert.match(result.message, /^ok: 3 records chain to [0-9a-f]{64}; 2 decisions replay the same$/);
+  assert.match(result.message, /^ok: 3 records chain to [0-9a-f]{64}; 2 decisions and 0 risk assessments replay the same$/);
+});
+
+/** A stabilization assessment as the server records it (#220): the balanced book, two calm weeks, and the policy. */
+const HOUR = 3_600_000, DAY = 24 * HOUR;
+function riskInput(change: Partial<RiskInput> = {}): RiskInput {
+  const history = Array.from({ length: 15 * 24 + 1 }, (_, i) => ({ at: AT - (15 * 24 - i) * HOUR, price: 4 }));
+  return {
+    at: AT,
+    book: [{ asset: wNEAR, symbol: "wNEAR", class: "volatile", usd: 40_000, venue: "NEAR Intents" },
+      { asset: USDC, symbol: "USDC", class: "stable", usd: 60_000, venue: "NEAR Intents" }],
+    terms: { monthlySpendUsd: 2_000, operatingCashMonths: 6 },
+    history: { [wNEAR]: history },
+    thresholds: RISK_PROFILE_DEFAULTS.balanced, projection: PROJECTION_DEFAULTS, scenarios: SCENARIO_DEFAULTS, autopilotOn: false,
+    trade: { turnoverTodayUsd: 0, ordersLastHour: 0, quotedSlippageBps: 0, cashUsd: 60_000,
+      config: { ...POLICY_CONFIG_DEFAULTS, exposure: { ...POLICY_CONFIG_DEFAULTS.exposure, monthlySpendUsd: 2_000 } },
+      bounds: { volatileMinPct: 10, volatileMaxPct: 50 }, baseLevel: 0, lastActionAt: null, cooldownMs: HOUR,
+      pricing: { prices: { [wNEAR]: "4", [USDC]: "1" }, decimals: { [wNEAR]: 24, [USDC]: 6 }, maxSlippageBps: 50 } },
+    ...change,
+  };
+}
+
+test("a risk record replays from its inputs too; one made under other terms is named by its sequence number", async () => {
+  const audit = chainedFileAudit<object>(join(tempDir("treasury-replay-"), "audit.jsonl"), () => AT);
+  await audit.check();
+  const input = riskInput();
+  await audit.append({ kind: "risk", organization: "owner--near", agent: "portfolio", input, assessment: assessRisk(input) });
+  const lines = (await readFile(audit.file, "utf8")).trim().split("\n");
+  // One made under other terms, as an engine whose spend rule changed: a valid chain, an assessment today's engines don't make.
+  const changed = riskInput({ terms: { monthlySpendUsd: 3_000, operatingCashMonths: 6 } });
+  await audit.append({ kind: "risk", organization: "owner--near", agent: "portfolio", input: changed, assessment: assessRisk(input) });
+  const passing = checkAuditLog(lines.join("\n"));
+  assert.equal(passing.ok, true, passing.message);
+  assert.match(passing.message, /1 risk assessments replay the same$/);
+  const result = checkAuditLog(await readFile(audit.file, "utf8"));
+  assert.equal(result.ok, false);
+  assert.match(result.message, /^risk assessment 2 \(seq 2\) differs:/);
 });
 
 test("an edited decision breaks the chain first: the check names its line", async () => {

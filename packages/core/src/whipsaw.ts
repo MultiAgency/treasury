@@ -17,7 +17,7 @@ export const WHIPSAW_DEFAULTS = {
 export type WhipsawLimits = { cooldownMs: number; reversalLockMs: number; hysteresisPct: number };
 
 /** `normal` is the only regime the engine trades in; any other holds. */
-export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress" | "system-fault";
+export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress" | "forward-risk" | "system-fault";
 
 export type WhipsawState = {
   lastActionAt?: number;
@@ -112,7 +112,9 @@ function line(zone: BandZone, bands: Bands): number | undefined {
 export function nextState(state: WhipsawState, intent: Intent, deviationPct: number | null, now: number,
   limits: WhipsawLimits = WHIPSAW_DEFAULTS, bands: Bands = BAND_DEFAULTS): WhipsawState {
   if (whipsawProblems(limits).length > 0 || bandProblems(bands).length > 0) return state;
-  if (intent.action !== "hold") return { lastActionAt: now, lastAction: intent.action, disarmed: intent.zone };
+  // A trade outside the bands (the stabilization agent's de-risk sell) has no zone to disarm: recording `hold` there
+  // would make the state unreadable (`stateProblems`) and hold every later trade.
+  if (intent.action !== "hold") return { lastActionAt: now, lastAction: intent.action, ...(intent.zone !== "hold" && { disarmed: intent.zone }) };
   if (state.disarmed === undefined || deviationPct === null) return state;
   let zone: BandZone | undefined = state.disarmed;
   while (zone !== undefined) {
