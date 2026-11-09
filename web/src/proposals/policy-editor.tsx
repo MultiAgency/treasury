@@ -7,10 +7,11 @@ import { useOwnerFlow } from "./owner-flow";
 import type { Identity, OverviewRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { fileLabel } from "./dao-filing";
+import type { StageWords } from "../../../apps/server/src/owner-action.ts";
 import { ReviewDialog } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
-const STAGE_WORDS: Record<string, string> = {
+const STAGE_WORDS: StageWords = {
   voting: "Waiting for the signature, or for the DAO's vote.",
   submitting: "Signed; the platform is submitting it.",
   submitted: "Done: the platform has the new policy, and the page reads it again.",
@@ -50,7 +51,7 @@ export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads:
   const [reviewing, setReviewing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const dao = identity.signer === "dao";
-  const flow = useOwnerFlow({ reads, identity, is: type => type === "policy_update", words: STAGE_WORDS, reviewDao: true, onFinal: stage => { if (stage === "submitted") onDone(); } });
+  const flow = useOwnerFlow({ reads, identity, kind: "policy_update", words: STAGE_WORDS, reviewDao: true, onFinal: stage => { if (stage === "submitted") onDone(); } });
   const result = changesOf(draft, data.book, policy);
   const lines = differences(baseline.draft, draft, data.book);
   const stale = !sameReviewedPolicy(baseline.policy, reviewedPolicyOf(data));

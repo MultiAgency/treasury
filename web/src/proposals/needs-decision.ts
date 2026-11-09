@@ -1,6 +1,7 @@
 // What needs the owner at the agent's home (#130), from reads the page already makes: pure, so it's tested without a
 // browser. With its extensions: test/needs-decision.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import type { ProposalView } from "@multiagency/sdk";
+import { awaiting, type OwnerActionRecord } from "../../../apps/server/src/owner-action.ts";
 import { actionName } from "./activity-view.ts";
 import { verdictOffered } from "./proposal-flow.ts";
 import { legText } from "./terms.ts";
@@ -20,8 +21,7 @@ export type Need = {
 
 type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
 type Unresolved = { key: string; kind: string; at: string };
-/** An owner action as `owner/actions` records it. */
-type OwnerAction = { correlationId: string; type: string; stage: string; signer: string; expiresAt: string };
+type OwnerAction = Pick<OwnerActionRecord, "correlationId" | "type" | "stage" | "signer" | "expiresAt">;
 
 const byDeadline = (a: ProposalView, b: ProposalView) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt);
 const live = (view: ProposalView, now: number) => Date.parse(view.expiresAt) > now;
@@ -55,9 +55,8 @@ export function needsDecision({ proposals, unresolved, daoRequests, ownerActions
       ? { key: `dao-${request.id}`, kind: "dao-consent", text: "Waiting for the DAO's vote to connect the agent", deadline: request.votingUntil, target: { page: "connection" } }
       : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal`, deadline: request.votingUntil,
         target: { page: "proposal", id: request.proposal ?? "" } }),
-    // A freeze, unfreeze, revocation or grant waiting for the DAO's vote, until it expires (#133). A wallet owner's intent that
-    // was only prepared is not waited on: it was never signed.
-    ...ownerActions.filter(item => item.stage === "prepared" && item.signer === "dao" && Date.parse(item.expiresAt) > now).map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
+    // A freeze, unfreeze, revocation or grant waiting for the DAO's vote, until it expires (#133).
+    ...ownerActions.filter(item => awaiting(item, now) === "vote").map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
       text: `${actionName(item.type)} is waiting for the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
       text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),

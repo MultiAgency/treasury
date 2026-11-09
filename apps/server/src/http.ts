@@ -11,6 +11,7 @@ import { checkConsent, consentFor, consentText, liveConsents, organizationOf, wi
 import { offerFor } from "./dao-offer.ts";
 import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
+import { awaiting, holdsEach } from "./owner-action.ts";
 import { changesNothing } from "./policy-edit.ts";
 import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
@@ -203,8 +204,6 @@ const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-
  * allows owner actions. Which form comes back (intent, confirm page, DAO transaction) is the platform's choice.
  */
 type OwnerActionInput = Parameters<Platform["owner"]["prepare"]>[2]["action"];
-/** Which owner actions hold each other while one's outcome is unknown: a freeze and an unfreeze do, the rest only their own kind. */
-const holdsEach = (type: string, other: string) => type === "agent_freeze" || type === "agent_unfreeze" ? other === "agent_freeze" || other === "agent_unfreeze" : other === type;
 const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant-revoke" | "policy-update", action: (body: unknown) => OwnerActionInput | undefined): Route => ({
   method: "POST", path, access: "owner-fresh", needs: "file",
   async handle({ body, account, identity }, { platform, audit }) {
@@ -220,11 +219,8 @@ const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant
     const actions = await relay(() => platform.reads.ownerActions(organization, agent), agent);
     if (!actions.ok) return readFailure(actions, agent, "owner/actions");
     const now = Date.now();
-    // Held while an outcome is unknown: one already submitted, or a DAO's request waiting for its vote, which a second
-    // filing would duplicate. A wallet owner's intent that was only prepared isn't held: it was never signed, so it can be
-    // prepared again (a reload mid-signature must not delay an emergency stop), and the old one expires.
-    if (actions.value.some(other => holdsEach(asked.type, other.type)
-      && (other.stage === "submitted" || (other.stage === "prepared" && other.signer === "dao" && Date.parse(other.expiresAt) > now)))) return refused(409, "action_pending");
+    // Held while another of its kind awaits its outcome (`awaiting` says when a prepared one doesn't).
+    if (actions.value.some(other => holdsEach(asked.type, other.type) && awaiting(other, now))) return refused(409, "action_pending");
     if (signer === "wallet") {
       const allowed = await ownerAllowed(platform, organization, identity!, agent);
       if (allowed === "unavailable") return unavailable();
@@ -1192,11 +1188,9 @@ export const routes: Route[] = [
       const actions = await relay(() => platform.grant.actions(organization, agent), agent);
       if (!actions.ok) return readFailure(actions, agent, "owner/actions");
       const now = Date.now();
-      // A grant submitted, or a DAO's still open for its vote, is followed rather than signed twice. A wallet's grant takes
-      // effect only by its submit here, so one only prepared holds nothing: its wallet may have refused the signature.
-      if (actions.value.some(action => action.type === "grant_issue" && (action.stage === "submitted"
-        || (action.stage === "prepared" && action.signer === "dao" && Date.parse(action.expiresAt) > now))))
-        return refused(409, "grant_pending");
+      // A grant awaiting its outcome is followed rather than signed twice. A wallet's grant takes effect only by its submit
+      // here, so one only prepared holds nothing: its wallet may have refused the signature.
+      if (actions.value.some(action => holdsEach("grant_issue", action.type) && awaiting(action, now))) return refused(409, "grant_pending");
       if (signer === "wallet") {
         const allowed = await ownerAllowed(platform, organization, identity!, agent);
         if (allowed === "unavailable") return unavailable();
