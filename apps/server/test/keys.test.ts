@@ -38,6 +38,8 @@ test("the RPC follows the platform: an override, else FastNEAR's keyed RPC, else
 test("the FastNEAR key goes only to FastNEAR's own hosts over HTTPS", () => {
   const key = new Secret("fn_key");
   assert.deepEqual(rpcHeaders("https://rpc.mainnet.fastnear.com", key), { Authorization: "Bearer fn_key" });
+  for (const url of ["https://archival-rpc.mainnet.fastnear.com", "https://rpc.testnet.fastnear.com", "https://archival-rpc.testnet.fastnear.com"])
+    assert.deepEqual(rpcHeaders(url, key), { Authorization: "Bearer fn_key" }, url);
   assert.deepEqual(rpcHeaders("https://my.rpc", key), {});
   assert.deepEqual(rpcHeaders("http://rpc.mainnet.fastnear.com", key), {});
   assert.deepEqual(rpcHeaders("https://rpc.mainnet.fastnear.com:8443", key), {});
