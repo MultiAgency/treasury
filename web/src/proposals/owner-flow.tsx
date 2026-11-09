@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useReducer, useState, type ReactNode } from "react";
+import { isFinal, type StageWords } from "../../../apps/server/src/owner-action.ts";
 import { ErrorBox, errorMessage } from "../shared/ui";
-import { waitingOn, type Waiting } from "./freeze-view";
+import { waitingOn } from "./freeze-view";
 import type { Identity, OwnerActionPrepared, Result } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { when } from "./ui";
@@ -11,7 +12,24 @@ import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
 
-export const FINAL = new Set(["submitted", "expired", "failed"]);
+/**
+ * What an owner action of `kind` waits on in the platform's own record (`owner/actions`), so it holds after a reload too:
+ * read every few seconds while something waits, or while `poll` asks, and rendered again when a waiting vote lapses, since
+ * the record may read the same once it has. `reading`: the record isn't read yet, so nothing of its kind is offered.
+ */
+export function useWaiting(reads: Reads, kind: string, { enabled = true, poll = false }: { enabled?: boolean; poll?: boolean } = {}) {
+  const actions = useQuery({ ...reads.ownerActions, enabled,
+    refetchInterval: query => poll || waitingOn(kind, { actions: query.state.data ?? [], now: Date.now() }) ? 10_000 : false });
+  const waiting = waitingOn(kind, { actions: actions.data ?? [], now: Date.now() });
+  const [, lapsed] = useReducer((n: number) => n + 1, 0);
+  const lapses = waiting?.why === "vote" ? Date.parse(waiting.expiresAt) : undefined;
+  useEffect(() => {
+    if (lapses === undefined) return;
+    const timer = setTimeout(lapsed, Math.max(0, lapses - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [lapses]);
+  return { waiting, reading: enabled && actions.isPending, refetch: actions.refetch };
+}
 
 /**
  * One owner action from preparation to outcome, for the pages that act on the agent's policy (#142, #134): prepared by the
@@ -21,15 +39,17 @@ export const FINAL = new Set(["submitted", "expired", "failed"]);
  * outcome holds another of its kind after a reload too. A DAO member may be shown the terms before and after before
  * filing (`reviewDao`).
  */
-export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, enabled = true, onFinal }: {
-  reads: Reads; identity: Identity; is: (type: string) => boolean;
+export function useOwnerFlow({ reads, identity, kind, words, reviewDao = false, enabled = true, onFinal }: {
+  reads: Reads; identity: Identity;
+  /** The kind of action: an earlier one that holds it (`holdsEach`, as the server holds) holds this one too. */
+  kind: string;
   /** The words for each stage: what has happened to this kind of action. */
-  words: Record<string, string>;
+  words: StageWords;
   reviewDao?: boolean;
   /** Whether the platform's records may be read yet (the stop reads them only once the agent is connected). */
   enabled?: boolean;
   /** Called once with the stage an action reached when it is final. */
-  onFinal?: (stage: string) => void;
+  onFinal?: (stage: "submitted" | "expired" | "failed") => void;
 }) {
   const client = useQueryClient();
   const [action, setAction] = useState<OwnerActionPrepared>();
@@ -38,9 +58,6 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
-  const [polling, setPolling] = useState(false);
-  const every = polling ? 10_000 : false;
-  const actions = useQuery({ ...reads.ownerActions, enabled, refetchInterval: every });
   const status = useQuery({
     queryKey: [...reads.ownerActions.queryKey.slice(0, 2), "owner-action", action?.correlationId],
     queryFn: async () => {
@@ -49,15 +66,14 @@ export function useOwnerFlow({ reads, identity, is, words, reviewDao = false, en
       return read.value;
     },
     enabled: action !== undefined, retry: false,
-    refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
   });
   const stage = status.data?.stage;
-  const waiting: Waiting | undefined = waitingOn(is, { actions: actions.data ?? [], now: Date.now() });
-  const inFlight = action !== undefined && !(stage !== undefined && FINAL.has(stage));
+  const inFlight = action !== undefined && !isFinal(stage);
+  const { waiting } = useWaiting(reads, kind, { enabled, poll: inFlight || toFile !== undefined });
   const holding = waiting !== undefined || inFlight || toFile !== undefined;
-  useEffect(() => { setPolling(holding); }, [holding]);
   const refresh = () => [reads.overview, reads.ownerActions, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
-  useEffect(() => { if (stage !== undefined && FINAL.has(stage)) { refresh(); onFinal?.(stage); } }, [stage]);
+  useEffect(() => { if (isFinal(stage)) { refresh(); onFinal?.(stage); } }, [stage]);
 
   const dao = identity.signer === "dao";
   const sendFiled = async (prepared: OwnerActionPrepared) => {

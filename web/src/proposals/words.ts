@@ -1,6 +1,7 @@
 import type { ProposalState } from "@multiagency/sdk";
 import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
+import type { StageWords } from "../../../apps/server/src/owner-action.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
 export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding" | "autopilot" | "owner-action";
@@ -139,7 +140,7 @@ export const scopeList = (scopes: readonly string[]) => [...scopes]
   .join(", ").replace(/, ([^,]*)$/, " and $1");
 
 /** What has happened to a grant's revocation, by its stage. */
-export const revokeWords: Record<string, string> = {
+export const revokeWords: StageWords = {
   voting: "Waiting for the signature, or for the DAO's vote.",
   submitting: "Signed; the platform is submitting it.",
   submitted: "Done: the platform has the revocation, and the grant no longer acts.",

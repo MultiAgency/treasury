@@ -1,27 +1,22 @@
 // The emergency stop as the frame shows it (#133): whether the agent is frozen, whether a freeze or unfreeze is awaiting
 // its outcome, and what the owner may do about it. Pure, so it's tested without a browser.
 // With its extensions: test/freeze-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
+import { awaiting, holdsEach, type OwnerActionRecord } from "../../../apps/server/src/owner-action.ts";
 
-type Action = { type: string; stage: "settled" | "submitted" | "expired" | "prepared"; signer: "dao" | "wallet"; expiresAt: string; correlationId: string };
-
-const STOPS = new Set(["agent_freeze", "agent_unfreeze"]);
-export const isStop = (type: string) => STOPS.has(type);
+type Action = Pick<OwnerActionRecord, "type" | "stage" | "signer" | "expiresAt" | "correlationId">;
 
 /**
- * What a freeze or unfreeze waits on, if anything: one submitted whose outcome isn't recorded yet, a DAO's request still
- * waiting for its vote. `owner/actions` holds both: the platform builds `owner/pending` from the same records. A wallet owner's intent that was only
- * prepared isn't waited on: it was never signed, so it can be prepared again (the server holds the same way).
+ * What a freeze or unfreeze waits on, if anything, as `awaiting` decides it (the server holds by the same rule).
+ * `owner/actions` holds both kinds: the platform builds `owner/pending` from the same records.
  */
-export function waitingStop(input: { actions: readonly Action[]; now: number }) { return waitingOn(isStop, input); }
+export function waitingStop(input: { actions: readonly Action[]; now: number }) { return waitingOn("agent_freeze", input); }
 
 export type Waiting = { correlationId: string; type: string; why: "submitted" | "vote"; expiresAt: string };
-/** What an owner action of the kinds `is` names waits on (a stop, a revocation): the one rule, so the pages hold alike. */
-export function waitingOn(is: (type: string) => boolean, { actions, now }: { actions: readonly Action[]; now: number }): Waiting | undefined {
-  const live = (expiresAt: string) => Date.parse(expiresAt) > now;
+/** What an owner action of `kind` waits on, if anything: an earlier one that holds it (`holdsEach`) awaiting its outcome, as the server holds. */
+export function waitingOn(kind: string, { actions, now }: { actions: readonly Action[]; now: number }): Waiting | undefined {
   for (const action of actions) {
-    if (!is(action.type)) continue;
-    if (action.stage === "submitted") return { correlationId: action.correlationId, type: action.type, why: "submitted", expiresAt: action.expiresAt };
-    if (action.stage === "prepared" && action.signer === "dao" && live(action.expiresAt)) return { correlationId: action.correlationId, type: action.type, why: "vote", expiresAt: action.expiresAt };
+    const why = holdsEach(kind, action.type) ? awaiting(action, now) : undefined;
+    if (why) return { correlationId: action.correlationId, type: action.type, why, expiresAt: action.expiresAt };
   }
   return undefined;
 }

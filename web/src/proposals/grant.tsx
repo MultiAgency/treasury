@@ -2,6 +2,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Signature } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { Button, ErrorBox, errorMessage, Spinner } from "../shared/ui";
+import { isFinal, type StageWords } from "../../../apps/server/src/owner-action.ts";
+import { useWaiting } from "./owner-flow";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
@@ -14,8 +16,7 @@ import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
 
-const FINAL = new Set(["submitted", "expired", "failed"]);
-const STAGE_WORDS: Record<string, string> = {
+const STAGE_WORDS: StageWords = {
   voting: "Waiting for the signature, or for the DAO's vote.",
   submitting: "Signed; the platform is submitting it.",
   submitted: "Authorized: the grant binds this strategy once the agent takes it up.",
@@ -29,7 +30,8 @@ const STAGE_WORDS: Record<string, string> = {
  * its intent here, once their connection allows owner actions; a DAO's member files it for the DAO's vote, which must
  * pass before it expires, in minutes. Its status is read every few seconds until it's final, and the strategy then read
  * again. Nothing is signed or filed twice from here: the grant prepared for the strategy is kept outside the component
- * (`kept-outcomes.ts`), so leaving the Strategy page and coming back resumes reading it, not starting another.
+ * (`kept-outcomes.ts`), so leaving the Strategy page and coming back resumes reading it, not starting another; and one
+ * awaiting its outcome in the platform's records (submitted, or a DAO's open vote) holds another after a reload too.
  */
 export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Reads; identity: Identity; strategy: StrategyRead; ownerAllowed: boolean }) {
   const client = useQueryClient();
@@ -46,9 +48,12 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
       return read.value;
     },
     enabled: grant !== undefined, retry: false,
-    refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
   });
   const stage = status.data?.stage;
+  // Another grant awaiting its outcome: the server would refuse a second (`grant_pending`), so it isn't offered.
+  const records = useWaiting(reads, "grant_issue");
+  const earlier = records.waiting !== undefined && records.waiting.correlationId !== grant?.correlationId ? records.waiting : undefined;
   useEffect(() => { if (stage === "submitted") void client.invalidateQueries({ queryKey: reads.strategy.queryKey }); }, [stage, client, reads]);
   // One that ended without taking effect is over: a new one may be started, and a return doesn't resume it.
   useEffect(() => { if (stage === "expired" || stage === "failed") forgetGrant(reads.name); }, [stage, reads.name]);
@@ -95,14 +100,15 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
       setBusy(false);
       // A forgotten grant has no status to read: its query is off, and refetch would run it anyway.
       if (!forgotten) void status.refetch();
+      void records.refetch();
     }
   };
 
-  const final = stage !== undefined && FINAL.has(stage);
-  const canStart = (!grant || (final && stage !== "submitted")) && !busy && (dao ? identity.access.canPropose : ownerAllowed);
+  const canStart = (!grant || (isFinal(stage) && stage !== "submitted")) && !earlier && !records.reading && !busy && (dao ? identity.access.canPropose : ownerAllowed);
   return <div className="flex w-full flex-col items-start gap-2">
     {!dao && !ownerAllowed && <p className="text-xs text-muted-foreground">Your connection doesn't allow owner actions yet: allow them in <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connection, on the agent's Home page</PageLink>, then authorize the strategy here.</p>}
     <Button size="sm" disabled={!canStart} onClick={() => setReviewing(true)}>{busy ? <Spinner /> : <Signature aria-hidden="true" />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
+    {earlier && <p role="status" className="text-xs">{earlier.why === "vote" ? "An earlier grant is waiting for the DAO's vote." : "An earlier grant's outcome isn't known yet."} Another can't be started until it is.</p>}
     {grant?.confirm && <p className="text-xs text-muted-foreground">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
       It expires {when(grant.confirm.expiresAt)}.</p>}
     {grant && <p role="status" className="text-xs">{!stage ? "Reading its status…" : STAGE_WORDS[stage] ?? stage}</p>}

@@ -12,9 +12,8 @@ export function splitGrants(grants: readonly Grant[], now: number): { live: Gran
   return { live: grants.filter(isLive).sort(newest), ended: grants.filter(grant => !isLive(grant)).sort(newest) };
 }
 
-export const isRevocation = (type: string) => type === "grant_revoke";
 /** What an earlier revocation waits on, from the platform's own record (so it is found after a reload, too). */
-export const waitingRevocation = (input: Parameters<typeof waitingOn>[1]) => waitingOn(isRevocation, input);
+export const waitingRevocation = (input: Parameters<typeof waitingOn>[1]) => waitingOn("grant_revoke", input);
 
 export type RevokeControls =
   | { kind: "ready"; label: string }

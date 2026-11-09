@@ -71,7 +71,7 @@ test("an operation's or request's equal deadlines keep the order they were given
 });
 
 test("an owner action waiting for the DAO's vote is listed until it expires, with its deadline, and leads to where it is voted on", () => {
-  const action = (type: string, expiresInMs: number, stage = "prepared", signer = "dao") => ({ correlationId: `c-${type}-${expiresInMs}-${stage}-${signer}`, type, stage, signer, expiresAt: new Date(NOW + expiresInMs).toISOString() });
+  const action = (type: string, expiresInMs: number, stage: "prepared" | "settled" = "prepared", signer: "dao" | "wallet" = "dao") => ({ correlationId: `c-${type}-${expiresInMs}-${stage}-${signer}`, type, stage, signer, expiresAt: new Date(NOW + expiresInMs).toISOString() });
   const need = needsDecision({ proposals: [view("p", "proposed", 3 * HOUR)], unresolved: [], daoRequests: [],
     ownerActions: [action("agent_freeze", HOUR), action("grant_issue", 2 * HOUR), action("agent_unfreeze", HOUR, "settled"), action("agent_freeze", -MIN), action("grant_revoke", 5 * HOUR),
       action("agent_freeze", HOUR, "prepared", "wallet")], now: NOW });

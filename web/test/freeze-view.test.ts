@@ -1,14 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isStop, stopControls, waitingStop } from "../src/proposals/freeze-view.ts";
+import { stopControls, waitingStop } from "../src/proposals/freeze-view.ts";
 
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
 const soon = new Date(NOW + 10 * 60_000).toISOString(), gone = new Date(NOW - 1000).toISOString();
 const action = (type: string, stage: "settled" | "submitted" | "expired" | "prepared", signer: "wallet" | "dao" = "wallet", expiresAt = soon) => ({ correlationId: `${type}-${stage}-${signer}`, type, stage, signer, expiresAt });
-
-test("only a freeze and an unfreeze are stops", () => {
-  assert.deepEqual(["agent_freeze", "agent_unfreeze", "grant_issue", "grant_revoke", "policy_update"].map(isStop), [true, true, false, false, false]);
-});
 
 test("a stop waits on a submitted action or a DAO's request awaiting its vote", () => {
   const wait = (actions: ReturnType<typeof action>[]) => waitingStop({ actions, now: NOW });

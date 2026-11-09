@@ -8,7 +8,7 @@ import { Chip, LimitsTable, Meter, ValuePill } from "@/components/ui/limits-tabl
 import { ago, amountOf, assetTone, symbolOf, usd } from "../shared/format";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, errorMessage, short, Spinner } from "../shared/ui";
 import { EmergencyStop } from "./freeze";
-import { DAO_WINDOW_WORDS, isRevocation, revokeControls, splitGrants, type Grant } from "./grants-view";
+import { DAO_WINDOW_WORDS, revokeControls, splitGrants, type Grant } from "./grants-view";
 import { PageLink } from "./nav";
 import { useOwnerFlow } from "./owner-flow";
 import { agentAddress } from "./pages";
@@ -189,7 +189,7 @@ const GRANT_COLUMNS = "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 
 
 function Grants({ reads, identity, grants, ownerScope }: { reads: Reads; identity: Identity; grants: Grant[]; ownerScope: boolean }) {
   const [review, setReview] = useState<Grant>();
-  const flow = useOwnerFlow({ reads, identity, is: isRevocation, words: revokeWords });
+  const flow = useOwnerFlow({ reads, identity, kind: "grant_revoke", words: revokeWords });
   const dao = identity.signer === "dao";
   const controls = revokeControls({ ownerScope, signer: identity.signer, canPropose: identity.access.canPropose });
   const { live, ended } = splitGrants(grants, Date.now());

@@ -5,18 +5,19 @@ import { useState } from "react";
 import { ActionRow, confirmDanger } from "@/components/ui/action-row";
 import { cn } from "@/lib/utils";
 import { Button, Spinner } from "../shared/ui";
-import { isStop, stopControls } from "./freeze-view";
+import { stopControls } from "./freeze-view";
 import { useOwnerFlow } from "./owner-flow";
 import { PageLink } from "./nav";
 import { agentAddress, place } from "./pages";
 import type { Identity } from "./proposals-api";
 import type { agentReads } from "./queries";
+import type { StageWords } from "../../../apps/server/src/owner-action.ts";
 import { ReviewDialog } from "./ui";
 
 type Reads = ReturnType<typeof agentReads>;
 type Kind = "freeze" | "unfreeze";
 
-const STAGE_WORDS: Record<string, string> = {
+const STAGE_WORDS: StageWords = {
   voting: "Waiting for the signature, or for the DAO's vote.",
   submitting: "Signed; the platform is submitting it.",
   submitted: "Done: the platform has it.",
@@ -49,7 +50,7 @@ function Stop({ reads, identity, inPage }: { reads: Reads; identity: Identity; i
   const [review, setReview] = useState<Kind>();
   // The frozen state: the same read other pages make (one read serves both), not read again within half a minute.
   const overview = useQuery({ ...reads.overview, enabled: connected, staleTime: 60_000 });
-  const flow = useOwnerFlow({ reads, identity, is: isStop, words: STAGE_WORDS, enabled: connected });
+  const flow = useOwnerFlow({ reads, identity, kind: "agent_freeze", words: STAGE_WORDS, enabled: connected });
 
   const frozen = overview.data?.policy.policy?.frozen;
   const controls = stopControls({ connected, ownerScope, signer: identity.signer, canPropose: identity.access.canPropose, frozen });

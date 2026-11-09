@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { accountId } from "../../../apps/server/src/contract.ts";
+import { isFinal } from "../../../apps/server/src/owner-action.ts";
 import { Button, Card, ErrorBox, errorMessage, input, Loading, Note, QueryError } from "../shared/ui";
 import { DaoRequestView } from "./dao-request";
 import type { ConsentText, Creation, CreationStatus, Identity } from "./proposals-api";
@@ -241,7 +242,7 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
       return read.value;
     },
     enabled: created !== undefined, retry: false,
-    refetchInterval: query => FINAL.has(query.state.data?.stage ?? "") ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
   });
   const stage = status.data?.stage;
   useEffect(() => { if (stage === "submitted") void client.invalidateQueries({ queryKey: reads.identity.queryKey }); }, [stage, client, reads]);
@@ -304,7 +305,6 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
   </section>;
 }
 
-const FINAL = new Set(["submitted", "expired", "failed"]);
 const STAGE_WORDS: Record<CreationStatus["stage"], string> = {
   voting: "Waiting for the signature.",
   submitting: "Signed; the platform is submitting it.",
