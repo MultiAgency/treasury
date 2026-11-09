@@ -41,14 +41,16 @@ function overview(price: number | null, now: number, change: Partial<OwnerOutput
   } as unknown as OwnerOutput<"overview">;
 }
 
-async function world({ seeded = true, failAudit = false, max, proposals = false }: { seeded?: boolean; failAudit?: boolean; max?: number; proposals?: boolean } = {}) {
+async function world({ seeded = true, seedEth = false, failAudit = false, max, proposals = false, settings = SETTINGS,
+  overviewValue }: { seeded?: boolean; seedEth?: boolean; failAudit?: boolean; max?: number; proposals?: boolean; settings?: BallastSettings; overviewValue?: OwnerOutput<"overview"> } = {}) {
   const dir = tempDir("treasury-ballast-");
   const clock = { now: T0 };
   const requests = await createRequests(join(dir, "requests.json"), max === undefined ? {} : { max });
   const history = await createPriceHistory(join(dir, "requests.json.history"));
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
-  const answers: { overview: OwnerOutput<"overview">; refuse?: string; create?: ProposalAnswer; consented?: boolean } = { overview: overview(3.12, T0) };
+  if (seedEth) await history.seed(ETH, fallingHistory(T0), T0);
+  const answers: { overview: OwnerOutput<"overview">; refuse?: string; create?: ProposalAnswer; consented?: boolean } = { overview: overviewValue ?? overview(3.12, T0) };
   const stored = new Map<string, ProposalView>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
@@ -83,7 +85,7 @@ async function world({ seeded = true, failAudit = false, max, proposals = false 
   const strategyProposals = proposals ? createStrategyProposals(memoryProposalRecords(), { audit: { append: async () => {} }, now: () => clock.now }) : undefined;
   const start = () => createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast, ...(strategyProposals && { strategyProposals }) });
   let watch = start();
-  return { dir, clock, answers, stored, sent, history, states, requests, audit, strategyProposals, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent),
+  return { dir, clock, answers, stored, sent, history, states, requests, audit, strategyProposals, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent), settings,
     /** A restart: a new watch, with nothing in memory, over the same files. */
     restart: () => { watch = start(); } };
 }
@@ -408,4 +410,76 @@ test("the mandate proposer runs on Ballast's tick beside its decision: one strat
   w.answers.overview = overview(3.12, w.clock.now);
   assert.deepEqual((await w.tick()).strategy, { skipped: "open", id: open!.id });
   assert.equal(w.strategyProposals!.open(AGENT).length, 1);
+});
+
+// The multi-sleeve book (#221): wNEAR and ETH at 20% each in the balanced profile, the account at 50% and the Ethereum
+// bridge at 25%. The book is 15,000 each and 70,000 USDC, so the 12,000 USD floor leaves a 58,000 reserve split by target.
+const DIVERSIFIED: BallastSettings = { ...SETTINGS, diversification: {
+  sleeves: [{ asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }, { asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25 }],
+  venueCapsPct: { "near-intents": 50, "omft-ethereum": 25 },
+} };
+const WATCHED_DIVERSIFIED: WatchedAgent = { ...WATCHED, ballast: DIVERSIFIED };
+/** A steady wNEAR price and a falling ETH price, so the ETH sleeve buys and wNEAR holds: one target, one no trade. */
+function diversifiedOverview(now: number): OwnerOutput<"overview"> {
+  const row = (asset: string, symbol: string, decimals: number, price: number, usd: number) =>
+    ({ asset, symbol, decimals, public: 0n, confidential: 0n, price, priceUpdatedAt: new Date(now - 60_000).toISOString(), priceExpiresAt: new Date(now + 240_000).toISOString(), usd });
+  return {
+    agentId: "id-portfolio",
+    book: [row(USDC, "USDC", 6, 1, 70_000), row(WNEAR, "wNEAR", 24, 4, 15_000), row(ETH, "ETH", 18, 3.12, 15_000)],
+    unmanaged: [], target: { [WNEAR]: 0.2, [ETH]: 0.2 }, rebalance: { minLegUsd: 1, maxCostBps: 50 }, policy: { policy: { assets: "any" } }, notInForce: null,
+  } as unknown as OwnerOutput<"overview">;
+}
+function steadyHistory(now: number, price: number) {
+  const out: { at: number; price: number }[] = [];
+  for (let at = now - 36 * DAY; at < now; at += HOUR) out.push({ at, price });
+  return out;
+}
+
+test("a diversified agent proposes one ETH sleeve buy, with its own state and a decision record carrying the book check", async () => {
+  const w = await world({ seedEth: true, settings: DIVERSIFIED, overviewValue: diversifiedOverview(T0) });
+  // wNEAR's own history is steady, so its sleeve holds; ETH's falls, so its DCA buys and the sell-first order doesn't matter.
+  await w.history.seed(WNEAR, steadyHistory(T0, 4), T0);
+  const event = await w.tick(WATCHED_DIVERSIFIED);
+  assert.ok("proposed" in event, JSON.stringify(event));
+  const input = w.sent[0] as { legs: { from: string; to: string; amount: string }[]; note: string; requestId: string };
+  assert.deepEqual([input.legs[0]!.from, input.legs[0]!.to], [USDC, ETH]);
+  // One DCA unit: 20% of ETH's half of the 58,000 reserve over 10 units = 580 USD, in USDC's 6 decimals.
+  assert.equal(input.legs[0]!.amount, "580000000");
+  assert.match(input.note, /^Ballast dca-1: buy 580\.00 USD of ETH/);
+  const state = w.states.find(ORG, AGENT);
+  assert.equal(state.sleeves?.ETH?.whipsaw.disarmed, "dca-1", "the ETH sleeve is disarmed");
+  assert.equal(state.sleeves?.wNEAR, undefined, "the wNEAR sleeve is untouched");
+  assert.deepEqual(state.whipsaw, {}, "the two-asset state isn't used by the multi-sleeve book");
+  assert.deepEqual(state.proposed.map(p => [p.requestId, p.asset]), [[input.requestId, "ETH"]]);
+  const decided = JSON.parse((await w.log()).trim().split("\n").find(line => line.includes('"kind":"decision"'))!);
+  assert.equal(decided.entry.requestId, input.requestId);
+  assert.equal(decided.entry.policy?.book?.limits?.venueCapsPct["omft-ethereum"], 25);
+  assert.ok(decided.entry.policy?.book?.ctx?.venueUsd?.["omft-ethereum"] >= 15_000, "the book check counted ETH at its bridge");
+  assert.deepEqual(replayAuditLog(await w.log()), { ok: true, count: 1 });
+});
+
+test("the Ethereum bridge's cap refuses the ETH buy before anything is stored: a decision says why, and no request is sent", async () => {
+  const capped: BallastSettings = { ...DIVERSIFIED, diversification: { ...DIVERSIFIED.diversification!, venueCapsPct: { "near-intents": 50, "omft-ethereum": 14 } } };
+  const w = await world({ seedEth: true, settings: capped, overviewValue: diversifiedOverview(T0) });
+  await w.history.seed(WNEAR, steadyHistory(T0, 4), T0);
+  const event = await w.tick({ ...WATCHED_DIVERSIFIED, ballast: capped });
+  assert.equal(event.skipped, "policy refused", JSON.stringify(event));
+  assert.equal(event.rule, "VENUE_EXPOSURE");
+  assert.match(String(event.reason), /Ethereum bridge/);
+  assert.equal(w.sent.length, 0);
+  assert.deepEqual(w.states.find(ORG, AGENT).proposed, []);
+  const decided = JSON.parse((await w.log()).trim().split("\n").find(line => line.includes('"kind":"decision"'))!);
+  assert.equal(decided.entry.policy?.result?.rule, "VENUE_EXPOSURE");
+  assert.equal(decided.entry.proposal, undefined);
+});
+
+test("a stablecoin the mandate didn't split into holds the tick, so the floor isn't counted from an unapproved coin", async () => {
+  const overview = diversifiedOverview(T0);
+  overview.book.push({ asset: "nep141:usdt.tether-token.near", symbol: "USDT", decimals: 6, public: 0n, confidential: 0n, price: 1,
+    priceUpdatedAt: new Date(T0 - 60_000).toISOString(), priceExpiresAt: new Date(T0 + 240_000).toISOString(), usd: 0 });
+  const w = await world({ seedEth: true, settings: DIVERSIFIED, overviewValue: overview });
+  const event = await w.tick(WATCHED_DIVERSIFIED);
+  assert.equal(event.skipped, "the book holds a stablecoin outside the mandate's split");
+  assert.deepEqual(event.assets, ["USDT"]);
+  assert.equal(w.sent.length, 0);
 });

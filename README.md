@@ -8,7 +8,7 @@ Freeze is the stop that halts every send. A wallet owner can freeze the agent fr
 | --- | --- |
 | `apps/server/` | The app's own server. It holds the deployment's `tap_` credential, calls `/apps/v1` with `appClient`, serves the app's pages, and runs `watch`, the proposer. See [docs/app-server.md](docs/app-server.md); for deploying, [docs/deploy.md](docs/deploy.md). |
 | `web/src/proposals/` | The app's pages, served by the app server: sign-in, setup, the connection, proposals, strategy and autopilot, funding. These are the one Treasury app (#128). See [docs/web.md](docs/web.md). |
-| `packages/core/` | The strategy engine: pure decision logic, run by `watch` for the agents configured with it ([ADR 3](docs/adr/0003-engine-parameters.md), [HISTORY.md](packages/core/HISTORY.md)). |
+| `packages/core/` | The strategy engine: pure decision logic, run by `watch` for the agents configured with it ([ADR 3](docs/adr/0003-engine-parameters.md), [HISTORY.md](packages/core/HISTORY.md)). It also carries the diversified book's asset registry, sleeves, stablecoin split and runway rules ([ADR 6](docs/adr/0006-diversified-book.md), [#221](https://github.com/MultiAgency/treasury/issues/221)), and the deterministic backtest behind [docs/diversified-backtest.md](docs/diversified-backtest.md). |
 | `scripts/stack.ts` | Starts the platform's simulated stack for the stack tests, and drives it through its state and control files only. |
 | `docs/` | Decisions (`adr/`), the app server and web builds, deploying, and the SDK report. |
 
@@ -32,6 +32,7 @@ pnpm build                                   # every package, and the app's page
 pnpm --filter @treasury/server test:stack    # the app server on fresh stacks, one with a DAO-owned agent
 pnpm --filter @treasury/web test:stack       # the app's pages through the app server
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-kit's local node; not in CI
+pnpm backtest:diversified                    # rewrites docs/diversified-backtest.md from the seeded synthetic history
 ```
 
 The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `96a0bb6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.

@@ -6,6 +6,8 @@ import { accessOf, mayCall, proposalId, proposalList, type OwnerInputs, type Pro
 import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
+import type { BallastSettings } from "./ballast.ts";
+import { diversificationView } from "./diversification.ts";
 import { sha256, type Audit } from "./audit.ts";
 import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
 import { offerFor } from "./dao-offer.ts";
@@ -77,6 +79,11 @@ export type Deps = {
   agentTokens?: AgentTokens;
   /** The strategies agents proposed and the owner hasn't answered (#206); without it, they last as long as the process. */
   strategyProposals?: StrategyProposals;
+  /**
+   * The Ballast settings `watch` runs for an agent, when it does: the diversification read reports its venue and class
+   * caps from the compiled mandate these name. Absent, the read shows the profile's defaults or no caps at all (#221).
+   */
+  ballastSettings?: (organization: string, agent: string) => BallastSettings | undefined;
   /**
    * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
    * and each of its calls is a call against the platform's hourly budget, which every owner shares.
@@ -992,6 +999,17 @@ export const routes: Route[] = [
   },
   readRoute("/api/agents/:agent/account", "account"),
   readRoute("/api/agents/:agent/overview", "overview"),
+  {
+    // The diversified book (#221): one overview read, the caps from the agent's configured mandate terms when `watch` has
+    // them, else marked as the profile's defaults or absent. Nothing here acts: the page only shows it.
+    method: "GET", path: "/api/agents/:agent/diversification", access: "owner", needs: "read",
+    async handle({ identity }, { platform, ballastSettings }) {
+      const { agent, owner } = identity!;
+      const organization = organizationOf(owner);
+      const answer = await relay(() => platform.reads.overview(organization, agent), agent);
+      return answer.ok ? ok(diversificationView(answer.value, ballastSettings?.(organization, agent))) : readFailure(answer, agent, "overview");
+    },
+  },
   readRoute("/api/agents/:agent/activity", "activity"),
   {
     // The agent's ledger as a CSV download (#136): relayed once as the platform wrote it.

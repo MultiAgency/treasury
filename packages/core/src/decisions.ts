@@ -10,6 +10,7 @@
 import { checkPolicy, type FullContext, type PolicyConfig } from "./check.ts";
 import { canonicalJson } from "./digest.ts";
 import { evaluateBands, type EngineConfig, type EngineInput } from "./engine.ts";
+import { checkBookExposure, combineResults, type BookExposureContext, type BookExposureLimits } from "./exposure.ts";
 import type { Intent } from "./bands.ts";
 import { centsDown, legsFor, type LegsInput, type LegsResult } from "./legs.ts";
 import type { OracleReading } from "./oracle.ts";
@@ -17,6 +18,12 @@ import type { PolicyResult } from "./policy.ts";
 
 /** What `legsFor` takes besides the decision: the assets, their prices and decimals, and the slippage bound. */
 export type LegsPricing = Omit<LegsInput, "decision">;
+
+/**
+ * The diversified book's own check (#221), for a decision in one of several sleeves: the order's asset and the book's
+ * exposure per venue and class, with the caps. A two-asset decision has none, and is checked and replayed as it always was.
+ */
+export type BookCheck = { ctx: BookExposureContext; limits: BookExposureLimits };
 
 /** One decision with everything it was made from. `kind` is the audit log's (`chain.ts`'s `AUDIT_KINDS`). */
 export type DecisionRecord = {
@@ -26,7 +33,7 @@ export type DecisionRecord = {
   engine: EngineConfig;
   intent: Intent;
   /** Every trade is checked by the policy; a hold never is, so a hold has none. */
-  policy?: { ctx: FullContext; config: PolicyConfig; result: PolicyResult };
+  policy?: { ctx: FullContext; config: PolicyConfig; book?: BookCheck; result: PolicyResult };
   /**
    * A trade the policy didn't refuse: its size in whole cents (`centsDown`; null below a cent, which proposes nothing)
    * and, when it has one, the legs made at `pricing`.
@@ -43,6 +50,12 @@ const decided = (intent: unknown) => typeof intent === "object" && intent !== nu
 /** A value as it reads back from the log: JSON drops undefined fields and writes NaN and Infinity as null. */
 const asStored = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+/** Every rule for a trade: the policy's, and the book's when the decision has one; any rejection wins, as in `checkPolicy`. */
+function checkTrade(intent: Intent, policy: { ctx: FullContext; config: PolicyConfig; book?: BookCheck }): PolicyResult {
+  const result = checkPolicy(intent, policy.ctx, policy.config);
+  return policy.book === undefined ? result : combineResults([result, checkBookExposure(intent, policy.book.ctx, policy.book.limits)]);
+}
+
 /** The proposal for a trade the policy let through: its size in cents, then its legs. */
 function proposalFor(intent: Intent, pricing: LegsPricing): NonNullable<DecisionRecord["proposal"]> {
   const sizeUsd = centsDown(intent.sizeUsd);
@@ -57,12 +70,12 @@ function proposalFor(intent: Intent, pricing: LegsPricing): NonNullable<Decision
  * `null`, exactly as a replay will see it, and the engines fail closed on it.
  */
 export function decide(reading: OracleReading, input: EngineInput, engine: EngineConfig,
-  policy: { ctx: FullContext; config: PolicyConfig }, pricing: LegsPricing): DecisionRecord {
+  policy: { ctx: FullContext; config: PolicyConfig; book?: BookCheck }, pricing: LegsPricing): DecisionRecord {
   const stored = asStored({ reading, input, engine, policy, pricing });
   const intent = evaluateBands(stored.reading, stored.input, stored.engine);
   const record: DecisionRecord = { kind: "decision", reading: stored.reading, input: stored.input, engine: stored.engine, intent };
   if (intent.action !== "hold") {
-    const result = checkPolicy(intent, stored.policy.ctx, stored.policy.config);
+    const result = checkTrade(intent, stored.policy);
     record.policy = { ...stored.policy, result };
     if (result.ok !== false) record.proposal = proposalFor(intent, stored.pricing);
   }
@@ -98,7 +111,7 @@ export function replayDecisions(records: readonly DecisionRecord[], seqs?: reado
 
     if (!record.policy) return differs("policy", undefined, "a trade must have been checked by the policy");
     let result: PolicyResult;
-    try { result = asStored(checkPolicy(intent, record.policy.ctx, record.policy.config)); }
+    try { result = asStored(checkTrade(intent, record.policy)); }
     catch (error) { return differs("policy", record.policy.result, `the policy threw: ${String(error)}`); }
     if (!same(result, record.policy.result)) return differs("policy", record.policy.result, result);
     if (result.ok === false) {

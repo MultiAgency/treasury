@@ -69,3 +69,52 @@ test("an interval must be shorter than a proposal's life, with or without a noti
   await assert.rejects(loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_400 })), /ticks every 86400s/);
   assert.equal((await loadWatchConfig(await agent({ proposalHours: 24, intervalS: 86_399 }))).length, 1);
 });
+
+const BALLAST = { profile: "balanced", monthlySpendUsd: 2_000, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"] };
+const WNEAR_SLEEVE = { asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }, ETH_SLEEVE = { asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25 };
+const VENUE_CAPS = { "near-intents": 50, "omft-ethereum": 25 };
+const diversified = (diversification: unknown) => file({ agents: [{ organization: "o", agent: "a", ballast: { ...BALLAST, diversification } }] });
+
+test("a diversification block loads when the compiled mandate's terms hold, and the two-asset agent is unchanged without one", async () => {
+  const withTerms = await loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS }));
+  assert.deepEqual(withTerms[0]!.ballast?.diversification?.sleeves, [WNEAR_SLEEVE, ETH_SLEEVE]);
+  const without = await loadWatchConfig(await file({ agents: [{ organization: "o", agent: "a", ballast: BALLAST }] }));
+  assert.equal(without[0]!.ballast?.diversification, undefined);
+});
+
+test("a sleeve or stablecoin the platform doesn't list is refused at load, naming the platform's proposal assets", async () => {
+  await assert.rejects(loadWatchConfig(await diversified({
+    sleeves: [WNEAR_SLEEVE, { asset: "BTC", targetPct: 20, minPct: 5, maxPct: 25 }], venueCapsPct: { ...VENUE_CAPS, "omft-bitcoin": 25 },
+  })), /sleeve BTC isn't among the platform's proposal assets/);
+  await assert.rejects(loadWatchConfig(await diversified({
+    sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS, stableSplit: { USDC: 50, USDT: 50 },
+  })), /USDT isn't among the platform's proposal assets/);
+});
+
+test("terms that leave the profile, or a venue path with no cap, are refused before the server starts", async () => {
+  await assert.rejects(loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: { "near-intents": 50 } })),
+    /Ethereum bridge \(omft\) is on a held asset's path and needs a cap/);
+  await assert.rejects(loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: { ...VENUE_CAPS, "near-intents": 60 } })),
+    /can't be over the mandate's venue limit of 50%/);
+  await assert.rejects(loadWatchConfig(await diversified({ sleeves: [{ ...WNEAR_SLEEVE, targetPct: 30 }, ETH_SLEEVE], venueCapsPct: VENUE_CAPS })),
+    /add to the profile's volatile weight, 40%/);
+});
+
+test("a sleeve's own bands are checked by the same rules the engine uses", async () => {
+  await assert.rejects(loadWatchConfig(await diversified({
+    sleeves: [{ ...WNEAR_SLEEVE, bands: { trim: [20, 15, 45], dca: [-20, -30, -40], buyHalt: -50 } }, ETH_SLEEVE], venueCapsPct: VENUE_CAPS,
+  })), /sleeve wNEAR: trim thresholds must be positive and rising/);
+  const loaded = await loadWatchConfig(await diversified({
+    sleeves: [{ ...WNEAR_SLEEVE, bands: { trim: [20, 30, 45], dca: [-20, -30, -40], buyHalt: -50 } }, ETH_SLEEVE], venueCapsPct: VENUE_CAPS,
+  }));
+  assert.deepEqual(loaded[0]!.ballast?.diversification?.sleeves[0]?.bands, { trim: [20, 30, 45], dca: [-20, -30, -40], buyHalt: -50 });
+});
+
+test("real-world assets need eligibility and KYC, and the block's shape is checked", async () => {
+  await assert.rejects(loadWatchConfig(await diversified({
+    sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS, classes: ["volatile", "stable", "rwa"],
+    classCapsPct: { volatile: 50, stable: 100, rwa: 10 }, rwa: { eligible: false, kycVerified: false, maxPct: 10, cashHorizonDays: 30 },
+  })), /eligible to hold them/);
+  await assert.rejects(loadWatchConfig(await diversified({ sleeves: [] })), /sleeves/);
+  await assert.rejects(loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS, surprise: true })), /surprise/);
+});

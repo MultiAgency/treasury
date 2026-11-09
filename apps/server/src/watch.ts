@@ -302,13 +302,16 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       await settleHold(watched, null, event);
       if (watched.ballast) {
         if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
-        const decided = await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours);
+        // A `diversification` block runs the multi-sleeve book (#221); without it, the two-asset step is unchanged.
+        const decided = watched.ballast.diversification
+          ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours)
+          : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours);
         if ("skipped" in decided) return event(decided);
         // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
         // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one
         // made and not counted.
         const { requestId } = decided;
-        await ballast.proposed(organization, agent, requestId, decided.intent);
+        await ballast.proposed(organization, agent, requestId, decided.intent, decided.asset);
         const request = await requests.add(organization, agent, decided.body, requestId);
         if (!request) return event({ held: "stored requests full" });
         return send(watched, request, event).then(sent => ({ ...sent, ballast: decided.detail }));

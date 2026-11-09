@@ -112,6 +112,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         creation: (id: string) => call(contract.creationStatus, `${base}/creation/${correlation.parse(id)}`),
         /** The owner reads (#61): holdings and policy, activity, payouts held, operations without a proven outcome, the autopilot's runs. */
         overview: () => call(contract.overviewRead, `${base}/overview`),
+        /** The diversified book (#221): holdings and venues with their caps, the stablecoin split and each phase's status. */
+        diversification: () => call(contract.diversificationRead, `${base}/diversification`),
         activity: () => call(contract.activityRead, `${base}/activity`),
         held: () => call(contract.heldRead, `${base}/held`),
         unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
@@ -196,6 +198,7 @@ export type CreationStatus = z.output<typeof contract.creationStatus>;
 export type ProposalRead = z.output<typeof contract.proposalRead>;
 export type PolicyHistoryRead = z.output<typeof contract.policyHistoryRead>;
 export type OverviewRead = z.output<typeof contract.overviewRead>;
+export type DiversificationRead = z.output<typeof contract.diversificationRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
 export type RecordingRead = z.output<typeof contract.recordingRead>;

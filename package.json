@@ -10,7 +10,8 @@
     "typecheck": "tsc -p .railway && pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
-    "check": "pnpm typecheck && pnpm test"
+    "check": "pnpm typecheck && pnpm test",
+    "backtest:diversified": "node scripts/diversify.ts"
   },
   "packageManager": "pnpm@12.16.1",
   "devDependencies": {

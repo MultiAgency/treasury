@@ -100,6 +100,8 @@ const handler = createServer({
   daoRequests,
   agentTokens,
   strategyProposals,
+  // What the diversification read reports the agent's caps from: its own configured terms, when watch runs it (#221).
+  ballastSettings: (organization, agent) => watched?.agents.find(agentSettings => agentSettings.organization === organization && agentSettings.agent === agent)?.ballast,
   tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
   tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,

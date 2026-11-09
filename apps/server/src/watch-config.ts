@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
-import { ballastSettings } from "./ballast.ts";
+import { ballastSettings, diversificationProblemsFor } from "./ballast.ts";
 import { notifier } from "./notify.ts";
 import { WATCH, type WatchedAgent } from "./watch.ts";
 
@@ -60,6 +60,14 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
   // Ballast keeps one price an hour: an agent read less often leaves gaps its oracle freezes on.
   for (const { organization, agent, intervalS, ballast } of parsed.agents) {
     if (ballast && intervalS > 3600) throw new Error(`${path}: ${organization}/${agent} runs Ballast, which needs a reading at least hourly: intervalS must be at most 3600`);
+  }
+  // The diversified terms compile against a treasury that can hold the floor, then every rule the book leans on: a sleeve
+  // or stablecoin the platform doesn't list, a missing venue cap, a split that doesn't add to 100 are refused here, never
+  // proposed on a tick. An agent without the block is the two-asset book, unchanged.
+  for (const { organization, agent, ballast } of parsed.agents) {
+    if (!ballast?.diversification) continue;
+    const problems = diversificationProblemsFor(ballast);
+    if (problems.length > 0) throw new Error(`${path}: ${organization}/${agent}: ${problems.join("; ")}`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {
