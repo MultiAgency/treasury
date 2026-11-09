@@ -1,15 +1,29 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { FieldLegend, FieldSet } from "@/components/ui/field";
-import { parseStrategyDraft, strategyDraft } from "./strategy-form";
+import { FromAssistant, SwapPreview } from "./assistant-note";
+import { parseStrategyDraft, strategyDraft, type StrategyDraft } from "./strategy-form";
 import { confirmDiscard, useDirtyDraft } from "../shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "../shared/form";
 import { symbolOf } from "../shared/format";
 import { Button, Details, ErrorBox, Spinner } from "../shared/ui";
-import type { StrategyRead } from "./proposals-api";
+import type { AssistantDraft, StrategyRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { StrategyTerms } from "./strategy-terms";
 import { failureText } from "./words";
+
+type StrategySeed = Extract<AssistantDraft, { kind: "strategy" }>;
+
+/** The form with an assistant's draft filled in: its targets by symbol, and the schedule when it names one. */
+function seeded(draft: StrategyDraft, seed: StrategySeed | undefined): StrategyDraft {
+  if (!seed) return draft;
+  const targets = Object.fromEntries(Object.entries(draft.targets).map(([asset, value]) => {
+    const pct = seed.targets[symbolOf(asset, [])];
+    return [asset, pct === undefined ? value : String(pct)];
+  }));
+  return { ...draft, targets, ...(seed.schedule?.everyMin !== undefined && { everyMin: String(seed.schedule.everyMin) }),
+    ...(seed.schedule?.maxUsd !== undefined && { maxUsd: String(seed.schedule.maxUsd) }) };
+}
 
 /**
  * Editing the saved strategy (`strategy-form.ts`'s form and checks): targets adding up to 100%, the swap limits, and
@@ -19,11 +33,12 @@ import { failureText } from "./words";
  * saved over it only once the owner has reviewed it. Saving turns autopilot off, and the strategy then needs authorizing
  * again.
  */
-export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<typeof agentReads>; strategy: StrategyRead; onDone: (saved: boolean) => void }) {
+export function StrategyEditor({ reads, strategy, seed, onDone }: { reads: ReturnType<typeof agentReads>; strategy: StrategyRead; seed?: StrategySeed; onDone: (saved: boolean) => void }) {
   const client = useQueryClient();
   /** The strategy the draft is saved over: the one shown when editing began, or the current one once reviewed. */
   const [base, setBase] = useState(strategy);
-  const [draft, setDraft] = useState(() => strategyDraft(strategy.strategy));
+  // A draft the assistant made (#219) fills the form; it's saved, like any other, only when the owner chooses Save.
+  const [draft, setDraft] = useState(() => seeded(strategyDraft(strategy.strategy), seed));
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -71,6 +86,7 @@ export function StrategyEditor({ reads, strategy, onDone }: { reads: ReturnType<
       <h3 ref={heading} tabIndex={-1} className="text-base font-semibold">Edit strategy</h3>
       <p className="text-sm text-muted-foreground">Saving turns autopilot off, and the new strategy needs authorizing before autopilot or Run now can act on it. It doesn't change the signed policy.</p>
     </div>
+    {seed && <FromAssistant>{seed.legs && <SwapPreview legs={seed.legs} />}</FromAssistant>}
     <FieldSet className="gap-3">
       <FieldLegend variant="label">Target allocation · total 100%</FieldLegend>
       <FieldGroup className="grid gap-3 sm:grid-cols-3">

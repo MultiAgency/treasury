@@ -12,6 +12,8 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import { appClient, proposalText, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page, type Route } from "playwright";
+import { createAssistant } from "../../apps/server/src/assistant/assistant.ts";
+import { rulesModel } from "../../apps/server/src/assistant/rules-model.ts";
 import { chainedFileAudit, verifyChain } from "../../apps/server/src/chain.ts";
 import { consentText } from "../../apps/server/src/consent.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
@@ -58,6 +60,9 @@ before(async () => {
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(join(import.meta.dirname, "..", "dist-proposals")),
+    // The treasury assistant (#219), answered by its deterministic local model: nothing leaves the server in a stack test.
+    assistant: createAssistant({ model: rulesModel(), audit: { append: entry => audit.append(entry) }, questionsPerHour: 1_000, platformReadsPerHour: 1_000 }),
+    auditLog: async () => [],
   });
 
   browser = await chromium.launch();
@@ -643,6 +648,50 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   assert.deepEqual(unexpected, []);
 });
 
+test("the assistant answers from the treasury's own records with sources, and a draft opens the strategy editor filled in without sending anything (#219)", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here());
+  const ask = page.getByRole("button", { name: "Ask the treasury" });
+  await visible(ask);
+  await ask.click();
+  const panel = page.getByRole("dialog", { name: "Treasury assistant" });
+  await visible(panel);
+  assert.deepEqual(await axe(), [], "the assistant panel");
+  const question = panel.getByRole("textbox", { name: "Your question" });
+  await question.fill("What's the book worth?");
+  await question.press("Enter");
+  await visible(panel.getByText(/^The book is worth \$/));
+  await visible(panel.getByRole("button", { name: /^Source S1:/ }));
+  assert.deepEqual(await axe(), [], "the assistant's answer");
+
+  // "Propose a rebalance to 40% wNEAR" drafts new targets: its card opens the strategy editor with them filled in, and
+  // nothing is saved or signed by opening it.
+  await question.fill("Propose a rebalance to 40% wNEAR");
+  await question.press("Enter");
+  const open = panel.getByRole("button", { name: "Open in the strategy editor" });
+  await visible(open);
+  assert.deepEqual(await axe(), [], "the assistant's draft");
+  await open.click();
+  const editor = page.getByRole("form", { name: "Edit strategy" });
+  await visible(editor);
+  await visible(editor.getByRole("note", { name: "Filled in by the assistant" }));
+  assert.equal(await editor.getByLabel("wNEAR (%)").inputValue(), "40", "the assistant's target is filled in");
+  assert.deepEqual(await axe(), [], "the strategy editor the draft opened");
+
+  // Another draft while the owner is editing doesn't replace their edit: the page says to save or cancel it first.
+  await editor.getByLabel("wNEAR (%)").fill("45");
+  await ask.click();
+  await visible(panel);
+  await question.fill("Propose a rebalance to 30% wNEAR");
+  await question.press("Enter");
+  const again = panel.getByRole("button", { name: "Open in the strategy editor" }).last();
+  await visible(again);
+  await again.click();
+  await visible(page.getByRole("status").filter({ hasText: /^Save or cancel the strategy edit first/ }));
+  assert.equal(await editor.getByLabel("wNEAR (%)").inputValue(), "45", "the owner's edit is kept");
+  assert.deepEqual(unexpected, []);
+});
+
 test("the emergency stop is in the frame of every page, with its own region and controls, and passes an axe scan", { timeout: 90_000 }, async () => {
   await ensureConnected();
   for (const path of ["", "/proposals", "/strategy", "/funding", "/policy", "/activity"]) {
@@ -992,6 +1041,24 @@ async function draftRateEdit() {
   await rate.fill((await rate.inputValue()) === "5" ? "6" : "5");
   return terms;
 }
+
+test("an assistant's policy draft doesn't replace an edit the owner has open: the page says to save or cancel it first (#219)", { timeout: 150_000 }, async () => {
+  const terms = await draftRateEdit();
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  const edited = await rate.inputValue();
+  await page.getByRole("button", { name: "Ask the treasury" }).click();
+  const panel = page.getByRole("dialog", { name: "Treasury assistant" });
+  const question = panel.getByRole("textbox", { name: "Your question" });
+  await question.fill("Set the monthly budget to $500");
+  await question.press("Enter");
+  const open = panel.getByRole("button", { name: "Open in the policy editor" }).last();
+  await visible(open);
+  await open.click();
+  await visible(page.getByRole("status").filter({ hasText: /^Save or cancel the policy edit first/ }));
+  assert.equal(await rate.inputValue(), edited, "the owner's edit is kept");
+  await terms.getByRole("button", { name: "Cancel" }).click();
+  assert.deepEqual(unexpected, []);
+});
 
 test("an edit that expires before it was signed keeps the editor open and says so", { timeout: 120_000 }, async () => {
   const terms = await draftRateEdit();

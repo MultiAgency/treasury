@@ -155,6 +155,21 @@ export async function readAuditLog(file: string): Promise<string> {
   return joinSegments(await Promise.all(segments.map(readSegment)));
 }
 
+/**
+ * The log's records, oldest first, read for display (the assistant's decision and audit tools, #219): at most the newest
+ * `keep` lines, and a line that isn't a record skipped. This doesn't verify the chain; `verifyChain` does.
+ */
+export function parseAuditLog(text: string, keep = 20_000): ChainRecord[] {
+  const records: ChainRecord[] = [];
+  for (const line of text.split("\n").slice(-keep)) {
+    if (!line) continue;
+    let parsed: unknown;
+    try { parsed = JSON.parse(line); } catch { continue; }
+    if (isRecord(parsed)) records.push(parsed);
+  }
+  return records;
+}
+
 /** Where a segment's chain starts: the sequence number and hash its first record continues. */
 function segmentStart(text: string): { seq: number; hash: string } {
   for (const line of text.split("\n")) {

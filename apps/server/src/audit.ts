@@ -20,7 +20,9 @@ export type AuditEntry = {
    */
   action: "setup" | "create" | "consent" | "revoke" | "approve" | "reject" | "execute" | "dao-setup" | "dao-setup-reserved" | "dao-consent"
     | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose" | "autopilot-on" | "autopilot-off" | "run-now" | "grant" | "grant-submit" | "strategy-save" | "freeze" | "unfreeze" | "grant-revoke" | "policy-update" | "owner-submit" | "token-issue" | "token-revoke"
-    | "strategy-propose" | "strategy-adopt" | "strategy-decline";
+    | "strategy-propose" | "strategy-adopt" | "strategy-decline"
+    /** The assistant (#219): a question asked (`attempt`, then `result`), and each tool call it made or draft it wrote, by their hashes. */
+    | "assistant-ask" | "assistant-tool" | "assistant-draft";
   /**
    * The agent the action concerns. A setup's attempt has none: the platform names the agent it reserves in its answer.
    * `setup`: a wallet owner's signed setup text relayed (`subject`: the setup consent); `create`: an agent's creation
@@ -35,6 +37,11 @@ export type AuditEntry = {
   verdict?: "approve" | "reject";
   /** The SHA-256 of the text the owner signed (or a DAO is asked to sign by its vote), never the signature. */
   signedTextSha256?: string;
+  /** The assistant's tool, on `assistant-tool` and `assistant-draft`. */
+  tool?: string;
+  /** The SHA-256 of the question or the tool's input, and of the answer or the tool's result: never the text itself. */
+  inputSha256?: string;
+  outputSha256?: string;
 } & (
   | { stage: "attempt" }
   /** The platform's answer: `ok`, or the failure's kind, its HTTP status, and the code the browser was given. */

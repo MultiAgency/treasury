@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Signature } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ErrorBox, errorMessage, Spinner } from "../shared/ui";
 import { isFinal, type StageWords } from "../../../apps/server/src/owner-action.ts";
+import { FromAssistant } from "./assistant-note";
 import { useWaiting } from "./owner-flow";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
 import { PageLink } from "./nav";
@@ -33,7 +34,7 @@ const STAGE_WORDS: StageWords = {
  * (`kept-outcomes.ts`), so leaving the Strategy page and coming back resumes reading it, not starting another; and one
  * awaiting its outcome in the platform's records (submitted, or a DAO's open vote) holds another after a reload too.
  */
-export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Reads; identity: Identity; strategy: StrategyRead; ownerAllowed: boolean }) {
+export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: { reads: Reads; identity: Identity; strategy: StrategyRead; ownerAllowed: boolean; review?: number }) {
   const client = useQueryClient();
   const [reviewing, setReviewing] = useState(false);
   const [grant, setGrant] = useState<GrantPrepared | undefined>(() => keptGrant(reads.name, strategy.digest));
@@ -105,9 +106,18 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
   };
 
   const canStart = (!grant || (isFinal(stage) && stage !== "submitted")) && !earlier && !records.reading && !busy && (dao ? identity.access.canPropose : ownerAllowed);
+  // The assistant's grant draft (#219) opens this review, as Authorize does; nothing is signed until the owner says so in it.
+  const [fromAssistant, setFromAssistant] = useState(false);
+  // Each new ask once: one made before this mounted (the counter it starts with) isn't opened again.
+  const handled = useRef(review);
+  useEffect(() => {
+    if (review === handled.current) return;
+    handled.current = review;
+    if (canStart) { setFromAssistant(true); setReviewing(true); }
+  }, [review, canStart]);
   return <div className="flex w-full flex-col items-start gap-2">
     {!dao && !ownerAllowed && <p className="text-xs text-muted-foreground">Your connection doesn't allow owner actions yet: allow them in <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connection, on the agent's Home page</PageLink>, then authorize the strategy here.</p>}
-    <Button size="sm" disabled={!canStart} onClick={() => setReviewing(true)}>{busy ? <Spinner /> : <Signature aria-hidden="true" />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
+    <Button size="sm" disabled={!canStart} onClick={() => { setFromAssistant(false); setReviewing(true); }}>{busy ? <Spinner /> : <Signature aria-hidden="true" />} {dao ? "Ask the DAO to authorize this strategy" : "Authorize this strategy"}</Button>
     {earlier && <p role="status" className="text-xs">{earlier.why === "vote" ? "An earlier grant is waiting for the DAO's vote." : "An earlier grant's outcome isn't known yet."} Another can't be started until it is.</p>}
     {grant?.confirm && <p className="text-xs text-muted-foreground">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
       It expires {when(grant.confirm.expiresAt)}.</p>}
@@ -119,6 +129,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed }: { reads: Read
         ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the grant's intent expires."
         : "Your wallet signs it; nothing takes effect without your signature."}`}
       actions={<Button disabled={busy} onClick={() => void authorize()}>{dao ? "File in your wallet" : "Sign in wallet"}</Button>}>
+      {fromAssistant && <FromAssistant />}
       <p className="text-sm">Strategy digest <code className="break-all text-xs">{strategy.digest}</code></p>
     </ReviewDialog>
   </div>;

@@ -27,6 +27,8 @@ import { recordResult, revokeAll } from "./revoke.ts";
 import type { Sessions } from "./sessions.ts";
 import { createStrategyProposals, memoryProposalRecords, type StrategyProposals } from "./strategy-proposals.ts";
 import type { SignIn } from "./signin.ts";
+import type { Assistant } from "./assistant/assistant.ts";
+import type { ChainRecord } from "./chain.ts";
 
 export const COOKIE = "__Host-treasury_session";
 /**
@@ -86,6 +88,10 @@ export type Deps = {
   tokenBudgetPerHour?: number;
   /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
   page?: Page;
+  /** The treasury assistant (#219); without it, questions are refused as `assistant_not_configured`. */
+  assistant?: Assistant;
+  /** The audit log's records, read for the assistant's decision and audit-trail tools. */
+  auditLog?: () => Promise<readonly ChainRecord[]>;
 };
 /**
  * What a handler reads: the dependencies, the limits the server keeps across requests, and the DAO filings in flight
@@ -1094,6 +1100,30 @@ export const routes: Route[] = [
       const input = parse(contract.strategySaveRequest, body);
       if (input === undefined) return refused(400, "bad_request");
       return saveStrategy(context, identity!, { who: account!, action: "strategy-save" }, input);
+    },
+  },
+  {
+    // Whether questions are answered here, and by which model: the page shows the assistant only where they are.
+    method: "GET", path: "/api/assistant", access: "session",
+    handle: async (_, { assistant }) => ok({ available: Boolean(assistant), model: assistant?.model ?? null }),
+  },
+  {
+    /**
+     * A question to the treasury assistant (#219), answered from this agent's records through typed reads, each figure
+     * cited by its source. It can draft, never send: a draft is fields for one of the page's review flows. The account's
+     * questions an hour and the assistant's platform reads an hour are limited (`rate_limited`, `platform_budget`), and
+     * every question, tool call and draft is recorded in the audit log by its hashes. An agent's token can't ask.
+     */
+    method: "POST", path: "/api/agents/:agent/assistant", access: "owner", needs: "read",
+    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals }) {
+      if (!assistant) return refused(503, "assistant_not_configured");
+      const input = parse(contract.assistantRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      const { agent, owner, signer } = identity!;
+      const asked = await assistant.ask({ who: account!, question: input.question, history: input.history,
+        scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, strategyProposals, ...(auditLog && { auditLog }) } });
+      if (asked.ok) return ok(asked.value);
+      return asked.kind === "unavailable" ? unavailable() : refused(429, asked.kind);
     },
   },
   {

@@ -88,6 +88,9 @@ export const setupReads = {
     refetchInterval: query => query.state.data?.request ? 30_000 : false }),
 };
 
+/** Whether the treasury assistant answers here (#219): read once a session, since it changes only with the server's configuration. */
+export const assistantStatus = queryOptions({ queryKey: ["assistant"], queryFn: async () => answered(await api.assistantStatus()), retry: false, staleTime: Infinity });
+
 /** After a session ends anywhere, every read is answered `not_signed_in`: the identity is read again, so the page signs in. */
 export function onSessionEnded(client: QueryClient, error: unknown, failed: readonly unknown[]) {
   if (failed[2] !== "identity" && failureOf(error)?.kind === "not_signed_in")
