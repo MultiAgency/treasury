@@ -7,6 +7,7 @@ import { createAgentTokens, fileTokenRecords, memoryTokenRecords } from "./agent
 import { chainedFileAudit, movePlainLogAside, parseAuditLog, readAuditLog } from "./chain.ts";
 import { createAssistant } from "./assistant/assistant.ts";
 import { claudeModel } from "./assistant/model.ts";
+import { rulesModel } from "./assistant/rules-model.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
@@ -81,12 +82,16 @@ const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, cre
   executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
 // One settle for the routes and the reader, so reads of the same DAO request at once share one.
 const settle = createSettle({ platform, daoRequests, audit });
-// The treasury assistant (#219), when an Anthropic API key is configured. It reads the audit log for Ballast's decisions
-// and the owner actions relayed here; only what a question needs leaves the server.
-const assistant = secrets.ANTHROPIC_API_KEY ? createAssistant({
-  model: claudeModel({ apiKey: secrets.ANTHROPIC_API_KEY, model: settings.TREASURY_ASSISTANT_MODEL }),
-  audit, questionsPerHour: settings.ASSISTANT_QUESTIONS_PER_HOUR, platformReadsPerHour: settings.ASSISTANT_READS_PER_HOUR,
-}) : undefined;
+// The treasury assistant (#219): on when a model is configured, else off and its panel hidden. It reads the audit log
+// for Ballast's decisions and the owner actions relayed here; only what a question needs leaves the server.
+// `TREASURY_ASSISTANT_PROVIDER=rules` answers without any model provider; `claude` (or unset with a key) asks Claude.
+const provider = settings.TREASURY_ASSISTANT_PROVIDER ?? (secrets.ANTHROPIC_API_KEY ? "claude" : undefined);
+if (provider === "claude" && !secrets.ANTHROPIC_API_KEY) throw new Error("TREASURY_ASSISTANT_PROVIDER=claude needs ANTHROPIC_API_KEY");
+const assistantModel = provider === "rules" ? rulesModel()
+  : provider === "claude" ? claudeModel({ apiKey: secrets.ANTHROPIC_API_KEY!, model: settings.TREASURY_ASSISTANT_MODEL }) : undefined;
+const assistant = assistantModel && createAssistant({
+  model: assistantModel, audit, questionsPerHour: settings.ASSISTANT_QUESTIONS_PER_HOUR, platformReadsPerHour: settings.ASSISTANT_READS_PER_HOUR,
+});
 const auditLog = async () => parseAuditLog(await readAuditLog(settings.TREASURY_AUDIT_FILE));
 
 const handler = createServer({

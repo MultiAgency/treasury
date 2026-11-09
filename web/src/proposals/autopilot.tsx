@@ -7,7 +7,8 @@ import { Kv, KvGrid } from "@/components/ui/kv-grid";
 import { Step, Stepper, type StepState } from "@/components/ui/stepper";
 import { ago } from "../shared/format";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, Loading, QueryError, Spinner } from "../shared/ui";
-import type { Identity } from "./proposals-api";
+import type { AssistantDraft, Identity } from "./proposals-api";
+import { useTakeDraft } from "./assistant-drafts";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { Grant } from "./grant";
 import { StrategyEditor } from "./strategy-editor";
@@ -46,6 +47,9 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   /** What was just saved, by the editor or by adopting a proposal: it's said until the grant binds it, then it's done. */
   const [saved, setSaved] = useState<"edited" | "adopted">();
   const [error, setError] = useState<string>();
+  /** The assistant's draft the editor opened with (#219), and how many times a grant was asked of it. */
+  const [seed, setSeed] = useState<{ draft: Extract<AssistantDraft, { kind: "strategy" }>; key: number }>();
+  const [grantReview, setGrantReview] = useState(0);
   const refresh = () => [reads.strategy, reads.strategyProposals, reads.autopilot, reads.runs].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const fetching = strategy.isFetching || schedule.isFetching;
 
@@ -82,7 +86,25 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const editButton = useRef<HTMLButtonElement>(null);
   const [returnFocus, setReturnFocus] = useState(false);
   useEffect(() => { if (returnFocus && !editing) { editButton.current?.focus(); setReturnFocus(false); } }, [returnFocus, editing, strategy.data]);
+  // A draft the assistant made opens here (#219): new targets fill the editor; a grant opens its review. Nothing is sent.
+  useTakeDraft(reads.name, "strategy", Boolean(s), draft => {
+    setNotice(undefined);
+    if (!canSave) { setError("The assistant drafted a strategy change, but editing the strategy needs a member who may file and vote on the DAO's policy changes."); return; }
+    setError(undefined);
+    setSaved(undefined);
+    setSeed(current => ({ draft, key: (current?.key ?? 0) + 1 }));
+    setEditing(true);
+  });
+  useTakeDraft(reads.name, "grant", Boolean(s), () => {
+    setError(undefined);
+    if (s!.grantMatches) setNotice("The assistant's grant isn't needed: the agent's grant binds this strategy already.");
+    else if (!s!.executor) setNotice("This host only approves: the strategy is authorized on the agent's executor, not here.");
+    else if (on) setNotice("Turn autopilot off to authorize the strategy the assistant drafted a grant for.");
+    else if (editing) setNotice("Save or cancel the strategy edit first; then authorize it.");
+    else { setNotice(undefined); setGrantReview(count => count + 1); }
+  });
   const doneEditing = (didSave: boolean) => {
+    setSeed(undefined);
     setEditing(false);
     setReturnFocus(true);
     refresh();
@@ -125,7 +147,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             detail={!s!.executor ? "This host only approves: the strategy is authorized on the agent's executor."
               : bound ? "Authorized: the agent's grant binds this strategy."
               : <>Not authorized: autopilot can't run it, and Run now would swap nothing.{on && " Turn autopilot off to authorize it."}</>}>
-            {s!.executor && !bound && !on && !editing && <Grant reads={reads} identity={identity} strategy={s!} ownerAllowed={ownerAllowed} />}
+            {s!.executor && !bound && !on && !editing && <Grant reads={reads} identity={identity} strategy={s!} ownerAllowed={ownerAllowed} review={grantReview} />}
           </Step>
           <Step number={3} title="Turn autopilot on" state={stepThree}
             detail={<p role="status">{on ? `Autopilot is on${schedule.data!.nextRun ? `; next run ${ago(schedule.data!.nextRun)}` : ""}.` : "Autopilot is off."}</p>}>
@@ -138,7 +160,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
           </Step>
         </Stepper>
         {!editing && <StrategyProposals reads={reads} identity={identity} strategy={s!} onAdopted={adopted} />}
-        {editing ? <Card><StrategyEditor reads={reads} strategy={s!} onDone={doneEditing} /></Card>
+        {editing ? <Card><StrategyEditor key={seed?.key ?? 0} reads={reads} strategy={s!} seed={seed?.draft} onDone={doneEditing} /></Card>
           : <div className="grid gap-4 lg:grid-cols-5">
             <Card className="lg:col-span-3">
               <SectionHeader level={3} title="Target allocation" description="Saved targets against the book now."

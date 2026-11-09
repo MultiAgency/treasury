@@ -59,6 +59,22 @@ test("a secret never prints: not as a string, in JSON or when inspected", () => 
     assert.ok(!printed.includes("fn_real_key"), printed);
 });
 
+test("the assistant's provider, model and limits are checked, and its defaults leave it off without a key (#219)", () => {
+  const { settings, secrets } = loadConfig(env);
+  assert.equal(settings.TREASURY_ASSISTANT_PROVIDER, undefined, "unset: the key decides");
+  assert.equal(settings.TREASURY_ASSISTANT_MODEL, "claude-sonnet-5-5");
+  assert.equal(settings.ASSISTANT_QUESTIONS_PER_HOUR, 30);
+  assert.equal(settings.ASSISTANT_READS_PER_HOUR, 240);
+  assert.equal(secrets.ANTHROPIC_API_KEY, undefined);
+  assert.equal(loadConfig({ ...env, TREASURY_ASSISTANT_PROVIDER: "rules" }).settings.TREASURY_ASSISTANT_PROVIDER, "rules");
+  assert.equal(loadConfig({ ...env, TREASURY_ASSISTANT_PROVIDER: "claude" }).settings.TREASURY_ASSISTANT_PROVIDER, "claude");
+  assert.throws(() => loadConfig({ ...env, TREASURY_ASSISTANT_PROVIDER: "openai" }), /TREASURY_ASSISTANT_PROVIDER/);
+  assert.throws(() => loadConfig({ ...env, TREASURY_ASSISTANT_MODEL: "Not A Model" }), /TREASURY_ASSISTANT_MODEL/);
+  assert.throws(() => loadConfig({ ...env, ASSISTANT_QUESTIONS_PER_HOUR: "0" }), /ASSISTANT_QUESTIONS_PER_HOUR/);
+  assert.throws(() => loadConfig({ ...env, ASSISTANT_READS_PER_HOUR: "0" }), /ASSISTANT_READS_PER_HOUR/);
+  assert.equal(loadConfig({ ...env, ANTHROPIC_API_KEY: "sk-test" }).secrets.ANTHROPIC_API_KEY?.reveal(), "sk-test");
+});
+
 test("watch runs only when its agents' file is named, and then needs a file for its stored requests", () => {
   const { settings } = loadConfig(env);
   assert.equal(settings.TREASURY_WATCH_FILE, undefined, "off unless configured");

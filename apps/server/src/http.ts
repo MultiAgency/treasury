@@ -1115,13 +1115,13 @@ export const routes: Route[] = [
      * every question, tool call and draft is recorded in the audit log by its hashes. An agent's token can't ask.
      */
     method: "POST", path: "/api/agents/:agent/assistant", access: "owner", needs: "read",
-    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests }) {
+    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals }) {
       if (!assistant) return refused(503, "assistant_not_configured");
       const input = parse(contract.assistantRequest, body);
       if (input === undefined) return refused(400, "bad_request");
       const { agent, owner, signer } = identity!;
       const asked = await assistant.ask({ who: account!, question: input.question, history: input.history,
-        scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, ...(auditLog && { auditLog }) } });
+        scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, strategyProposals, ...(auditLog && { auditLog }) } });
       if (asked.ok) return ok(asked.value);
       return asked.kind === "unavailable" ? unavailable() : refused(429, asked.kind);
     },

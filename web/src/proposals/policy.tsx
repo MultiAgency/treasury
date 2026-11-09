@@ -12,16 +12,18 @@ import { DAO_WINDOW_WORDS, revokeControls, splitGrants, type Grant } from "./gra
 import { PageLink } from "./nav";
 import { useOwnerFlow } from "./owner-flow";
 import { agentAddress } from "./pages";
+import { useTakeDraft } from "./assistant-drafts";
 import { PolicyEditor } from "./policy-editor";
 import { WINDOWS } from "./policy-draft";
 import { budgetRows, capRows, daoVoteWords, dateText, destinationsText } from "./policy-view";
-import type { Identity, OverviewRead } from "./proposals-api";
+import type { AssistantDraft, Identity, OverviewRead } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog } from "./ui";
 import { failureText, revokeWords } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
 type Policy = NonNullable<OverviewRead["policy"]["policy"]>;
+type PolicyDraftFields = Extract<AssistantDraft, { kind: "policy" }>["fields"];
 
 /** A time read relative to now, with the exact time on hover. */
 const Ago = ({ iso, prefix = "" }: { iso: string; prefix?: string }) => <time dateTime={iso} title={dateText(iso)}>{prefix}{ago(iso)}</time>;
@@ -38,6 +40,18 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
   const overview = useQuery(reads.overview);
   const ownerScope = Boolean(consent.data?.consent?.scopes.includes("owner"));
   const [editing, setEditing] = useState(false);
+  /** The edit the assistant drafted (#219), which the editor opens with; and why it couldn't be opened, if it couldn't. */
+  const [seed, setSeed] = useState<{ fields: PolicyDraftFields; key: number }>();
+  const [unopened, setUnopened] = useState<string>();
+  const policyRead = overview.data?.policy.policy;
+  const editable = identity.signer === "dao" ? identity.access.canPropose : ownerScope;
+  useTakeDraft(reads.name, "policy", overview.isSuccess && consent.isSuccess, draft => {
+    if (!policyRead) return setUnopened("The assistant drafted a policy edit, but there's no policy here to edit.");
+    if (!editable) return setUnopened("The assistant drafted a policy edit, but your connection can't edit the policy yet.");
+    setUnopened(undefined);
+    setSeed(current => ({ fields: draft.fields, key: (current?.key ?? 0) + 1 }));
+    setEditing(true);
+  });
   if (overview.isPending) return <p role="status" className="flex items-center gap-3 text-sm text-muted-foreground"><Spinner /> Reading the policy…</p>;
   if (overview.isError) return <ErrorBox error={errorMessage(overview.error)} />;
   const data = overview.data, policy = data.policy.policy;
@@ -58,8 +72,9 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
       {policy && !canEdit && <p className="text-sm text-muted-foreground">{dao
         ? "A member who may file proposals asks the DAO to change the policy."
         : <>Your connection doesn't allow owner actions yet: <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Allow owner actions in Connection</PageLink>, then edit from here.</>}</p>}
+      {unopened && <p role="status" className="text-sm">{unopened}</p>}
       {policy && editing
-        ? <PolicyEditor reads={reads} identity={identity} data={data} policy={policy} onDone={() => setEditing(false)} />
+        ? <PolicyEditor key={seed?.key ?? 0} reads={reads} identity={identity} data={data} policy={policy} seed={seed?.fields} onDone={() => { setSeed(undefined); setEditing(false); }} />
         : policy && <Terms policy={policy} book={data.book} />}
     </section>
 

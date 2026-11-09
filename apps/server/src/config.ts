@@ -76,7 +76,13 @@ const Settings = z.object({
   /** New consents per signed-in account a day: the platform caps a deployment's live consents at 1,024, every owner's together. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
   /**
-   * The treasury assistant (#219), on when `ANTHROPIC_API_KEY` is set: the Claude model it asks, the questions one account
+   * Which model answers: `claude` (Anthropic's Messages API, needs `ANTHROPIC_API_KEY`) or `rules`, a deterministic
+   * keyword-routed stand-in that answers a fixed set of question kinds with the same tools and sends nothing off the
+   * server (the stack's tests use it). Unset, the assistant is on only when an Anthropic key is.
+   */
+  TREASURY_ASSISTANT_PROVIDER: z.enum(["claude", "rules"]).optional(),
+  /**
+   * The treasury assistant (#219): the Claude model it asks, the questions one account
    * may ask an hour, and the platform reads it may make an hour, every owner's together (its share of the deployment's
    * 1,200 platform calls an hour, which the routes and watch spend too).
    */

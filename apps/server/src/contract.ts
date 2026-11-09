@@ -284,6 +284,7 @@ export const assistantDraft = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("policy"), changes: z.array(draftChange), note: z.string(),
     fields: z.strictObject({ budget: z.strictObject({ daily_usd: z.string().nullable(), weekly_usd: z.string().nullable(), monthly_usd: z.string().nullable() }).optional(),
       owner_approval: z.boolean().optional(), max_actions_per_hour: z.number().nullable().optional(), swap: z.boolean().optional() }) }),
+  z.strictObject({ kind: z.literal("rebalance"), legs: z.array(z.strictObject({ sell: z.string(), buy: z.string(), usd: z.number() })).optional(), note: z.string() }),
   z.strictObject({ kind: z.literal("grant"), note: z.string() }),
   z.strictObject({ kind: z.literal("freeze"), reason: z.string(), note: z.string() }),
 ]);

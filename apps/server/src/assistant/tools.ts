@@ -7,6 +7,7 @@ import type { DecisionEntry } from "../ballast.ts";
 import type { ChainRecord } from "../chain.ts";
 import type { DaoRequests } from "../dao-requests.ts";
 import type { Platform } from "../platform.ts";
+import type { StrategyProposals } from "../strategy-proposals.ts";
 
 /**
  * The assistant's tools (#219): typed reads of the signed-in owner's own agent, and drafts. Each tool is scoped to the
@@ -25,6 +26,7 @@ export type Source = { id: string; label: string; read: string; at: string };
 export type Draft =
   | { kind: "strategy"; targets: Record<string, number>; schedule?: { everyMin?: number; maxUsd?: number }; changes: Change[]; legs?: Leg[]; note: string }
   | { kind: "policy"; changes: Change[]; fields: PolicyDraftFields; note: string }
+  | { kind: "rebalance"; legs?: Leg[]; note: string }
   | { kind: "grant"; note: string }
   | { kind: "freeze"; reason: string; note: string };
 /** One field a draft changes: its value in force, and the drafted one, in words. */
@@ -45,6 +47,8 @@ export type ToolScope = {
   /** The audit log's records, newest last: Ballast's decisions and the owner actions relayed for this agent are read from it. */
   auditLog?: () => Promise<readonly ChainRecord[]>;
   daoRequests: DaoRequests;
+  /** The strategies agents proposed through their tokens (#206), kept by this server: their reasons are text others wrote. */
+  strategyProposals?: Pick<StrategyProposals, "open">;
   now: () => number;
 };
 
@@ -192,6 +196,24 @@ export const TOOLS = [
           .map(request => request.kind === "vote" ? { kind: request.kind, proposal: request.proposal } : { kind: request.kind }) },
       source: { label: "DAO requests", read: "dao-requests", at: new Date(scope.now()).toISOString() },
     })),
+  tool("list_strategy_proposals", "Strategies the agent's software proposed through its access tokens and the owner hasn't adopted or declined, oldest first: the targets, the reasons the software gave (text it wrote), and when.",
+    noInput, EMPTY, async (_, scope) => {
+      if (!scope.strategyProposals) return { error: "This server keeps no strategy proposals." };
+      const open = scope.strategyProposals.open(scope.agent).map(proposal => ({ id: proposal.id, source: proposal.source, created_at: new Date(proposal.createdAt).toISOString(),
+        target_percent: Object.fromEntries(Object.entries(proposal.strategy.targetBps).map(([asset, bps]) => [symbolOf(asset), bps / 100])), reasons: proposal.reasons }));
+      return { content: { proposals: open }, source: { label: "Strategy proposals (this server's records)", read: "strategy-proposals", at: new Date(scope.now()).toISOString() } };
+    }),
+  tool("draft_rebalance", "Opens the rebalance proposal form for the saved strategy as it is, with the swaps a rebalance would make at current prices. Sends nothing: the owner proposes it there, and it executes nothing until approved. Use draft_strategy instead when the owner names new targets.",
+    noInput, EMPTY, async (_, scope) => {
+      const overview = await scope.platform.reads.overview(scope.organization, scope.agent).catch(() => null);
+      if (!overview?.ok) return { error: "The book could not be read, so nothing was drafted." };
+      const targets = Object.fromEntries(Object.entries(overview.value.target).map(([asset, bps]) => [symbolOf(asset), bps / 100]));
+      const legs = legsTo(overview.value.book.map(holding => ({ symbol: holding.symbol, usd: holding.usd })), targets);
+      if (legs && legs.length === 0) return { error: "The book is at the saved strategy's targets already: there is nothing to rebalance." };
+      const draft: Draft = { kind: "rebalance", ...(legs && { legs }),
+        note: "Proposing quotes the swaps again and opens a proposal for a day; nothing executes until it's approved and signed." };
+      return { content: { drafted: draft, target_percent: targets }, draft, source: { label: "Overview (book and targets)", read: "overview", at: new Date(scope.now()).toISOString() } };
+    }),
   tool("draft_strategy", "Drafts a change to the saved strategy's target allocation (and optionally its autopilot schedule) for the owner to review in the strategy editor. Sends nothing. Use it for \"rebalance to X% wNEAR\": a rebalance proposal moves the book to the saved strategy, so the targets are saved first, then authorized, then a rebalance is proposed. Answers the changes against the saved strategy and the swaps a rebalance would make at current prices.",
     z.strictObject({ targets: targetsInput, everyMin: z.number().int().min(5).max(1_440).optional(), maxUsd: z.number().int().min(0).max(1_000_000).optional() }),
     { ...TARGETS, properties: { ...(TARGETS.properties as Record<string, unknown>), everyMin: { type: "integer", minimum: 5, maximum: 1440, description: "Autopilot's interval in minutes, only if the owner asked to change it." },
@@ -226,11 +248,11 @@ export const TOOLS = [
     async (fields, scope) => {
       const overview = await scope.platform.reads.overview(scope.organization, scope.agent).catch(() => null);
       if (!overview?.ok) return { error: "The policy in force could not be read, so nothing was drafted." };
-      const policy = overview.value.policy.policy as { owner_approval?: boolean; max_actions_per_hour?: number | null; actions?: string[] } | null;
+      const policy = overview.value.policy.policy as { owner_approval?: boolean; max_actions_per_hour?: number | null; actions?: string[]; budget?: Record<string, string | null> } | null;
       const budget = overview.value.policy.usage.budget;
       const changes: Change[] = [];
       if (fields.budget) for (const window of ["daily", "weekly", "monthly"] as const) {
-        const from = budget[window]?.limit_usd ?? null, to = fields.budget[`${window}_usd`];
+        const from = policy?.budget?.[`${window}_usd`] ?? budget[window]?.limit_usd ?? null, to = fields.budget[`${window}_usd`];
         if (from !== to) changes.push({ field: `${window[0]!.toUpperCase()}${window.slice(1)} budget`, from: fmtUsd(from), to: fmtUsd(to) });
       }
       if (fields.owner_approval !== undefined && fields.owner_approval !== policy?.owner_approval) changes.push({ field: "Owner approval", from: policy?.owner_approval ? "required" : "not required", to: fields.owner_approval ? "required" : "not required" });
@@ -263,4 +285,4 @@ export async function runTool(name: string, input: unknown, scope: ToolScope): P
 
 /** Tools that read the platform: each call spends from the deployment's hourly budget. */
 export const PLATFORM_TOOLS = new Set(["get_overview", "get_strategy", "get_autopilot", "get_runs", "get_activity", "get_unresolved", "get_held", "list_proposals", "get_proposal",
-  "get_owner_actions", "get_policy_history", "get_account", "draft_strategy", "draft_policy_edit"]);
+  "get_owner_actions", "get_policy_history", "get_account", "draft_strategy", "draft_policy_edit", "draft_rebalance"]);

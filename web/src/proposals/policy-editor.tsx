@@ -4,7 +4,8 @@ import { daoVoteWords, policyComparison } from "./policy-view";
 import { allowsAsset, BUDGET, changesOf, type AgentPolicy, type Draft, differences, draftOf, WINDOWS } from "./policy-draft";
 import { reviewedPolicyOf, sameReviewedPolicy } from "./policy-review";
 import { useOwnerFlow } from "./owner-flow";
-import type { Identity, OverviewRead } from "./proposals-api";
+import type { AssistantDraft, Identity, OverviewRead } from "./proposals-api";
+import { FromAssistant } from "./assistant-note";
 import type { agentReads } from "./queries";
 import { fileLabel } from "./dao-filing";
 import type { StageWords } from "../../../apps/server/src/owner-action.ts";
@@ -39,15 +40,28 @@ function ChangeLine({ line }: { line: string }) {
   return <><span className="text-muted-foreground">{field}</span>: <span className="text-destructive line-through decoration-1">{was}</span> → <span className="font-medium text-success-muted-foreground">{now}</span></>;
 }
 
+type Seed = Extract<AssistantDraft, { kind: "policy" }>["fields"];
+
+/** The form with an assistant's drafted fields filled in: only the fields it names change. */
+function seeded(draft: Draft, seed: Seed | undefined): Draft {
+  if (!seed) return draft;
+  return { ...draft,
+    ...(seed.swap !== undefined && { swap: seed.swap }),
+    ...(seed.owner_approval !== undefined && { ownerApproval: seed.owner_approval }),
+    ...(seed.max_actions_per_hour !== undefined && { rate: seed.max_actions_per_hour === null ? "" : String(seed.max_actions_per_hour) }),
+    ...(seed.budget && { budget: { daily_usd: seed.budget.daily_usd ?? "", weekly_usd: seed.budget.weekly_usd ?? "", monthly_usd: seed.budget.monthly_usd ?? "" } }) };
+}
+
 /**
  * Edits the envelope and proposes it as one policy update (#134): the owner's wallet signs it here or on the platform's
  * confirm page, or a DAO member files it for the vote, shown the terms before and after first. It is reviewed against the
  * revision it was drafted from: if the policy changes meanwhile, nothing is offered until it is read again. Destinations
  * are not edited here.
  */
-export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads: Reads; identity: Identity; data: OverviewRead; policy: AgentPolicy; onDone: () => void }) {
+export function PolicyEditor({ reads, identity, data, policy, seed, onDone }: { reads: Reads; identity: Identity; data: OverviewRead; policy: AgentPolicy; seed?: Seed; onDone: () => void }) {
   const [baseline] = useState(() => ({ draft: draftOf(policy, data.book), policy: reviewedPolicyOf(data) }));
-  const [draft, setDraft] = useState(baseline.draft);
+  // An edit the assistant drafted (#219) fills the form over the policy in force; it's reviewed and signed like any other.
+  const [draft, setDraft] = useState(() => seeded(baseline.draft, seed));
   const [reviewing, setReviewing] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const dao = identity.signer === "dao";
@@ -73,6 +87,7 @@ export function PolicyEditor({ reads, identity, data, policy, onDone }: { reads:
       setSubmitted(true);
       if (!("invalid" in result) && dirty && !stale && !flow.busy && !flow.holding) setReviewing(true);
     }}>
+      {seed && <FromAssistant />}
       <Group legend="Permissions" className="sm:grid-cols-3">
         <Toggle checked={draft.swap} onChange={swap => set({ swap })}>Swaps allowed</Toggle>
         <Toggle checked={draft.ownerApproval} onChange={ownerApproval => set({ ownerApproval })}>Owner approval for every payment</Toggle>
