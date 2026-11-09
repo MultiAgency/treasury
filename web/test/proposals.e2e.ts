@@ -677,6 +677,18 @@ test("the assistant answers from the treasury's own records with sources, and a 
   await visible(editor.getByRole("note", { name: "Filled in by the assistant" }));
   assert.equal(await editor.getByLabel("wNEAR (%)").inputValue(), "40", "the assistant's target is filled in");
   assert.deepEqual(await axe(), [], "the strategy editor the draft opened");
+
+  // Another draft while the owner is editing doesn't replace their edit: the page says to save or cancel it first.
+  await editor.getByLabel("wNEAR (%)").fill("45");
+  await ask.click();
+  await visible(panel);
+  await question.fill("Propose a rebalance to 30% wNEAR");
+  await question.press("Enter");
+  const again = panel.getByRole("button", { name: "Open in the strategy editor" }).last();
+  await visible(again);
+  await again.click();
+  await visible(page.getByRole("status").filter({ hasText: /^Save or cancel the strategy edit first/ }));
+  assert.equal(await editor.getByLabel("wNEAR (%)").inputValue(), "45", "the owner's edit is kept");
   assert.deepEqual(unexpected, []);
 });
 
@@ -1029,6 +1041,24 @@ async function draftRateEdit() {
   await rate.fill((await rate.inputValue()) === "5" ? "6" : "5");
   return terms;
 }
+
+test("an assistant's policy draft doesn't replace an edit the owner has open: the page says to save or cancel it first (#219)", { timeout: 150_000 }, async () => {
+  const terms = await draftRateEdit();
+  const rate = terms.getByLabel("Actions an hour (blank for no cap)");
+  const edited = await rate.inputValue();
+  await page.getByRole("button", { name: "Ask the treasury" }).click();
+  const panel = page.getByRole("dialog", { name: "Treasury assistant" });
+  const question = panel.getByRole("textbox", { name: "Your question" });
+  await question.fill("Set the monthly budget to $500");
+  await question.press("Enter");
+  const open = panel.getByRole("button", { name: "Open in the policy editor" }).last();
+  await visible(open);
+  await open.click();
+  await visible(page.getByRole("status").filter({ hasText: /^Save or cancel the policy edit first/ }));
+  assert.equal(await rate.inputValue(), edited, "the owner's edit is kept");
+  await terms.getByRole("button", { name: "Cancel" }).click();
+  assert.deepEqual(unexpected, []);
+});
 
 test("an edit that expires before it was signed keeps the editor open and says so", { timeout: 120_000 }, async () => {
   const terms = await draftRateEdit();

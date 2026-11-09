@@ -179,6 +179,24 @@ test("Ballast's decisions are read from the audit log for this agent only, each 
   ]);
 });
 
+test("the audit trail is the owner actions relayed for this agent, never the assistant's own records, however many questions were asked", async () => {
+  const at = (seq: number) => new Date(Date.UTC(2026, 10, 9, 12, seq)).toISOString();
+  const record = (seq: number, entry: object) => ({ seq, at: at(seq), prev: "0", hash: "0", entry: { who: "owner.near", agent: "portfolio", ...entry } }) as ChainRecord;
+  const records = [
+    record(1, { action: "freeze", stage: "attempt" }),
+    record(2, { action: "freeze", stage: "result", answer: { ok: true } }),
+    record(3, { action: "grant", stage: "result", agent: "theirs", answer: { ok: true } }),
+    // Five questions of five tool calls each, as the assistant records them: more than the 20 entries read by default.
+    ...Array.from({ length: 30 }, (_, index) => record(4 + index, index % 6 === 5
+      ? { action: "assistant-ask", stage: "result", inputSha256: "q", outputSha256: "a", answer: { ok: true } }
+      : { action: index % 6 === 4 ? "assistant-draft" : "assistant-tool", stage: "result", tool: "get_overview", inputSha256: "i", outputSha256: "o", answer: { ok: true } })),
+  ];
+  const scope = { platform: fake.platform, organization: "owner--near", agent: "portfolio", signer: "wallet" as const, daoRequests: { open: () => [] } as never, now: Date.now, auditLog: async () => records };
+  const read = await runTool("get_audit_trail", {}, scope);
+  assert.ok(!("error" in read));
+  assert.deepEqual((read.content as { entries: { audit_seq: number; action: string }[] }).entries.map(entry => [entry.audit_seq, entry.action]), [[2, "freeze"]]);
+});
+
 test("a tool that doesn't exist, or an input that doesn't fit its schema, is an error result the model sees, never a call", async () => {
   await ask("Freeze it all", [
     () => [use("send_funds", { to: "evil.near" }, "a"), use("get_proposal", { id: 42 }, "b"), use("draft_strategy", { targets: { wNEAR: 70, USDC: 70 } }, "c")],

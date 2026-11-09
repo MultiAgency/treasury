@@ -125,9 +125,16 @@ function decisionsView(records: readonly ChainRecord[], agent: string, count: nu
   })), count);
 }
 
-/** The owner actions this server relayed for the agent, as the audit log recorded them: hashes and outcomes, never what was signed. */
+/**
+ * The owner actions this server relayed for the agent, as the audit log recorded them: hashes and outcomes, never what was
+ * signed. The assistant's own records (`assistant-*`) are left out: they aren't the owner's actions, and every question
+ * adds several, which would push the actions out of the newest `count`.
+ */
 function auditView(records: readonly ChainRecord[], agent: string, count: number) {
-  const actions = records.filter(record => { const entry = record.entry as Partial<AuditEntry>; return typeof entry.action === "string" && entry.agent === agent && entry.stage === "result"; });
+  const actions = records.filter(record => {
+    const entry = record.entry as Partial<AuditEntry>;
+    return typeof entry.action === "string" && !entry.action.startsWith("assistant-") && entry.agent === agent && entry.stage === "result";
+  });
   return newest(actions.map(record => { const entry = record.entry as AuditEntry & { stage: "result" }; return { at: record.at, audit_seq: record.seq, action: entry.action, who: entry.who, subject: entry.subject, answer: entry.answer }; }), count);
 }
 

@@ -48,6 +48,8 @@ export function Policy({ reads, identity }: { reads: Reads; identity: Identity }
   useTakeDraft(reads.name, "policy", overview.isSuccess && consent.isSuccess, draft => {
     if (!policyRead) return setUnopened("The assistant drafted a policy edit, but there's no policy here to edit.");
     if (!editable) return setUnopened("The assistant drafted a policy edit, but your connection can't edit the policy yet.");
+    // An open editor holds the owner's own edits, and may be following an edit being signed: a draft never replaces it.
+    if (editing) return setUnopened("Save or cancel the policy edit first; then open the assistant's draft again.");
     setUnopened(undefined);
     setSeed(current => ({ fields: draft.fields, key: (current?.key ?? 0) + 1 }));
     setEditing(true);

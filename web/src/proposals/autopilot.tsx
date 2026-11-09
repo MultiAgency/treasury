@@ -90,6 +90,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   useTakeDraft(reads.name, "strategy", Boolean(s), draft => {
     setNotice(undefined);
     if (!canSave) { setError("The assistant drafted a strategy change, but editing the strategy needs a member who may file and vote on the DAO's policy changes."); return; }
+    // An open editor holds the owner's own edits: a draft never replaces them.
+    if (editing) { setNotice("Save or cancel the strategy edit first; then open the assistant's draft again."); return; }
     setError(undefined);
     setSaved(undefined);
     setSeed(current => ({ draft, key: (current?.key ?? 0) + 1 }));
