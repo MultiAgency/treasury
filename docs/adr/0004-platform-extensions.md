@@ -1,6 +1,6 @@
 # 4. What Ballast asks the platform to add
 
-**Status:** proposed, 2026-11-06. #62's step 2: H3's ADR-001.
+**Status:** accepted, 2026-11-06 (#160, extended by #168). #62's step 2: H3's ADR-001.
 
 **Decision: no new procedures and no new contracts. One refinement to a planning question already open: the cash floor, MultiAgency/platform#23.** Everything else the gap tables raised (`docs/sdk-report.md` sections 3.2 and 3.6) is either already there, settled elsewhere, or not this app's to ask. This page records what was checked, at SDK 0.5.2 and the platform at `ce5fec6` (the pin in CI; paths below are the platform's), and why.
 
@@ -19,7 +19,7 @@ These facts decide every item below:
 
 **Why it's needed even with signed proposals.** The autopilot sells whatever is over-weight. With a USDC target below the six-month floor, its runs spend USDC below the floor, and Ballast never checks them. ADR 3 puts the floor in Ballast only, which holds back Ballast's own proposals and nothing else.
 
-**What's proposed in planning.** The platform's answer on #23, waiting on approval: not in the provider's policy, which has no balance floor and rejects unknown fields. Instead, in the strategy, `cashFloor: { usd, assets }`, bound by the grant, checked in `authorize.ts` on every send path, refused with `cash_floor_exceeded`. Not built yet.
+**What shipped.** Not in the provider's policy, which has no balance floor and rejects unknown fields. Instead, in the strategy, `cashFloor: { usd, assets }`, bound by the grant and checked in `authorize.ts` on every send path: SDK 0.5.3 (platform#23, closed 2026-11-07), with the refinement below. Treasury pins 0.5.4.
 
 **The refinement.** #23's check keeps cash at or above the floor after the swap. Read literally, that refuses a buy of USDC while cash is under the floor: the swap that restores it. Ballast's own check (`checkExposure`, `packages/core/src/exposure.ts`) has two rules: no order may spend cash if that leaves less than the floor, and while cash is under the floor, no order may buy a risk asset, even from the reserve. Neither refuses a swap that adds cash. The platform's should keep that property, so a book already under its floor can always be brought back. The second rule needs no counterpart there: the platform sees the reserve and operating cash as one USDC balance, so a buy paid from the reserve lowers cash and is refused under the floor anyway.
 
@@ -30,7 +30,7 @@ These facts decide every item below:
 | Candidate | Why it isn't asked |
 | --- | --- |
 | A new procedure for adaptive DCA schedules | Ballast's band, DCA and whipsaw state stays in `packages/core` and reaches the platform as proposal legs (`legsFor`, #60), which `proposals/create` accepts |
-| Escalation | Ballast's (ADR 3, H11), on `watch`'s `notify` |
+| Escalation | Ballast's levels are worked out in the app (ADR 3, H11), and a notice when one rises would go through `watch`'s `notify` |
 | Ledger export | Already an app read: `ledger`, `ledgerCsv`, `reconcileBooks` |
 | A freeze that takes effect at once | Settled by ADR 3: freeze meets A14, and the owner's signature on the confirm page is acceptable. A DAO's window is platform#20 |
 | Typed rate limits | SDK 0.5.2 reports the gateway's 429 as `rate_limited` with `Retry-After` (platform#15) |
@@ -44,4 +44,11 @@ The three payout gaps are real for payout agents. They're recorded here so Payab
 
 ## After agreement
 
-When #23's floor lands and is published, this app sets `cashFloor` from the mandate's floor (`cashFloorUsd`: its months of operating cash, at least six, times the monthly spend), and moves the floor from "Ballast only" to "Ballast and the platform" in ADR 3's rules map.
+Once #23's floor is published, this app sets `cashFloor` from the mandate's floor (`cashFloorUsd`: its months of operating cash, at least six, times the monthly spend), and moves the floor from "Ballast only" to "Ballast and the platform" in ADR 3's rules map.
+
+**Open:** the floor is published (SDK 0.5.3), and this app doesn't set it yet. The strategy editor sends the saved floor unchanged (`web/src/proposals/strategy-editor.tsx`), and Ballast's mandate proposal keeps the saved one (`apps/server/src/strategy-proposals.ts`), so until an owner sets a floor elsewhere, the autopilot can spend USDC below it.
+
+## What would reopen it
+
+- **This app's consent or agent changes:** it asks for `payout` or `treasury-execute`, or its agent gains `transfer`. The payout rows above then apply to it.
+- **The platform's floor works differently from the refinement:** a swap that adds cash is refused while cash is under the floor.

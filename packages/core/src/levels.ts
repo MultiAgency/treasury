@@ -7,7 +7,7 @@ import type { Intent } from "./bands.ts";
 import type { PolicyResult } from "./policy.ts";
 import { isPct, report } from "./validate.ts";
 
-/** Escalation level. Rises on its own; only a human lowers it, one step at a time (A15). */
+/** Escalation level, L0 to L4: how far the level gate narrows what an order may do (ADR 3, H11). */
 export type Level = 0 | 1 | 2 | 3 | 4;
 
 export const LEVEL_DEFAULTS = {
