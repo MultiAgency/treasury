@@ -1,7 +1,7 @@
 import { fundingTransaction, mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, Bank, Coins, Eye, QrCode, ShieldCheck } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { DataTable, td, th, tr, TokenChip, ValuePill } from "@/components/ui/data-table";
 import { Meter, SplitBar } from "@/components/ui/meter";
 import { PanelTitle, StatCard } from "@/components/ui/stat";
@@ -97,7 +97,8 @@ function Balances({ reads }: { reads: Reads }) {
 /**
  * Money into the agent, under the app's consent (its `treasury` scope): the account linked to fund it, a transfer from
  * that account to a fresh deposit address, and a deposit address anyone may pay. A wallet owner links the account;
- * a DAO agent's account is the DAO itself, fixed at setup. Above them, what the agent holds, public and confidential
+ * a DAO agent's account is the DAO itself, fixed at setup. A confidential DAO is offered both ways to pay: from its
+ * confidential balance first, then from its public one. Above them, what the agent holds, public and confidential
  * (#195), and below, shielding public balances. Shown once the agent is connected.
  */
 export function Funding({ reads, identity }: { reads: Reads; identity: Identity }) {
@@ -124,10 +125,13 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
       </Card>
       {linked ? <Card className="gap-3">
         <PanelTitle level={3} title="Money in" icon={<ArrowDown weight="bold" />} tone="brand" description={<>From <span className="font-mono">{linked.accountId}</span> to this agent</>}
-          infoLabel="About money in" info={confidential ? "A confidential DAO pays from its private balance, in Trezu, to the near.com network: it never touches the public chain."
+          infoLabel="About money in" info={confidential ? "A confidential DAO pays from its confidential balance in Trezu, to the near.com network, out of public view. What it holds publicly it pays by a proposal to a fresh deposit address. Either way, funds land in the agent's private balance."
             : linked.dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve. Funds land in the agent's private balance."
             : "Sends from the funding account to a fresh deposit address. Funds land in the agent's private balance."} />
-        {confidential ? <ConfidentialFund reads={reads} linked={linked} /> : <Fund reads={reads} identity={identity} linked={linked} />}
+        {confidential ? <>
+          <FundingPath id="money-in-confidential" title="From the confidential balance"><ConfidentialFund reads={reads} linked={linked} /></FundingPath>
+          <FundingPath id="money-in-public" title="From the public balance"><Fund reads={reads} identity={identity} linked={linked} /></FundingPath>
+        </> : <Fund reads={reads} identity={identity} linked={linked} />}
       </Card> : <ReceiveCard reads={reads} identity={identity} />}
       {/* Beside the other two, it reads across the width: what it is on the left, the address on the right. */}
       {linked && <ReceiveCard reads={reads} identity={identity} className="lg:col-span-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-center lg:gap-x-6" />}
@@ -137,6 +141,14 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
         infoLabel="About shielding" info="Shields public USDC, wNEAR and ETH balances into the agent's private balance. Other assets aren't included. Shielding needs the agent to hold a treasury grant." />
       <Sweep reads={reads} identity={identity} />
     </Card>
+  </section>;
+}
+
+/** One of a confidential DAO's two ways to pay its agent, named by the balance it pays from. */
+function FundingPath({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+  return <section aria-labelledby={id} className="flex flex-col gap-2 border-t border-border pt-3 first-of-type:border-t-0 first-of-type:pt-0">
+    <h4 id={id} className="text-sm font-medium">{title}</h4>
+    {children}
   </section>;
 }
 
@@ -330,7 +342,7 @@ function ConfidentialFund({ reads, linked }: { reads: Reads; linked: Linked }) {
   if (!account.data.wallet) return <p className="text-sm" role="status">The agent has no wallet yet, so a confidential payment has nowhere to land.</p>;
   const recipient = `nearcom:${account.data.wallet}`;
   return <div className="flex flex-col gap-3 text-sm">
-    <p className="text-muted-foreground">Create a payment in Trezu from the confidential balance, to this recipient. It lands once the DAO approves.</p>
+    <p className="text-muted-foreground">Create a payment in Trezu from the DAO's confidential balance, to this recipient. It lands once the DAO approves, out of public view.</p>
     <div className="flex items-center gap-2">
       <code className="min-w-0 flex-1 truncate rounded-lg bg-muted px-3 py-2 text-xs" title={recipient}>{recipient}</code>
       <CopyButton text={recipient} />

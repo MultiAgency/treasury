@@ -14,10 +14,10 @@ Freeze is the stop that halts every send. A wallet owner can freeze the agent fr
 
 ## Running it locally
 
-Everything runs against the platform's simulated stack at [`f2c7b7f`](https://github.com/MultiAgency/platform/commit/f2c7b7f), the commit SDK 0.5.4 was published from (tag `sdk-v0.5.4`). Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
+Everything runs against the platform's simulated stack at [`96a0bb6`](https://github.com/MultiAgency/platform/commit/96a0bb6), platform main after SDK 0.5.4 (tag `sdk-v0.5.4`), with #41, #43 and #44. Its provider, chain, signatures and settlement are simulated. It needs Node ≥ 24.22, pnpm 12.16, and the platform checked out beside this repository:
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout f2c7b7f
+git clone https://github.com/MultiAgency/platform.git ../platform && git -C ../platform checkout 96a0bb6
 (cd ../platform && pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web)  # the confirm page the stack serves
 pnpm install
 ```
@@ -34,6 +34,6 @@ pnpm --filter @treasury/web test:stack       # the app's pages through the app s
 pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-kit's local node; not in CI
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `f2c7b7f` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `96a0bb6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
