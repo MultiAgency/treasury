@@ -5,8 +5,12 @@ import type { Secret } from "./config.ts";
 export type KeyState = "full" | "limited" | "none" | "unavailable";
 export type KeyLookup = (accountId: string, publicKey: string) => Promise<KeyState>;
 
-/** FastNEAR's hosts, the only ones the API key is sent to (the platform's `src/fastnear.ts`). */
-const FASTNEAR_HOSTS = new Set(["rpc.mainnet.fastnear.com", "archival-rpc.mainnet.fastnear.com", "free.rpc.fastnear.com"]);
+/**
+ * FastNEAR's hosts, the only ones the API key is sent to (the platform's `src/fastnear.ts`), with testnet's, where the
+ * anchors are sent and read back (`ANCHOR_NETWORKS`): its archival RPC answers nothing without a key.
+ */
+const FASTNEAR_HOSTS = new Set(["rpc.mainnet.fastnear.com", "archival-rpc.mainnet.fastnear.com", "free.rpc.fastnear.com",
+  "rpc.testnet.fastnear.com", "archival-rpc.testnet.fastnear.com"]);
 
 /** The RPC the platform's `src/chain.ts` uses: `NEAR_RPC_URL`, else FastNEAR's keyed RPC, else its free one. */
 export function rpcUrlFor(override: string | undefined, apiKey: Secret | undefined) {
