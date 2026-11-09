@@ -4,7 +4,7 @@
 
 **Reopened:** two of the conditions under "What would reopen it" have happened. MultiAgency/platform#14 answered that the owner session gets no production host, so the owner pages move onto the app route. SDK 0.5.0 (`6ba0831`) brings DAO-owned agents to the app route only. Which owner-session procedures the app route gains is MultiAgency/platform#17.
 
-**Superseded:** ADR 2 replaces the owner pages' destination, moving them behind this repository's app server, which already serves agents and proposals as decided here. The owner-session build stays as the simulated-stack reference until it's retired.
+**Superseded:** ADR 2 replaces the owner pages' destination, moving them behind this repository's app server, which already serves agents and proposals as decided here. The owner-session build stayed as the simulated-stack reference until it was retired in #189.
 
 ## Decision
 

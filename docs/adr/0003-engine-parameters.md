@@ -1,6 +1,6 @@
 # 3. The engine's parameters: price sources, rules map, profiles, calibration and escalation
 
-**Status:** proposed by Harjaap (owner of H5, H6, H8, H9 and H11), 2026-11-06, for review in this PR. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95.
+**Status:** accepted, 2026-11-06 (#156); proposed by Harjaap, owner of H5, H6, H8, H9 and H11. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95. **H11 amended** 2026-11-09 by James as lead maintainer: the level is worked out on every tick, and the owner's approval and the freeze are the human controls ([H11](#h11-escalation-and-alerting)). Harjaap may reopen it.
 
 Every value below is either changed in this PR (marked **changed**) or kept as it already is in code (marked **kept**), so the code and this page agree. Anything not decided here is listed under [Open](#open).
 
@@ -9,10 +9,10 @@ Every value below is either changed in this PR (marked **changed**) or kept as i
 A14's wording, from the plan and its task card: at L4, **no new sends**. One action freezes the agent, Ballast's queued proposals stop, the state is snapshotted and the roster is told; release takes two approvals.
 
 - **Freeze is the answer.** A frozen agent is refused every send at the platform and at the provider, so approved proposals, Run now, other apps' `executePlan` and autopilot all stop. A stop of every app's access without a signature is **not** required, so no new platform request is raised.
-- **The owner's signature is acceptable.** The freeze takes effect once the owner signs on the platform's confirm page. H16's under-60-second target is measured from that signature to the platform confirming the freeze, not from the alert.
-- **Gaps we accept and track:** a wallet owner needs the app to offer Freeze (#133). A DAO owner's vote must pass within the intent's minutes, which most DAOs can't do (MultiAgency/platform#20). Until that's fixed, a DAO-owned agent's red hand is `autopilot/stop` plus Ballast proposing nothing at L4. That stops Ballast, not other apps, and the README says so.
+- **The owner's signature is acceptable.** The freeze takes effect once the owner signs on the platform's confirm page. H16's under-60-second target is measured from that signature to the platform confirming the freeze, not from the level reaching L4.
+- **Gaps we accept and track:** a wallet owner freezes from the app's pages (#133), but a DAO owner's vote must pass within the intent's minutes, which most DAOs can't do (MultiAgency/platform#20). Until that's fixed, a DAO-owned agent's red hand is `autopilot/stop` plus Ballast proposing nothing at L4. That stops Ballast, not other apps, and the README says so.
 - **Revoking grants** isn't needed for "no new sends" once frozen; it stays the owner's choice.
-- **The two-approval release** is Ballast's: lowering from L4 needs two distinct approvers from the mandate's `governance.approvers` (A15). Unfreezing itself is the owner's platform action, under the platform's `unfreeze_available_at` cooldown.
+- **Release is the owner's unfreeze** (**kept**), the platform's action, under its `unfreeze_available_at` cooldown. Ballast's level has no release of its own: it is worked out on every tick (H11), and once the agent is unfrozen each Ballast proposal still waits for the owner's approval. The plan's two-approval release is dropped (H11).
 
 ## H5: assets and price sources
 
@@ -26,7 +26,7 @@ A14's wording, from the plan and its task card: at L4, **no new sends**. One act
 | Pyth `Crypto.NEAR/USD` | `GET hermes.pyth.network/v2/updates/price/latest?ids[]=c415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750` (`price × 10^expo`, `publish_time`) | Not needed: the history comes from Coinbase |
 
 - **History:** the oracle stores **one median an hour** (the first reading in each UTC hour). The EMA warm-up is seeded from Coinbase's hourly candles. The chop detector and H9's calibration both assume hourly samples.
-- **Until the fetchers land:** `watch` reads prices from the platform's `overview` (#47). One source can't meet the oracle's three, so `watch` uses an explicit single-source setting that is named, logged and removed when the fetchers ship. That holds back nothing the owner doesn't see: every Ballast trade is still a proposal the owner signs.
+- **One source until the fetchers are built (kept):** `watch` reads prices from the platform's `overview` (#47). One source can't meet the oracle's three, so `watch` uses an explicit single-source setting that is named, logged and removed when the fetchers ship. That holds back nothing the owner doesn't see: every Ballast trade is still a proposal the owner signs.
 
 ### Threat-model entries (to add to #20's table)
 
@@ -49,7 +49,7 @@ Each rule is enforced in one or more places. The platform's signed policy always
 | ≤ 10 orders an hour | `ORDER_RATE` | `max_actions_per_hour: 10` | — |
 | Slippage ≤ 50 bps | `SLIPPAGE`, quote against the oracle median | The proposal's `minAmountOut` (`legsFor`), enforced at execution | — |
 | Venue exposure | `VENUE_EXPOSURE` (see below) | — | — |
-| Six-month cash floor | `CASH_FLOOR` | — | — |
+| Six-month cash floor | `CASH_FLOOR` | The strategy's `cashFloor` (SDK 0.5.3), which this app doesn't set yet (ADR 4) | — |
 | Assets and actions | Mandate `assets` | `assets: [wNEAR, USDC]`, `actions: ["swap"]` for trading (payroll adds `transfer`) | — |
 | Destinations | Mandate `destinations` | `destinations.mode: "only"` with the mandate's list | — |
 | Levels L1–L3 | `LEVEL` | — | L2 and L3 trades are proposals the owner approves |
@@ -103,20 +103,22 @@ Each rule is enforced in one or more places. The platform's signed policy always
 
 **Levels (kept):** L1 halves the per-order cap. L2 asks a human for every order. L3 allows only risk-reducing sells, each approved. L4 is no new sends.
 
-| Level | Who is told | Acknowledge within | If not acknowledged |
-| --- | --- | --- | --- |
-| L0 Normal | Nobody (the log) | — | — |
-| L1 Watch | The builder channel (`notify`) | — | — |
-| L2 Caution | The owner and the operators | 60 minutes | Rises to L3 |
-| L3 Critical | The owner and the operators, paged | 15 minutes | Rises to L4: Ballast proposes nothing and asks the owner to freeze |
-| L4 Red hand | Everyone on the roster | — | Stays until two approvers lower it, one step at a time |
+**How the level moves (kept):** Ballast works it out on every tick, as the highest of the market and fault detections and the profile's `startLevel` (`apps/server/src/ballast.ts`). It falls back as soon as the detection that raised it clears. Nothing stores, acknowledges or lowers it. Each trade's policy check in the audit log records the level it was made at, and each tick's `watch` log line names it.
 
-- **Roster:** the owner, from the mandate's `governance.approvers`, and the operators, Harjaap and Ayush. A15 builds this on `watch`'s existing `notify` command.
-- **Telegram:** if A15 sends through a Telegram bot, the bot token is a new credential and gets its #20 threat-model entry first.
-- **Levels only rise on their own.** A human lowers them one step at a time, and from L4 that takes two distinct approvers (A14).
+The plan also had a raised level held until a human lowers it one step at a time, an unacknowledged L2 or L3 rise further (60 and 15 minutes), two approvers release L4, and a roster be told and paged. That is dropped, because the human controls it would add are already in place:
+
+- **Every Ballast trade is a proposal the owner approves,** and the platform enforces the owner's signed policy when it executes. The level changes what Ballast proposes, never what executes. Autopilot runs on the platform and doesn't read it.
+- **The red hand is the freeze** (A14, #133), which the platform holds until the owner unfreezes.
+- **Holding the level would cost more than it guards.** Approvers who aren't the owner would need their own access to the app server, from a list the operator writes (`approvers` in the watch file) and the owner never signs. Paging needs a new credential (#20). And the windows are shorter than a Ballast agent's tick, which may be an hour.
+
+**Who is told (kept):** nobody. No notice is sent when the level changes (see Open).
 
 ## Open
 
+- **A notice when the level rises,** through `watch`'s `notify`, asking the owner to freeze at L4: the part of H11's alerting worth keeping, as its own small change.
+- **The three price fetchers (H5)** aren't built, and no issue tracks them. Until they are, `watch` runs the oracle on the platform's `overview` alone.
+- **Agent malfunction (H9):** Ballast leaves this detector out (`NOT_JUDGED_HERE`), since its step has no reconciliation. `reconcileBooks` is an app read the server already wraps (`platform.books`), and unknown outcomes are effectively zero whenever Ballast runs, since `watch` holds while any are unresolved. Whether to feed the detector from it, at one more read a tick, is open.
+- **Approvals (H8):** `approvalsRequired` (2 for the conservative profile) is checked against the number of `governance.approvers` and enforced nowhere: a proposal executes on the owner's signature, or the DAO's vote. Enforce it or remove it. Without H11's lowering, `approvers` is used only in the text of the mandate compiler's strategy proposals (`apps/server/src/strategy-proposals.ts`).
 - **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
 - **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
 - **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.

@@ -152,7 +152,7 @@ export type Decision =
  * is the reserve the DCA draws on, so a buy never reaches into the floor. Slippage isn't quoted before proposing (app
  * access has no quote): it's bounded by the leg's `minAmountOut` at the mandate's limit, which the platform refuses if the
  * quote is worse, so the policy's own slippage rule is given 0 and thin liquidity isn't a detection here. Unresolved
- * operations already hold `watch` before this runs; reconciliation is A19's.
+ * operations already hold `watch` before this runs, and holdings aren't reconciled here.
  */
 export function createBallast({ history, states, audit, now = Date.now }: {
   history: PriceHistory; states: EngineStates;
