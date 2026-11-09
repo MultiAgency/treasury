@@ -76,6 +76,14 @@ const Settings = z.object({
   /** New consents per signed-in account a day: the platform caps a deployment's live consents at 1,024, every owner's together. */
   CONSENTS_PER_DAY: z.coerce.number().int().positive().default(5),
   /**
+   * The treasury assistant (#219), on when `ANTHROPIC_API_KEY` is set: the Claude model it asks, the questions one account
+   * may ask an hour, and the platform reads it may make an hour, every owner's together (its share of the deployment's
+   * 1,200 platform calls an hour, which the routes and watch spend too).
+   */
+  TREASURY_ASSISTANT_MODEL: z.string().regex(/^[a-z0-9.-]{1,64}$/).default("claude-sonnet-5-5"),
+  ASSISTANT_QUESTIONS_PER_HOUR: z.coerce.number().int().positive().default(30),
+  ASSISTANT_READS_PER_HOUR: z.coerce.number().int().positive().default(240),
+  /**
    * DAO requests (consents and votes) a signed-in member may file a day: the platform allows a deployment 256 a day,
    * shared by every DAO and member.
    */
@@ -115,6 +123,8 @@ const Settings = z.object({
 const Secrets = z.object({
   /** FastNEAR's API key: a rate-limit and billing credential, sent only to FastNEAR's hosts. */
   FASTNEAR_API_KEY: z.string().min(1).optional().transform(value => value === undefined ? undefined : new Secret(value)),
+  /** The Anthropic API key the assistant calls Claude with; unset, the assistant is off. Sent only to Anthropic's API. */
+  ANTHROPIC_API_KEY: z.string().min(1).optional().transform(value => value === undefined ? undefined : new Secret(value)),
 });
 
 export type Settings = z.output<typeof Settings>;

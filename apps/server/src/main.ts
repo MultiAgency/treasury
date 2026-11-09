@@ -4,7 +4,9 @@ import type { AddressInfo } from "node:net";
 import { ANCHOR_NETWORKS, anchorKey, createAnchorer, nearAnchorChain, readAnchorKey, runAnchor, type AnchorEntry } from "./anchor.ts";
 import type { AuditEntry } from "./audit.ts";
 import { createAgentTokens, fileTokenRecords, memoryTokenRecords } from "./agent-tokens.ts";
-import { chainedFileAudit, movePlainLogAside } from "./chain.ts";
+import { chainedFileAudit, movePlainLogAside, parseAuditLog, readAuditLog } from "./chain.ts";
+import { createAssistant } from "./assistant/assistant.ts";
+import { claudeModel } from "./assistant/model.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
@@ -79,6 +81,14 @@ const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, cre
   executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
 // One settle for the routes and the reader, so reads of the same DAO request at once share one.
 const settle = createSettle({ platform, daoRequests, audit });
+// The treasury assistant (#219), when an Anthropic API key is configured. It reads the audit log for Ballast's decisions
+// and the owner actions relayed here; only what a question needs leaves the server.
+const assistant = secrets.ANTHROPIC_API_KEY ? createAssistant({
+  model: claudeModel({ apiKey: secrets.ANTHROPIC_API_KEY, model: settings.TREASURY_ASSISTANT_MODEL }),
+  audit, questionsPerHour: settings.ASSISTANT_QUESTIONS_PER_HOUR, platformReadsPerHour: settings.ASSISTANT_READS_PER_HOUR,
+}) : undefined;
+const auditLog = async () => parseAuditLog(await readAuditLog(settings.TREASURY_AUDIT_FILE));
+
 const handler = createServer({
   platform,
   signIn: createSignIn({
@@ -103,6 +113,7 @@ const handler = createServer({
   tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
   tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,
+  ...(assistant && { assistant, auditLog }),
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
 });
