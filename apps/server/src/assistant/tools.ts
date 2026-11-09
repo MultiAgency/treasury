@@ -1,4 +1,4 @@
-import type Anthropic from "@anthropic-ai/sdk";
+import type { InputSchema, ToolDefinition } from "./model.ts";
 import { ASSETS } from "@multiagency/sdk";
 import { z } from "zod";
 import type { AuditEntry } from "../audit.ts";
@@ -78,13 +78,13 @@ const policyDraftInput = z.strictObject({
   swap: z.boolean().optional(),
 }).refine(input => Object.keys(input).length > 0, "a policy draft must change at least one field");
 
-type Tool<I extends z.ZodType> = { definition: Anthropic.Beta.BetaTool; input: I; run(input: z.output<I>, scope: ToolScope): Promise<ToolOutcome> };
-const tool = <I extends z.ZodType>(name: string, description: string, input: I, inputSchema: Anthropic.Beta.BetaTool.InputSchema, run: Tool<I>["run"]): Tool<I> =>
+type Tool<I extends z.ZodType> = { definition: ToolDefinition; input: I; run(input: z.output<I>, scope: ToolScope): Promise<ToolOutcome> };
+const tool = <I extends z.ZodType>(name: string, description: string, input: I, inputSchema: InputSchema, run: Tool<I>["run"]): Tool<I> =>
   ({ definition: { name, description, input_schema: inputSchema }, input, run });
 
-const EMPTY: Anthropic.Beta.BetaTool.InputSchema = { type: "object", properties: {}, additionalProperties: false };
-const LIST: Anthropic.Beta.BetaTool.InputSchema = { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, description: "How many of the newest entries to read (default 20)." } }, additionalProperties: false };
-const TARGETS: Anthropic.Beta.BetaTool.InputSchema = {
+const EMPTY: InputSchema = { type: "object", properties: {}, additionalProperties: false };
+const LIST: InputSchema = { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50, description: "How many of the newest entries to read (default 20)." } }, additionalProperties: false };
+const TARGETS: InputSchema = {
   type: "object", additionalProperties: false, required: ["targets"],
   properties: { targets: { type: "object", description: `The percent each asset should hold, by symbol (${Object.keys(ASSETS).join(", ")}), adding up to 100. Name every asset of the saved strategy.`,
     additionalProperties: { type: "number", minimum: 0, maximum: 100 } } },
@@ -271,7 +271,7 @@ export const TOOLS = [
     async ({ reason }) => { const draft: Draft = { kind: "freeze", reason, note: "Freezing blocks new actions across grants; the owner signs it. It doesn't prove an operation already committed will stop." }; return { content: { drafted: draft }, draft }; }),
 ] as const;
 
-export const TOOL_DEFINITIONS: Anthropic.Beta.BetaTool[] = TOOLS.map(entry => entry.definition);
+export const TOOL_DEFINITIONS: ToolDefinition[] = TOOLS.map(entry => entry.definition);
 const BY_NAME = new Map<string, Tool<z.ZodType>>(TOOLS.map(entry => [entry.definition.name, entry as unknown as Tool<z.ZodType>]));
 
 /** Runs a tool the model asked for, its input checked against the tool's schema first: an unknown tool or bad input is an error result, never a call. */

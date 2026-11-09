@@ -6,7 +6,7 @@ taken. It can also draft a change for the owner to review in the flow that alrea
 holds no key, signs nothing, and has no tool that writes.
 
 - **Server:** `apps/server/src/assistant/` (`assistant.ts`'s loop and instructions, `tools.ts`'s typed reads and drafts,
-  `model.ts`'s provider interface and Claude adapter, `rules-model.ts`'s deterministic stand-in).
+  `model.ts`'s provider interface and NEAR AI Cloud adapter, `rules-model.ts`'s deterministic stand-in).
 - **Routes:** `GET /api/assistant` answers whether this server answers questions and with which model;
   `POST /api/agents/:agent/assistant` takes `{ question, history }` and answers `{ answer, sources, drafts, model,
   stopped? }`.
@@ -59,22 +59,33 @@ revokes or moves funds. A test asserts that a drafted question makes no platform
 
 The model is behind one interface (`AssistantModel`): `respond({ system, tools, messages })`. Two implementations ship:
 
-- **`claude`** (default when `ANTHROPIC_API_KEY` is set): Anthropic's Messages API, model `claude-sonnet-5-5` unless
-  `TREASURY_ASSISTANT_MODEL` names another. Effort is `medium`, adaptive thinking, a 120-second timeout and two retries.
-  The instructions and tool definitions are cached server-side by the provider; the conversation is not.
+- **`nearai`** (default when `NEARAI_API_KEY` is set): NEAR AI Cloud's OpenAI-compatible chat completions
+  (`https://cloud-api.near.ai/v1`), model `Qwen/Qwen3.8-27B` unless `TREASURY_ASSISTANT_MODEL` names another. A
+  120-second timeout; a rate limit or server error is tried twice more.
 - **`rules`** (`TREASURY_ASSISTANT_PROVIDER=rules`): a deterministic, keyword-routed stand-in that answers a fixed set of
   question kinds and drafts through the same tools and the same loop. Nothing leaves the server. The stack tests use it,
   and a deployment can run the panel with it if its treasury data must not reach a model provider.
 
-**What leaves the server with `claude`:** the frozen instructions and tool definitions, the owner's question, up to eight
+**What leaves the server with `nearai`:** the frozen instructions and tool definitions, the owner's question, up to eight
 earlier turns of text, and the result of each tool the model asks for during this question (bounded to 60,000 characters
 a result). Nothing else: no credential, session cookie, wallet key or signature, and no platform call the model didn't
-ask for. A tool result can include USD balances, prices, budget figures, policy terms, proposal legs and statuses, an
-agent's reasons, and account IDs. Which records a question needs is the model's choice, so an operator who cannot send
-that to a provider should use `rules` or leave the assistant off; the panel then doesn't appear.
-**Retention and training** are the model provider's terms, not this server's. The deployment's `ANTHROPIC_API_KEY` is a
-secret: it is read from the environment, printed as `[secret]`, never written to the audit log, and never reaches the
-browser. A leak costs the provider account's spend and the data above; rotate it at the provider and restart.
+ask for. A tool result can include USD balances (confidential ones included), prices, budget figures, policy terms,
+proposal legs and statuses, an agent's reasons, and account IDs. Which records a question needs is the model's choice.
+
+**Who can see it depends on the model's tier** in NEAR AI Cloud's catalog:
+
+- **Private TEE** (the default, `Qwen/Qwen3.8-27B`): inference runs in NEAR's enclaves (Intel TDX and NVIDIA confidential
+  computing), where neither NEAR nor anyone else sees the prompts or outputs; each answer can be verified against
+  `/v1/attestation/report` and `/v1/signature/{chat_id}`. This server doesn't verify them yet.
+- **Third-party confidential TEE:** inference runs in another provider's enclave.
+- **Incognito** (Claude, GPT, Gemini and others through NEAR AI): inference runs at the upstream provider, outside any
+  enclave, and the enclave's guarantees don't extend to it. Naming one in `TREASURY_ASSISTANT_MODEL` sends the records
+  above to that provider, under its terms.
+
+An operator who can't send treasury data off the server at all should use `rules` or leave the assistant off; the panel
+then doesn't appear. The deployment's `NEARAI_API_KEY` is a secret: it is read from the environment, printed as
+`[secret]`, never written to the audit log, and never reaches the browser. A leak costs the NEAR AI account's credits and
+lets its holder ask models on that account; it reads nothing of the treasury's. Rotate it in NEAR AI Cloud and restart.
 
 ## Limits, audit and failure
 
@@ -98,16 +109,16 @@ browser. A leak costs the provider account's spend and the data above; rotate it
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | unset | the provider key; with it, Claude answers; without it and without a provider, the assistant is off |
-| `TREASURY_ASSISTANT_PROVIDER` | key-dependent | `claude` (needs the key) or `rules` (nothing leaves the server) |
-| `TREASURY_ASSISTANT_MODEL` | `claude-sonnet-5-5` | the Claude model to ask |
+| `NEARAI_API_KEY` | unset | the NEAR AI Cloud key; with it, NEAR AI answers; without it and without a provider, the assistant is off |
+| `TREASURY_ASSISTANT_PROVIDER` | key-dependent | `nearai` (needs the key) or `rules` (nothing leaves the server) |
+| `TREASURY_ASSISTANT_MODEL` | `Qwen/Qwen3.8-27B` | the NEAR AI Cloud model to ask; a private TEE model keeps the records in NEAR's enclaves |
 | `ASSISTANT_QUESTIONS_PER_HOUR` | `30` | questions one signed-in account may ask an hour |
 | `ASSISTANT_READS_PER_HOUR` | `240` | platform reads the assistant may make an hour, every owner together |
 
 ## Open questions
 
-- **Which model and host** is a deployment's choice; this build names Claude and keeps the interface open. Running a
-  model on NEAR AI Cloud, as the platform's steward does, needs another `AssistantModel` and no change to the tools.
+- **Attestation:** the server trusts NEAR AI Cloud's private tier without checking each answer's attestation and
+  signature. Verifying them would make the enclave a guarantee this server holds, not one it takes on NEAR's word.
 - **Agent tokens (#139)** don't reach the assistant today. An owner's external agent can call the typed routes it is
   allowed; giving it the model's tools would need a token-scoped tool layer and its own budget, which this build doesn't
   add.

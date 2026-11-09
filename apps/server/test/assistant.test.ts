@@ -1,9 +1,8 @@
 import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
-import type Anthropic from "@anthropic-ai/sdk";
 import { createAssistant, SYSTEM } from "../src/assistant/assistant.ts";
-import type { AssistantModel, ModelRequest } from "../src/assistant/model.ts";
+import type { AssistantModel, ModelRequest, TextBlock, ToolResultBlock, ToolUseBlock } from "../src/assistant/model.ts";
 import { legsTo, runTool, TOOL_DEFINITIONS } from "../src/assistant/tools.ts";
 import type { AuditEntry } from "../src/audit.ts";
 import type { ChainRecord } from "../src/chain.ts";
@@ -11,11 +10,11 @@ import * as contract from "../src/contract.ts";
 import { ORIGIN, OVERVIEW, fakePlatform, proposal, wallet } from "./fakes.ts";
 import { testServer } from "./test-server.ts";
 
-type Block = Anthropic.Beta.BetaContentBlock;
+type Block = TextBlock | ToolUseBlock;
 const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 
 /**
- * A scripted stand-in for Claude: each step reads the request it's given and answers the next reply, so a test can see
+ * A scripted stand-in for the model: each step reads the request it's given and answers the next reply, so a test can see
  * exactly what reached the model (and what didn't) and answer from the tool results it was sent.
  */
 function scripted(steps: ((request: ModelRequest) => Block[])[]) {
@@ -32,12 +31,12 @@ function scripted(steps: ((request: ModelRequest) => Block[])[]) {
   };
   return { model, requests };
 }
-const use = (name: string, input: unknown = {}, id = `toolu_${name}`): Block => ({ type: "tool_use", id, name, input, caller: { type: "direct" } } as unknown as Block);
-const say = (text: string): Block => ({ type: "text", text, citations: null } as unknown as Block);
+const use = (name: string, input: unknown = {}, id = `toolu_${name}`): Block => ({ type: "tool_use", id, name, input });
+const say = (text: string): Block => ({ type: "text", text });
 /** The tool results the last request carried, parsed. */
 const resultsOf = (request: ModelRequest) => {
   const last = request.messages.at(-1)!;
-  return (last.content as Anthropic.Beta.BetaToolResultBlockParam[]).map(result => ({ ...result, body: typeof result.content === "string" && !result.is_error ? JSON.parse(result.content) : result.content }));
+  return (last.content as ToolResultBlock[]).map(result => ({ ...result, body: typeof result.content === "string" && !result.is_error ? JSON.parse(result.content) : result.content }));
 };
 
 const owner = wallet("owner.near"), intruder = wallet("intruder.near");

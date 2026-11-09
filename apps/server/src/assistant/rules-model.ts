@@ -1,19 +1,18 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { ASSETS } from "@multiagency/sdk";
-import type { AssistantModel, ModelReply, ModelRequest } from "./model.ts";
+import type { AssistantModel, ModelReply, ModelRequest, TextBlock, ToolUseBlock } from "./model.ts";
 
 /**
  * A deterministic stand-in for a language model (#219): `TREASURY_ASSISTANT_PROVIDER=rules`. It answers a fixed set of
  * question kinds (balances, budget use, limits, proposals, runs, Ballast's decisions) and drafts (a rebalance, new
  * targets, a budget or approval edit, a grant, a freeze) by keywords in the owner's question, through the same tools and
- * the same loop as Claude: each read is a tool call, audited and limited, and each figure cites the source it came from.
+ * the same loop as a hosted model: each read is a tool call, audited and limited, and each figure cites the source it came from.
  *
  * It's for the stack's tests and for a deployment that wants the panel without sending any treasury data to a model
  * provider. Nothing leaves the server. What it does is chosen from the owner's own question only: text inside a tool
  * result (a proposal's note, an agent's reasons) is quoted, never read for what to do.
  */
 
-type Block = Anthropic.Beta.BetaContentBlock;
+type Block = TextBlock | ToolUseBlock;
 type Result = { tool: string; source: string | null; data: any; error?: string };
 type Intent =
   | { kind: "retarget"; percent: number; symbol: string }
@@ -143,9 +142,9 @@ function drafted(result: Result) {
     ...(legs.length ? [`A rebalance to it would swap, at current prices: ${legs.map(leg => `${leg.sell} → ${leg.buy} ${usd(leg.usd)}`).join("; ")}${cite(result)}.`] : [])].join("\n");
 }
 
-const say = (text: string): Block => ({ type: "text", text, citations: null }) as unknown as Block;
+const say = (text: string): Block => ({ type: "text", text });
 let calls = 0;
-const use = (name: string, input: Record<string, unknown> = {}): Block => ({ type: "tool_use", id: `toolu_rules_${++calls}`, name, input }) as unknown as Block;
+const use = (name: string, input: Record<string, unknown> = {}): Block => ({ type: "tool_use", id: `toolu_rules_${++calls}`, name, input });
 const reply = (content: Block[]): ModelReply => ({ content, stop_reason: content.some(block => block.type === "tool_use") ? "tool_use" : "end_turn", model: "rules" });
 
 /** The tool results the last message carried, with the tool each answers, read from the message before it. */

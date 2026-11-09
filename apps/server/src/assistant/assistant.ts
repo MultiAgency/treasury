@@ -1,7 +1,6 @@
-import type Anthropic from "@anthropic-ai/sdk";
 import { sha256, type AuditEntry } from "../audit.ts";
 import { createRateLimit, type RateLimit } from "../ratelimit.ts";
-import type { AssistantModel } from "./model.ts";
+import type { AssistantModel, Message, TextBlock, ToolResultBlock, ToolUseBlock } from "./model.ts";
 import { PLATFORM_TOOLS, runTool, TOOL_DEFINITIONS, type Draft, type Source, type ToolScope } from "./tools.ts";
 
 
@@ -76,7 +75,7 @@ export function createAssistant({ model, audit, questionsPerHour, platformReadsP
       const questionSha256 = sha256(question);
       await record({ action: "assistant-ask", stage: "attempt", inputSha256: questionSha256 });
 
-      const messages: Anthropic.Beta.BetaMessageParam[] = [
+      const messages: Message[] = [
         ...history.slice(-MAX_HISTORY).map(turn => ({ role: turn.role, content: turn.text.slice(0, MAX_TURN_CHARS) })),
         { role: "user", content: question },
       ];
@@ -94,14 +93,14 @@ export function createAssistant({ model, audit, questionsPerHour, platformReadsP
           return { ok: false, kind: "unavailable" };
         }
         if (reply.stop_reason === "refusal") { stopped = "refused"; messages.push({ role: "assistant", content: reply.content }); break; }
-        const uses = reply.content.filter((block): block is Anthropic.Beta.BetaToolUseBlock => block.type === "tool_use");
+        const uses = reply.content.filter((block): block is ToolUseBlock => block.type === "tool_use");
         // A tool input cut off at max_tokens may parse as a valid partial one: never run it.
         if (reply.stop_reason === "max_tokens") { stopped = "truncated"; messages.push({ role: "assistant", content: reply.content.filter(block => block.type !== "tool_use") }); break; }
         messages.push({ role: "assistant", content: reply.content });
         if (reply.stop_reason !== "tool_use" || uses.length === 0) break;
 
         // Every call answered in one message, as the API asks; each recorded before its result goes back.
-        const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
+        const results: ToolResultBlock[] = [];
         for (const use of uses) {
           const inputSha256 = sha256(json(use.input));
           if (++toolCalls > toolCallsPerQuestion) {
@@ -138,7 +137,7 @@ export function createAssistant({ model, audit, questionsPerHour, platformReadsP
 
       const last = messages.at(-1);
       const text = last?.role === "assistant" && Array.isArray(last.content)
-        ? last.content.filter((block): block is Anthropic.Beta.BetaTextBlockParam => block.type === "text").map(block => block.text).join("\n\n").trim() : "";
+        ? last.content.filter((block): block is TextBlock => block.type === "text").map(block => block.text).join("\n\n").trim() : "";
       const answer = text || (stopped === "refused" ? "I can't help with that request." : "I couldn't finish an answer. Try asking more narrowly.");
       await record({ action: "assistant-ask", stage: "result", inputSha256: questionSha256, outputSha256: sha256(answer), answer: { ok: true } });
       // Only the sources the answer cites, in the order they were read; every draft made (each is a form to open, not an action).
