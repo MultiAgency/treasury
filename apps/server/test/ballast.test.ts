@@ -473,6 +473,44 @@ test("the Ethereum bridge's cap refuses the ETH buy before anything is stored: a
   assert.equal(decided.entry.proposal, undefined);
 });
 
+test("a sleeve the book check refuses doesn't stop the next: ETH's buy is over its bridge's cap, so wNEAR's buy is proposed", async () => {
+  // ETH first in the sleeves' order, its bridge capped below its holding; both prices have fallen, so both sleeves buy.
+  const capped: BallastSettings = { ...SETTINGS, diversification: {
+    sleeves: [{ asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25 }, { asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }],
+    venueCapsPct: { "near-intents": 50, "omft-ethereum": 14 },
+  } };
+  const both = diversifiedOverview(T0);
+  both.book[1] = { ...both.book[1]!, price: 3.12 };
+  const w = await world({ seedEth: true, settings: capped, overviewValue: both });
+  const event = await w.tick({ ...WATCHED_DIVERSIFIED, ballast: capped });
+  assert.ok("proposed" in event, JSON.stringify(event));
+  const input = w.sent[0] as { legs: { from: string; to: string }[]; note: string };
+  assert.deepEqual([input.legs[0]!.from, input.legs[0]!.to], [USDC, WNEAR]);
+  assert.match(input.note, /USD of wNEAR/);
+  // Both sleeves' decisions are recorded: ETH's refusal, then wNEAR's proposal, so the log explains the tick.
+  const decisions = (await w.log()).trim().split("\n").map(line => JSON.parse(line)).filter(line => line.entry.kind === "decision");
+  assert.deepEqual(decisions.map(d => [d.entry.policy?.result?.rule ?? null, Boolean(d.entry.requestId)]), [["VENUE_EXPOSURE", false], [null, true]]);
+  assert.deepEqual(replayAuditLog(await w.log()), { ok: true, count: 2 });
+});
+
+test("a holding sleeve re-arms at its own bands, as the replay does, not the engine's defaults", async () => {
+  // ETH's DCA-1 line is at -10% (the default is -20%), and DCA-1 is disarmed. At 15% under its average, ETH hasn't come
+  // back inside its own line, so DCA-1 stays disarmed; at the default line it would have re-armed.
+  const banded: BallastSettings = { ...DIVERSIFIED, diversification: { ...DIVERSIFIED.diversification!,
+    sleeves: [{ asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }, { asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25, bands: { trim: [20, 30, 45], dca: [-10, -30, -40], buyHalt: -50 } }] } };
+  const dipped = diversifiedOverview(T0);
+  dipped.book[2] = { ...dipped.book[2]!, price: 3.4 };
+  const w = await world({ seeded: false, settings: banded, overviewValue: dipped });
+  await w.history.seed(WNEAR, steadyHistory(T0, 4), T0);
+  // Steady at 4, then 3.4 for the last six hours: its recent average sits about 15% under its 30-day one.
+  await w.history.seed(ETH, steadyHistory(T0, 4).map(s => s.at >= T0 - 6 * HOUR ? { ...s, price: 3.4 } : s), T0);
+  const disarmed = { lastActionAt: T0 - 3 * DAY, lastAction: "buy-volatile" as const, disarmed: "dca-1" as const };
+  await w.states.change(ORG, AGENT, s => ({ ...s, sleeves: { ETH: { dcaUnitsUsed: 1, whipsaw: disarmed } } }));
+  const event = await w.tick({ ...WATCHED_DIVERSIFIED, ballast: banded });
+  assert.equal(event.skipped, "ballast holds", JSON.stringify(event));
+  assert.deepEqual(w.states.find(ORG, AGENT).sleeves?.ETH?.whipsaw, disarmed, "still disarmed at its own -10% line");
+});
+
 test("a stablecoin the mandate didn't split into holds the tick, so the floor isn't counted from an unapproved coin", async () => {
   const overview = diversifiedOverview(T0);
   overview.book.push({ asset: "nep141:usdt.tether-token.near", symbol: "USDT", decimals: 6, public: 0n, confidential: 0n, price: 1,

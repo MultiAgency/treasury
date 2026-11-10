@@ -12,6 +12,7 @@
 // - its bounds are its own, with the ceiling lowered so that all volatile sleeves together stay under the book's
 //   volatile ceiling: room the other sleeves already use isn't room this one may buy into.
 
+import { assetBySymbol } from "./assets.ts";
 import { bandProblems, type Bands } from "./bands.ts";
 import { evaluateBands, type EngineConfig, type EngineInput } from "./engine.ts";
 import type { Intent } from "./bands.ts";
@@ -80,7 +81,18 @@ export function sleeveInput(asset: string, holdings: BookHoldings, book: SleeveB
 }
 
 /** The engine configuration for one sleeve: its own bands, the rest shared. */
-export const sleeveConfig = (sleeve: SleeveTerms, config: EngineConfig): EngineConfig => sleeve.bands ? { ...config, bands: sleeve.bands } : config;
+/**
+ * One sleeve's engine config: its own bands, if it has them, and an order cap no larger than its asset's liquidity limit
+ * (the registry's `maxOrderUsd`), so an order is sized to the limit rather than refused for it. The percent is rounded
+ * down a millionth of a point so the sized order, a float, never lands over the limit.
+ */
+export function sleeveConfig(sleeve: SleeveTerms, config: EngineConfig, totalUsd: number): EngineConfig {
+  const banded = sleeve.bands ? { ...config, bands: sleeve.bands } : config;
+  const limitUsd = assetBySymbol(sleeve.asset)?.liquidity.maxOrderUsd;
+  if (limitUsd === undefined || !(totalUsd > 0)) return banded;
+  const limitPct = Math.floor(limitUsd / totalUsd * 100 * 1e6) / 1e6;
+  return limitPct < banded.sizing.maxOrderPctOfTreasury ? { ...banded, sizing: { ...banded.sizing, maxOrderPctOfTreasury: limitPct } } : banded;
+}
 
 export type SleeveDecision = { asset: string; input: EngineInput | null; config: EngineConfig; intent: Intent };
 
@@ -90,10 +102,11 @@ export type SleeveDecision = { asset: string; input: EngineInput | null; config:
  */
 export function evaluateSleeves(readings: Readonly<Record<string, OracleReading>>, holdings: BookHoldings, book: SleeveBook,
   states: Readonly<Record<string, SleeveState>>, regimes: Readonly<Record<string, Regime>>, config: EngineConfig): SleeveDecision[] {
+  const totalUsd = Object.values(holdings.volatileUsd).reduce((sum, usd) => sum + usd, 0) + holdings.reserveUsd + holdings.cashUsd;
   const decided = book.sleeves.map((sleeve): SleeveDecision => {
     const reading = readings[sleeve.asset];
     const at = reading?.at ?? 0;
-    const cfg = sleeveConfig(sleeve, config);
+    const cfg = sleeveConfig(sleeve, config, totalUsd);
     const input = sleeveInput(sleeve.asset, holdings, book, states[sleeve.asset] ?? { dcaUnitsUsed: 0, whipsaw: {} }, regimes[sleeve.asset] ?? "system-fault");
     if (!reading || !input) {
       return { asset: sleeve.asset, input, config: cfg,

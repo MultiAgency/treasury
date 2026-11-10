@@ -44,7 +44,7 @@ const rwaSettings = z.strictObject({
 export const diversificationSettings = z.strictObject({
   sleeves: z.array(sleeveSettings).min(1),
   classes: z.array(z.enum(["volatile", "stable", "rwa"])).min(1).optional(),
-  classCapsPct: z.record(z.enum(["volatile", "stable", "rwa"]), z.number()).optional(),
+  classCapsPct: z.partialRecord(z.enum(["volatile", "stable", "rwa"]), z.number()).optional(),
   venueCapsPct: z.record(z.string().min(1), z.number()).optional(),
   stableSplit: z.record(z.string().min(1), z.number()).optional(),
   rwa: rwaSettings.optional(),
@@ -517,17 +517,20 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       const orderCapPct = m.limits.policy.maxOrderPctOfTreasury * (level === 1 ? m.limits.l1OrderCapFactor : 1);
       const engine: EngineConfig = { ...ENGINE_DEFAULTS, sizing: { ...ENGINE_DEFAULTS.sizing, maxOrderPctOfTreasury: orderCapPct } };
       const decided = evaluateSleeves(readings, holdings, sleeveBookOf(terms, m.bounds.volatileMaxPct), sleeveStates, regimes, engine);
-      const chosen = decided.find(d => d.intent.action !== "hold");
+      // The sleeves that want to trade, sells first: each is tried in turn, so one the policy or the book check refuses
+      // doesn't stop the next.
+      const candidates = decided.filter(d => d.intent.action !== "hold");
 
-      const rearmHolds = async (skip?: string) => {
+      // A holding sleeve may re-arm a disarmed zone, at its own bands: written only when it changes.
+      const rearmHolds = async () => {
         const updates: Record<string, WhipsawState> = {};
         for (const d of decided) {
-          if (d.intent.action !== "hold" || !d.input || d.asset === skip) continue;
+          if (d.intent.action !== "hold" || !d.input) continue;
           const reading = readings[d.asset];
           if (!reading) continue;
           const deviation = reading.frozen ? null : deviationPct(reading.twap15m, reading.ema30d);
           const current = sleeveStates[d.asset]!;
-          const next = nextState(current.whipsaw, d.intent, deviation, at);
+          const next = nextState(current.whipsaw, d.intent, deviation, at, d.config.whipsaw, d.config.bands);
           if (JSON.stringify(next) !== JSON.stringify(current.whipsaw)) updates[d.asset] = next;
         }
         if (Object.keys(updates).length === 0) return;
@@ -548,9 +551,10 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           ...(reading?.frozen ? { frozen: reading.reason } : reading ? { twap: reading.twap15m, ema: reading.ema30d } : {}) };
       };
 
-      if (!chosen) {
+      if (candidates.length === 0) {
         const first = decided.find(d => d.input !== null && readings[d.asset] !== undefined);
         if (!first) return { skipped: "no sleeve can be priced", sleeves: terms.sleeves.map(s => s.asset) };
+        // A hold records no policy or pricing (`decide`), so the legs' assets here never reach the record.
         const record = decide(readings[first.asset]!, first.input!, first.config, { ctx: policyCtx(volatileUsd[first.asset] ?? 0), config: policyConfigOf(m) },
           { volatile: PROPOSAL_ASSETS.wNEAR, reserve: PROPOSAL_ASSETS.USDC, prices: {}, decimals: {}, maxSlippageBps: m.limits.policy.maxSlippageBps });
         await audit.append({ ...record, organization, agent });
@@ -558,46 +562,59 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         return { skipped: "ballast holds", reason: first.intent.reason, ...detailsOf(first), sleeves: decided.map(d => [d.asset, d.intent.action]) };
       }
 
-      const entry = assetBySymbol(chosen.asset), chosenReading = readings[chosen.asset], chosenInput = chosen.input;
-      if (!entry || entry.id === null) return { skipped: `sleeve ${chosen.asset} isn't in the asset registry` };
-      if (!chosenReading || !chosenInput) return { skipped: "the sleeve's reading or book can't be read" };
       // The reserve leg: the first stablecoin in the split that the platform lists and the book prices.
       const reserve = Object.keys(terms.stableSplit).map(coin => assetBySymbol(coin)).find((e): e is AssetEntry => e !== undefined && proposable(e) && rowOf(e.symbol) !== undefined);
       if (!reserve) return { skipped: "no proposable stablecoin in the reserve split" };
-      const volatileRow = rowOf(entry.symbol), reserveRow = rowOf(reserve.symbol);
-      if (!volatileRow || volatileRow.price === null || !reserveRow || reserveRow.price === null)
-        return { skipped: "no fresh price for the trade's two assets" };
-      const volatileId = entry.id, reserveId = reserve.id;
-      if (volatileId === null || reserveId === null) return { skipped: "a trade's asset isn't a proposal asset" };
+      const reserveRow = rowOf(reserve.symbol), reserveId = reserve.id;
+      const reservePrice = reserveRow?.price ?? null;
+      if (reservePrice === null || reserveId === null) return { skipped: "no fresh price for the reserve" };
       const bookHoldings = entries.map(({ entry, row }) => ({ asset: entry.symbol, usd: row.usd! }));
-      const bookCtx = bookContext(entry.symbol, bookHoldings, total);
-      if (!bookCtx) return { skipped: "the book's venue exposure can't be read" };
-      const record = decide(chosenReading, chosenInput, chosen.config, {
-        ctx: policyCtx(bookCtx.venueUsd[VENUE_IDS.intents] ?? 0), config: policyConfigOf(m),
-        book: { ctx: bookCtx, limits: { venueCapsPct: terms.venueCapsPct, classCapsPct: terms.classCapsPct } },
-      }, {
-        volatile: volatileId, reserve: reserveId,
-        prices: { [volatileId]: decimalOf(volatileRow.price), [reserveId]: decimalOf(reserveRow.price) },
-        decimals: Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals])),
-        maxSlippageBps: m.limits.policy.maxSlippageBps,
-      });
-      const { intent, policy: verdict, proposal } = record;
-      const detail = detailsOf(chosen);
-      const decision = ((): Decision => {
-        if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
-        if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
-        const { sizeUsd, legs } = proposal;
-        if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
-        const approval = verdict?.result.ok === "needs-approval" ? `; ${verdict.result.reason}` : "";
-        return {
-          requestId: newRequestId(agent), asset: entry.symbol,
-          body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of ${entry.symbol}${approval}`.slice(0, 280) },
-          intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
-        };
-      })();
-      await audit.append({ ...record, organization, agent, ...("skipped" in decision ? {} : { requestId: decision.requestId }) });
-      await rearmHolds(chosen.asset);
-      return decision;
+      const decimals = Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals]));
+
+      /** One sleeve's trade through the policy and the book check, recorded before anything acts; a refusal says why. */
+      const attempt = async (chosen: (typeof decided)[number]): Promise<Decision> => {
+        const entry = assetBySymbol(chosen.asset), chosenReading = readings[chosen.asset], chosenInput = chosen.input;
+        if (!entry || entry.id === null) return { skipped: `sleeve ${chosen.asset} isn't in the asset registry` };
+        if (!chosenReading || !chosenInput) return { skipped: "the sleeve's reading or book can't be read", asset: chosen.asset };
+        const volatileRow = rowOf(entry.symbol), volatileId = entry.id;
+        if (!volatileRow || volatileRow.price === null) return { skipped: "no fresh price for the trade's two assets", asset: chosen.asset };
+        const bookCtx = bookContext(entry.symbol, bookHoldings, total);
+        if (!bookCtx) return { skipped: "the book's venue exposure can't be read", asset: chosen.asset };
+        const record = decide(chosenReading, chosenInput, chosen.config, {
+          ctx: policyCtx(bookCtx.venueUsd[VENUE_IDS.intents] ?? 0), config: policyConfigOf(m),
+          book: { ctx: bookCtx, limits: { venueCapsPct: terms.venueCapsPct, classCapsPct: terms.classCapsPct } },
+        }, {
+          volatile: volatileId, reserve: reserveId,
+          prices: { [volatileId]: decimalOf(volatileRow.price), [reserveId]: decimalOf(reservePrice) },
+          decimals, maxSlippageBps: m.limits.policy.maxSlippageBps,
+        });
+        const { intent, policy: verdict, proposal } = record;
+        const detail = detailsOf(chosen);
+        const decision = ((): Decision => {
+          if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
+          if (!proposal || proposal.sizeUsd === null) return { skipped: "below a cent", ...detail };
+          const { sizeUsd, legs } = proposal;
+          if (!legs.ok) return { skipped: "no legs", code: legs.code, ...detail };
+          const approval = verdict?.result.ok === "needs-approval" ? `; ${verdict.result.reason}` : "";
+          return {
+            requestId: newRequestId(agent), asset: entry.symbol,
+            body: { legs: legs.legs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(), note: `Ballast ${intent.zone}: ${intent.action === "buy-volatile" ? "buy" : "sell"} ${sizeUsd} USD of ${entry.symbol}${approval}`.slice(0, 280) },
+            intent: { ...intent, sizeUsd: Number(sizeUsd) }, level, detail: { ...detail, sizeUsd },
+          };
+        })();
+        await audit.append({ ...record, organization, agent, ...("skipped" in decision ? {} : { requestId: decision.requestId }) });
+        return decision;
+      };
+
+      // At most one proposal a tick: the first sleeve whose trade passes. With none, the first refusal says why.
+      let refused: Decision | undefined;
+      for (const chosen of candidates) {
+        const decision = await attempt(chosen);
+        if (!("skipped" in decision)) { await rearmHolds(); return decision; }
+        refused ??= decision;
+      }
+      await rearmHolds();
+      return refused!;
     },
 
     /**

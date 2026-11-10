@@ -53,6 +53,17 @@ test("each sleeve is decided on its own reading: ETH above its reference trims w
   assert.deepEqual(decided.map(d => [d.asset, d.intent.action]), [["ETH", "sell-volatile"], ["wNEAR", "buy-volatile"]]);
 });
 
+test("an order is sized to its asset's liquidity limit (the registry's maxOrderUsd), not refused for it, and only for that asset", () => {
+  // A 5M book: the 2% order cap is 100,000, over wNEAR's 50,000 limit and under ETH's 250,000.
+  const holdings = { volatileUsd: { wNEAR: 1_000_000, ETH: 1_000_000 }, reserveUsd: 1_750_000, cashUsd: 1_250_000 };
+  const decided = evaluateSleeves({ wNEAR: reading(75), ETH: reading(125) }, holdings, two, {}, { wNEAR: "normal", ETH: "normal" }, ENGINE_DEFAULTS);
+  const wnear = decided.find(d => d.asset === "wNEAR")!, eth = decided.find(d => d.asset === "ETH")!;
+  assert.equal(wnear.intent.action, "buy-volatile");
+  assert.ok(wnear.intent.sizeUsd > 0 && wnear.intent.sizeUsd <= 50_000, String(wnear.intent.sizeUsd));
+  assert.equal(wnear.config.sizing.maxOrderPctOfTreasury, 1, "wNEAR's cap is its liquidity limit: 50,000 of 5,000,000");
+  assert.equal(eth.config.sizing.maxOrderPctOfTreasury, ENGINE_DEFAULTS.sizing.maxOrderPctOfTreasury, "ETH's limit is above the order cap: unchanged");
+});
+
 test("anti-whipsaw is per sleeve: one sleeve's cooldown doesn't hold the other", () => {
   const holdings = { volatileUsd: { wNEAR: 20_000, ETH: 20_000 }, reserveUsd: 35_000, cashUsd: 25_000 };
   const cooling = { dcaUnitsUsed: 0, whipsaw: { lastActionAt: 999, lastAction: "buy-volatile" as const } };

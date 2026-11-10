@@ -82,6 +82,11 @@ test("a diversification block loads when the compiled mandate's terms hold, and 
   assert.equal(without[0]!.ballast?.diversification, undefined);
 });
 
+test("class caps may name only some classes: the watch file doesn't need a cap for a class the book doesn't hold", async () => {
+  const loaded = await loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS, classCapsPct: { volatile: 50, stable: 100 } }));
+  assert.deepEqual(loaded[0]!.ballast?.diversification?.classCapsPct, { volatile: 50, stable: 100 });
+});
+
 test("the risk agent and a diversified book together are refused at load: the risk agent assesses the two-asset book only", async () => {
   const both = { organization: "o", agent: "a", risk: {}, ballast: { ...BALLAST, diversification: { sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS } } };
   await assert.rejects(loadWatchConfig(await file({ agents: [both] })), /sets risk with a diversified ballast: the risk agent assesses the two-asset book only/);
