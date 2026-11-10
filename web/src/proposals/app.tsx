@@ -7,6 +7,7 @@ import { Policy } from "./policy";
 import { Activity, Run } from "./activity";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
+import { Diversification } from "./diversification";
 import { EmergencyStop } from "./freeze";
 import { Funding } from "./funding";
 import { NeedsDecision, Standing } from "./home";
@@ -184,10 +185,14 @@ export function ProposalPage() {
     </div>;
 }
 
-/** Strategy (`…/strategy`): the schedule, its grant and the strategy's editor. */
+/** Strategy (`…/strategy`): the schedule, its grant and the strategy's editor, then the diversified book (#221). */
 export function StrategyPage() {
   const { reads, identity } = useAgent();
-  return <WhenConnected><Autopilot reads={reads} identity={identity} /><RiskPanel reads={reads} /></WhenConnected>;
+  return <WhenConnected><div className="flex flex-col gap-8">
+    <Autopilot reads={reads} identity={identity} />
+    <RiskPanel reads={reads} />
+    <Diversification reads={reads} />
+  </div></WhenConnected>;
 }
 
 /** Funding (`…/funding`). */

@@ -4,14 +4,16 @@
 // volatile asset, stablecoin and venue (#221) becomes its own scenarios here without any change to this file.
 
 import { isNum, isPositive, report } from "./validate.ts";
+import type { AssetClass } from "./assets.ts";
 
 /** Volatile assets move with the market; stables are the reserve and the operating cash, worth about $1 each. */
-export type AssetClass = "volatile" | "stable";
+/** The risk book holds volatile and stable assets only: the registry's classes (`assets.ts`) less `rwa`. */
+export type RiskAssetClass = Exclude<AssetClass, "rwa">;
 /**
  * One holding of the book: its asset (on the server, the platform's asset ID, so a de-risk sell can be built from it), its
  * class, its USD value now, the venue it is held and settles at, and optionally the symbol a person reads (`wNEAR`).
  */
-export type BookHolding = { asset: string; class: AssetClass; usd: number; venue: string; symbol?: string };
+export type BookHolding = { asset: string; class: RiskAssetClass; usd: number; venue: string; symbol?: string };
 export type Book = readonly BookHolding[];
 /** The mandate's spend terms: the cash floor is `monthlySpendUsd × operatingCashMonths` (`compileMandate`). */
 export type SpendTerms = { monthlySpendUsd: number; operatingCashMonths: number };

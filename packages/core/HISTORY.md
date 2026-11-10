@@ -18,6 +18,11 @@ H5 named the price sources and H9 calibrated on a year of real NEAR-USD (ADR 3, 
   or, when the replay refuses the run, `{ ok: false, problems }`.
   It lists every threshold used (`thresholds`, the whole config) and the starting portfolio, and carries a SHA-256
   digest of the inputs as canonical JSON: equal digests mean equal inputs.
+- `bookCalibrationReport({ series, seedHistory, start, config })` is the same report for the diversified book (#221): it
+  runs `replayBook` over one series per sleeve (all at the same instants), returns every fill, the trades per asset, the
+  outcomes and the same input digest. A book of one sleeve makes the single-asset run's trades and equity, and a core test
+  holds it to that. `scripts/diversify.ts` (`pnpm backtest:diversified`) writes `docs/diversified-backtest.md` from it over
+  a seeded synthetic history; that page says plainly that the history is a placeholder, not market data.
 
 Demo setup, rebuilt from this page alone:
 

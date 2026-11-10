@@ -11,6 +11,7 @@
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
     "check": "pnpm typecheck && pnpm test",
+    "backtest:diversified": "node scripts/diversify.ts",
     "backtest:stabilization": "node scripts/stabilization-backtest.ts run"
   },
   "packageManager": "pnpm@12.16.1",

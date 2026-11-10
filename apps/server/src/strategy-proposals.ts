@@ -1,9 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { ASSETS, type OwnerOutput } from "@multiagency/sdk";
 import { z } from "zod";
-import { compileMandate, PROPOSAL_ASSETS, type ProfileName } from "../../../packages/core/src/index.ts";
+import { ASSET_REGISTRY, compileMandate, PROPOSAL_ASSETS, type ProfileName } from "../../../packages/core/src/index.ts";
 import type { Audit } from "./audit.ts";
-import type { BallastSettings } from "./ballast.ts";
+import { mandateAnswersOf, type BallastSettings } from "./ballast.ts";
 import { MAX_PROPOSAL_REASONS, strategyInput, strategyProposal } from "./contract.ts";
 import { createRecords, memoryRecords } from "./records.ts";
 
@@ -120,14 +120,34 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
   if (!(total > 0)) return { skipped: "unpriced" };
   const policy = overview.policy.policy;
   if (!policy) return { skipped: "no policy" };
-  const compiled = compileMandate({ ...settings, treasuryValueUsd: total, volatileAssets: ["wNEAR"], stablecoins: ["USDC"] }, settings.profile as ProfileName);
+  const compiled = compileMandate(mandateAnswersOf(settings, total), settings.profile as ProfileName);
   if (!compiled.ok) return { skipped: "mandate refused", problems: compiled.problems };
-  const { weights, limits } = compiled.mandate;
-  const aim = {
-    targetBps: Object.fromEntries(Object.values(ASSETS).map(asset => [asset,
-      asset === PROPOSAL_ASSETS.wNEAR ? weights.volatilePct * 100 : asset === PROPOSAL_ASSETS.USDC ? (weights.reservePct + weights.cashPct) * 100 : 0])),
-    maxCostBps: limits.policy.maxSlippageBps,
-  };
+  const { weights, limits, diversification } = compiled.mandate;
+  const targetBps: Record<string, number> = Object.fromEntries(Object.values(ASSETS).map(asset => [asset, 0]));
+  if (diversification) {
+    // Each sleeve is one platform asset's target; the reserve and cash split across the stablecoins the platform manages,
+    // by the mandate's split. A coin it doesn't manage stays at 0, as the platform's strategy has no target for it.
+    let sleeveBps = 0;
+    for (const sleeve of diversification.sleeves) {
+      const id = ASSET_REGISTRY[sleeve.asset]?.id;
+      if (id && id in targetBps) { targetBps[id] = Math.round(sleeve.targetPct * 100); sleeveBps += targetBps[id]!; }
+    }
+    const stableTotal = 10_000 - sleeveBps;
+    const split = Object.entries(diversification.stableSplit);
+    let assigned = 0;
+    for (const [coin, share] of split) {
+      const id = ASSET_REGISTRY[coin]?.id;
+      if (!id || !(id in targetBps)) continue;
+      targetBps[id] = Math.round(stableTotal * share / 100);
+      assigned += targetBps[id]!;
+    }
+    const firstManaged = split.map(([coin]) => ASSET_REGISTRY[coin]?.id).find(id => id !== null && id !== undefined && id in targetBps);
+    if (firstManaged) targetBps[firstManaged] = (targetBps[firstManaged] ?? 0) + (stableTotal - assigned);
+  } else {
+    targetBps[PROPOSAL_ASSETS.wNEAR] = weights.volatilePct * 100;
+    targetBps[PROPOSAL_ASSETS.USDC] = (weights.reservePct + weights.cashPct) * 100;
+  }
+  const aim = { targetBps, maxCostBps: limits.policy.maxSlippageBps };
   const saved = { targetBps: Object.fromEntries(Object.entries(overview.target).map(([asset, share]) => [asset, Math.round(share * 10_000)])), maxCostBps: overview.rebalance.maxCostBps };
   if (sameAim(aim, saved)) return { skipped: "matches the saved strategy" };
   const last = proposals.last(agent, "mandate");
@@ -143,8 +163,11 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
     agent, from: "mandate", against: digest, policyAssets: policy.assets,
     strategy: { ...aim, minLegUsd: now.minLegUsd, autopilot: { everyMin: now.autopilot.everyMin, maxUsd: now.autopilot.maxUsd },
       ...(now.cashFloor && { cashFloor: { usd: now.cashFloor.usd, assets: now.cashFloor.assets } }) },
-    reasons: (`Ballast's ${settings.profile} profile: ${weights.volatilePct}% volatile in wNEAR, and ${weights.reservePct}% reserve and ${weights.cashPct}% operating cash in USDC; `
-      + `every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%. The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
+    reasons: (`Ballast's ${settings.profile} profile: ${weights.volatilePct}% volatile${diversification
+        ? ` across ${diversification.sleeves.map(s => `${s.asset} ${s.targetPct}%`).join(", ")}`
+        : " in wNEAR"}, and ${weights.reservePct}% reserve and ${weights.cashPct}% operating cash${diversification
+        ? ` across ${Object.entries(diversification.stableSplit).map(([coin, share]) => `${coin} ${share}%`).join(", ")}`
+        : " in USDC"}; every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%. The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
   });
   if (proposed.ok) return { proposed: proposed.id };
   return "full" in proposed ? { skipped: "proposals full" } : { skipped: "invalid", problems: proposed.problems };

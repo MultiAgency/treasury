@@ -4,6 +4,7 @@
 // sleeve labels (volatile wNEAR, a USDC reserve the DCA draws on, USDC operating cash). The weights are still not an
 // approved allocation for any one owner: `weightsApproved` stays false until that owner signs the mandate built on them.
 
+import { diversificationDefaults, diversifiedProblems, type DiversifiedTerms, type MandateFrame } from "./diversified.ts";
 import type { ExposureLimits } from "./exposure.ts";
 import { LEVEL_DEFAULTS, levelProblems, type Level } from "./levels.ts";
 import { POLICY_DEFAULTS, policyLimitProblems, type PolicyLimits } from "./policy.ts";
@@ -64,6 +65,13 @@ export type Answers = {
   destinations: string[];
   /** 7. NEAR accounts that approve orders. */
   approvers: string[];
+  /**
+   * 8 (#221). The asset classes the owner allows and the caps per class and per venue, the sleeves' targets, the
+   * stablecoin split and what real-world assets need. Optional, and each part of it too: what's left out is the profile's
+   * (`diversificationDefaults`). Asked only of an owner with more than one volatile asset, or who sets it; without it, and
+   * with one volatile asset, the mandate is the two-asset one.
+   */
+  diversification?: Partial<DiversifiedTerms>;
 };
 
 export type Mandate = {
@@ -77,6 +85,8 @@ export type Mandate = {
   bounds: WeightBounds;
   /** Always false here: the owner hasn't yet signed these weights (H8). */
   weightsApproved: false;
+  /** The diversified book's terms (#221); absent from a two-asset mandate, so its shape and digest are unchanged. */
+  diversification?: DiversifiedTerms;
 };
 
 export type CompileResult = { ok: true; mandate: Mandate; cashFloorUsd: number } | { ok: false; problems: string[] };
@@ -153,6 +163,19 @@ export function mandateProblems(m: unknown): string[] {
   r.need(b.volatileMinPct >= 0 && b.volatileMaxPct <= 100 && b.volatileMinPct <= b.volatileMaxPct && w.volatilePct >= b.volatileMinPct && w.volatilePct <= b.volatileMaxPct, "the volatile weight must sit inside its bounds");
   for (const problem of [...policyLimitProblems(profile.limits), ...levelProblems({ l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor, maxOrderPctOfTreasury: profile.limits.maxOrderPctOfTreasury })]) r.need(false, problem);
   r.need(isPositiveInt(profile.approvalsRequired), "approvalsRequired must be a whole number of at least 1");
+
+  // The diversified book's terms, read back as the compiler checks them: inside the profile, and only what's proposable.
+  // More than one volatile asset can only come from the compiler with its terms, so a mandate missing them isn't one
+  // the compiler could have produced: it is refused rather than read as a two-asset book it isn't.
+  if (volatile.length > 1 && !hasOwn(m, "diversification")) r.need(false, "a mandate with more than one volatile asset needs its diversification terms");
+  if (hasOwn(m, "diversification")) {
+    const terms = own(m, "diversification");
+    if (!isRecord(terms)) r.need(false, "diversification must be an object");
+    else for (const problem of diversifiedProblems(terms as DiversifiedTerms, {
+      weights: profile.weights, bounds: profile.bounds,
+      assets: { volatile, stablecoins: [...stable] }, maxVenueExposurePct: profile.bounds.volatileMaxPct,
+    })) r.need(false, `diversification: ${problem}`);
+  }
   return r.problems;
 }
 
@@ -191,12 +214,19 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
   if (r.problems.length > 0 || !profile || !isNum(spend) || !isNum(months)) return { ok: false, problems: r.problems };
 
   const exposure: ExposureLimits = { maxVenueExposurePct: profile.bounds.volatileMaxPct, operatingCashMonths: months, monthlySpendUsd: spend };
+  const asked = own(answers, "diversification");
+  if (asked !== undefined && !isRecord(asked)) return { ok: false, problems: ["diversification must be an object"] };
+  // More than one volatile asset needs the diversified book's terms; the owner's own, part by part, over the profile's.
+  const diversification = asked !== undefined || volatile.length > 1
+    ? { ...diversificationDefaults(profileName as ProfileName, { weights: profile.weights, bounds: profile.bounds, assets: { volatile, stablecoins }, maxVenueExposurePct: exposure.maxVenueExposurePct }), ...(asked as Partial<DiversifiedTerms> | undefined) }
+    : undefined;
   const mandate: Mandate = {
     version: MANDATE_VERSION, profile: profileName as ProfileName,
     assets: { volatile, stablecoins }, destinations,
     limits: { policy: { ...profile.limits }, exposure, l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor },
     governance: { approvers, approvalsRequired: profile.approvalsRequired, startLevel: profile.startLevel },
     weights: { ...profile.weights }, bounds: { ...profile.bounds }, weightsApproved: false,
+    ...(diversification && { diversification }),
   };
   const inconsistent = mandateProblems(mandate);
   if (inconsistent.length > 0) return { ok: false, problems: inconsistent };
@@ -208,3 +238,8 @@ export const policyConfigOf = (m: Mandate): PolicyConfig => ({ limits: m.limits.
 
 /** The volatile weight bounds from a mandate (feeds the sizing step). */
 export const weightBoundsOf = (m: Mandate): WeightBounds => m.bounds;
+
+/** What the diversification terms are checked against, from a mandate the compiler built: the frame `diversifiedProblems` takes. */
+export const mandateFrameOf = (m: Mandate): MandateFrame => ({
+  weights: m.weights, bounds: m.bounds, assets: m.assets, maxVenueExposurePct: m.limits.exposure.maxVenueExposurePct,
+});

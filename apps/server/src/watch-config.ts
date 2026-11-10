@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
-import { ballastSettings } from "./ballast.ts";
+import { ballastSettings, diversificationProblemsFor } from "./ballast.ts";
 import { notifier } from "./notify.ts";
 import { riskWatchSettings } from "./risk.ts";
 import { WATCH, type WatchedAgent } from "./watch.ts";
@@ -64,10 +64,21 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
   for (const { organization, agent, intervalS, ballast } of parsed.agents) {
     if (ballast && intervalS > 3600) throw new Error(`${path}: ${organization}/${agent} runs Ballast, which needs a reading at least hourly: intervalS must be at most 3600`);
   }
-  // The risk agent reads Ballast's mandate for the cash floor and the thresholds, and the same hourly history.
+  // The diversified terms compile against a treasury that can hold the floor, then every rule the book leans on: a sleeve
+  // or stablecoin the platform doesn't list, a missing venue cap, a split that doesn't add to 100 are refused here, never
+  // proposed on a tick. An agent without the block is the two-asset book, unchanged.
+  for (const { organization, agent, ballast } of parsed.agents) {
+    if (!ballast?.diversification) continue;
+    const problems = diversificationProblemsFor(ballast);
+    if (problems.length > 0) throw new Error(`${path}: ${organization}/${agent}: ${problems.join("; ")}`);
+  }
+  // The risk agent reads Ballast's mandate for the cash floor and the thresholds, and the same hourly history, of the
+  // two-asset book: it doesn't run on a diversified one yet (ADR 5, ADR 6), so the two together are refused.
   for (const { organization, agent, risk, ballast } of parsed.agents) {
     if (risk && !ballast)
       throw new Error(`${path}: ${organization}/${agent} sets risk without ballast: the risk agent needs the mandate's spend terms and profile`);
+    if (risk && ballast?.diversification)
+      throw new Error(`${path}: ${organization}/${agent} sets risk with a diversified ballast: the risk agent assesses the two-asset book only (ADR 5)`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {

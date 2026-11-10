@@ -119,3 +119,11 @@ export function detectMarketMoves(samples: readonly Sample[], now: number, cfg: 
   }
   return found;
 }
+
+/**
+ * Market moves per asset (#221): each sleeve's asset judged on its own history, so a crash in ETH holds the ETH sleeve
+ * and raises the book's level, and a wNEAR sleeve whose history is too short is judged too short on its own.
+ */
+export function detectBookMoves(histories: Readonly<Record<string, readonly Sample[]>>, now: number, cfg: DetectorConfig = DETECTOR_DEFAULTS): Record<string, Detection[]> {
+  return Object.fromEntries(Object.entries(histories).map(([asset, samples]) => [asset, detectMarketMoves(samples, now, cfg)]));
+}

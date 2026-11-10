@@ -189,6 +189,37 @@ export const unlinkRequest = z.strictObject({});
 export const fundingChanged = z.strictObject({});
 /** Per asset, the provider's balances against the chain and against recorded executions (raw units as decimal strings). */
 export const booksRead = ownerOutputs.reconcileBooks;
+/**
+ * The agent's diversified book (#221), from one `overview` read: each holding's class, chain, route and venues, what the
+ * platform can propose, every venue's exposure and cap with where the cap came from (`mandate`, the profile's
+ * `profile-default`, or `absent`), the stablecoin split with each coin's peg level, and each phase with the reasons it
+ * can't run. An app-side cap only holds back: nothing here claims the platform enforces these numbers.
+ */
+const assetClass = z.enum(["volatile", "stable", "rwa"]);
+const intentsRoute = z.enum(["native", "omft", "bridged"]);
+const capSource = z.enum(["mandate", "profile-default", "absent"]);
+export const diversificationRead = z.strictObject({
+  source: z.enum(["mandate", "profile-defaults", "absent"]),
+  profile: z.enum(["conservative", "balanced", "growth"]).nullable(),
+  holdings: z.array(z.strictObject({
+    asset: z.string(), symbol: z.string(),
+    class: assetClass.nullable(), chain: z.string().nullable(), route: intentsRoute.nullable(),
+    venues: z.array(z.string()), usd: z.number().nullable(), proposable: z.boolean(),
+  })),
+  venues: z.array(z.strictObject({
+    id: z.string(), label: z.string(), kind: z.enum(["account", "bridge"]),
+    exposureUsd: z.number().nullable(), capPct: z.number().nullable(), capSource,
+  })),
+  stablecoins: z.array(z.strictObject({
+    symbol: z.string(), usd: z.number(), price: z.number().nullable(), sharePct: z.number().nullable(),
+    targetPct: z.number().nullable(), peg: z.union([z.literal(0), z.literal(2), z.literal(3)]),
+  })),
+  phases: z.array(z.strictObject({
+    phase: z.union([z.literal(1), z.literal(2), z.literal(3)]), title: z.string(), on: z.boolean(), reasons: z.array(z.string()),
+  })),
+  notes: z.array(z.string()),
+});
+export type DiversificationRead = z.output<typeof diversificationRead>;
 /** A sweep is a preview of the public balances (`execute: false`) or their shielding (`execute: true`). */
 export const sweepRequest = z.strictObject({ execute: z.boolean() });
 /** What a sweep's activity shows: the public balances it found (raw units as decimal strings), and each shield it sent. */

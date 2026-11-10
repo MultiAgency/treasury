@@ -316,13 +316,17 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       if (watched.risk && !watched.ballast) { state.stopped = { reason: "the risk agent needs Ballast's mandate settings", resumable: false }; return event({ stopped: state.stopped.reason }); }
       if (watched.ballast) {
         if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
-        const decided = await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on);
+        // A `diversification` block runs the multi-sleeve book (#221); without it, the two-asset step, with the stabilization
+        // agent when the entry has a `risk` block (#220). The two don't run together: the config refuses it.
+        const decided = watched.ballast.diversification
+          ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours)
+          : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on);
         if ("skipped" in decided) return event(decided);
         // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
         // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one
         // made and not counted.
         const { requestId } = decided;
-        await ballast.proposed(organization, agent, requestId, decided.intent);
+        await ballast.proposed(organization, agent, requestId, decided.intent, decided.asset);
         const request = await requests.add(organization, agent, decided.body, requestId);
         if (!request) return event({ held: "stored requests full", ...(decided.risk && { risk: decided.risk }) });
         return send(watched, request, event).then(sent => ({ ...sent, ballast: decided.detail, ...(decided.risk && { risk: decided.risk }) }));

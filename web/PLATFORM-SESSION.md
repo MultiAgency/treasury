@@ -107,6 +107,11 @@ The build (`src/proposals/`, built to `dist-proposals/`), served only by the app
 | What it changes; Estimated swaps; Open the rebalance proposal, Open in the strategy editor, Open in the policy editor, Open the grant, Open the freeze review | description list; list; one button for each draft card | an answer that drafts a change |
 | Filled in by the assistant; Estimated swaps | note; list | the rebalance form, strategy editor, policy editor, grant review or freeze review a draft opened |
 | Save or cancel the strategy edit first…; Save or cancel the policy edit first… | status, when a draft is opened while the owner's own edit is open; the edit is kept | the Strategy and Policy pages |
+| Diversification | region and heading (level 2), on Strategy (#221): the book's assets, venues, caps and phases, from the agent's mandate or the profile's defaults | the Strategy page, connected |
+| Holdings and venues, Venue exposure and caps, Stablecoins and the reserve split, Phases | headings (level 3) | the Diversification region |
+| Diversified holdings, Venue exposure and caps, Stablecoins and the reserve split | tables (captions); "No stablecoin is held." is a status in place of the last | the Diversification region |
+| Diversification phases; Why phase `<n>` can't run | list; a list for each phase that can't run | the Diversification region |
+| What this read can't say; Limits of this diversification read | heading (level 3); list | the Diversification region, when the read has limits |
 
 How it departs from the brief, or decides what the brief leaves open:
 - **The agent comes from the address** (`/agents/<agent>/…`, one frame around each of its pages). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.

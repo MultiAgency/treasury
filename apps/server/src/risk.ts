@@ -20,8 +20,6 @@ import type { RiskReport } from "./contract.ts";
  * The venues a book can name. SDK 0.5.4 has no venue ID: an agent's assets are held and settle at its NEAR Intents
  * account, which the docs and the scenarios call "NEAR Intents". The shape is here so a second venue is one entry.
  */
-export const VENUE_IDS = { intents: "NEAR Intents" } as const;
-
 /**
  * A deployment's own projection parameters: whatever it names, over the core's defaults, checked with the core's own
  * `projectionParamsProblems`, so a value the projection would fail closed on refuses the watch file at startup instead.
