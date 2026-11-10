@@ -76,6 +76,15 @@ test("the assistant's provider, model and limits are checked, and its defaults l
   assert.equal(loadConfig({ ...env, TREASURY_ASSISTANT_MODEL: "z-ai/glm-5.3-flash" }).settings.TREASURY_ASSISTANT_MODEL, "z-ai/glm-5.3-flash", "a NEAR AI model ID");
 });
 
+test("NEAR Intents is read live by default, can be stubbed or turned off, and its call limit is checked (#221)", () => {
+  const { settings } = loadConfig(env);
+  assert.deepEqual([settings.INTENTS_PROVIDER, settings.INTENTS_CALLS_PER_HOUR], ["live", 120]);
+  assert.equal(loadConfig({ ...env, INTENTS_PROVIDER: "stub" }).settings.INTENTS_PROVIDER, "stub");
+  assert.equal(loadConfig({ ...env, INTENTS_PROVIDER: "off" }).settings.INTENTS_PROVIDER, "off");
+  assert.throws(() => loadConfig({ ...env, INTENTS_PROVIDER: "1click" }), /INTENTS_PROVIDER/);
+  assert.throws(() => loadConfig({ ...env, INTENTS_CALLS_PER_HOUR: "0" }), /INTENTS_CALLS_PER_HOUR/);
+});
+
 test("watch runs only when its agents' file is named, and then needs a file for its stored requests", () => {
   const { settings } = loadConfig(env);
   assert.equal(settings.TREASURY_WATCH_FILE, undefined, "off unless configured");

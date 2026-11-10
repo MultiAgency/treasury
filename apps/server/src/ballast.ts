@@ -1,12 +1,12 @@
 import { PROPOSAL_TOKENS, type OwnerOutput } from "@multiagency/sdk";
 import { z } from "zod";
 import {
-  assessRisk, ASSET_REGISTRY, assetById, assetBySymbol, bookContext, bookExposure, checkQuotes, compileMandate, decide,
+  assessRisk, ASSET_REGISTRY, assetById, assetBySymbol, bookContext, bookExposure, bookLimitProblems, checkQuotes, compileMandate, decide,
   detectFaults, detectMarketMoves, deviationPct, diversifiedProblems, ENGINE_DEFAULTS, evaluateSleeves,
-  highestFaultLevel, highestLevel, mandateFrameOf, nextState, ORACLE_DEFAULTS, policyConfigOf, PROFILE_DEFAULTS,
+  hedgeTermsProblems, HEDGE_DEFAULTS, highestFaultLevel, highestLevel, mandateFrameOf, nextState, ORACLE_DEFAULTS, policyConfigOf, PROFILE_DEFAULTS,
   proposable, PROPOSAL_ASSETS, readOracle, regimeFrom, riskThresholdsOf, runwayCash, rwaOn, sleeveBookOf, VENUE_IDS, VENUES,
   weightBoundsOf, type AssetEntry, type Book, type BookHoldings, type DecisionRecord, type DiversifiedTerms,
-  type EngineConfig, type Intent, type Level, type OracleLimits, type OracleReading, type ProfileName,
+  type EngineConfig, type HedgeTerms, type Intent, type Level, type OracleLimits, type OracleReading, type ProfileName,
   type Recommendation, type Regime, type RiskAssessment, type RiskInput, type Sample, type SleeveState,
   type WhipsawState,
 } from "../../../packages/core/src/index.ts";
@@ -52,6 +52,40 @@ export const diversificationSettings = z.strictObject({
 export type DiversificationSettings = z.output<typeof diversificationSettings>;
 
 /**
+ * The hedge the owner's page plans (#221): the assets they want some exposure to besides the sleeves (gold, other chains'
+ * majors), each with a target and a ceiling in percent of the treasury, and the limits a move is judged by. The class and
+ * venue caps here are added to the mandate's, and a class with no cap isn't allowed: gold, a real-world asset, needs
+ * `classCapsPct.rwa` set here. It is read by the page and the assistant; `watch` proposes nothing from it, and it is no
+ * part of the mandate, so a mandate's digest is the same with or without it.
+ */
+export const hedgeSettings = z.strictObject({
+  sleeves: z.array(z.strictObject({ asset: z.string().min(1).max(32), targetPct: z.number(), maxPct: z.number() })).min(1).max(8),
+  maxMoveUsd: z.number().optional(),
+  maxCostBps: z.number().optional(),
+  maxQuoteAgeMs: z.number().optional(),
+  hedgeAtLevel: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+  driftPoints: z.number().optional(),
+  maxSourceSharePct: z.number().optional(),
+  classCapsPct: z.partialRecord(z.enum(["volatile", "stable", "rwa"]), z.number()).optional(),
+  venueCapsPct: z.record(z.string().min(1), z.number()).optional(),
+}).superRefine((value, ctx) => {
+  for (const problem of hedgeTermsProblems(hedgeTermsOf(value))) ctx.addIssue({ code: "custom", message: problem });
+  for (const [cls, pct] of Object.entries(value.classCapsPct ?? {})) if (!(pct >= 0 && pct <= 100)) ctx.addIssue({ code: "custom", message: `the ${cls} class cap must be 0 to 100` });
+  for (const problem of bookLimitProblems({ venueCapsPct: value.venueCapsPct ?? {}, classCapsPct: {} })) ctx.addIssue({ code: "custom", message: problem });
+});
+export type HedgeSettings = z.output<typeof hedgeSettings>;
+/** The planner's terms from the hedge block: its limits over the defaults. */
+export const hedgeTermsOf = (settings: HedgeSettings): HedgeTerms => ({
+  ...HEDGE_DEFAULTS, sleeves: settings.sleeves,
+  ...(settings.maxMoveUsd !== undefined && { maxMoveUsd: settings.maxMoveUsd }),
+  ...(settings.maxCostBps !== undefined && { maxCostBps: settings.maxCostBps }),
+  ...(settings.maxQuoteAgeMs !== undefined && { maxQuoteAgeMs: settings.maxQuoteAgeMs }),
+  ...(settings.hedgeAtLevel !== undefined && { hedgeAtLevel: settings.hedgeAtLevel }),
+  ...(settings.driftPoints !== undefined && { driftPoints: settings.driftPoints }),
+  ...(settings.maxSourceSharePct !== undefined && { maxSourceSharePct: settings.maxSourceSharePct }),
+});
+
+/**
  * What the owner chose for an agent `watch` runs Ballast for (#47): a profile and the mandate answers the platform can't
  * read. The treasury's value comes from `overview` on every tick, so the mandate is compiled again each time and a
  * floor the cash share can no longer hold refuses, never proposes. With `diversification`, `watch` runs the multi-sleeve
@@ -66,6 +100,8 @@ export const ballastSettings = z.strictObject({
   diversification: diversificationSettings.optional(),
   /** This mandate's own risk thresholds (#220); unset, its profile's (`RISK_PROFILE_DEFAULTS`), until a backtest calibrates them. */
   risk: riskThresholdSettings.optional(),
+  /** The hedge the owner's page plans into gold and other chains' assets (#221); nothing proposes from it on its own. */
+  hedge: hedgeSettings.optional(),
 });
 export type BallastSettings = z.output<typeof ballastSettings>;
 
@@ -221,7 +257,7 @@ export async function createEngineState(path: string) {
 export type EngineStates = Awaited<ReturnType<typeof createEngineState>>;
 
 /** A price as the decimal string `legsFor` takes. */
-const decimalOf = (price: number) => price.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
+export const decimalOf = (price: number) => price.toFixed(12).replace(/0+$/, "").replace(/\.$/, "");
 
 type Holding = OwnerOutput<"overview">["book"][number];
 /**
@@ -428,7 +464,8 @@ export function createBallast({ history, states, audit, now = Date.now }: {
      * whose terms the compiler refuses proposes nothing. The cash the floor counts is `runwayCash`: stablecoins in full,
      * and a cash-like real-world asset only when the RWA phase is on and it can be redeemed inside its horizon.
      */
-    async decideDiversified(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number): Promise<Decision> {
+    async decideDiversified(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
+      risk?: RiskSettings, autopilotOn: boolean | null = null): Promise<Decision> {
       const at = now();
       if (!settings.diversification) return { skipped: "no diversification terms" };
 
@@ -467,6 +504,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       const readings: Record<string, OracleReading> = {};
       const markets: Record<string, ReturnType<typeof detectMarketMoves>> = {};
       const volatileUsd: Record<string, number> = {};
+      const hourlySeen: Record<string, Sample[]> = {};
       for (const sleeve of terms.sleeves) {
         const entry = assetBySymbol(sleeve.asset);
         if (!entry || entry.id === null) return { skipped: `sleeve ${sleeve.asset} isn't in the asset registry` };
@@ -482,7 +520,8 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           const checked = checkQuotes(id, quotes, at, OVERVIEW_ORACLE);
           if (!checked.frozen) await history.record(id, at, checked.median);
           readings[entry.symbol] = reading;
-          markets[entry.symbol] = detectMarketMoves(seen.concat(checked.frozen ? [] : [{ at, price: checked.median }]), at);
+          hourlySeen[entry.symbol] = seen.concat(checked.frozen ? [] : [{ at, price: checked.median }]);
+          markets[entry.symbol] = detectMarketMoves(hourlySeen[entry.symbol]!, at);
         } else markets[entry.symbol] = detectMarketMoves(seen, at);
       }
 
@@ -506,12 +545,61 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           unknownOutcomes: 0, expectedUsd: null, reportedUsd: null }).filter(d => !NOT_JUDGED_HERE.has(d.detector))
         : [];
       const allFaults = [...faults, ...Object.values(readings).flatMap(sourceFaults)];
-      const level = Math.max(...Object.values(markets).map(highestLevel), highestFaultLevel(allFaults), m.governance.startLevel) as Level;
-      const regimes: Record<string, Regime> = Object.fromEntries(terms.sleeves.map(s =>
-        [s.asset, regimeFrom([...(markets[s.asset] ?? []), ...faults, ...sourceFaults(readings[s.asset])])]));
+      const baseLevel = Math.max(...Object.values(markets).map(highestLevel), highestFaultLevel(allFaults), m.governance.startLevel) as Level;
 
       const state = states.find(organization, agent);
+      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
       const sleeveStates = Object.fromEntries(terms.sleeves.map(s => [s.asset, sleeveOf(state, s.asset)]));
+      const decimals = Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals]));
+
+      // The stabilization agent on the multi-sleeve book (#220, #221): the book is every holding with its venue and the
+      // bridges it crossed, each volatile sleeve's own hourly history, and the same mandate, cash and policy context a
+      // sleeve's trade is checked under. Gold, a price exposure, is a risk asset. Its record goes to the log with every
+      // input before anything acts on it, and a record that can't be appended stops the tick.
+      let riskAssessment: RiskAssessment | undefined, riskInput: RiskInput | undefined;
+      let riskIntent: Intent | undefined, riskRequestId: string | undefined;
+      if (risk) {
+        const projection = projectionOf(risk), scenarios = scenariosOf(risk);
+        const label = (venue: string) => VENUES[venue]?.label ?? venue;
+        const book: Book = entries.map(({ entry, row }) => ({
+          asset: entry.id ?? entry.symbol, symbol: entry.symbol, class: entry.class === "stable" ? "stable" as const : "volatile" as const, usd: row.usd!,
+          venue: label(VENUE_IDS.intents), ...(entry.venues.length > 1 && { via: entry.venues.slice(1).map(label) }),
+        }));
+        // The cooldown runs from the newest trade of any sleeve: one agent, one account, one proposal a tick.
+        const acted = terms.sleeves.map(s => sleeveStates[s.asset]!.whipsaw.lastActionAt).filter((x): x is number => typeof x === "number");
+        const lastAction = acted.length > 0 ? Math.max(...acted) : null;
+        const priced = entries.filter(({ entry, row }) => entry.id !== null && proposable(entry) && row.price !== null && row.price > 0);
+        const from = at - projection.lookbackDays * DAY_MS - projection.maxGapMs;
+        riskInput = {
+          at, book,
+          terms: { monthlySpendUsd: settings.monthlySpendUsd, operatingCashMonths: settings.operatingCashMonths },
+          history: Object.fromEntries(entries.flatMap(({ entry }) => entry.class !== "stable" && hourlySeen[entry.symbol] ? [[entry.id ?? entry.symbol, hourlySeen[entry.symbol]!.filter(sample => sample.at >= from)]] : [])),
+          thresholds: riskThresholdsOf(m, settings.risk),
+          projection, scenarios, autopilotOn: autopilotOn ?? null,
+          trade: {
+            turnoverTodayUsd: recent.reduce((sum, p) => sum + p.sizeUsd, 0), ordersLastHour: recent.filter(p => p.at > at - HOUR_MS).length, quotedSlippageBps: 0,
+            cashUsd: runway.cashUsd, config: policyConfigOf(m), bounds: weightBoundsOf(m), baseLevel,
+            lastActionAt: lastAction,
+            cooldownMs: ENGINE_DEFAULTS.whipsaw.cooldownMs,
+            pricing: { prices: Object.fromEntries(priced.map(({ entry, row }) => [entry.id!, decimalOf(row.price!)])), decimals, maxSlippageBps: m.limits.policy.maxSlippageBps },
+          },
+        };
+        riskAssessment = assessRisk(riskInput);
+        // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
+          ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
+      }
+      const riskEvent = riskAssessment ? riskEventOf(riskAssessment) : undefined;
+      // While autopilot runs, Ballast decides nothing: the risk agent has assessed it and recommended pausing it if needed.
+      if (autopilotOn === true) return { skipped: "autopilot", ...(riskEvent && { risk: riskEvent }) };
+      // The forward detections join each sleeve's regime and the level once: buys hold at L1+, and every policy check sees
+      // the higher of the forward level and Ballast's own. Without a risk block nothing changes.
+      const forward = riskAssessment?.detections ?? [];
+      const level = Math.max(baseLevel, riskAssessment?.level ?? 0) as Level;
+      const regimes: Record<string, Regime> = Object.fromEntries(terms.sleeves.map(s =>
+        [s.asset, regimeFrom([...(markets[s.asset] ?? []), ...faults, ...sourceFaults(readings[s.asset]), ...forward])]));
+
       const holdings: BookHoldings = { volatileUsd, reserveUsd, cashUsd };
       // Sized to the mandate's own order cap, halved at L1 as the level gate halves it, so a sized order passes both.
       const orderCapPct = m.limits.policy.maxOrderPctOfTreasury * (level === 1 ? m.limits.l1OrderCapFactor : 1);
@@ -539,7 +627,6 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         }));
       };
 
-      const recent = state.proposed.filter(p => p.at > at - DAY_MS);
       const policyCtx = (venueExposureUsd: number) => ({
         treasuryValueUsd: total, turnoverTodayUsd: recent.reduce((sum, p) => sum + p.sizeUsd, 0),
         ordersLastHour: recent.filter(p => p.at > at - HOUR_MS).length, quotedSlippageBps: 0,
@@ -551,25 +638,42 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           ...(reading?.frozen ? { frozen: reading.reason } : reading ? { twap: reading.twap15m, ema: reading.ema30d } : {}) };
       };
 
+      /** The tick's decision with the risk agent's event beside it, as the two-asset step reports it. */
+      const done = (decision: Decision): Decision => riskEvent ? { ...decision, risk: riskEvent } : decision;
+      // A de-risk sell the forward risk agent sized passes policy, needs no cooldown and has legs: it is the tick's one
+      // proposal, for the owner to approve, and Ballast's sleeves make none this tick (so no decision of theirs names a
+      // request it never made). The sleeve it sells is the one whose cooldown and zone it disarms.
+      const riskProposal = riskAssessment?.derisk?.proposal;
+      const riskLegs = riskProposal?.legs.ok ? riskProposal.legs.legs : null;
+      const sold = riskLegs ? assetById(riskLegs[0].from) : undefined;
+      if (riskLegs && riskProposal && riskIntent && riskRequestId && riskAssessment?.derisk && sold) {
+        await rearmHolds();
+        return done({
+          requestId: riskRequestId, asset: sold.symbol, level,
+          body: { legs: riskLegs, expiresAt: new Date(at + proposalHours * HOUR_MS).toISOString(),
+            note: `Stabilization de-risk: sell ${riskProposal.sizeUsd} USD of ${sold.symbol}${riskAssessment.derisk.policy.ok === "needs-approval" ? `; ${riskAssessment.derisk.policy.reason}` : ""}`.slice(0, 280) },
+          intent: riskIntent, detail: { asset: sold.symbol, zone: riskIntent.zone, level },
+        });
+      }
+
       if (candidates.length === 0) {
         const first = decided.find(d => d.input !== null && readings[d.asset] !== undefined);
-        if (!first) return { skipped: "no sleeve can be priced", sleeves: terms.sleeves.map(s => s.asset) };
+        if (!first) return done({ skipped: "no sleeve can be priced", sleeves: terms.sleeves.map(s => s.asset) });
         // A hold records no policy or pricing (`decide`), so the legs' assets here never reach the record.
         const record = decide(readings[first.asset]!, first.input!, first.config, { ctx: policyCtx(volatileUsd[first.asset] ?? 0), config: policyConfigOf(m) },
           { volatile: PROPOSAL_ASSETS.wNEAR, reserve: PROPOSAL_ASSETS.USDC, prices: {}, decimals: {}, maxSlippageBps: m.limits.policy.maxSlippageBps });
         await audit.append({ ...record, organization, agent });
         await rearmHolds();
-        return { skipped: "ballast holds", reason: first.intent.reason, ...detailsOf(first), sleeves: decided.map(d => [d.asset, d.intent.action]) };
+        return done({ skipped: "ballast holds", reason: first.intent.reason, ...detailsOf(first), sleeves: decided.map(d => [d.asset, d.intent.action]) });
       }
 
       // The reserve leg: the first stablecoin in the split that the platform lists and the book prices.
       const reserve = Object.keys(terms.stableSplit).map(coin => assetBySymbol(coin)).find((e): e is AssetEntry => e !== undefined && proposable(e) && rowOf(e.symbol) !== undefined);
-      if (!reserve) return { skipped: "no proposable stablecoin in the reserve split" };
+      if (!reserve) return done({ skipped: "no proposable stablecoin in the reserve split" });
       const reserveRow = rowOf(reserve.symbol), reserveId = reserve.id;
       const reservePrice = reserveRow?.price ?? null;
-      if (reservePrice === null || reserveId === null) return { skipped: "no fresh price for the reserve" };
+      if (reservePrice === null || reserveId === null) return done({ skipped: "no fresh price for the reserve" });
       const bookHoldings = entries.map(({ entry, row }) => ({ asset: entry.symbol, usd: row.usd! }));
-      const decimals = Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([asset, token]) => [asset, token.decimals]));
 
       /** One sleeve's trade through the policy and the book check, recorded before anything acts; a refusal says why. */
       const attempt = async (chosen: (typeof decided)[number]): Promise<Decision> => {
@@ -610,11 +714,11 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       let refused: Decision | undefined;
       for (const chosen of candidates) {
         const decision = await attempt(chosen);
-        if (!("skipped" in decision)) { await rearmHolds(); return decision; }
+        if (!("skipped" in decision)) { await rearmHolds(); return done(decision); }
         refused ??= decision;
       }
       await rearmHolds();
-      return refused!;
+      return done(refused!);
     },
 
     /**

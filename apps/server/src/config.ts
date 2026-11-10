@@ -91,6 +91,14 @@ const Settings = z.object({
   ASSISTANT_QUESTIONS_PER_HOUR: z.coerce.number().int().positive().default(30),
   ASSISTANT_READS_PER_HOUR: z.coerce.number().int().positive().default(240),
   /**
+   * NEAR Intents' public API (#221), read for the hedge plan's live prices and dry quotes: `live` (1Click, keyless, nothing
+   * of the treasury's sent), `stub` (a deterministic list and quotes from the registry, nothing leaves the server: the
+   * stack's tests use it) or `off` (the hedge read says NEAR Intents isn't connected and blocks every move).
+   */
+  INTENTS_PROVIDER: z.enum(["live", "stub", "off"]).default("live"),
+  /** Calls to NEAR Intents an hour, the token list and every quote, for the whole deployment. */
+  INTENTS_CALLS_PER_HOUR: z.coerce.number().int().positive().default(120),
+  /**
    * DAO requests (consents and votes) a signed-in member may file a day: the platform allows a deployment 256 a day,
    * shared by every DAO and member.
    */

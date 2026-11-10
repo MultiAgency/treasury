@@ -223,6 +223,49 @@ export const diversificationRead = z.strictObject({
   notes: z.array(z.string()),
 });
 export type DiversificationRead = z.output<typeof diversificationRead>;
+
+/**
+ * The hedge page's read (#221): NEAR Intents' token list as the registry sees it (each asset's live price and any drift),
+ * and the plan into gold and other chains' assets, every move with its blockers by code. `intents.status` says whether the
+ * list is current (`ok`), the last good one served late (`stale`), or unreadable (`unavailable`, or the provider `off`); a
+ * move with no quote is blocked, never priced from a guess. `canPropose` is true only for an executable move whose swap
+ * could be built: the platform's list, a fresh quote and the book's caps all allow it. Nothing here acts.
+ */
+const blockCode = z.enum(["not_listed", "no_quote", "stale_quote", "quote_size", "quote_cost", "risk_level", "venue_cap", "class_cap", "order_size", "no_cap", "cash_floor", "invalid"]);
+export const hedgeMoveRead = z.strictObject({
+  id: z.string(), kind: z.enum(["hedge", "rebalance", "trim", "depeg-exit"]),
+  shape: z.enum(["stable-to-risk", "risk-to-stable", "risk-to-risk", "stable-to-stable"]),
+  from: z.string(), to: z.string(), sizeUsd: z.number(), reason: z.string(),
+  status: z.enum(["executable", "blocked"]),
+  blocked: z.array(z.strictObject({ code: blockCode, reason: z.string() })),
+  quote: z.strictObject({ costBps: z.number(), ageMs: z.number() }).nullable(),
+  canPropose: z.boolean(),
+});
+export const hedgeRead = z.strictObject({
+  at: z.number(),
+  intents: z.strictObject({
+    source: z.enum(["live", "stub", "off"]), status: z.enum(["ok", "stale", "unavailable", "off"]),
+    fetchedAt: z.number().nullable(), detail: z.string().nullable(), rejected: z.number(),
+  }),
+  registry: z.array(z.strictObject({
+    symbol: z.string(), id: z.string().nullable(), class: assetClass, chain: z.string(), route: intentsRoute,
+    venues: z.array(z.string()), proposable: z.boolean(),
+    /** On NEAR Intents' token list now: false when the list was read and doesn't carry the id, null when it wasn't read. */
+    listed: z.boolean().nullable(),
+    priceUsd: z.number().nullable(), heldUsd: z.number(),
+    drift: z.array(z.strictObject({ kind: z.enum(["missing", "decimals", "chain", "unpriced", "stale-price", "off-peg"]), detail: z.string() })),
+  })),
+  /** Whether the agent's watch config has a `hedge` block: without it there are no hedge sleeves to plan. */
+  configured: z.boolean(),
+  /** The forward risk level the plan used, from the latest stabilization record, or null when there is none. */
+  level: z.number().nullable(),
+  plan: z.strictObject({ moves: z.array(hedgeMoveRead), notes: z.array(z.string()) }).nullable(),
+  /** Why there is no plan, when there isn't one. */
+  problems: z.array(z.string()),
+});
+export type HedgeRead = z.output<typeof hedgeRead>;
+/** A hedge move the owner asks to propose: its id from the plan, and a `requestId` the page names (as a rebalance does). */
+export const hedgeProposeRequest = z.strictObject({ requestId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), move: z.string().min(1).max(100) });
 /** A sweep is a preview of the public balances (`execute: false`) or their shielding (`execute: true`). */
 export const sweepRequest = z.strictObject({ execute: z.boolean() });
 /** What a sweep's activity shows: the public balances it found (raw units as decimal strings), and each shield it sent. */
