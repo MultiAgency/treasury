@@ -12,8 +12,10 @@ export type RiskAssetClass = Exclude<AssetClass, "rwa">;
 /**
  * One holding of the book: its asset (on the server, the platform's asset ID, so a de-risk sell can be built from it), its
  * class, its USD value now, the venue it is held and settles at, and optionally the symbol a person reads (`wNEAR`).
+ * `via` names the other venues its holding depends on (#221): an asset that arrived over a bridge is down while the bridge
+ * is, as well as while the account holding it is. A holding without it depends on its `venue` alone.
  */
-export type BookHolding = { asset: string; class: RiskAssetClass; usd: number; venue: string; symbol?: string };
+export type BookHolding = { asset: string; class: RiskAssetClass; usd: number; venue: string; symbol?: string; via?: readonly string[] };
 export type Book = readonly BookHolding[];
 /** The mandate's spend terms: the cash floor is `monthlySpendUsd × operatingCashMonths` (`compileMandate`). */
 export type SpendTerms = { monthlySpendUsd: number; operatingCashMonths: number };
@@ -33,8 +35,9 @@ export function bookProblems(book: unknown): string[] {
     if (!isRecord(h)) { r.need(false, `holding ${i} is not an object`); continue; }
     const ok = typeof h.asset === "string" && h.asset.length > 0 && (h.class === "volatile" || h.class === "stable")
       && isNum(h.usd) && h.usd >= 0 && typeof h.venue === "string" && h.venue.length > 0
-      && (h.symbol === undefined || (typeof h.symbol === "string" && h.symbol.length > 0));
-    if (!ok) { r.need(false, `holding ${i} needs an asset, a class (volatile or stable), a USD value of zero or more, a venue, and a symbol if it has one`); continue; }
+      && (h.symbol === undefined || (typeof h.symbol === "string" && h.symbol.length > 0))
+      && (h.via === undefined || (Array.isArray(h.via) && h.via.every(v => typeof v === "string" && v.length > 0)));
+    if (!ok) { r.need(false, `holding ${i} needs an asset, a class (volatile or stable), a USD value of zero or more, a venue, and a symbol and the venues it crosses if it has them`); continue; }
     r.need(!seen.has(h.asset as string), `${h.asset as string} is listed twice`);
     seen.add(h.asset as string);
     total += h.usd as number;
@@ -109,7 +112,7 @@ export function scenariosFor(book: Book, params: ScenarioParams = SCENARIO_DEFAU
     else for (const price of params.stablePrices)
       out.push({ id: `depeg:${h.asset}:${price}`, label: `${name} trades at $${price}`, shocks: [{ kind: "price", asset: h.asset, factor: price }] });
   }
-  for (const venue of [...new Set(book.map(h => h.venue))]) for (const days of params.venueOutageDays)
+  for (const venue of [...new Set(book.flatMap(h => [h.venue, ...(h.via ?? [])]))]) for (const days of params.venueOutageDays)
     out.push({ id: `venue:${venue}:${days}d`, label: `${venue} unavailable for ${days === 1 ? "24 hours" : `${days} days`}`, shocks: [{ kind: "venue-down", venue, days }] });
   out.push({ id: "sources-stale", label: `Every price source stale for ${params.staleDays === 1 ? "a day" : `${params.staleDays} days`}`, shocks: [{ kind: "sources-stale", days: params.staleDays }] });
   out.push({ id: `spend:${params.spendFactor}x`, label: `Spend at ${params.spendFactor}× plan`, shocks: [{ kind: "spend", factor: params.spendFactor }] });
@@ -176,11 +179,13 @@ export function stressRun(book: Book, terms: SpendTerms, scenario: Scenario): St
   // Spend falls due through the longest outage; the stables on venues still up pay what they can, and the rest waits.
   const outageDays = Math.max(0, ...down.values());
   const due = monthly * outageDays / MONTH_DAYS;
-  const reachable = after.filter(h => h.class === "stable" && !down.has(h.venue)).reduce((sum, h) => sum + h.usd, 0);
+  // A holding is cut off while any venue on its path is down: the account holding it, or the bridge it came over.
+  const cutOff = (h: BookHolding) => down.has(h.venue) || (h.via ?? []).some(v => down.has(v));
+  const reachable = after.filter(h => h.class === "stable" && !cutOff(h)).reduce((sum, h) => sum + h.usd, 0);
   const stables = after.filter(h => h.class === "stable").reduce((sum, h) => sum + h.usd, 0);
   const stableUsd = Math.max(0, stables - due);
   const floorUsd = monthly * terms.operatingCashMonths;
-  const tradable = staleDays === 0 && !after.some(h => h.class === "volatile" && down.has(h.venue));
+  const tradable = staleDays === 0 && !after.some(h => h.class === "volatile" && cutOff(h));
   return {
     id, label, valueUsd: round(valueUsd), lossUsd: round(before - valueUsd), drawdownPct: round((before - valueUsd) / before * 100),
     stableUsd: round(stableUsd), runwayMonths: round(stableUsd / monthly), floorUsd: round(floorUsd), floorBreached: stableUsd < floorUsd,

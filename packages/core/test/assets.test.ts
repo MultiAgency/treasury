@@ -14,7 +14,7 @@ test("what is proposable is exactly the platform's proposal assets: wNEAR, USDC 
 });
 
 test("an asset the platform doesn't list is declared but never proposable", () => {
-  for (const symbol of ["BTC", "USDT", "USDC.e", "XAUT", "TBILL"]) {
+  for (const symbol of ["BTC", "SOL", "USDT", "USDC.e", "XAUT", "TBILL"]) {
     assert.ok(ASSET_REGISTRY[symbol], `${symbol} is declared`);
     assert.equal(proposable(ASSET_REGISTRY[symbol]!), false, `${symbol} isn't proposable`);
   }
@@ -36,7 +36,7 @@ test("every asset names three distinct price sources", () => {
 });
 
 test("risk assets are the volatile ones and a real-world asset that isn't cash-like", () => {
-  assert.deepEqual(Object.values(ASSET_REGISTRY).filter(isRisk).map(e => e.symbol).sort(), ["BTC", "ETH", "XAUT", "wNEAR"]);
+  assert.deepEqual(Object.values(ASSET_REGISTRY).filter(isRisk).map(e => e.symbol).sort(), ["BTC", "ETH", "SOL", "XAUT", "wNEAR"]);
 });
 
 test("lookups: by symbol ignoring case, and by NEAR Intents id", () => {
