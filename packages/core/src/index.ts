@@ -23,3 +23,6 @@ export * from "./stables.ts";
 export * from "./runway.ts";
 export * from "./diversified.ts";
 export * from "./book-replay.ts";
+export * from "./scenarios.ts";
+export * from "./projection.ts";
+export * from "./stabilization.ts";

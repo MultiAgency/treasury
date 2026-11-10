@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { z } from "zod";
 import { ballastSettings, diversificationProblemsFor } from "./ballast.ts";
 import { notifier } from "./notify.ts";
+import { riskWatchSettings } from "./risk.ts";
 import { WATCH, type WatchedAgent } from "./watch.ts";
 
 /** The platform's calls an hour per app credential (`hourlyLimit(1_200)` in its `app-routes.ts`), shared by every owner. */
@@ -22,6 +23,8 @@ const agentSettings = z.strictObject({
   notify: z.array(z.string().min(1)).min(1).optional(),
   /** Ballast proposes for this agent instead of the drift rule (`ballast.ts`, #47). */
   ballast: ballastSettings.optional(),
+  /** The stabilization agent runs beside Ballast (#220): with it, each tick records a risk assessment and may de-risk. */
+  risk: riskWatchSettings.optional(),
 });
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
 
@@ -68,6 +71,14 @@ export async function loadWatchConfig(path: string): Promise<WatchedAgent[]> {
     if (!ballast?.diversification) continue;
     const problems = diversificationProblemsFor(ballast);
     if (problems.length > 0) throw new Error(`${path}: ${organization}/${agent}: ${problems.join("; ")}`);
+  }
+  // The risk agent reads Ballast's mandate for the cash floor and the thresholds, and the same hourly history, of the
+  // two-asset book: it doesn't run on a diversified one yet (ADR 5, ADR 6), so the two together are refused.
+  for (const { organization, agent, risk, ballast } of parsed.agents) {
+    if (risk && !ballast)
+      throw new Error(`${path}: ${organization}/${agent} sets risk without ballast: the risk agent needs the mandate's spend terms and profile`);
+    if (risk && ballast?.diversification)
+      throw new Error(`${path}: ${organization}/${agent} sets risk with a diversified ballast: the risk agent assesses the two-asset book only (ADR 5)`);
   }
   const spent = readsPerHour(parsed.agents);
   if (spent > WATCH_HOURLY_BUDGET) {

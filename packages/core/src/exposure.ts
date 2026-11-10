@@ -109,7 +109,7 @@ export function checkExposure(order: Intent, ctx: ExposureContext, limits: Expos
 // carries everything the check read and replays without the registry.
 
 /** A holding by registry symbol, valued in USD. */
-export type BookHolding = { asset: string; usd: number };
+export type ValuedHolding = { asset: string; usd: number };
 
 /** What the book check reads: the order's asset as the registry describes it, and the book's exposure now. */
 export type BookExposureContext = {
@@ -135,7 +135,7 @@ export function bookLimitProblems(l: BookExposureLimits): string[] {
 }
 
 /** USD at each venue and in each class, from the holdings; null when one is unusable or not in the registry. */
-export function bookExposure(holdings: readonly BookHolding[], registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY):
+export function bookExposure(holdings: readonly ValuedHolding[], registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY):
   { venueUsd: Record<string, number>; classUsd: Partial<Record<AssetClass, number>> } | null {
   const venueUsd: Record<string, number> = {}, classUsd: Partial<Record<AssetClass, number>> = {};
   for (const h of holdings) {
@@ -152,7 +152,7 @@ export function bookExposure(holdings: readonly BookHolding[], registry: Readonl
 }
 
 /** The check's context for an order in `asset`, or null when the asset or a holding isn't in the registry or is unusable. */
-export function bookContext(asset: string, holdings: readonly BookHolding[], treasuryValueUsd: number,
+export function bookContext(asset: string, holdings: readonly ValuedHolding[], treasuryValueUsd: number,
   registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY): BookExposureContext | null {
   const entry = registry[asset];
   const exposure = bookExposure(holdings, registry);

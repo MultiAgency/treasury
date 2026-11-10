@@ -253,3 +253,16 @@ test("a strategy is saved by one JSON POST naming the digest it replaces, held t
   assert.deepEqual(server.sent.map(request => JSON.parse(request.body)), [{ strategy, expectedDigest: digest }]);
   assert.throws(() => agent.saveStrategy({ ...strategy, maxCostBps: 2_000 }, digest));
 });
+
+test("the forward risk report is read from the agent's own route, parsed with the server's contract; none yet is null", async () => {
+  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const report = { at: "2026-11-06T12:00:00.000Z", seq: 7, level: 2, reason: "projected drawdown 22.6% is at or past its L2 step, 16%",
+    projection: { usable: true, reasons: [], projectedDrawdownPct: 22.62, expectedShortfallPct: 22.66, breachProbabilityPct: 4.2, runwayMonths: 30, monthsToFloor: 24, volatileSharePct: 40 },
+    scenarios: [{ id: "drop:wNEAR:80", label: "wNEAR falls 80% in a day", valueUsd: 68_000, lossUsd: 32_000, drawdownPct: 32, stableUsd: 60_000, runwayMonths: 30, floorUsd: 12_000, floorBreached: false, unfundedUsd: 0, tradable: true }],
+    recommendations: [{ action: "hold-buys", reason: "holds" }], derisk: null, proposed: false };
+  server.answer(`GET ${base}/risk`, ok({ risk: report }));
+  assert.deepEqual(await agent.risk(), { ok: true, value: { risk: report } });
+  server.answer(`GET ${base}/risk`, ok({ risk: null }));
+  assert.deepEqual(await agent.risk(), { ok: true, value: { risk: null } });
+  assert.deepEqual(server.sent.map(request => request.path), [`${base}/risk`, `${base}/risk`]);
+});

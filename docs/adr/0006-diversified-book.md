@@ -107,3 +107,4 @@ An agent's watch config may carry a `diversification` block: sleeves, class and 
 - The second stablecoin's price source, and the first one that isn't the platform's own quote.
 - Bridge risk numbers to replace `BRIDGE_CAP_PCT`.
 - A stablecoin-to-stablecoin leg: `legsFor` builds volatile ↔ reserve swaps, so a split move needs either a second leg shape or two proposals.
+- The stabilization agent (ADR 5) on a diversified book: until it assesses the multi-sleeve book, a watch entry with both `risk` and `diversification` is refused at load.

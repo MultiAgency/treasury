@@ -6,11 +6,14 @@ The owner can also ask the [treasury assistant](docs/assistant.md) about the tre
 
 Freeze is the stop that halts every send. A wallet owner can freeze the agent from the app's pages (#133). A DAO-owned agent has no such stop through the app yet: its freeze vote must pass within the provider intent's 600 seconds, which most DAOs can't do (MultiAgency/platform#20). Until then, `autopilot/stop` ends its schedule and the strategy engine proposes nothing at L4, but other apps' access and approved proposals are untouched.
 
+Beside the strategy engine, a stabilization agent projects the book under tail scenarios and from its recent price history, raises the level early, and proposes a de-risk within the same limits, or recommends pausing autopilot or a freeze. It only ever proposes or recommends: a de-risk is the owner's to approve, and a freeze needs their signature (#220, [ADR 5](docs/adr/0005-forward-risk.md)).
+
 | Path | What |
 | --- | --- |
 | `apps/server/` | The app's own server. It holds the deployment's `tap_` credential, calls `/apps/v1` with `appClient`, serves the app's pages, and runs `watch`, the proposer. See [docs/app-server.md](docs/app-server.md); for deploying, [docs/deploy.md](docs/deploy.md). |
-| `web/src/proposals/` | The app's pages, served by the app server: sign-in, setup, the connection, proposals, strategy and autopilot, funding. These are the one Treasury app (#128). See [docs/web.md](docs/web.md). |
-| `packages/core/` | The strategy engine: pure decision logic, run by `watch` for the agents configured with it ([ADR 3](docs/adr/0003-engine-parameters.md), [HISTORY.md](packages/core/HISTORY.md)). It also carries the diversified book's asset registry, sleeves, stablecoin split and runway rules ([ADR 6](docs/adr/0006-diversified-book.md), [#221](https://github.com/MultiAgency/treasury/issues/221)), and the deterministic backtest behind [docs/diversified-backtest.md](docs/diversified-backtest.md). |
+| `web/src/proposals/` | The app's pages, served by the app server: sign-in, setup, the connection, proposals, strategy and autopilot, funding, and the forward risk report. These are the one Treasury app (#128). See [docs/web.md](docs/web.md). |
+| `packages/core/` | The strategy engine: pure decision logic, run by `watch` for the agents configured with it, and the stabilization agent beside it ([ADR 3](docs/adr/0003-engine-parameters.md), [ADR 5](docs/adr/0005-forward-risk.md), [HISTORY.md](packages/core/HISTORY.md)). It also carries the diversified book's asset registry, sleeves, stablecoin split and runway rules ([ADR 6](docs/adr/0006-diversified-book.md), [#221](https://github.com/MultiAgency/treasury/issues/221)), and the deterministic backtest behind [docs/diversified-backtest.md](docs/diversified-backtest.md). |
+| `scripts/stabilization-backtest.ts` | The deterministic backtest behind [docs/stabilization-backtest.md](docs/stabilization-backtest.md): Ballast's bands alone against the stabilization agent, on a synthetic placeholder until real history loads. |
 | `scripts/stack.ts` | Starts the platform's simulated stack for the stack tests, and drives it through its state and control files only. |
 | `docs/` | Decisions (`adr/`), the app server and web builds, the [treasury assistant](docs/assistant.md), deploying, and the SDK report. |
 

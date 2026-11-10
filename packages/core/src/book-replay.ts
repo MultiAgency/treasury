@@ -11,7 +11,7 @@ import { checkPolicy, type FullContext } from "./check.ts";
 import { canonicalJson, sha256Hex } from "./digest.ts";
 import { detectMarketMoves } from "./detectors.ts";
 import { maxDrawdownPct } from "./calibration.ts";
-import { bookContext, checkBookExposure, combineResults, type BookExposureLimits, type BookHolding } from "./exposure.ts";
+import { bookContext, checkBookExposure, combineResults, type BookExposureLimits, type ValuedHolding } from "./exposure.ts";
 import { regimeFrom } from "./faults.ts";
 import { readOracle, type PriceQuote } from "./oracle.ts";
 import { replayProblems, SimulatedProvider, type EquityPoint, type Fill, type ReplayConfig, type StepOutcome } from "./replay.ts";
@@ -111,7 +111,7 @@ export function replayBook(series: Readonly<Record<string, readonly Sample[]>>, 
         // The account is one venue for every risk asset, as H6 counts it.
         venueExposureUsd: riskUsd, cashUsd: cash, spendsCashUsd: 0, level: config.level,
       };
-      const holdings: BookHolding[] = [...assets.map(a => ({ asset: a, usd: usd(a) })), { asset: "USDC", usd: reserve + cash }];
+      const holdings: ValuedHolding[] = [...assets.map(a => ({ asset: a, usd: usd(a) })), { asset: "USDC", usd: reserve + cash }];
       const book = bookContext(asset, holdings, treasury, registry);
       const verdict = book === null ? { ok: false as const, rule: "INVALID_INPUT" as const, detail: "the book can't be read", failed: ["INVALID_INPUT" as const] }
         : combineResults([checkPolicy(intent, ctx, config.policy), checkBookExposure(intent, book, config)]);

@@ -82,6 +82,12 @@ test("a diversification block loads when the compiled mandate's terms hold, and 
   assert.equal(without[0]!.ballast?.diversification, undefined);
 });
 
+test("the risk agent and a diversified book together are refused at load: the risk agent assesses the two-asset book only", async () => {
+  const both = { organization: "o", agent: "a", risk: {}, ballast: { ...BALLAST, diversification: { sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS } } };
+  await assert.rejects(loadWatchConfig(await file({ agents: [both] })), /sets risk with a diversified ballast: the risk agent assesses the two-asset book only/);
+  assert.equal((await loadWatchConfig(await file({ agents: [{ organization: "o", agent: "a", risk: {}, ballast: BALLAST }] }))).length, 1, "risk on the two-asset book loads");
+});
+
 test("a sleeve or stablecoin the platform doesn't list is refused at load, naming the platform's proposal assets", async () => {
   await assert.rejects(loadWatchConfig(await diversified({
     sleeves: [WNEAR_SLEEVE, { asset: "BTC", targetPct: 20, minPct: 5, maxPct: 25 }], venueCapsPct: { ...VENUE_CAPS, "omft-bitcoin": 25 },

@@ -26,6 +26,7 @@ import { failure, log } from "./log.ts";
 import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import { agentsOf, checkSetup, DAO_SETUP_MS, setupConsents, setupFor, setupText } from "./setup.ts";
 import { recordResult, revokeAll } from "./revoke.ts";
+import { riskReportOf, type LatestRisk } from "./risk.ts";
 import type { Sessions } from "./sessions.ts";
 import { createStrategyProposals, memoryProposalRecords, type StrategyProposals } from "./strategy-proposals.ts";
 import type { SignIn } from "./signin.ts";
@@ -86,6 +87,11 @@ export type Deps = {
    * caps from the compiled mandate these name. Absent, the read shows the profile's defaults or no caps at all (#221).
    */
   ballastSettings?: (organization: string, agent: string) => BallastSettings | undefined;
+  /**
+   * The latest stabilization record for an agent (#220), read from the audit log: the owner's risk report. Without it,
+   * the route answers that no assessment has been recorded.
+   */
+  latestRisk?: LatestRisk;
   /**
    * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
    * and each of its calls is a call against the platform's hourly budget, which every owner shares.
@@ -1039,6 +1045,19 @@ export const routes: Route[] = [
   readRoute("/api/agents/:agent/unresolved", "unresolved"),
   readRoute("/api/agents/:agent/runs", "runs"),
   readRoute("/api/agents/:agent/policy-history", "policyHistory"),
+  {
+    // The stabilization agent's latest assessment (#220), as the audit log recorded it: its level, projection, scenarios
+    // and recommendations, with the time and sequence number it was written at. Nothing is computed on request and the
+    // platform isn't read: the record is the one a watch tick made, and a replay of the log makes it again. Read anew
+    // (`owner-fresh`), since this server's own record is what the answer is.
+    method: "GET", path: "/api/agents/:agent/risk", access: "owner-fresh", needs: "read",
+    async handle({ identity }, { latestRisk }) {
+      const { agent, owner } = identity!;
+      if (!latestRisk) return ok({ risk: null });
+      const found = await relay(async () => ({ ok: true as const, value: await latestRisk(organizationOf(owner), agent) }), agent);
+      return found.ok ? ok({ risk: found.value ? riskReportOf(found.value) : null }) : readFailure(found, agent, "risk");
+    },
+  },
   {
     // The account linked to fund the agent, with its balances and, for a DAO, its members: null when none is linked.
     method: "GET", path: "/api/agents/:agent/treasury", access: "owner", needs: "read",

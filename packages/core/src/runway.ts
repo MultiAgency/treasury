@@ -5,7 +5,7 @@
 // counts: it's a price exposure, not cash. The result feeds `checkExposure`'s `cashUsd` and the cash-floor detector.
 
 import { ASSET_REGISTRY, proposable, type AssetEntry } from "./assets.ts";
-import type { BookHolding } from "./exposure.ts";
+import type { ValuedHolding } from "./exposure.ts";
 import { isNum } from "./validate.ts";
 
 export type RunwayTerms = {
@@ -23,7 +23,7 @@ export type RunwayCash = {
 };
 
 /** The cash the floor counts, holding by holding, with why each one that doesn't count is left out. */
-export function runwayCash(holdings: readonly BookHolding[], terms: RunwayTerms, registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY): RunwayCash {
+export function runwayCash(holdings: readonly ValuedHolding[], terms: RunwayTerms, registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY): RunwayCash {
   const counted: RunwayCash["counted"] = [], excluded: RunwayCash["excluded"] = [];
   let usable = isNum(terms.horizonDays) && terms.horizonDays >= 0;
   for (const h of holdings) {
