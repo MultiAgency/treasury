@@ -22,7 +22,9 @@ export type AuditEntry = {
     | "dao-consent-stored" | "dao-vote" | "dao-vote-relayed" | "deposit" | "link" | "unlink" | "confidential" | "sweep" | "propose" | "autopilot-on" | "autopilot-off" | "run-now" | "grant" | "grant-submit" | "strategy-save" | "freeze" | "unfreeze" | "grant-revoke" | "policy-update" | "owner-submit" | "token-issue" | "token-revoke"
     | "strategy-propose" | "strategy-adopt" | "strategy-decline"
     /** The assistant (#219): a question asked (`attempt`, then `result`), and each tool call it made or draft it wrote, by their hashes. */
-    | "assistant-ask" | "assistant-tool" | "assistant-draft";
+    | "assistant-ask" | "assistant-tool" | "assistant-draft"
+    /** A call to NEAR Intents' public API (#221), for the token list or a dry-run quote: by the hash of the request and of the answer. */
+    | "intents-read";
   /**
    * The agent the action concerns. A setup's attempt has none: the platform names the agent it reserves in its answer.
    * `setup`: a wallet owner's signed setup text relayed (`subject`: the setup consent); `create`: an agent's creation
@@ -37,7 +39,7 @@ export type AuditEntry = {
   verdict?: "approve" | "reject";
   /** The SHA-256 of the text the owner signed (or a DAO is asked to sign by its vote), never the signature. */
   signedTextSha256?: string;
-  /** The assistant's tool, on `assistant-tool` and `assistant-draft`. */
+  /** The assistant's tool, on `assistant-tool` and `assistant-draft`; `tokens` or `quote` on `intents-read`. */
   tool?: string;
   /** The SHA-256 of the question or the tool's input, and of the answer or the tool's result: never the text itself. */
   inputSha256?: string;
