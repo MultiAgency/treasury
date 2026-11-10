@@ -26,3 +26,4 @@ export * from "./book-replay.ts";
 export * from "./scenarios.ts";
 export * from "./projection.ts";
 export * from "./stabilization.ts";
+export * from "./whatif.ts";
