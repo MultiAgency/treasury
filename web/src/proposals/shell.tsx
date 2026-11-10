@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CaretRight } from "@phosphor-icons/react";
 import { createContext, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { Assistant } from "./assistant";
 import { Logo } from "./brand";
 import { AgentNav, PageLink, TreasuriesNav } from "./nav";
 import type { Place } from "./pages";
@@ -55,6 +56,8 @@ function TopBar({ here }: { here: Place }) {
       </>}
       <span className="truncate font-medium">{here.title}</span>
     </p>
+    {/* The treasury assistant (#219), on an agent's pages once the server answers questions and the account may read the agent. */}
+    {agent !== undefined && <Assistant agent={agent} />}
   </header>;
 }
 

@@ -1,7 +1,9 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, ErrorBox, Spinner } from "../shared/ui";
 import type { agentReads } from "./queries";
+import type { AssistantDraft } from "./proposals-api";
+import { FromAssistant, SwapPreview } from "./assistant-note";
 import { failureText } from "./words";
 import { PageLink } from "./nav";
 import { proposalAddress } from "./pages";
@@ -14,12 +16,15 @@ const freshRequestId = () => `page-${Array.from(crypto.getRandomValues(new Uint8
  * until it's approved below. After a lost answer, the proposal is looked up by its request ID: found, it's shown;
  * not found, nothing was stored, and asking again is safe.
  */
-export function ProposeRebalance({ reads }: { reads: ReturnType<typeof agentReads> }) {
+export function ProposeRebalance({ reads, drafted }: { reads: ReturnType<typeof agentReads>; drafted?: Extract<AssistantDraft, { kind: "rebalance" }> }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
   const [made, setMade] = useState<string>();
+  // Opened from the assistant's draft (#219): the button takes the focus, so the owner's next step is to propose, or not.
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (drafted) button.current?.focus(); }, [drafted]);
 
   const ask = async () => {
     setBusy(true);
@@ -46,7 +51,8 @@ export function ProposeRebalance({ reads }: { reads: ReturnType<typeof agentRead
 
   return <div className="flex flex-col items-start gap-2">
     <p className="text-sm text-muted-foreground">A rebalance to the saved strategy, proposed for approval. It's quoted now and open for a day.</p>
-    <Button variant="outline" disabled={busy} onClick={() => void ask()}>{busy && <Spinner />} Propose a rebalance</Button>
+    {drafted && !made && <FromAssistant>{drafted.legs && <SwapPreview legs={drafted.legs} />}</FromAssistant>}
+    <Button ref={button} variant="outline" disabled={busy} onClick={() => void ask()}>{busy && <Spinner />} Propose a rebalance</Button>
     <p role="status" className="text-sm">{notice}{made && <> <PageLink to={proposalAddress(reads.name, made)} className="underline">Review the proposal</PageLink></>}</p>
     <ErrorBox error={error} />
   </div>;

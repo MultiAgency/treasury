@@ -5,6 +5,8 @@ import { useState } from "react";
 import { ActionRow, confirmDanger } from "@/components/ui/action-row";
 import { cn } from "@/lib/utils";
 import { Button, Spinner } from "../shared/ui";
+import { useTakeDraft } from "./assistant-drafts";
+import { FromAssistant } from "./assistant-note";
 import { stopControls } from "./freeze-view";
 import { useOwnerFlow } from "./owner-flow";
 import { PageLink } from "./nav";
@@ -59,10 +61,19 @@ function Stop({ reads, identity, inPage }: { reads: Reads; identity: Identity; i
 
   const start = (kind: Kind) => {
     setReview(undefined);
+    setAsked(undefined);
     void flow.start(() => kind === "freeze" ? reads.agent.freeze() : reads.agent.unfreeze());
   };
 
   const ready = controls.kind === "ready" ? controls : undefined;
+  // The assistant's freeze draft (#219) opens this review, as Freeze does: nothing is signed until the owner says so in it.
+  const [asked, setAsked] = useState<string>();
+  const [unopened, setUnopened] = useState<string>();
+  useTakeDraft(reads.name, "freeze", consent.isSuccess && (!connected || overview.isSuccess), draft => {
+    if (ready?.action === "freeze" && !busy && !holding) { setUnopened(undefined); setAsked(draft.reason); setReview("freeze"); }
+    else setUnopened(frozen ? "The assistant drafted a freeze, but the agent is frozen already."
+      : "The assistant drafted a freeze, but it can't be started from here now: see below.");
+  });
   const notes = <>
     {controls.kind === "not-connected" && <p className="text-xs text-muted-foreground">The agent isn't connected to this app, so it can't be frozen from here and its state can't be read. <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Connect the agent</PageLink> on its Home page.</p>}
     {controls.kind === "needs-owner-scope" && <p className="text-xs text-muted-foreground">Your connection doesn't allow owner actions yet: <PageLink to={agentAddress(identity.agent)} hash="connection" className="underline">Allow owner actions in Connection</PageLink>, then freeze from here.</p>}
@@ -75,16 +86,19 @@ function Stop({ reads, identity, inPage }: { reads: Reads; identity: Identity; i
         : <p role="status" className={frozen ? "font-medium text-destructive" : undefined}>{frozen ? "Frozen: the agent refuses every send." : "Not frozen."}</p>}
       info="Freezing is the only stop that refuses every send: swaps, shields, transfers and autopilot runs, until it is unfrozen. It doesn't move funds or undo an operation already sent."
       infoLabel="About the emergency stop"
-      action={ready && <Button variant={ready.action === "freeze" ? "danger" : "outline"} size="sm" disabled={busy || holding} onClick={() => setReview(ready.action)}>{busy && <Spinner />} {ready.label}</Button>}>
+      action={ready && <Button variant={ready.action === "freeze" ? "danger" : "outline"} size="sm" disabled={busy || holding} onClick={() => { setAsked(undefined); setReview(ready.action); }}>{busy && <Spinner />} {ready.label}</Button>}>
+      {unopened && <p role="status" className="text-xs">{unopened}</p>}
       {notes}
       {flow.progress}
     </ActionRow>
-    <ReviewDialog open={review !== undefined} busy={busy} onClose={() => setReview(undefined)}
+    <ReviewDialog open={review !== undefined} busy={busy} onClose={() => { setReview(undefined); setAsked(undefined); }}
       title={review === "unfreeze" ? "Unfreeze this agent?" : "Freeze this agent?"}
       description={review === "unfreeze"
         ? `The agent may send again: autopilot, rebalances you approve, shielding and transfers within the signed policy. ${dao ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`
         : `A frozen agent refuses every send: swaps, shields, transfers and autopilot runs, until it is unfrozen. It does not move funds, and it does not undo an operation already sent: check Activity for any without a proven outcome. Proposals approved earlier are invalidated, and new ones can't be approved while it is frozen. ${dao ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the request expires." : "Your wallet signs it; nothing takes effect without your signature."}`}
       actions={<Button variant={review === "unfreeze" ? "default" : "destructive"} className={review === "unfreeze" ? undefined : confirmDanger} disabled={busy} onClick={() => review && start(review)}>
-        {dao ? "File in your wallet" : review === "unfreeze" ? "Sign and unfreeze" : "Sign and freeze"}</Button>} />
+        {dao ? "File in your wallet" : review === "unfreeze" ? "Sign and unfreeze" : "Sign and freeze"}</Button>}>
+      {asked !== undefined && review === "freeze" ? <FromAssistant><p className="text-xs text-muted-foreground">You asked: {asked}</p></FromAssistant> : null}
+    </ReviewDialog>
   </section>;
 }

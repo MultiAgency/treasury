@@ -63,6 +63,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
     daoSetup: (dao: string) => call(contract.daoSetup, `/api/setup/dao/${contract.accountId.parse(dao)}`),
     /** Files a DAO's Treasury setup for its vote, or answers the one already open. */
     fileDaoSetup: (dao: string) => call(contract.daoFiled, `/api/setup/dao/${contract.accountId.parse(dao)}`, { method: "POST" }),
+    /** Whether this server answers the treasury assistant's questions (#219), and with which model. */
+    assistantStatus: () => call(contract.assistantStatus, "/api/assistant"),
     /** One agent's routes; each needs the signed-in account to be its owner. */
     agent(name: string) {
       const base = `/api/agents/${contract.agentName.parse(name)}`;
@@ -153,6 +155,9 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
           call(contract.strategySaved, `${base}/strategy`, { method: "POST", body: contract.strategySaveRequest.parse({ strategy, expectedDigest }) }),
         /** The strategies agents proposed and the owner hasn't answered (#206), from the server's own records. */
         strategyProposals: () => call(contract.strategyProposalsRead, `${base}/strategy-proposals`),
+        /** A question to the treasury assistant, with the conversation's earlier turns as text: it reads, cites and drafts, never sends. */
+        ask: (question: string, history: z.input<typeof contract.assistantTurn>[]) =>
+          call(contract.assistantAnswer, `${base}/assistant`, { method: "POST", body: { question, history } }),
         /** Adopts one: saved over the strategy it was compared against, once. The grant that binds it is asked for after. */
         adoptStrategyProposal: (id: string) => call(contract.strategySaved, `${base}/strategy-proposals/${proposalRecordId.parse(id)}/adopt`, { method: "POST" }),
         /** Declines one: closed, and not proposed again by its source. */
@@ -211,6 +216,8 @@ export type BooksRead = z.output<typeof contract.booksRead>;
 export type StrategyRead = z.output<typeof contract.strategyRead>;
 export type StrategyProposal = z.output<typeof contract.strategyProposal>;
 export type RiskReport = z.output<typeof contract.riskReport>;
+export type AssistantAnswer = z.output<typeof contract.assistantAnswer>;
+export type AssistantDraft = z.output<typeof contract.assistantDraft>;
 export type GrantPrepared = z.output<typeof contract.grantPrepared>;
 
 /** A fresh 32-byte NEP-413 nonce, in the canonical base64 the server accepts. */

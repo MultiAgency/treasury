@@ -100,6 +100,13 @@ The build (`src/proposals/`, built to `dist-proposals/`), served only by the app
 | `<dao>` votes to approve (reject) this proposal. | status | proposal, while the DAO's vote waits |
 | What the DAO votes on | list (the DAO proposal's description, line by line) | a waiting DAO request |
 | File the DAO proposal or File and vote; Vote on it in Trezu; Check the exact text and hash the DAO signs | button; links | a waiting DAO request |
+| Ask the treasury | button in the top bar of each agent page (#219), shown only where the server answers (`GET /api/assistant`); its text is hidden visually, not from assistive technology, on narrow screens | an agent's pages |
+| Treasury assistant | dialog (a sheet), with its description | an agent's pages, from Ask the treasury |
+| Conversation; Your question; Ask | log; textbox; button. While an answer is read, a status "Reading the records…" | the assistant |
+| Source S`n`: `<read>`, read `<time>`; Sources | a button for each citation mark; a list of the reads an answer cites, each with when it was read | an answer |
+| What it changes; Estimated swaps; Open the rebalance proposal, Open in the strategy editor, Open in the policy editor, Open the grant, Open the freeze review | description list; list; one button for each draft card | an answer that drafts a change |
+| Filled in by the assistant; Estimated swaps | note; list | the rebalance form, strategy editor, policy editor, grant review or freeze review a draft opened |
+| Save or cancel the strategy edit first…; Save or cancel the policy edit first… | status, when a draft is opened while the owner's own edit is open; the edit is kept | the Strategy and Policy pages |
 
 How it departs from the brief, or decides what the brief leaves open:
 - **The agent comes from the address** (`/agents/<agent>/…`, one frame around each of its pages). `/` lists the signed-in account's own treasuries (`GET /api/setup`, the agents its consents name under its Organization), and still opens an agent by name, for one a DAO owns.

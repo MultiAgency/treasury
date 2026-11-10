@@ -4,7 +4,10 @@ import type { AddressInfo } from "node:net";
 import { ANCHOR_NETWORKS, anchorKey, createAnchorer, nearAnchorChain, readAnchorKey, runAnchor, type AnchorEntry } from "./anchor.ts";
 import type { AuditEntry } from "./audit.ts";
 import { createAgentTokens, fileTokenRecords, memoryTokenRecords } from "./agent-tokens.ts";
-import { chainedFileAudit, movePlainLogAside } from "./chain.ts";
+import { chainedFileAudit, movePlainLogAside, parseAuditLog, readAuditLog } from "./chain.ts";
+import { createAssistant } from "./assistant/assistant.ts";
+import { nearAiModel } from "./assistant/model.ts";
+import { rulesModel } from "./assistant/rules-model.ts";
 import { loadConfig } from "./config.ts";
 import { createCredential } from "./credential.ts";
 import { createServer } from "./http.ts";
@@ -80,6 +83,18 @@ const platform = createPlatform({ origin: settings.TREASURY_PLATFORM_ORIGIN, cre
   executeTimeoutMs: settings.PLATFORM_EXECUTE_TIMEOUT_MS });
 // One settle for the routes and the reader, so reads of the same DAO request at once share one.
 const settle = createSettle({ platform, daoRequests, audit });
+// The treasury assistant (#219): on when a model is configured, else off and its panel hidden. It reads the audit log
+// for Ballast's decisions and the owner actions relayed here; only what a question needs leaves the server.
+// `TREASURY_ASSISTANT_PROVIDER=rules` answers without any model provider; `nearai` (or unset with a key) asks NEAR AI Cloud.
+const provider = settings.TREASURY_ASSISTANT_PROVIDER ?? (secrets.NEARAI_API_KEY ? "nearai" : undefined);
+if (provider === "nearai" && !secrets.NEARAI_API_KEY) throw new Error("TREASURY_ASSISTANT_PROVIDER=nearai needs NEARAI_API_KEY");
+const assistantModel = provider === "rules" ? rulesModel()
+  : provider === "nearai" ? nearAiModel({ apiKey: secrets.NEARAI_API_KEY!, model: settings.TREASURY_ASSISTANT_MODEL }) : undefined;
+const assistant = assistantModel && createAssistant({
+  model: assistantModel, audit, questionsPerHour: settings.ASSISTANT_QUESTIONS_PER_HOUR, platformReadsPerHour: settings.ASSISTANT_READS_PER_HOUR,
+});
+const auditLog = async () => parseAuditLog(await readAuditLog(settings.TREASURY_AUDIT_FILE));
+
 const handler = createServer({
   platform,
   signIn: createSignIn({
@@ -106,6 +121,7 @@ const handler = createServer({
   settle,
   // The stabilization agent's latest record for the owner's report (#220): read from the audit log, never computed here.
   latestRisk: createRiskReader(settings.TREASURY_AUDIT_FILE),
+  ...(assistant && { assistant, auditLog }),
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),
 });

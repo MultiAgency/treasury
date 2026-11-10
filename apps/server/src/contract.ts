@@ -269,6 +269,34 @@ export const strategyProposal = z.strictObject({
   createdAt: z.number().int(),
 });
 export const strategyProposalsRead = z.array(strategyProposal);
+
+/**
+ * The treasury assistant (#219). A question with the conversation's earlier turns, text only: the page never sends a tool
+ * result back, so it can't forge one. The answer cites its sources by ID, and carries the drafts it made: forms the page
+ * opens in its existing review flows, never anything sent.
+ */
+export const assistantTurn = z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().max(1_200) });
+export const assistantRequest = z.strictObject({ question: z.string().trim().min(1).max(2_000), history: z.array(assistantTurn).max(8).default([]) });
+const draftChange = z.strictObject({ field: z.string(), from: z.string(), to: z.string() });
+export const assistantDraft = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("strategy"), targets: z.record(z.string(), z.number()), schedule: z.strictObject({ everyMin: z.number().optional(), maxUsd: z.number().optional() }).optional(),
+    changes: z.array(draftChange), legs: z.array(z.strictObject({ sell: z.string(), buy: z.string(), usd: z.number() })).optional(), note: z.string() }),
+  z.strictObject({ kind: z.literal("policy"), changes: z.array(draftChange), note: z.string(),
+    fields: z.strictObject({ budget: z.strictObject({ daily_usd: z.string().nullable(), weekly_usd: z.string().nullable(), monthly_usd: z.string().nullable() }).optional(),
+      owner_approval: z.boolean().optional(), max_actions_per_hour: z.number().nullable().optional(), swap: z.boolean().optional() }) }),
+  z.strictObject({ kind: z.literal("rebalance"), legs: z.array(z.strictObject({ sell: z.string(), buy: z.string(), usd: z.number() })).optional(), note: z.string() }),
+  z.strictObject({ kind: z.literal("grant"), note: z.string() }),
+  z.strictObject({ kind: z.literal("freeze"), reason: z.string(), note: z.string() }),
+]);
+export const assistantAnswer = z.strictObject({
+  answer: z.string(),
+  sources: z.array(z.strictObject({ id: z.string(), label: z.string(), read: z.string(), at: z.string() })),
+  drafts: z.array(assistantDraft),
+  model: z.string(),
+  stopped: z.enum(["refused", "truncated", "tool_budget"]).optional(),
+});
+/** Whether this server answers questions, and with which model. */
+export const assistantStatus = z.strictObject({ available: z.boolean(), model: z.string().nullable() });
 /**
  * A strategy proposed by an agent's token (#206): the strategy, why, and the digest of the saved strategy it was read
  * against (`GET …/strategy`), which adopting it saves over.
