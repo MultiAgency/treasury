@@ -152,6 +152,35 @@ async function ensureConnected() {
   }
 }
 
+/** A bound strategy and controllable schedule, with Run now intercepted before it reaches the simulated platform. */
+async function withRunNowRoutes(respond: (route: Route, attempt: number) => Promise<void>, check: (calls: { tick: number; stop: number }) => Promise<void>, beforeStop?: () => Promise<void>) {
+  await ensureConnected();
+  const base = `${origin}/api/agents/${target.agent}`;
+  const paths = { strategy: `${base}/strategy`, schedule: `${base}/autopilot`, tick: `${base}/autopilot/tick`, stop: `${base}/autopilot/stop` };
+  const calls = { tick: 0, stop: 0 };
+  let on = true;
+  const strategy = await page.evaluate(async url => (await fetch(url)).json(), paths.strategy) as { ok: boolean; value?: Record<string, unknown> };
+  assert.ok(strategy.ok && strategy.value, "the connected owner can read the strategy");
+  await page.route(paths.strategy, route => route.fulfill({ json: { ...strategy, value: { ...strategy.value, executor: true, grantMatches: true } } }));
+  await page.route(paths.schedule, route => route.fulfill({ json: { ok: true, value: { on, everyMin: 60, maxUsd: 100, lastRun: null, nextRun: null } } }));
+  await page.route(paths.tick, async route => { calls.tick++; await respond(route, calls.tick); });
+  await page.route(paths.stop, async route => { calls.stop++; await beforeStop?.(); on = false; await route.fulfill({ json: { ok: true, value: {} } }); });
+  try {
+    await page.goto(here("/strategy"));
+    await visible(page.getByRole("region", { name: "Autopilot" }).getByRole("button", { name: "Run now", exact: true }));
+    await check(calls);
+  } finally {
+    // Each check releases deliberately delayed replies before returning; finish refreshes before removing our mocks.
+    await page.waitForLoadState("networkidle");
+    for (const path of Object.values(paths)) await page.unroute(path);
+  }
+}
+
+async function askRunNow() {
+  await page.getByRole("region", { name: "Autopilot" }).getByRole("button", { name: "Run now", exact: true }).click();
+  await dialog("Run the strategy once now?").getByRole("button", { name: "Run now", exact: true }).click();
+}
+
 /** The stack's portfolio proposes a swap through the app route, as the app's proposer does (#20 PR 4). */
 async function propose(requestId: string): Promise<ProposalView> {
   const state = stack.state();
@@ -648,6 +677,128 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   await visible(disconnect.getByText(/^Autopilot is turned off first/));
   await disconnect.getByRole("button", { name: "Disconnect" }).click();
   await visible(connection.getByRole("status").filter({ hasText: "Not connected." }));
+  assert.deepEqual(unexpected, []);
+});
+
+for (const answer of ["lost", "unavailable"] as const) test(`Run now retry guard: a ${answer} reply holds another attempt across route navigation and leaves Turn off usable`, { timeout: 90_000 }, async () => {
+  await withRunNowRoutes(route => answer === "lost" ? route.abort("failed") : route.fulfill({ status: 503, json: { ok: false, kind: "unavailable" } }), async calls => {
+    await askRunNow();
+    await page.waitForLoadState("networkidle");
+    const autopilot = page.getByRole("region", { name: "Autopilot" });
+    const run = autopilot.getByRole("button", { name: "Run now", exact: true });
+    const warning = autopilot.getByRole("status").filter({ hasText: /run's outcome isn't known/i });
+    const runs = warning.getByRole("link", { name: "Check this agent's runs", exact: true });
+    assert.equal(calls.tick, 1);
+    await visible(warning);
+    assert.equal(await runs.getAttribute("href"), `/agents/${target.agent}/activity#runs`);
+    assert.equal(await run.isDisabled(), true, "an unanswered run is held after the request ends");
+    assert.equal(await autopilot.getByRole("button", { name: "Turn off", exact: true }).isEnabled(), true, "stopping the schedule remains possible");
+
+    await runs.click();
+    await visible(page.getByRole("heading", { level: 1, name: "Activity", exact: true }));
+    await page.waitForFunction(() => location.hash === "#runs");
+    await nav("Strategy").click();
+    await visible(run);
+    await visible(warning);
+    await visible(runs);
+    assert.equal(await run.isDisabled(), true, "leaving and returning in the same tab does not forget the unanswered run");
+    await autopilot.getByRole("button", { name: "Check again", exact: true }).click();
+    await page.waitForLoadState("networkidle");
+    await visible(warning);
+    assert.equal(await run.isDisabled(), true, "fresh observations don't identify or release the unanswered attempt");
+    await run.evaluate(button => (button as HTMLButtonElement).click());
+    assert.equal(calls.tick, 1, "the disabled control and route changes send no duplicate tick");
+    await autopilot.getByRole("button", { name: "Turn off", exact: true }).click();
+    await visible(autopilot.getByRole("status").filter({ hasText: /^Autopilot is off\.$/ }));
+    assert.equal(calls.stop, 1);
+    await visible(warning);
+    assert.equal(await run.isDisabled(), true, "stopping the schedule does not prove how the earlier run ended");
+  });
+  assert.deepEqual(unexpected, []);
+});
+
+test("Run now retry guard: a known refusal permits an explicit retry", { timeout: 90_000 }, async () => {
+  await withRunNowRoutes((route, attempt) => attempt === 1
+    ? route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "autopilot_refused" } })
+    : route.fulfill({ json: { ok: true, value: { summary: "Mocked successful retry." } } }), async calls => {
+    await askRunNow();
+    await page.waitForLoadState("networkidle");
+    const autopilot = page.getByRole("region", { name: "Autopilot" });
+    assert.equal(calls.tick, 1, "a refused run is not automatically retried");
+    assert.equal(await autopilot.getByRole("button", { name: "Run now", exact: true }).isEnabled(), true);
+    await askRunNow();
+    await visible(autopilot.getByRole("status").filter({ hasText: /^Run now: Mocked successful retry\.$/ }));
+    assert.equal(calls.tick, 2, "only the second explicit confirmation retries it");
+    assert.equal(await autopilot.getByRole("button", { name: "Run now", exact: true }).isEnabled(), true, "a proven success leaves Run now available");
+  });
+  assert.deepEqual(unexpected, []);
+});
+
+test("Run now retry guard: an in-flight attempt remains held while its page unmounts, then releases on success", { timeout: 90_000 }, async () => {
+  let release!: () => void, entered!: () => void;
+  const reply = new Promise<void>(resolve => { release = resolve; });
+  const request = new Promise<void>(resolve => { entered = resolve; });
+  try {
+    await withRunNowRoutes(async route => {
+      entered();
+      await reply;
+      await route.fulfill({ json: { ok: true, value: { summary: "Mocked run completed after navigation." } } });
+    }, async calls => {
+      try {
+        await askRunNow();
+        await request;
+        await nav("Activity").click();
+        await visible(page.getByRole("heading", { level: 1, name: "Activity", exact: true }));
+        await nav("Strategy").click();
+        const autopilot = page.getByRole("region", { name: "Autopilot" });
+        const run = autopilot.getByRole("button", { name: "Run now", exact: true });
+        await visible(run);
+        assert.equal(await run.isDisabled(), true, "the in-flight attempt belongs to the agent, rather than its unmounted component");
+        await autopilot.getByRole("button", { name: "Turn off", exact: true }).click();
+        await visible(autopilot.getByRole("status").filter({ hasText: /^Autopilot is off\.$/ }));
+        assert.equal(calls.stop, 1, "the schedule can stop before the run replies");
+        assert.equal(await run.isDisabled(), true, "stopping the schedule doesn't release the pending run");
+        assert.equal(calls.tick, 1);
+        release();
+        await page.waitForLoadState("networkidle");
+        await page.waitForFunction(() => Array.from(document.querySelectorAll("button")).some(button => button.textContent?.trim() === "Run now" && !button.disabled));
+        assert.equal(await run.isEnabled(), true, "the completed reply clears the hold even though the caller unmounted");
+        assert.equal(calls.tick, 1);
+      } finally { release(); }
+    });
+  } finally { release(); }
+  assert.deepEqual(unexpected, []);
+});
+
+test("Run now retry guard: a lost run reply cannot release a stop that is still in flight", { timeout: 90_000 }, async () => {
+  let releaseTick!: () => void, tickEntered!: () => void, releaseStop!: () => void, stopEntered!: () => void;
+  const tickReply = new Promise<void>(resolve => { releaseTick = resolve; });
+  const tickRequest = new Promise<void>(resolve => { tickEntered = resolve; });
+  const stopReply = new Promise<void>(resolve => { releaseStop = resolve; });
+  const stopRequest = new Promise<void>(resolve => { stopEntered = resolve; });
+  await withRunNowRoutes(async route => {
+    tickEntered();
+    await tickReply;
+    await route.fulfill({ status: 503, json: { ok: false, kind: "unavailable" } });
+  }, async calls => {
+    try {
+      await askRunNow();
+      await tickRequest;
+      const autopilot = page.getByRole("region", { name: "Autopilot" });
+      const stop = autopilot.getByRole("button", { name: "Turn off", exact: true });
+      await stop.click();
+      await stopRequest;
+      releaseTick();
+      await visible(autopilot.getByText(/run's outcome isn't known/i));
+      assert.equal(await stop.isDisabled(), true, "the run's answer doesn't clear the separate stop request's busy state");
+      assert.equal(await autopilot.getByRole("button", { name: "Run now", exact: true }).isDisabled(), true);
+      assert.deepEqual(calls, { tick: 1, stop: 1 });
+      releaseStop();
+      await visible(autopilot.getByRole("status").filter({ hasText: /^Autopilot is off\.$/ }));
+      assert.equal(await autopilot.getByRole("button", { name: "Run now", exact: true }).isDisabled(), true, "the stop's later reply doesn't forget the unanswered run");
+      assert.deepEqual(calls, { tick: 1, stop: 1 });
+    } finally { releaseTick(); releaseStop(); }
+  }, async () => { stopEntered(); await stopReply; });
   assert.deepEqual(unexpected, []);
 });
 
