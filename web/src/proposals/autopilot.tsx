@@ -17,6 +17,7 @@ import { TargetAllocation } from "./strategy-terms";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";
 import { forgetGrant } from "./kept-outcomes";
+import { runNowOnce, useRunNowHold } from "./run-now-guard";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 
@@ -32,7 +33,12 @@ type Confirm = "enable" | "tick";
  * Laid out (#196) as a step strip (save, authorize, schedule) whose current step holds the primary action, then the
  * target allocation beside the schedule's figures; swap limits and the digest are folded under Details.
  */
-export function Autopilot({ reads, identity }: { reads: Reads; identity: Identity }) {
+export function Autopilot(props: { reads: Reads; identity: Identity }) {
+  // An open confirmation and late local messages belong to this agent/account, not the next route's owner.
+  return <AgentAutopilot key={`${props.reads.name}:${props.identity.account}`} {...props} />;
+}
+
+function AgentAutopilot({ reads, identity }: { reads: Reads; identity: Identity }) {
   const client = useQueryClient();
   const strategy = useQuery(reads.strategy);
   const schedule = useQuery(reads.autopilot);
@@ -42,7 +48,9 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const ownerAllowed = consent.data?.consent?.scopes.includes("owner") === true;
   const [confirm, setConfirm] = useState<Confirm>();
   const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState<"enable" | "stop" | "tick">();
+  const [busy, setBusy] = useState<"enable" | "stop">();
+  const runHold = useRunNowHold(reads.name);
+  const working = busy !== undefined || runHold === "pending";
   const [notice, setNotice] = useState<string>();
   /** What was just saved, by the editor or by adopting a proposal: it's said until the grant binds it, then it's done. */
   const [saved, setSaved] = useState<"edited" | "adopted">();
@@ -56,12 +64,13 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
   const act = async (what: "enable" | "stop" | "tick") => {
     if (!strategy.data) return;
     setConfirm(undefined);
-    setBusy(what);
+    if (what !== "tick") setBusy(what);
     setNotice(undefined);
     setError(undefined);
     const answer = what === "enable" ? await reads.agent.enableAutopilot(strategy.data.digest)
-      : what === "stop" ? await reads.agent.stopAutopilot() : await reads.agent.runNow();
-    setBusy(undefined);
+      : what === "stop" ? await reads.agent.stopAutopilot() : await runNowOnce(reads.name, reads.agent.runNow);
+    if (what !== "tick") setBusy(undefined);
+    if (!answer) return; // A pending or unknown attempt already owns Run now for this agent.
     refresh();
     // A run may have swapped and shielded whatever its answer: the portfolio is read anew.
     if (what === "tick") refreshPortfolio(client, reads);
@@ -70,10 +79,9 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
       if (what === "tick" && "summary" in answer.value) setNotice(`Run now: ${answer.value.summary}`);
       return;
     }
-    // A Run now whose answer was lost may have run, and swapped: never sent again from here.
-    if (what === "tick" && (answer.kind === "lost" || answer.kind === "unavailable"))
-      setError("The run's answer was lost: it may have run. Check the autopilot's runs, in Portfolio on the agent's Home page, before running again.");
-    else setError(failureText(answer, "autopilot"));
+    // The shared hold supplies the warning after an unknown tick, including when this component has unmounted.
+    if (!(what === "tick" && (answer.kind === "lost" || answer.kind === "unavailable")))
+      setError(failureText(answer, "autopilot"));
   };
 
   const s = strategy.data, on = schedule.data?.on === true;
@@ -142,7 +150,7 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
           <Step number={1} title="Configure the strategy" state={editing ? "current" : "done"}
             detail={editing ? "Editing a draft. Saving turns autopilot off." : `${Object.values(s!.strategy.targetBps).filter(bps => bps > 0).length} targets saved`}>
             {editing ? null : canSave
-              ? <Button ref={editButton} variant="outline" size="sm" disabled={busy !== undefined} onClick={() => { setNotice(undefined); setSaved(undefined); setEditing(true); }}><PencilSimple aria-hidden="true" /> Edit strategy</Button>
+              ? <Button ref={editButton} variant="outline" size="sm" disabled={working} onClick={() => { setNotice(undefined); setSaved(undefined); setEditing(true); }}><PencilSimple aria-hidden="true" /> Edit strategy</Button>
               : identity.signer === "dao" && <p className="text-xs text-muted-foreground">Editing the strategy needs a member who may file and vote on the DAO's policy changes.</p>}
           </Step>
           <Step number={2} title="Authorize it" state={stepTwo}
@@ -156,8 +164,8 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
             {reasons && (bound ? reasons : <Details summary={`Why it can't be turned on (${s!.readiness.reasons.length})`} className="text-xs">{reasons}</Details>)}
             {canControl ? <div className="flex flex-wrap gap-2">
               {on ? <Button variant="danger" size="sm" disabled={busy !== undefined} onClick={() => void act("stop")}>{busy === "stop" ? <Spinner /> : <Pause aria-hidden="true" />} Turn off</Button>
-                : <Button size="sm" variant={stepThree === "current" ? "default" : "outline"} disabled={busy !== undefined || !s!.readiness.canEnable} onClick={() => setConfirm("enable")}><Play aria-hidden="true" /> Turn on</Button>}
-              {s!.grantMatches && s!.executor && <Button variant="outline" size="sm" disabled={busy !== undefined} onClick={() => setConfirm("tick")}>{busy === "tick" && <Spinner />} Run now</Button>}
+                : <Button size="sm" variant={stepThree === "current" ? "default" : "outline"} disabled={working || !s!.readiness.canEnable} onClick={() => setConfirm("enable")}><Play aria-hidden="true" /> Turn on</Button>}
+              {s!.grantMatches && s!.executor && <Button variant="outline" size="sm" disabled={busy !== undefined || runHold !== undefined} onClick={() => setConfirm("tick")}>{runHold === "pending" && <Spinner />} Run now</Button>}
             </div> : <p className="text-xs text-muted-foreground">Autopilot and Run now need a member who may both file and vote on proposals.</p>}
           </Step>
         </Stepper>
@@ -196,12 +204,15 @@ export function Autopilot({ reads, identity }: { reads: Reads; identity: Identit
       </>}
     <p role="status" className="text-sm empty:hidden">{notice ?? (saved && !bound
       ? `${saved === "adopted" ? "Proposal adopted and saved" : "Strategy saved"}. Authorize it next.` : null)}</p>
+    {runHold && <p role="status" className="text-sm text-muted-foreground">{runHold === "pending"
+      ? "Waiting for the run's reply. Run now is held until its reply is known."
+      : <>The run's outcome isn't known. Run now is held while this app is open. <PageLink to={agentAddress(reads.name, "activity")} hash="runs" className="underline">Check this agent's runs</PageLink> before another attempt. Reloading or opening another tab does not retain this hold.</>}</p>}
     <ErrorBox error={error} />
-    {s && <ReviewDialog open={confirm !== undefined} busy={busy !== undefined} onClose={() => setConfirm(undefined)}
+    {s && <ReviewDialog open={confirm !== undefined} busy={working} onClose={() => setConfirm(undefined)}
       title={confirm === "enable" ? "Let the agent act on its own?" : "Run the strategy once now?"}
       description={confirm === "enable"
         ? `Every ${s.strategy.autopilot.everyMin} minutes the agent may shield public balances and swap toward the targets above, up to $${s.strategy.autopilot.maxUsd} a run, without asking you each time. It acts only under the grant that binds this strategy, within the signed policy.`
         : `The agent rebalances toward the targets above once, up to $${s.strategy.autopilot.maxUsd}, under the grant that binds this strategy. It doesn't ask you for each swap.`}
-      actions={<Button disabled={busy !== undefined} onClick={() => void act(confirm === "enable" ? "enable" : "tick")}>{confirm === "enable" ? "Turn on" : "Run now"}</Button>}>{null}</ReviewDialog>}
+      actions={<Button disabled={working || (confirm === "tick" && runHold !== undefined)} onClick={() => void act(confirm === "enable" ? "enable" : "tick")}>{confirm === "enable" ? "Turn on" : "Run now"}</Button>}>{null}</ReviewDialog>}
   </section>;
 }

@@ -2,7 +2,7 @@
 
 What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what remains to improve.
 
-Rechecked on 10 November 2026 against SDK **0.5.5**, pinned platform [`2e7b1e6`](https://github.com/MultiAgency/platform/tree/2e7b1e6f231da5be62d077d67f7bc2686c57bdc9), and Treasury [`9db65e4`](https://github.com/MultiAgency/treasury/commit/9db65e4) through #237. This replaces the report's 0.5.0/0.5.1 snapshot and its partial 0.5.4 updates. Paths beginning `platform/` refer to that platform commit. Host availability and live settlement are operator checks, not guarantees from the SDK pin or simulated tests.
+Rechecked on 10 November 2026 against SDK **0.5.5**, pinned platform [`2e7b1e6`](https://github.com/MultiAgency/platform/tree/2e7b1e6f231da5be62d077d67f7bc2686c57bdc9), and Treasury's SDK integration through #237. Run now recovery below also reflects the page-lifetime guard in `web/src/proposals/run-now-guard.ts`. This replaces the report's 0.5.0/0.5.1 snapshot and its partial 0.5.4 updates. Paths beginning `platform/` refer to that platform commit. Host availability and live settlement are operator checks, not guarantees from the SDK pin or simulated tests.
 
 ## Summary
 
@@ -107,7 +107,7 @@ The app-route migration is complete. The aggregate owner RPC and hosted setup ar
 
 | Finding | Current behavior and limit |
 |---|---|
-| `autopilot/tick` takes no input and returns a summary without an attempt/run id | After a lost answer, Treasury refreshes observations and points the owner to recorded runs. It does not automatically retry. The current button has no retained lost-outcome hold after the request ends, so this is not a durable or page-lifetime retry guard (`web/src/proposals/autopilot.tsx`) |
+| `autopilot/tick` takes no input and returns a summary without an attempt/run id | Treasury claims a per-agent hold before sending. A lost, unavailable or unreadable reply retains it across navigation in the loaded app; a validated tick summary or proven refusal releases it. Turn off remains available while a tick is pending or unknown. The warning links to the agent's runs. No read can correlate this particular attempt, so refreshing reads or stopping the schedule does not clear an unknown hold. Reloads and other tabs do not retain it; durable recovery still needs a caller request id and returned run id (`web/src/proposals/run-now-guard.ts`) |
 | The old steward and inbox pages lacked app-route equivalents | `steward/propose` is removed in 0.5.5; the current app's proposers use `proposals/create`. Inbox procedures remain owner-session-only, while the app derives its own decision list (3.1) |
 | A funding transaction can lose its wallet answer | No platform funding-transfer record identifies that attempt. The current page retains its hold while loaded and explains the limit in `web/PLATFORM-SESSION.md` |
 
@@ -132,7 +132,7 @@ These separate current app/platform work from requests already satisfied. They d
 2. **Prevent duplicate pending owner actions on the platform.** At this pin, creation has a guard, but other kinds can be prepared again while submitted or awaiting a DAO vote (`platform/src/owner-intents.ts`). Treasury's phase-based guard holds another of the same kind, makes freeze/unfreeze hold each other, and lets unsigned wallet preparations expire without delaying an emergency stop. Platform enforcement would cover other apps too.
 3. **Expose and coordinate the shared credential budget.** Keep the existing typed 429/backoff behavior; add visibility or shared limiting rather than claiming those signals are missing. Per-Organization limits are tracked separately (platform#59).
 4. **Improve DAO request recovery and types.** Idempotent filing, request lists, complete state payloads, typed check URLs and an effectless read would remove app bookkeeping (3.4).
-5. **Identify Run now attempts and close the app's retry gap.** A caller request id and returned run id would let Treasury recover a lost answer. The current UI warning is not a retained retry hold (3.5).
+5. **Identify Run now attempts for durable recovery.** The loaded app retains a per-agent pending/unknown hold across navigation, with Turn off available. A caller request id and returned run id are still needed to recover an unknown attempt across reloads and tabs; schedule timestamps and nearby runs do not prove its outcome (3.5).
 6. **Supply read-only quote and venue/usage context where needed.** Ballast already converts intents with `legsFor`; a new proposal-leg procedure is not required. Richer reads could improve detectors without granting `treasury-execute` (3.2).
 7. **Distinguish test support from simulator completeness.** 0.5.5 supplies `@multiagency/sdk/testing`'s `payoutDouble` and more stack controls, including payee signing and failed/refunded withdrawals. The double models payouts, not Treasury owner workflows, and neither it nor the simulator proves provider budget concurrency. Treasury still needs its own fakes and stack scenarios; no local platform patch is required for the documented tests.
 
