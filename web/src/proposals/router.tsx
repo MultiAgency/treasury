@@ -1,5 +1,5 @@
 import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
-import { ActivityPage, AgentFrame, DaoPage, FundingPage, HomePage, Missing, PolicyPage, ProposalPage, ProposalsPage, RootPage, RunPage, Shell, StrategyPage } from "./app";
+import { ActivityPage, AgentFrame, AgentsPage, DaoPage, FundingPage, HomePage, Missing, PolicyPage, ProposalPage, ProposalsPage, RootPage, RunPage, Shell, StrategyPage } from "./app";
 import { AGENT_PAGES } from "./pages";
 
 /**
@@ -27,6 +27,7 @@ export const router = createRouter({
       page(AGENT_PAGES.funding.path, FundingPage),
       page(AGENT_PAGES.policy.path, PolicyPage),
       page(AGENT_PAGES.activity.path, ActivityPage),
+      page(AGENT_PAGES.agents.path, AgentsPage),
       page(`${AGENT_PAGES.activity.path}/runs/$id`, RunPage),
     ]),
   ]),

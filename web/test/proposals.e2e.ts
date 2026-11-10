@@ -63,6 +63,8 @@ before(async () => {
     // The treasury assistant (#219), answered by its deterministic local model: nothing leaves the server in a stack test.
     assistant: createAssistant({ model: rulesModel(), audit: { append: entry => audit.append(entry) }, questionsPerHour: 1_000, platformReadsPerHour: 1_000 }),
     auditLog: async () => [],
+    // The stabilization agent isn't run by this server (no watch file), so it has recorded nothing: the Agents page says so.
+    latestRisk: async () => null, riskHistory: async () => [], riskStatus: () => ({ configured: false, intervalS: null }),
   });
 
   browser = await chromium.launch();
@@ -843,6 +845,61 @@ test("the assistant answers from the treasury's own records with sources, and a 
   await again.click();
   await visible(page.getByRole("status").filter({ hasText: /^Save or cancel the strategy edit first/ }));
   assert.equal(await editor.getByLabel("wNEAR (%)").inputValue(), "45", "the owner's edit is kept");
+  assert.deepEqual(unexpected, []);
+});
+
+test("the Agents page shows the stabilization agent and the NEAR agent, each with a conversation that opens a review and sends nothing (#219, #220)", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  await page.goto(here());
+  await nav("Agents").click();
+  await visible(page.getByRole("heading", { name: "Agents", level: 1 }));
+  assert.equal(page.url(), here("/ai"));
+  // This stack's server doesn't run the stabilization agent, and the page says so rather than showing a level it doesn't have.
+  const stabilization = page.locator("#stabilization-agent");
+  await visible(stabilization.getByText("Not running", { exact: true }));
+  await visible(stabilization.getByText(/No forward risk assessment has been recorded/).first());
+  await visible(page.getByRole("heading", { name: "What it has been doing" }));
+  assert.deepEqual(await axe(), [], "the Agents page");
+
+  // A what-if with no recorded book says so, in words, instead of a result.
+  await page.getByRole("button", { name: "Run what-if" }).click();
+  await visible(page.getByRole("status").filter({ hasText: /no risk assessment has been recorded/ }));
+  // A value the core would refuse isn't sent.
+  await page.getByLabel(/^Value/).fill("500");
+  await page.getByRole("button", { name: "Run what-if" }).click();
+  await visible(page.getByRole("alert").filter({ hasText: /Enter a number from 1 to 100/ }));
+
+  // The stabilization agent answers from its records, citing them, and declines what isn't forward risk.
+  const risk = page.getByRole("textbox", { name: "Ask the stabilization agent" });
+  await risk.fill("Why is the risk level what it is?");
+  await risk.press("Enter");
+  await visible(page.getByRole("log", { name: "Ask the stabilization agent: conversation" }).getByText(/No forward risk assessment has been recorded for this agent yet/));
+  await risk.fill("Set the daily budget to $200");
+  await risk.press("Enter");
+  await visible(page.getByText(/The treasury assistant does that/));
+  assert.deepEqual(await axe(), [], "the stabilization agent's conversation");
+
+  // The NEAR agent: an autopilot control opens the Strategy page's own controls, and a page draft goes to the page.
+  const near = page.getByRole("textbox", { name: "Ask the NEAR agent" });
+  await near.fill("Take me to the policy page");
+  await near.press("Enter");
+  const toPolicy = page.getByRole("button", { name: "Open Policy" });
+  await visible(toPolicy);
+  await toPolicy.click();
+  await visible(page.getByRole("heading", { name: "Policy", level: 1 }));
+  await nav("Agents").click();
+  await visible(page.getByRole("heading", { name: "Agents", level: 1 }));
+  // The conversation is kept while the owner moves between pages.
+  await visible(page.getByRole("log", { name: "Ask the NEAR agent: conversation" }).getByText("Take me to the policy page"));
+  const nearAgain = page.getByRole("textbox", { name: "Ask the NEAR agent" });
+  await nearAgain.fill("Pause autopilot");
+  await nearAgain.press("Enter");
+  const open = page.getByRole("button", { name: "Open the autopilot controls" });
+  await visible(open);
+  assert.deepEqual(await axe(), [], "the NEAR agent's autopilot draft");
+  await open.click();
+  await visible(page.getByRole("heading", { name: "Strategy", level: 1 }));
+  await visible(page.getByRole("status").filter({ hasText: /Autopilot is off already|use Turn off below/ }));
   assert.deepEqual(unexpected, []);
 });
 
