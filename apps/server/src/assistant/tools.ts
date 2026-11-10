@@ -8,6 +8,8 @@ import type { ChainRecord } from "../chain.ts";
 import type { DaoRequests } from "../dao-requests.ts";
 import type { Platform } from "../platform.ts";
 import type { StrategyProposals } from "../strategy-proposals.ts";
+import { riskHistoryEntryOf, riskReportOf, riskWhatIfOf, type LatestRisk, type RiskHistory } from "../risk.ts";
+import { riskWhatIfRequest } from "../contract.ts";
 
 /**
  * The assistant's tools (#219): typed reads of the signed-in owner's own agent, and drafts. Each tool is scoped to the
@@ -28,7 +30,12 @@ export type Draft =
   | { kind: "policy"; changes: Change[]; fields: PolicyDraftFields; note: string }
   | { kind: "rebalance"; legs?: Leg[]; note: string }
   | { kind: "grant"; note: string }
-  | { kind: "freeze"; reason: string; note: string };
+  | { kind: "freeze"; reason: string; note: string }
+  | { kind: "autopilot"; action: "on" | "off" | "run-now"; note: string }
+  | { kind: "page"; page: AssistantPage; why: string; note: string };
+/** The pages of an agent the assistant may open for the owner: where an operation is reviewed or a record is read. */
+export const ASSISTANT_PAGES = ["home", "proposals", "strategy", "funding", "policy", "activity", "agents"] as const;
+export type AssistantPage = (typeof ASSISTANT_PAGES)[number];
 /** One field a draft changes: its value in force, and the drafted one, in words. */
 export type Change = { field: string; from: string; to: string };
 /** A swap a rebalance to drafted targets would make, at the overview's prices: an estimate, quoted again when proposed. */
@@ -49,6 +56,9 @@ export type ToolScope = {
   daoRequests: DaoRequests;
   /** The strategies agents proposed through their tokens (#206), kept by this server: their reasons are text others wrote. */
   strategyProposals?: Pick<StrategyProposals, "open">;
+  /** The stabilization agent's records (#220), kept by this server's audit log: its latest assessment and its recent ones. */
+  latestRisk?: LatestRisk;
+  riskHistory?: RiskHistory;
   now: () => number;
 };
 
@@ -276,15 +286,71 @@ export const TOOLS = [
   tool("draft_freeze", "Opens the freeze review, so the owner can freeze the agent. Sends nothing. Only when the owner asks to freeze or stop everything.",
     z.strictObject({ reason: z.string().min(1).max(300) }), { type: "object", properties: { reason: { type: "string", maxLength: 300, description: "Why, in the owner's words." } }, required: ["reason"], additionalProperties: false },
     async ({ reason }) => { const draft: Draft = { kind: "freeze", reason, note: "Freezing blocks new actions across grants; the owner signs it. It doesn't prove an operation already committed will stop." }; return { content: { drafted: draft }, draft }; }),
+  tool("get_risk_report", "The stabilization agent's latest forward-risk assessment from the audit log: its level and why, the projection (drawdown, expected shortfall, cash-floor breach probability, runway), every stress scenario most severe first, and what it would do (hold buys, de-risk with a size, pause autopilot, recommend a freeze). Use it to explain the risk level or the agent's recommendations.",
+    noInput, EMPTY, async (_, scope) => {
+      if (!scope.latestRisk) return { error: "This server keeps no risk records." };
+      const stored = await scope.latestRisk(scope.organization, scope.agent);
+      const at = new Date(scope.now()).toISOString();
+      return { content: stored ? { report: riskReportOf(stored) } : { report: null, note: "No risk assessment has been recorded for this agent yet: the stabilization agent may not be configured for it." },
+        source: { label: "Stabilization agent's latest assessment (audit log)", read: "audit/risk", at } };
+    }),
+  tool("get_risk_history", "The stabilization agent's recent assessments, newest first: when each was made, its level and reason, the actions it recommended, and whether it proposed a de-risk. Use it to say what the agent has been doing, or how the level moved.",
+    listInput, LIST, async ({ limit: count = 20 }, scope) => {
+      if (!scope.riskHistory) return { error: "This server keeps no risk records." };
+      const records = await scope.riskHistory(scope.organization, scope.agent, count);
+      return { content: { entries: records.map(riskHistoryEntryOf) }, source: { label: "Stabilization agent's recent assessments (audit log)", read: "audit/risk-history", at: new Date(scope.now()).toISOString() } };
+    }),
+  tool("run_what_if", "Runs a tail event over the book of the stabilization agent's latest assessment, with the agent's own stress arithmetic, and answers the book's value, the stables and runway left, whether the cash floor breaks and whether the agent could still trade, next to today. Reads and computes only: nothing is proposed. Name at least one event: volatileDropPct (a one-day fall, 1-100), stablePrice (a stablecoin's price, e.g. 0.9), venueOutageDays, spendFactor (a multiple of plan) or staleDays; optionally `asset` (an asset ID) or `venue` to limit it.",
+    riskWhatIfRequest, {
+      type: "object", additionalProperties: false,
+      properties: {
+        volatileDropPct: { type: "number", exclusiveMinimum: 0, maximum: 100, description: "Volatile holdings fall this many percent in a day." },
+        stablePrice: { type: "number", exclusiveMinimum: 0, maximum: 1.5, description: "Stablecoins trade at this USD price." },
+        venueOutageDays: { type: "number", exclusiveMinimum: 0, maximum: 90, description: "The venue is unreachable this many days." },
+        spendFactor: { type: "number", exclusiveMinimum: 0, maximum: 20, description: "Spend runs at this multiple of the plan." },
+        staleDays: { type: "number", exclusiveMinimum: 0, maximum: 30, description: "Every price source is stale this many days." },
+        asset: { type: "string", description: "Limits the price event to this asset ID." }, venue: { type: "string", description: "Limits the outage to this venue." },
+      },
+    },
+    async (event, scope) => {
+      if (!scope.latestRisk) return { error: "This server keeps no risk records." };
+      const answer = riskWhatIfOf(await scope.latestRisk(scope.organization, scope.agent), event);
+      if (!answer.result) return { error: `The what-if could not be run: ${answer.problems.join("; ")}.` };
+      return { content: answer.result, source: { label: `What-if: ${answer.result.label} (on the assessment of ${answer.result.basedOn.at})`, read: "risk/what-if", at: new Date(scope.now()).toISOString() } };
+    }),
+  tool("draft_autopilot", "Opens the Strategy page's autopilot controls for the owner: turn it on, turn it off, or run it once now. Sends nothing: the owner presses the control there and confirms. Only when the owner asks for it (or asks you to pause autopilot because of the risk level).",
+    z.strictObject({ action: z.enum(["on", "off", "run-now"]) }), { type: "object", properties: { action: { type: "string", enum: ["on", "off", "run-now"] } }, required: ["action"], additionalProperties: false },
+    async ({ action }) => {
+      const what = { on: "Turning autopilot on", off: "Turning autopilot off", "run-now": "Running autopilot once now" }[action];
+      const draft: Draft = { kind: "autopilot", action, note: `${what} is done on the Strategy page, where the owner reviews and confirms it; the platform checks the signed policy and the grant as it always does.` };
+      return { content: { drafted: draft }, draft };
+    }),
+  tool("open_page", `Takes the owner to one of the agent's pages: ${ASSISTANT_PAGES.join(", ")}. Use it to show a record or the place an operation is done. Sends and changes nothing.`,
+    z.strictObject({ page: z.enum(ASSISTANT_PAGES), why: z.string().min(1).max(200) }),
+    { type: "object", properties: { page: { type: "string", enum: [...ASSISTANT_PAGES] }, why: { type: "string", maxLength: 200, description: "What the owner will find there." } }, required: ["page", "why"], additionalProperties: false },
+    async ({ page, why }) => { const draft: Draft = { kind: "page", page, why, note: "Opens the page; nothing changes." }; return { content: { drafted: draft }, draft }; }),
 ] as const;
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = TOOLS.map(entry => entry.definition);
 const BY_NAME = new Map<string, Tool<z.ZodType>>(TOOLS.map(entry => [entry.definition.name, entry as unknown as Tool<z.ZodType>]));
 
+/**
+ * The two agents the owner talks to (Agents page): the treasury assistant, which reads the whole app and drafts any change
+ * for the owner to review, and the stabilization agent, which is held to forward risk: it reads the book, the risk records
+ * and the runs, runs what-ifs, and drafts only a de-risk rebalance, an autopilot pause or a freeze. A tool outside an
+ * agent's set isn't offered to it and isn't run if it asks, so what the stabilization agent may draft is the code's rule,
+ * not the prompt's.
+ */
+export type Persona = "treasury" | "stabilization";
+const STABILIZATION_TOOLS = new Set(["get_overview", "get_autopilot", "get_runs", "get_unresolved", "get_ballast_decisions", "list_proposals", "get_proposal",
+  "get_risk_report", "get_risk_history", "run_what_if", "draft_rebalance", "draft_autopilot", "draft_freeze", "open_page"]);
+export const toolNames = (persona: Persona): ReadonlySet<string> => persona === "stabilization" ? STABILIZATION_TOOLS : new Set(TOOLS.map(entry => entry.definition.name));
+export const toolDefinitions = (persona: Persona): ToolDefinition[] => TOOL_DEFINITIONS.filter(definition => toolNames(persona).has(definition.name));
+
 /** Runs a tool the model asked for, its input checked against the tool's schema first: an unknown tool or bad input is an error result, never a call. */
-export async function runTool(name: string, input: unknown, scope: ToolScope): Promise<ToolOutcome> {
+export async function runTool(name: string, input: unknown, scope: ToolScope, persona: Persona = "treasury"): Promise<ToolOutcome> {
   const entry = BY_NAME.get(name);
-  if (!entry) return { error: `There is no tool named ${name}.` };
+  if (!entry || !toolNames(persona).has(name)) return { error: `There is no tool named ${name}.` };
   const parsed = entry.input.safeParse(input ?? {});
   if (!parsed.success) return { error: `Invalid input for ${name}: ${parsed.error.issues.map(issue => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ")}` };
   try { return await entry.run(parsed.data, scope); } catch { return { error: `${name} failed while reading.` }; }

@@ -20,7 +20,7 @@ import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
 import { createHolds, createRequests } from "./requests.ts";
-import { createRiskReader, type RiskEntry } from "./risk.ts";
+import { createRiskHistoryReader, createRiskReader, type RiskEntry } from "./risk.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
 import { createStrategyProposals, fileProposalRecords, memoryProposalRecords } from "./strategy-proposals.ts";
@@ -123,6 +123,12 @@ const handler = createServer({
   settle,
   // The stabilization agent's latest record for the owner's report (#220): read from the audit log, never computed here.
   latestRisk: createRiskReader(settings.TREASURY_AUDIT_FILE),
+  riskHistory: createRiskHistoryReader(settings.TREASURY_AUDIT_FILE),
+  // Whether the stabilization agent runs for an agent, from the watch file: the Agents page says so rather than guess.
+  riskStatus: (organization, agent) => {
+    const watchedAgent = watched?.agents.find(entry => entry.organization === organization && entry.agent === agent);
+    return { configured: Boolean(watchedAgent?.risk), intervalS: watchedAgent?.risk ? watchedAgent.intervalS : null };
+  },
   ...(assistant && { assistant, auditLog }),
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),

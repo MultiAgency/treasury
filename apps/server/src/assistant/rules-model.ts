@@ -16,12 +16,23 @@ type Block = TextBlock | ToolUseBlock;
 type Result = { tool: string; source: string | null; data: any; error?: string };
 type Intent =
   | { kind: "retarget"; percent: number; symbol: string }
+  | { kind: "whatif"; dropPct: number }
+  | { kind: "autopilot"; action: "on" | "off" | "run-now" }
+  | { kind: "page"; page: string }
+  | { kind: "risk" }
   | { kind: "policy"; budget?: { window: "daily" | "weekly" | "monthly"; usd: string }; ownerApproval?: boolean }
   | { kind: "freeze" | "grant" | "rebalance" | "decisions" | "budget" | "proposals" | "runs" | "limits" | "balances" };
 
 /** What the owner asked for, read from their question alone. */
 export function intentOf(question: string): Intent {
   const text = question.toLowerCase();
+  const fall = /what if\b.*?(\d{1,3}(?:\.\d+)?)\s*%/.exec(text);
+  if (fall && /\b(fall|falls|drop|drops|crash|crashes|dump|dumps|lose|loses)\b/.test(text)) return { kind: "whatif", dropPct: Number(fall[1]) };
+  if (/\b(pause|stop|turn off|disable|switch off)\s+(the\s+)?autopilot\b/.test(text)) return { kind: "autopilot", action: "off" };
+  if (/\b(turn on|enable|resume|start|switch on)\s+(the\s+)?autopilot\b/.test(text)) return { kind: "autopilot", action: "on" };
+  if (/\brun\s+(the\s+)?autopilot\b|\brun now\b/.test(text)) return { kind: "autopilot", action: "run-now" };
+  const page = /\b(?:open|go to|take me to|show me|navigate to)\b.*?\b(home|proposals|strategy|funding|policy|activity|agents)\b/.exec(text);
+  if (page) return { kind: "page", page: page[1]! };
   const retarget = /(\d{1,3}(?:\.\d{1,2})?)\s*%\s*(?:in\s+|of\s+|to\s+)?([a-z][a-z0-9]{1,9})/.exec(text);
   if (retarget && /rebalanc|target|strateg|allocat|move/.test(text)) return { kind: "retarget", percent: Number(retarget[1]), symbol: retarget[2]! };
   const budget = /(daily|weekly|monthly)\s+budget\s+(?:to|at)\s+\$?(\d+(?:\.\d{1,2})?)/.exec(text);
@@ -29,6 +40,7 @@ export function intentOf(question: string): Intent {
   if (budget || approval !== undefined)
     return { kind: "policy", ...(budget && { budget: { window: budget[1] as "daily", usd: budget[2]! } }), ...(approval !== undefined && { ownerApproval: approval }) };
   if (/\bfreeze\b|\bstop everything\b/.test(text) && !/\bwhy\b|\bfrozen\b/.test(text)) return { kind: "freeze" };
+  if (/\brisk\b|\bstress\b|\bscenarios?\b|\bstabili[sz]|\bdrawdown\b|\brunway\b|\bthe level\b|\bwhat have you been doing\b/.test(text)) return { kind: "risk" };
   if (/\bwhy\b|\bdecision|\bballast\b|\bdidn.?t\b/.test(text)) return { kind: "decisions" };
   if (/\bbudget|\bspent\b|\bspend|\bleft\b/.test(text)) return { kind: "budget" };
   if (/\bproposals?\b|\bwaiting\b|\bapprov|\bpending\b/.test(text)) return { kind: "proposals" };
@@ -131,11 +143,39 @@ function decisions(read: Result, runList: Result | undefined) {
   return runList && !runList.error ? `${head}\n${runs(runList, undefined)}` : head;
 }
 
+const LEVELS = ["L0 normal", "L1 watch", "L2 caution", "L3 critical", "L4 red hand"];
+const pct = (value: number | null | undefined) => value == null || !Number.isFinite(value) ? "unknown" : `${Number(value.toFixed(2))}%`;
+
+function riskReport(result: Result, history: Result | undefined) {
+  const report = result.data?.report as { at: string; level: number; reason: string; projection: { usable: boolean; projectedDrawdownPct: number; expectedShortfallPct: number; breachProbabilityPct: number; runwayMonths: number };
+    scenarios: { label: string; drawdownPct: number; floorBreached: boolean }[]; recommendations: { action: string; reason: string }[]; proposed: boolean } | null | undefined;
+  if (!report) return `No forward risk assessment has been recorded for this agent yet; the stabilization agent may not be configured for it${cite(result)}.`;
+  const p = report.projection;
+  const top = report.scenarios.slice(0, 3).map(scenario => `${scenario.label} (${pct(scenario.drawdownPct)} drawdown${scenario.floorBreached ? ", breaks the cash floor" : ""})`);
+  const lines = [`The forward risk level is ${LEVELS[report.level] ?? `L${report.level}`}: ${quote(report.reason)}${cite(result)}, assessed ${day(report.at)}.`,
+    p.usable ? `Projected drawdown ${pct(p.projectedDrawdownPct)}, expected shortfall ${pct(p.expectedShortfallPct)}, ${pct(p.breachProbabilityPct)} chance of breaching the cash floor, ${Number(p.runwayMonths.toFixed(1))} months of runway${cite(result)}.`
+      : `The projection wasn't usable on the last assessment, so its figures are held at the conservative reading${cite(result)}.`,
+    `The most severe scenarios: ${top.join("; ")}${cite(result)}.`,
+    report.recommendations.length ? `What I would do: ${report.recommendations.map(r => r.action.replace(/-/g, " ")).join(", ")}${report.proposed ? "; a de-risk proposal is waiting for your approval" : ""}${cite(result)}.` : `Nothing: every scenario is within its steps${cite(result)}.`];
+  const entries = history && !history.error ? (history.data?.entries ?? []) as { at: string; level: number }[] : [];
+  if (entries.length > 1) lines.push(`I have made ${entries.length} recent assessments; the level was ${entries.slice(0, 5).map(entry => entry.level).join(", ")} newest first${cite(history!)}.`);
+  return lines.join("\n");
+}
+
+function whatIfAnswer(result: Result) {
+  const r = result.data as { label: string; now: { valueUsd: number; stableUsd: number; runwayMonths: number }; after: { valueUsd: number; lossUsd: number; drawdownPct: number; stableUsd: number; runwayMonths: number; floorBreached: boolean; tradable: boolean } };
+  return [`If ${r.label}: the book would be worth ${usd(r.after.valueUsd)} instead of ${usd(r.now.valueUsd)} (${usd(r.after.lossUsd)} lost, ${pct(r.after.drawdownPct)})${cite(result)}.`,
+    `The stables would fund ${Number(r.after.runwayMonths.toFixed(1))} months instead of ${Number(r.now.runwayMonths.toFixed(1))}, and the cash floor ${r.after.floorBreached ? "would break" : "would hold"}${cite(result)}. I ${r.after.tradable ? "could" : "could not"} still trade through it${cite(result)}.`,
+    "This is arithmetic on the last recorded book, not a forecast, and nothing was proposed."].join("\n");
+}
+
 function drafted(result: Result) {
   const draft = result.data?.drafted;
   if (!draft) return "";
   const changes = (draft.changes ?? []) as { field: string; from: string; to: string }[];
   const legs = (draft.legs ?? []) as { sell: string; buy: string; usd: number }[];
+  if (draft.kind === "page") return `Opening the ${draft.page} page: ${draft.why}. Nothing changes.`;
+  if (draft.kind === "autopilot") return `I've opened the autopilot controls to ${({ on: "turn it on", off: "turn it off", "run-now": "run it once" } as Record<string, string>)[draft.action]}. You confirm it on the Strategy page; nothing is sent from here${cite(result)}.`;
   const what = { strategy: "a strategy change", policy: "a policy edit", rebalance: "a rebalance proposal", grant: "a grant", freeze: "a freeze" }[draft.kind as string] ?? "a change";
   return [`I've drafted ${what} for you to review${cite(result)}. Nothing is sent until you submit it and sign in your wallet (or the DAO votes).`,
     ...changes.map(change => `- ${change.field}: ${change.from} → ${change.to}`),
@@ -165,11 +205,22 @@ function lastResults(messages: ModelRequest["messages"]): Result[] | undefined {
 export function rulesModel(): AssistantModel {
   return {
     name: "rules",
-    async respond({ messages }) {
+    async respond({ system, tools, messages }) {
       const question = [...messages].reverse().find(message => message.role === "user" && typeof message.content === "string")?.content as string ?? "";
       const intent = intentOf(question);
       const results = lastResults(messages);
+      // The stabilization agent has fewer tools: a request for one it wasn't given is said to be the other agent's, never tried.
+      const offered = new Set(tools.map(tool => tool.name));
+      const stabilization = system.startsWith("You are the stabilization agent");
+      const needs: Partial<Record<Intent["kind"], string>> = { retarget: "draft_strategy", policy: "draft_policy_edit", grant: "draft_grant" };
+      const wanted = needs[intent.kind];
+      if (!results && wanted && !offered.has(wanted)) return reply([say("I watch forward risk; I can't edit the strategy, the policy or a grant. The treasury assistant does that: ask it on this page, or open the Strategy or Policy page.")]);
+      if (!results && stabilization && ["balances", "limits", "budget"].includes(intent.kind)) return reply([use("get_risk_report"), use("get_risk_history", { limit: 10 })]);
       if (!results) switch (intent.kind) {
+        case "whatif": return reply([use("run_what_if", { volatileDropPct: intent.dropPct })]);
+        case "autopilot": return reply([use("draft_autopilot", { action: intent.action })]);
+        case "page": return reply([use("open_page", { page: intent.page, why: `where you can see ${intent.page}` })]);
+        case "risk": return reply([use("get_risk_report"), use("get_risk_history", { limit: 10 })]);
         case "retarget": return reply([use("get_strategy")]);
         case "policy": return reply([use("get_overview")]);
         case "freeze": return reply([use("draft_freeze", { reason: question.slice(0, 300) })]);
@@ -205,6 +256,10 @@ export function rulesModel(): AssistantModel {
       if (failed.length === results.length) return reply([say(failures)]);
 
       const overview = by("get_overview");
+      const report = by("get_risk_report");
+      if (report && !report.error && (intent.kind === "risk" || stabilization)) return reply([say(riskReport(report, by("get_risk_history")))]);
+      const whatIf = by("run_what_if");
+      if (whatIf) return reply([say(whatIf.error ? `I couldn't run that: ${whatIf.error}` : whatIfAnswer(whatIf))]);
       const text = intent.kind === "budget" && overview && !overview.error ? budget(overview, by("get_activity"), question.toLowerCase())
         : intent.kind === "limits" && overview && !overview.error ? limits(overview)
         : intent.kind === "proposals" && by("list_proposals") && !by("list_proposals")!.error ? proposals(by("list_proposals")!, by("list_strategy_proposals"))
