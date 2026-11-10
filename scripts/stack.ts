@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 96a0bb6), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 2e7b1e6), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -7,13 +7,13 @@ import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 /**
- * The platform commit the stack runs from: platform main after `@multiagency/sdk` 0.5.4 (tag `sdk-v0.5.4`), with #41
+ * The platform commit the stack runs from: `@multiagency/sdk` 0.5.5 (tag `sdk-v0.5.5`), which includes #41
  * (`treasury/get` reads a linked DAO's confidential setup from chain; the stack's `daoConfidentialSetup` control), #43 (a
  * DAO vote on a proposal that ended answers `proposal_not_open`) and #44 (a read closes a proposal whose agent or
  * strategy changed); with the stack's simulated DAO (`--dao-treasury`), proposals stored at a market price, the `signOwnerDelegate`
  * control, and `treasury/get`'s raw balances, which the SDK's schema requires.
  */
-export const PLATFORM_COMMIT = "96a0bb6";
+export const PLATFORM_COMMIT = "2e7b1e6";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";

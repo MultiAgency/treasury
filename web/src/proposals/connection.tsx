@@ -65,8 +65,8 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
       void client.invalidateQueries({ queryKey: reads.proposals.queryKey });
       return;
     }
-    // The agent changed since the text was built: a new text, and a new signature.
-    if (stored.kind === "refused" && stored.code === "agent_changed") return prepare(asked, failureText(stored, "consent"));
+    // The agent changed since the text was built, or the owner's wallet stop came after its nonce: a new text, and a new signature.
+    if (stored.kind === "refused" && (stored.code === "agent_changed" || stored.code === "owner_stopped")) return prepare(asked, failureText(stored, "consent"));
     setReview(undefined);
     setError(failureText(stored, "consent"));
     void refresh();

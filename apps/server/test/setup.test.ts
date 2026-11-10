@@ -9,7 +9,7 @@ import { setupConsents } from "../src/setup.ts";
 import { daoTransaction, fakePlatform, ORIGIN, wallet } from "./fakes.ts";
 import { testServer } from "./test-server.ts";
 
-const owner = wallet("owner.near"), other = wallet("other.near"), lapsed = wallet("lapsed.near");
+const owner = wallet("owner.near"), other = wallet("other.near"), lapsed = wallet("lapsed.near"), stopper = wallet("stopper.near");
 const council = wallet("council.near"), proposer = wallet("proposer.near"), reader = wallet("reader.near");
 const DAO = "agentic.sputnik-dao.near";
 const fake = fakePlatform({ "dao-new": DAO }, { daos: ["dao-new"], unborn: ["dao-new"] });
@@ -28,7 +28,7 @@ const chainProposals: Record<string, DaoProposal[]> = { [DAO]: [] };
 let server: Server, base: string, signIn: Awaited<ReturnType<typeof testServer>>["signIn"];
 
 before(async () => {
-  ({ server, base, signIn } = await testServer({ platform: fake.platform, wallets: [owner, other, lapsed, council, proposer, reader], audited,
+  ({ server, base, signIn } = await testServer({ platform: fake.platform, wallets: [owner, other, lapsed, council, proposer, reader, stopper], audited,
     daos: standInDaos(policies, chainProposals) }));
 });
 after(() => server.close());
@@ -60,7 +60,8 @@ test("an owner sets up their Treasury: the server's text for the platform's host
   assert.ok(Date.parse(setup.expiresAt) <= Date.now() + 60 * 60_000);
   const { status, body } = await json(await call("POST", "/api/setup", { cookie, body: submission }));
   assert.deepEqual([status, body], [200, { ok: true, value: { agent: "treasury-1" } }]);
-  assert.deepEqual(fake.calls, ["setup"]);
+  assert.deepEqual(fake.calls, ["consents.nonce", "setup"]);
+  assert.equal(text.nonce, fake.issued.at(-1), "the text's nonce is the one the platform issued");
   assert.deepEqual(shape(audited), [["setup", "attempt", "owner.near", undefined, undefined], ["setup", "result", "owner.near", "treasury-1", fake.consents.at(-1)!.id]]);
   assert.ok(audited[0]!.signedTextSha256);
   assert.deepEqual((await json(await call("GET", "/api/setup", { cookie }))).body, { ok: true, value: { account: "owner.near", agents: ["treasury-1"] } });
@@ -114,7 +115,7 @@ test("a setup text other than the one the server asks for is refused before the 
     assert.notEqual(submission.message, (await signedSetup(other, cookie)).submission.message, name);
     const { status, body } = await json(await call("POST", "/api/setup", { cookie, body: submission }));
     assert.deepEqual([status, body], [400, { ok: false, kind: "refused", code: "not_this_setup" }], name);
-    assert.deepEqual(fake.calls, [], name);
+    assert.deepEqual(fake.calls.filter(made => made !== "consents.nonce"), [], name);
   }
 });
 
@@ -134,7 +135,7 @@ test("the platform's answers to a setup: already set up, unavailable on this hos
     const { submission } = await signedSetup(other, cookie);
     const reply = await json(await call("POST", "/api/setup", { cookie, body: submission }));
     assert.deepEqual([reply.status, reply.body], [status, code ? { ok: false, kind: "refused", code } : { ok: false, kind: "unavailable" }]);
-    assert.equal(fake.calls.length, calls);
+    assert.equal(fake.calls.filter(made => made === "setup").length, calls);
     assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["setup", "attempt"], ["setup", "result"]]);
   }
   // A lost answer, then the platform's: the same body went twice, and the agent is set up.
@@ -143,7 +144,31 @@ test("the platform's answers to a setup: already set up, unavailable on this hos
   const { submission } = await signedSetup(other, cookie);
   const reply = await json(await call("POST", "/api/setup", { cookie, body: submission }));
   assert.equal(reply.status, 200, JSON.stringify(reply.body));
-  assert.deepEqual(fake.calls, ["setup", "setup"]);
+  assert.deepEqual(fake.calls, ["consents.nonce", "setup", "setup"]);
+});
+
+test("after the owner's wallet stop, a setup text from before it is refused, and a new text, with the platform's new nonce, sets up", async () => {
+  clean();
+  const cookie = await signIn(stopper);
+  const before = await signedSetup(stopper, cookie);
+  fake.stop("stopper.near");
+  const stopped = await json(await call("POST", "/api/setup", { cookie, body: before.submission }));
+  assert.deepEqual([stopped.status, stopped.body], [409, { ok: false, kind: "refused", code: "owner_stopped" }]);
+  const after = await signedSetup(stopper, cookie);
+  assert.equal((await call("POST", "/api/setup", { cookie, body: after.submission })).status, 200);
+});
+
+test("no setup text without the platform's nonce: unavailable, or the platform's limit", async t => {
+  clean();
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  for (const [answer, reply] of [
+    [{ ok: false, kind: "unavailable" }, { status: 503, body: { ok: false, kind: "unavailable" } }],
+    [{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }, { status: 429, body: { ok: false, kind: "refused", code: "platform_rate_limited" } }],
+  ] as const) {
+    fake.nonceAnswers.push(answer as never);
+    assert.deepEqual(await json(await call("POST", "/api/setup/text", { cookie, body: {} })), reply);
+  }
 });
 
 test("a thrown setup call is recorded and answers unavailable", async t => {
@@ -351,5 +376,22 @@ test("the setup routes count against the account's requests a minute, as the own
       assert.notEqual(statuses[1], 429, `${method} ${path}: ${statuses}`);
       assert.equal(statuses[2], 429, `${method} ${path}: ${statuses}`);
     }
+  } finally { limited.server.close(); }
+});
+
+test("setup texts share the account's setup request limit, and a refused text asks the platform for no nonce", async () => {
+  const first = wallet("nonce-limited.near"), second = wallet("nonce-other.near");
+  const isolated = fakePlatform({});
+  const limited = await testServer({ platform: isolated.platform, wallets: [first, second], ownerRequestsPerMinute: 1 });
+  try {
+    const firstCookie = await limited.signIn(first), secondCookie = await limited.signIn(second);
+    const text = (cookie: string) => fetch(`${limited.base}/api/setup/text`, { method: "POST", headers: { ...write, cookie }, body: "{}" });
+    assert.equal((await fetch(`${limited.base}/api/setup`, { headers: { cookie: firstCookie } })).status, 200);
+    const refused = { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" } };
+    assert.deepEqual(await json(await text(firstCookie)), refused, "listing setups used this account's request");
+    assert.deepEqual(isolated.calls, ["consents.list nonce-limited--near"], "a refused text spends no platform call");
+    assert.equal((await text(secondCookie)).status, 200, "another account keeps its own request");
+    assert.deepEqual(await json(await text(secondCookie)), refused, "issuing a text uses that account's request too");
+    assert.equal(isolated.calls.filter(call => call === "consents.nonce").length, 1);
   } finally { limited.server.close(); }
 });

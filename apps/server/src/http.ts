@@ -414,6 +414,18 @@ async function ownerAllowed(platform: Platform, organization: string, identity: 
   return liveConsents(listed.value.consents, identity).some(consent => withOwner(consent.scopes));
 }
 
+/**
+ * The text for the owner's wallet, with a NEP-413 nonce the platform issued for it: once the owner's wallet stop covers
+ * the agent, the platform stores only a text signed with a nonce it issued after the stop (`owner_stopped` otherwise).
+ * Unanswered, the owner is shown no text, never one with a nonce of this server's.
+ */
+async function withPlatformNonce(platform: Platform, who: string, text: (nonce: string) => unknown): Promise<Reply> {
+  const issued = await relay(() => platform.consents.nonce(), who);
+  if (issued.ok) return ok(text(issued.value.nonce));
+  log("platform_nonce_failed", { who, ...failure(issued) });
+  return issued.kind === "rate_limited" ? platformLimited() : unavailable();
+}
+
 /** A platform call whose throw is a lost answer: logged, and answered as `unavailable`, so a result is always recorded. */
 async function relay<Answer>(call: () => Promise<Answer>, agent: string): Promise<Answer | { ok: false; kind: "unavailable" }> {
   try { return await call(); } catch (error) { log("platform_call_threw", { agent, error: String(error) }); return { ok: false, kind: "unavailable" }; }
@@ -666,8 +678,9 @@ export const routes: Route[] = [
   {
     // The setup text the owner's wallet signs: a Treasury agent for their own Organization, for the platform's host.
     method: "POST", path: "/api/setup/text", access: "session",
-    async handle({ account }, { platform, deployment }) {
-      return ok(setupText({ host: platform.host, deployment, owner: account! }));
+    async handle({ account }, { platform, deployment, requests }) {
+      if (!requests(account!)) return refused(429, "rate_limited");
+      return withPlatformNonce(platform, account!, nonce => setupText({ host: platform.host, deployment, owner: account! }, nonce));
     },
   },
   {
@@ -691,11 +704,13 @@ export const routes: Route[] = [
       let stored = await relay(() => platform.setup(submission), account!);
       if (!stored.ok && stored.kind === "unavailable") stored = await relay(() => platform.setup(submission), account!);
       if (!stored.ok) log("platform_setup_failed", { owner: account, ...failure(stored) });
-      // 409: the owner's Treasury agent is already created, or the deployment can set up no more on this host. 403: this
-      // host doesn't set agents up. 400: the text or signature wasn't accepted. The platform's limit: nothing was done.
-      // Anything else may work later as is.
+      // 409 `owner_stopped`: the owner's wallet stop came after this text's nonce; a new text, and a new signature. Any
+      // other 409: the owner's Treasury agent is already created, or the deployment can set up no more on this host. 403:
+      // this host doesn't set agents up. 400: the text or signature wasn't accepted. The platform's limit: nothing was
+      // done. Anything else may work later as is.
       const status = !stored.ok && "status" in stored ? stored.status : undefined;
       const reply = stored.ok ? ok({ agent: stored.value.agent })
+        : stored.kind === "refused" && stored.code === "owner_stopped" ? refused(409, "owner_stopped")
         : status === 409 ? refused(409, "already_set_up") : status === 403 ? refused(403, "setup_unavailable")
         : status === 400 ? refused(400, "setup_refused") : !stored.ok && stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "setup", signedTextSha256, stage: "result",
@@ -834,7 +849,9 @@ export const routes: Route[] = [
       if (!listed.ok) { log("platform_consents_failed", { agent: identity!.agent, ...failure(listed) }); return unavailable(); }
       const live = liveConsents(listed.value.consents, identity!);
       if (live.length && !(asked.owner && !live.some(consent => withOwner(consent.scopes)))) return refused(409, "already_connected");
-      if (identity!.signer === "wallet") return ok(consentText({ identity: { ...identity!, agentId }, deployment: context.deployment, owner: true }));
+      if (identity!.signer === "wallet") {
+        return withPlatformNonce(context.platform, identity!.agent, nonce => consentText({ identity: { ...identity!, agentId }, deployment: context.deployment, owner: true }, nonce));
+      }
       return fileDao({ kind: "consent" }, account!, { ...identity!, agentId }, context);
     },
   },
@@ -861,11 +878,12 @@ export const routes: Route[] = [
       let stored = await submit();
       if (!stored.ok && stored.kind === "unavailable") stored = await submit();
       if (!stored.ok) log("platform_consent_failed", { agent, ...failure(stored) });
-      // 400: not accepted. 409: the agent changed since the text was built; read it again and ask for a new signature.
-      // 403: the platform says the signer doesn't own the agent. The platform's limit: nothing was stored. Anything else
-      // (a proxy's 429 included) may work later as is.
+      // 400: not accepted. 409: the agent changed since the text was built, or the owner's wallet stop came after its
+      // nonce (`owner_stopped`); either way a new text, and a new signature. 403: the platform says the signer doesn't own
+      // the agent. The platform's limit: nothing was stored. Anything else (a proxy's 429 included) may work later as is.
       const reply = stored.ok ? ok({ consent: shown(stored.value.consent) })
         : stored.kind === "refused" && stored.status === 400 ? refused(400, "consent_refused")
+        : stored.kind === "refused" && stored.code === "owner_stopped" ? refused(409, "owner_stopped")
         : stored.kind === "refused" && stored.status === 409 ? refused(409, "agent_changed")
         : stored.kind === "forbidden" ? notOwner() : stored.kind === "rate_limited" ? platformLimited() : unavailable();
       await recordResult(audit, { who: account!, action: "consent", agent, signedTextSha256, stage: "result",

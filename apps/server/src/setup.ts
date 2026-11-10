@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { parseSetupMessage, setupMessage } from "@multiagency/sdk";
 import { organizationOf } from "./consent.ts";
 import type { ConsentRecord } from "./platform.ts";
@@ -21,8 +20,8 @@ type Setup = { host: string; deployment: string; owner: string; now?: number };
 export const setupFor = ({ host, deployment, owner, now = Date.now() }: Setup, forMs: number) =>
   setupMessage({ host, deployment, organization: organizationOf(owner), owner, area: SETUP_AREA, expiresAt: new Date(now + forMs).toISOString() });
 
-/** The setup text for the owner's wallet to sign, with a fresh 32-byte nonce, for the platform's host. */
-export const setupText = (setup: Setup) => ({ message: setupFor(setup, SETUP_MS), nonce: randomBytes(32).toString("base64"), recipient: setup.host });
+/** The setup text for the owner's wallet to sign, with the nonce the platform issued for it, for the platform's host. */
+export const setupText = (setup: Setup, nonce: string) => ({ message: setupFor(setup, SETUP_MS), nonce, recipient: setup.host });
 
 /**
  * Whether a signed text is exactly a setup this server would ask the owner for now: the canonical text naming this

@@ -480,7 +480,9 @@ test("a wallet owner's consent always carries owner, and a connection without it
 test("a signed consent without owner, as an older page's, is still relayed", async () => {
   clean();
   const cookie = await signIn(owner);
-  const text = consentText({ identity: { agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test" }, deployment: "treasury", owner: false });
+  const issued = await fake.platform.consents.nonce();
+  assert.ok(issued.ok);
+  const text = consentText({ identity: { agent: "portfolio", owner: "owner.near", agentId: "id-portfolio", host: "platform.test" }, deployment: "treasury", owner: false }, issued.value.nonce);
   assert.deepEqual(parseConsentMessage(text.message)!.scopes, ["read", "treasury"]);
   const signed = owner.sign(text);
   const stored = await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature } }));
@@ -566,6 +568,33 @@ test("a result the audit trail can't record is logged, and the action's answer a
   fake.consents.push(record("one"), record("two"));
   assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/revoke", { cookie, body: {} })), { status: 200, body: { ok: true, value: { revoked: 2 } } });
   assert.ok(logged.mock.calls.filter(call => String(call.arguments[0]).includes("audit_failed")).length >= 3);
+});
+
+test("the text's nonce is the one the platform issued: after the owner's wallet stop, a text from before it is refused, and a new one connects", async () => {
+  clean();
+  const cookie = await signIn(owner);
+  const before = await signedConsent(cookie);
+  assert.equal(before.text.nonce, fake.issued.at(-1));
+  fake.stop("owner.near");
+  const stopped = await json(await call("POST", "/api/agents/portfolio/consent", { cookie, body: before.submission }));
+  assert.deepEqual([stopped.status, stopped.body], [409, { ok: false, kind: "refused", code: "owner_stopped" }]);
+  assert.deepEqual(results().map(entry => entry.answer), [{ ok: false, kind: "refused", status: 409, code: "owner_stopped" }]);
+  const after = await signedConsent(cookie);
+  assert.notEqual(after.text.nonce, before.text.nonce);
+  assert.equal((await call("POST", "/api/agents/portfolio/consent", { cookie, body: after.submission })).status, 200);
+});
+
+test("no consent text without the platform's nonce: unavailable, or the platform's limit, and never one of this server's", async t => {
+  clean();
+  t.mock.method(console, "error", () => {});
+  const cookie = await signIn(owner);
+  for (const [answer, reply] of [
+    [{ ok: false, kind: "unavailable" }, { status: 503, body: { ok: false, kind: "unavailable" } }],
+    [{ ok: false, kind: "rate_limited", status: 429, error: "Request limit reached" }, { status: 429, body: { ok: false, kind: "refused", code: "platform_rate_limited" } }],
+  ] as const) {
+    fake.nonceAnswers.push(answer as never);
+    assert.deepEqual(await json(await call("POST", "/api/agents/portfolio/consent/text", { cookie, body: {} })), reply);
+  }
 });
 
 test("a consent submission that throws is a lost answer: sent once more, then unavailable, with its result on record", async t => {

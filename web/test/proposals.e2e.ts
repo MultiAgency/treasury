@@ -130,7 +130,10 @@ async function connectWithoutOwner() {
     return response.status;
   }, { url: `${origin}/api/agents/${target.agent}${path}`, body });
   assert.equal(await call("/consent/revoke"), 200, "the connection made so far is revoked");
-  const text = consentText({ identity: { agent: target.agent, owner, agentId: state.treasury.agentId, host: new URL(state.dashboard).host }, deployment: state.app!.deployment });
+  const app = appClient({ base: state.dashboard as `https://${string}`, credential: readFileSync(state.app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+  const issued = await app.consents.nonce();
+  assert.ok(issued.ok, JSON.stringify(issued));
+  const text = consentText({ identity: { agent: target.agent, owner, agentId: state.treasury.agentId, host: new URL(state.dashboard).host }, deployment: state.app!.deployment }, issued.value.nonce);
   const signed = await signOwner(target, text);
   assert.equal(await call("/consent", { message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature }), 200, "the older connection is stored");
 }

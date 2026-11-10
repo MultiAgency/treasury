@@ -18,6 +18,7 @@ const SETUP: Record<string, string> = {
   already_set_up: "This Treasury is already set up, or this host can't set one up now. A Treasury already set up shows under your treasuries.",
   setup_unavailable: "This host doesn't set up Treasury agents.",
   setup_refused: "The platform didn't accept the setup. Nothing was set up.",
+  owner_stopped: "Your wallet stopped app access after this text was prepared, so the platform can't tell it was signed after the stop. Nothing was set up. Review the new text and sign again.",
   not_set_up: "The setup this agent was reserved with has lapsed: it's good for an hour. Set it up again, then create it.",
   already_created: "This agent is already created.",
   creation_refused: "The platform refused the creation. Nothing was prepared. If one is already waiting for a signature or a vote, sign that one, or wait for it to expire, in minutes.",
@@ -32,6 +33,7 @@ const CONSENT: Record<string, string> = {
   agent_changed: "The agent changed since this text was prepared. Nothing was stored. Review the new text and sign again.",
   not_this_consent: "The signed text isn't the consent this server asks for now. Nothing was stored. Connect again.",
   consent_refused: "The platform didn't accept the consent. Nothing was stored.",
+  owner_stopped: "The owner's wallet stopped app access after this text was prepared, so the platform can't tell it was signed after the stop. Nothing was stored. Review the new text and sign again.",
   autopilot_not_stopped: "Autopilot couldn't be turned off, so nothing was disconnected: once disconnected, this page couldn't turn it off. Try again.",
   // The same code for the owner routes' per-minute limit and the daily limit on new consents.
   rate_limited: "Too many requests from this account. Wait a minute and try again; if it has connected agents several times today, connecting again waits until tomorrow.",

@@ -22,24 +22,22 @@ test("the Organization is the owner's account with each '.' written as '--', and
 });
 
 test("the consent text names this deployment, the owner's Organization, the agent's identity, and read and treasury only", () => {
-  const text = consentText(expected);
+  const text = consentText(expected, "A".repeat(43) + "=");
   assert.equal(text.recipient, "platform.test", "the platform's host, never this server's");
-  assert.equal(Buffer.from(text.nonce, "base64").length, 32);
-  assert.equal(Buffer.from(text.nonce, "base64").toString("base64"), text.nonce, "canonical base64");
+  assert.equal(text.nonce, "A".repeat(43) + "=", "the nonce the platform issued");
   assert.deepEqual(parseConsentMessage(text.message), {
     type: "multiagency.app-consent", version: 1, host: "platform.test", deployment: "treasury", organization: "owner--near",
     owner: "owner.near", agent: "portfolio", agentId: "id-portfolio", scopes: ["read", "treasury"],
     expiresAt: new Date(now + CONSENT_DAYS * DAY).toISOString(),
   });
-  assert.notEqual(consentText(expected).nonce, text.nonce, "a fresh nonce each time");
   assert.deepEqual(checkConsent(text.message, expected), { ok: true });
 });
 
 test("a wallet owner's consent text carries owner, in the order the platform sorts scopes; both scope sets are still accepted", () => {
-  const withOwner = consentText({ ...expected, owner: true });
+  const withOwner = consentText({ ...expected, owner: true }, "A".repeat(43) + "=");
   assert.deepEqual(parseConsentMessage(withOwner.message)?.scopes, ["owner", "read", "treasury"]);
   assert.deepEqual(checkConsent(withOwner.message, expected), { ok: true }, "the default consent");
-  const without = consentText({ ...expected, owner: false });
+  const without = consentText({ ...expected, owner: false }, "A".repeat(43) + "=");
   assert.deepEqual(parseConsentMessage(without.message)?.scopes, ["read", "treasury"]);
   assert.deepEqual(checkConsent(without.message, expected), { ok: true }, "a consent made before the default, still live");
   assert.equal(OWNER_CONSENT_SCOPES.includes("owner"), true);
