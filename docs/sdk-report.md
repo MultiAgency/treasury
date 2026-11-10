@@ -1,151 +1,152 @@
 # Treasury and the MultiAgency SDK
 
-What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what would improve the SDK from here.
+What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what remains to improve.
 
-Reviewed against SDK 0.5.0 and platform `6ba0831` on 4 November 2026, describing merged Treasury work through #109; held work from #104 is identified separately. Sections 3.1, 3.2, 3.3, 3.5 and 3.6 were rechecked on 5 November 2026 against SDK 0.5.1 (pinned since #119), the platform at `c671872`, and merged work through #143. On 9 November 2026 three rows of 3.2 were brought up to date (emergency stop, the floor in the signed policy, staging access); the rest isn't rechecked against SDK 0.5.4. Host availability is an operator check, not a guarantee from this SDK pin.
+Rechecked on 10 November 2026 against SDK **0.5.5**, pinned platform [`2e7b1e6`](https://github.com/MultiAgency/platform/tree/2e7b1e6f231da5be62d077d67f7bc2686c57bdc9), and Treasury [`9db65e4`](https://github.com/MultiAgency/treasury/commit/9db65e4) through #237. This replaces the report's 0.5.0/0.5.1 snapshot and its partial 0.5.4 updates. Paths beginning `platform/` refer to that platform commit. Host availability and live settlement are operator checks, not guarantees from the SDK pin or simulated tests.
 
 ## Summary
 
-The Treasury app (owner UI in `web/`, app server in `apps/server/`, engines in `packages/core/`) runs on `@multiagency/sdk` 0.5.1 (#119). Upgrading from 0.4.1 to 0.5.0 needed no code changes beyond the version and the platform pin (PR #97).
+Treasury pins `@multiagency/sdk` 0.5.5 in both the app server and web package (#235). It has one browser app, `web/src/proposals/`, which calls its own app server. The owner-session reference build was retired in #189; it is no longer held work awaiting an app-route migration ([ADR 2](adr/0002-owner-ui-app-access.md)).
 
-The engines in `packages/core` don't use the SDK at all. They are pure decision logic: oracle, bands, sizing, anti-whipsaw, policy, levels, detectors, replay and mandate. The SDK matters where those decisions meet the platform: proposals, owner signatures, consents, reads and execution.
+The engines in `packages/core` do not use the SDK. Ballast already runs through `watch`, with persistent history and decision state, policy checks and proposal legs. SDK integration is the boundary between those decisions and the platform's consents, reads, owner actions, proposals and execution.
 
-**Three things decide where the app can go next:**
+Three distinctions matter for the remaining work:
 
-1. **Owner UIs are moving to the app route.** The platform answered on platform#14: owner UIs move to `/apps/v1`, and the owner session gets no production host. Several procedures the owner UI uses have no app-route version yet (section 3.1).
-2. **DAO-owned treasuries.** 0.5.0 adds DAO consents, votes and setups. The app server now supports DAO-owned agents (#20) against the SDK types, with the implementation merged in #109 and simulated-stack coverage. Confirm deployment availability with the operator; the file calls have no idempotency key (section 3.4).
-3. **Limits the signed policy can't express.** Venue exposure and the cash floor are enforced app-side only. They can refuse a trade the platform would allow, but nothing outside this app enforces them.
-
-Against the plan's four proposed procedures, the app route already has ledger export, and partly has DCA schedules, approval gates and an emergency stop (section 3.6).
+1. **App access is implemented.** The server uses `appClient` on `/apps/v1`; wallet owners sign exact texts or use the platform's confirm page, and DAO members file transactions for votes. New wallet-owner consents include `read`, `treasury` and `owner`; DAO consent excludes `owner`. Treasury asks for neither `payout` nor `treasury-execute`.
+2. **The platform executor enforces a saved cash floor; venue exposure is app-side.** SDK 0.5.3 added `strategy.cashFloor`, checked by the executor rather than a provider policy field. Treasury carries the mandate's floor through adopted strategy proposals (#236), but `overview` still omits it, so matching allocations can prevent a floor-only proposal (3.2).
+3. **Implementation, simulated acceptance and live readiness are different evidence.** Wallet and DAO flows run on the pinned simulated stack. Production availability remains host-specific. H9 used real NEAR history, while stabilization and diversified-book backtest reports remain synthetic and do not establish live performance (section 5).
 
 ## 1. How the app uses the SDK
 
 | Part | Client | What it does through the SDK |
 |---|---|---|
-| Owner UI (`web/`) | `ownerClient` on the owner session (`/gw`) | Session and access, reads (overview, holdings, strategy, activity, inbox), owner actions prepared for the wallet to sign, plan execution streams |
-| Proposals page (`web/src/proposals`) | none (calls the app server only) | Shows the owner's proposals; signs the exact `proposalText` in the wallet |
-| App server (`apps/server/`) | `appClient` on `/apps/v1` with the deployment's `tap_` credential | Identity, consents, proposals (create, read, list, approve, reject, execute), the `watch` proposer, DAO consents and votes |
-| Engines (`packages/core/`) | none | Pure logic; #60 supplies raw-unit proposal legs. Calling the engine from watch also needs prices, history, state and policy-context integration |
+| Browser app (`web/src/proposals/`) | No SDK network client; same-origin `/api/` calls through `proposals-api.ts` | Parses app-server answers and uses SDK schemas, signing text and funding helpers; the wallet signs the reviewed text or transaction |
+| App server (`apps/server/`) | `appClient` on `/apps/v1` with the deployment's `tap_` credential | Identity, setup, consents, owner reads/actions, strategy and autopilot, funding, proposals and their execution, DAO coordination |
+| `watch` and Ballast integration | The server's platform wrapper over `appClient` | Reads the book and strategy, evaluates the engine, records decisions and creates proposals with exact raw-unit legs |
+| Engines (`packages/core/`) | None | Pure oracle, bands, sizing, whipsaw, policy, levels, detectors, mandate, risk, multi-sleeve evaluation and replay logic |
 
 ## 2. SDK changes the app needed, and how each was resolved
 
+Historical needs remain here to distinguish shipped support from remaining app protections.
+
 | # | Need | Resolution | Status |
 |---|---|---|---|
-| 2.1 | SDK 0.5.0 (DAO flows, fixes) | Upgraded in PR #97 with the platform pin moved to `6ba0831`. Typecheck and all tests pass. | Resolved |
-| 2.2 | "token" means an asset in the SDK (`PROPOSAL_TOKENS`, `tokenAmount`), but the audit store refused any field named like `token` as a credential | The audit store now names credentials exactly (`sessionToken`, `accessToken`, `apiKey`, `mnemonic`, `seedPhrase`, …), so `token`, `tokenIn` and `seed` record (#90) | Resolved in this app |
-| 2.3 | Platform policy digest and owner signing for the mandate | The platform computes the mandate digest; the owner signs policy edits in the wallet (#59 closed as covered by the platform). A9.1 compiles answers to that policy plus app-side limits | Resolved by the platform |
-| 2.4 | A bad NEP-413 signature reaches the SDK as a lost answer (the gateway's 400 isn't a typed refusal) | The app server verifies NEP-413 locally before relaying (`apps/server/src/http.ts`) and classifies refusals by status | Workaround in this app |
-| 2.5 | A gateway 4xx comes back from the SDK as `unknown`; 429 isn't its own kind (platform#15) | `watch` treats `unknown` with HTTP 429 as a rate limit and backs off; other 4xx are treated as bugs and stop the agent | Workaround in this app |
-| 2.6 | 1,200 calls an hour per deployment, shared by every owner and `watch` | Identity answers cached 60 s; `watch` refuses to start past half the budget; owner requests rate-limited per account | Workaround in this app |
-| 2.7 | Organization ids can't contain dots, but NEAR accounts do | The Organization is the owner's account with `.` written as `--` (`apps/server/src/consent.ts`) | Workaround in this app |
-| 2.8 | `selfServiceTreasury` isn't in `gatewayDiscovery` | Read as a local extension of the discovery answer (`web/src/platform.ts`) | Workaround in this app |
-| 2.9 | Gateway 401/403 denials need classifying before `ownerClient` sees them | Classified in `web/src/platform.ts` | Workaround in this app |
-| 2.10 | Engine intents and platform proposals both called "proposal" | The engine's output is now an `Intent` (#63); a platform proposal stays a proposal | Resolved in this app |
+| 2.1 | SDK and simulated-platform compatibility | SDK 0.5.0 landed in #97; the current 0.5.5 package and platform pin landed together in #235 | Resolved at this pin |
+| 2.2 | Asset fields such as `token`, `tokenIn` and `seed` were mistaken for credentials by the audit store | The audit store names credentials exactly (`sessionToken`, `accessToken`, `apiKey`, `mnemonic`, `seedPhrase`, …), preserving asset fields (#90) | Resolved in this app |
+| 2.3 | Policy digest and owner signing for the mandate | The platform computes the mandate digest and prepares owner-signed policy edits. A9.1 compiles the mandate; its strategy floor is saved through adopted proposals (#236) | Implemented; floor visibility gap in 3.2 |
+| 2.4 | A coded gateway signature refusal could appear as a lost answer | Since SDK 0.5.3, coded gateway 4xx denials such as `signature_invalid` are typed refusals. Treasury keeps local exact-text, account and NEP-413 verification before relaying (`apps/server/src/http.ts`) | SDK support shipped; local protection retained |
+| 2.5 | A gateway 429 lacked its own result kind and backoff value (platform#15) | Since 0.5.2, the gateway's JSON 429 is `rate_limited`, with optional `retryAfterSeconds` from `Retry-After`. `watch` handles it and retains legacy HTTP-429 fallback. Uncoded proxy/transport failures can still be ambiguous; a mutation's unknown outcome is not a proven refusal | Resolved for typed gateway rate limits |
+| 2.6 | Owners and `watch` share the server's credential allowance | The platform defaults to 1,200 requests/hour **per credential**, operator-adjustable up to 12,000. Treasury caches successful identity reads, rate-limits owner requests and limits watch's estimated load to half the default allowance | App safeguards; budget visibility remains missing |
+| 2.7 | Organization ids cannot contain dots, but NEAR accounts do | The Organization is the owner's account with `.` written as `--` (`apps/server/src/consent.ts`) | Workaround in this app |
+| 2.8 | The old browser needed an untyped `selfServiceTreasury` discovery flag | That consumer and `web/src/platform.ts` were retired in #189. SDK discovery now exposes `setupAreas` and `selfService`; the current app uses its server's setup routes | Historical workaround retired |
+| 2.9 | The old browser classified gateway 401/403 before `ownerClient` | SDK gateway answers have `session`/`forbidden` kinds, and the current browser has no `ownerClient`. The app server maps SDK results to its own public contract | Historical workaround retired |
+| 2.10 | Engine intents and platform proposals were both called proposal | The engine emits an `Intent` (#63); the server converts it into platform proposal legs | Resolved in this app |
+| 2.11 | A consent signed before a wallet stop could be replayed afterwards | 0.5.5 adds platform-issued consent/setup nonces and `owner_stopped`; Treasury obtains a fresh nonce and asks for a new signature after that refusal (#235) | Implemented |
+| 2.12 | Owner-action reads used different stage vocabularies | 0.5.5 adds optional `phase` to `owner/status`, `owner/pending` and `owner/actions`. Treasury prefers phase, falls back to legacy stage, and requires provider `SUCCESS` before claiming success (#237) | Implemented |
 
 ## 3. What the app still needs from the SDK or the platform
 
-### 3.1 App-route versions of owner-session procedures
+### 3.1 App-route versions and replacements for owner-session procedures
 
-Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-route equivalent or an explicit replacement; platform#17 tracks that decision. Hosted creation already has a different app-route API.
+The app-route migration is complete. The aggregate owner RPC and hosted setup are different APIs; a missing owner RPC name does not necessarily mean an app workflow is missing.
 
-| Procedure | Used by | Today |
+| Procedure | Current app route or replacement | Remaining limitation |
 |---|---|---|
-| `setup` (identity, instance, overview fields) | owner UI frame | owner session only |
-| `reconcileBooks` | portfolio | On the app route since 0.5.1 (`read`); the app server reads it |
-| `treasury/link`, `unlink` | funding page | On the app route since 0.5.1 (`treasury`, wallet owners only); the proposals page uses them (#121). `setConfidential` is gone in 0.5.5: `treasury/get` reads it from chain (platform#41) |
-| `treasury/fund` | funding page | Owner session only; on the app route, `deposit` and the SDK's `fundingTransaction` fund the agent instead (#121) |
-| `autopilot/tick` ("Run now") | automations (#7) | On the app route since 0.5.1 (`treasury`); the proposals page's Run now uses it (#126) |
-| `steward/propose` | steward page (#7) | owner session only |
-| `inbox/list`, `inbox/dismiss` | attention inbox (#7) | owner session only |
-| `/gw/agents`, `/gw/treasuries` | Treasury creation (#12) | Replaced: creation runs on `/apps/v1/setup` and `/apps/v1/dao-setups` (#117) |
+| Owner RPC `setup` aggregate | The app uses identity and owner reads such as `account`, `overview` and `treasury/get`. `app.setup()` separately reserves a hosted agent | The aggregate itself is not an app procedure; current pages use the separate reads |
+| `reconcileBooks` | App read since 0.5.1; used by Treasury | No missing app-route equivalent |
+| `treasury/link`, `unlink` | App `treasury` procedures for wallet owners; used by the Funding page | A DAO agent's funding account is its DAO. `setConfidential` was removed in 0.5.5; `treasury/get` reads confidentiality from chain (platform#41) |
+| `treasury/fund` | App `deposit` plus SDK `fundingTransaction`; the funding wallet or DAO sends the reviewed transaction | Funding-outcome recovery remains limited by the absence of a platform transfer record for this flow; see `web/PLATFORM-SESSION.md` |
+| `autopilot/tick` | App `treasury` procedure since 0.5.1; used by Run now | No request/run id for recovering a particular attempt (3.5) |
+| `steward/propose` | Removed from the platform and SDK in 0.5.5. An app's own agent proposes through `proposals/create`; `externalPlan` needs `treasury-execute` | Not a procedure awaiting an app-route version; Treasury uses signed proposals |
+| `inbox/list`, `inbox/dismiss` | Remain owner-session procedures, absent from app scope lists | The current app derives Needs your decision from its available reads; it does not expose the prototype inbox |
+| `/gw/agents`, `/gw/treasuries` | Hosted creation uses `/apps/v1/setup` or `/apps/v1/dao-setups`, followed by wallet confirmation or a DAO vote | Host enablement and app-specific end-to-end setup coverage are separate checks (3.2) |
 
-### 3.2 Needs to confirm against the platform and deployment
+### 3.2 Capabilities, remaining limits and deployment checks
 
-| Gap | Why the app needs it | Issue |
+| Capability or gap | Current evidence and remaining work | Reference |
 |---|---|---|
-| Approving a held withdrawal to a NEAR account | Shipped in SDK 0.5.5: an `approval_vote` on a held withdrawal to a NEAR account is verified like a transfer's (the provider's request hash recomputed with `flow` `withdraw` and chain `near`), and refused unless its destination asset is the token withdrawn, or if it names fields outside those observed on mainnet (the platform's `src/payment-approval.ts`). Offline- and stack-tested there, not mainnet-observed. A payout feature: a Treasury agent makes no payouts | #62, platform#42 |
-| Emergency-stop requirements | Settled by ADR 3: the freeze meets A14. A wallet owner freezes from the app (#133); a DAO's freeze vote must pass within the intent's minutes | #95, platform#20 |
-| Venue exposure and cash floor in the signed policy | Venue exposure is enforced app-side only; the platform would allow a trade it refuses. The cash floor is the platform's since SDK 0.5.3, in the strategy (`cashFloor`), and this app sets it through Ballast's mandate proposals. `overview` doesn't report it, so a proposer comparing against the overview can't see whether it's saved without another read: `overview` should carry `cashFloor` beside `target` | #49, #62, platform#23 |
-| Treasury setup on production and the simulated stack | Creation runs through the app server (#117), but at `c671872` only staging offers the `treasury` area; production and the stack offer payables only | #12 |
-| Staging access and production readiness | Staging is granted (#95): its host, the `multiagency-treasury` deployment and its network. Production readiness is still to confirm; SDK support does not establish access | #95 |
-| Budget visibility, `Retry-After`, and typed 429 | A shared deployment limit already exists (1,200 calls/hour); explicit budget and backoff signals are missing | platform#15 |
-| The consent cap counts revoked consents | A user who reconnects often can be locked out | #20 threat model |
-| Venue holdings and quoted slippage in reads | The policy needs venue exposure and slippage against the oracle median | A10.1 (#60) |
+| Approving a held withdrawal to a NEAR account | Shipped in SDK 0.5.5: the platform verifies `approval_vote` by recomputing the provider's request hash with `flow` `withdraw` and chain `near`; it refuses a different destination asset or fields outside those observed on mainnet (`platform/src/payment-approval.ts`). Offline- and stack-tested there, not mainnet-observed. Treasury makes no payouts and does not use it | #62, platform#42 |
+| Emergency stop | ADR 3 accepts the owner's signed freeze for A14; Treasury exposes it. A DAO's freeze vote must still pass within the short intent window. Until then, stopping autopilot and Ballast does not freeze other apps | #95, platform#20 |
+| Cash floor enforcement and visibility | Since 0.5.3, the platform executor checks the saved strategy's floor on plan-bound swaps (`platform/src/authorize.ts`); it is not a field in the provider's signed policy. Adopted mandate proposals carry it (#236), keeping the higher saved amount for the same asset set; different asset sets skip the proposal. `overview` omits `cashFloor`, so matching allocations can produce no proposal and install no floor. The editor preserves an existing floor; it is not a separate floor-setting control | #49, #62, platform#23; [ADR 4](adr/0004-platform-extensions.md) |
+| Venue exposure | Enforced app-side. Treasury derives known-asset route/venue exposure from its registry and overview holdings; the platform does not supply a venue-balance breakdown or a signed portfolio-exposure cap | A10.1 (#60), #221 |
+| Treasury setup and creation on the stack | The standard simulated app stack enables Treasury setup and supplies wallet/DAO Treasury agents. Platform app-access E2Es cover hosted wallet/DAO Treasury setup and creation. Treasury's own setup/creation tests use fakes; its stack suites exercise precreated agents, not the full hosted creation flow. A frontend demo host may narrow the allowed areas | #12; `platform/test/e2e/environment.mjs`, `platform/test/e2e/app-access.spec.mjs`, `apps/server/test/setup.test.ts` |
+| Staging access and production readiness | Staging access was recorded in #95. The pinned deployment configurations differ in enabled areas; neither the source configuration nor the SDK establishes a live host's current availability | #95; operator verification |
+| Shared call-budget visibility | Typed 429 and `Retry-After` already exist. The remaining gap is the credential's available budget and coordination across owners, `watch` and server processes; a per-Organization limit is a separate request | platform#15, platform#59 |
+| Consent capacity | Revoked and expired consents do **not** count toward the 1,024-live-consent cap (`platform/src/gateway/app-access.ts`). The old revoked-consent lockout claim is resolved; live-consent limits still apply | #20 threat model |
+| Quote and policy-context reads | Ballast has no pre-proposal quote feed and passes no quoted-slippage value to its detector. Signed `minAmountOut` and platform quote/cost checks still constrain execution. Venue breakdown and richer rolling usage reads would reduce app-side derivation; execution-stream cost fields do not replace a quote-only read for this app | A10.1 (#60) |
+| Provider-wide cumulative spending guarantees | The platform's own serialized-dispatch race tests pass offline. Atomic USD-budget and cumulative per-asset enforcement across other hosts or directly used grants still depend on unresolved provider evidence; they are not established by this app's tests | platform#6; `platform/docs/enforcement.md`, Spending limits under concurrency |
 
-### 3.3 New in 0.5.0 and now used
+### 3.3 SDK capabilities now used
 
-| 0.5.0 feature | Where the app uses it |
+| Capability | Where Treasury uses it |
 |---|---|
-| `identity.signer` | The app server tells a DAO-owned agent from a wallet-owned one and routes each to its own flow (#20) |
-| `accessOf`, `mayCall` | Members are gated by role against the DAO's on-chain policy, read and cached by the server |
-| `app.daoConsents` | The server files the DAO's consent and follows it by state until the vote passes |
-| `app.daoVotes` | Approve and reject become DAO votes, with the platform's `/confirm/dao/<hash>` link for voters |
-| `app.daoSetups`, `owner/prepare` with `signer: "dao"` | A DAO's setup is filed for its vote and completed when it passes (#117); production and the stack don't offer the `treasury` area yet |
-| `appClient(...).stream` for `sweep`, `rebalance`, `executePlan` | `sweep` on the proposals page, answered as its AG-UI run (#122); `rebalance` and `executePlan` aren't used: they need `treasury-execute` |
+| `identity.signer`, `accessOf`, `mayCall` | Distinguishes wallet/DAO owners and gates member actions using the DAO policy the server reads from chain |
+| `app.daoConsents`, `app.daoVotes`, `app.daoSetups` | Coordinates consent, proposal verdicts and setup through a member's transaction and the DAO's vote |
+| `owner/prepare` with wallet or DAO signer | Prepares creation, freeze/unfreeze, grants/revocations and policy edits for the appropriate signing flow |
+| Owner-action `phase` and provider status | Shared server/UI holds and polling; submitted actions stay held past signing expiry, while settlement alone never claims success (#237) |
+| `consents.nonce()` | Consent and wallet setup text use a platform nonce; a stop invalidates an older nonce (#235) |
+| `strategy/save`, `strategy/get`, `autopilot/*` | Saves the reviewed strategy, retains its floor, binds authorization to its digest, and controls the schedule/Run now |
+| `appClient(...).stream` for `sweep` | Treasury follows the sweep's AG-UI events; it does not request `treasury-execute` for `rebalance` or `executePlan` |
 
-### 3.4 Gaps found while building DAO agents
+### 3.4 Gaps and limits in DAO coordination
 
-| Gap | Effect today | Suggested SDK change |
+| Gap or limit | Effect today | Possible SDK improvement |
 |---|---|---|
-| `daoConsents.file` and `daoVotes.file` take no request id | A lost file reply can leave a request whose id is unknown. #109 persists known requests and blocks uncertain filing; it does not make blind retries safe | An idempotency key on `file`, as `proposals/create` has |
-| No list of an app's DAO requests | The server must persist every request id itself, or a restart forgets open votes | `daoConsents.list` and `daoVotes.list` by organization, agent and proposal |
-| `mayCall` has no entry for filing a consent or vote, or for revoking an app's consent | #109 records the explicit member permission mapping; DAO-member disconnect is not offered | Named rules for these app-level actions |
-| The skill text names `permits`, the example uses `mayCall` | Ambiguity about which to use | One name in docs and code |
-| Reading a DAO request's state is also what relays it | The audit rule "record before the platform is asked" doesn't fit; the relay is recorded only as a result | A separate relay call, or a state read without side effects |
-| DAO answers' HTTP statuses (404, 409, 410; 403, 409, 429 on file) are documented in prose only | The app maps them to gone, ended, expired by guesswork | Typed refusal kinds for DAO answers |
-| `daoConsents.state` returns no `request` when `signed`; transaction actions are typed as loose `params` | The server answers from its own copy, and casts actions for the wallet | Complete, typed wire types |
-| The voter check link is only inside `description` | The server rebuilds it from host and hash; the page refuses any other link | A typed `checkUrl` field |
-| No DAO policy reader in the SDK | Each app calls the DAO's `get_policy` through its own RPC | A `daoPolicy(account)` read |
-| Deployment availability | #109 includes simulated-stack coverage; a real deployment and network still need operator confirmation | Staging verification |
+| Filing has no caller request id | A lost filing reply can leave an orphan platform request. SDK 0.5.5 documents retry as safe: only the returned transaction can be filed by a member, so a lost reply does not itself put a vote on chain. Orphans still consume request capacity; Treasury conservatively records filing uncertainty | Idempotency keys on consent/setup/vote filing to avoid orphan requests |
+| No list of pending DAO requests | The app persists known ids to follow open votes. `reservations()` lists hosted agents, not DAO requests | Lists by Organization, agent and proposal |
+| `mayCall` has no named rule for app-level filing or consent revocation | Treasury maps filing permissions to the relevant owner action; DAO-member disconnect is not offered. `permits` and `mayCall` already have distinct documented roles, rather than a naming ambiguity | Named app-level permission rules |
+| Reading a request's state can relay it | Consent state can store consent, setup state can reserve an agent, and proposal-vote state can relay the verdict. Treasury audits the result of that settling read | Separate effectless read and relay operations |
+| Refusal types are broad | `AppRouteResult` already has failure kinds, typed rate limits and optional refusal codes. Codes/statuses are not endpoint-specific exhaustive unions, so the app still maps them to its public contract | Endpoint-specific refusal unions where useful; preserve uncertainty for unproven mutation outcomes |
+| Some terminal state answers omit the request | Signed consent and reserved setup answers omit `request`; the app keeps its copy. DAO filing transaction parameters remain loose, although owner-preparation transactions have fuller types | Complete typed state/request and transaction payloads |
+| No typed voter check URL | The platform embeds its check URL in transaction descriptions; Treasury constructs the link from the validated host/hash | A `checkUrl` field |
+| No SDK DAO-policy network reader | `DaoPolicy`, `accessOf` and `permits` are pure helpers. Treasury calls `get_policy` through its own RPC (`apps/server/src/dao.ts`) | A policy-reader helper if it would remove duplicated app code |
 
-### 3.5 Findings from the held owner-UI work in #104
+### 3.5 Prototype findings and current recovery limits
 
-| Gap | Effect today |
+#104 was prototype work, not a second UI still waiting to ship. Its owner-session build was retired in #189. The current app's remaining recovery limits should be read separately from those historical pages.
+
+| Finding | Current behavior and limit |
 |---|---|
-| `autopilot/tick` takes no input and returns no id | After a lost answer nothing links the attempt to a recorded run, so Run now is only held back for as long as the page is open, plus while a run or unresolved operation is visible. The merged proposals page's Run now (#126) has the same limit: a lost answer is never sent again from there |
-| `steward/propose` and `inbox/*` exist only on the owner session (`autopilot/tick` reached the app route in 0.5.1); `rebalance` and `executePlan` reach the app route only under `treasury-execute` | Moving owner UIs to `/apps/v1` (platform#14) means reworking the steward, runs and attention pages |
+| `autopilot/tick` takes no input and returns a summary without an attempt/run id | After a lost answer, Treasury refreshes observations and points the owner to recorded runs. It does not automatically retry. The current button has no retained lost-outcome hold after the request ends, so this is not a durable or page-lifetime retry guard (`web/src/proposals/autopilot.tsx`) |
+| The old steward and inbox pages lacked app-route equivalents | `steward/propose` is removed in 0.5.5; the current app's proposers use `proposals/create`. Inbox procedures remain owner-session-only, while the app derives its own decision list (3.1) |
+| A funding transaction can lose its wallet answer | No platform funding-transfer record identifies that attempt. The current page retains its hold while loaded and explains the limit in `web/PLATFORM-SESSION.md` |
 
 ### 3.6 The plan's proposed procedures (#62)
 
-The plan proposes new procedures for four needs, as #62 quotes it; the task card itself (Ballast's `docs/TASKS.md`) hasn't been received. Each against SDK 0.5.1 on the app route and the platform at `c671872`:
+The four procedure needs recorded in #62, assessed against SDK 0.5.5 and the app's current scopes:
 
-| Plan's procedure | What the app route offers | Status | What's left |
-|---|---|---|---|
-| Adaptive DCA strategy schemas | `strategy/save` takes target weights, a minimum leg, a cost limit, and the autopilot's interval and auto-execute ceiling (the platform's `src/strategy-digest.ts`); nothing for bands, DCA units or anti-whipsaw. The app can carry its own: `proposals/create` takes the app's legs, and `externalPlan` (with `treasury-execute`) runs an app-built plan within the policy, the cost limit and a grant binding the strategy | Partly | Ballast's band, DCA and whipsaw state stays in `packages/core` and reaches the platform as proposal legs (#60's `legsFor`). A new procedure is needed only if the owner must sign the DCA schedule itself |
-| Escalation and approval gates | A proposal's swaps run only after the owner's wallet signs its exact text, or the DAO votes. The autopilot executes alone only up to the strategy's `autopilot.maxUsd`, under a grant binding it; 0 leaves every autopilot swap to the owner. A payout is held for a wallet owner's vote (`approval_vote`) when the policy sets `owner_approval` | Partly | The `maxUsd` ceiling applies to autopilot runs only: with `treasury-execute`, an app's `rebalance`, `externalPlan` and `executePlan` swap without a signature and without an amount ceiling, within the policy and the cost limit (the platform's `src/authorize.ts`). `owner_approval` holds every payout or none (`src/policy.ts`), so a hold only above an amount can't be expressed. A DAO can't vote on a held payout through an app (`DAO_APP_ACTIONS` has no `approval_vote`). Telling the owner a decision waits is the app's job (#131) |
-| Emergency-stop orchestration | `autopilot/stop` at once, with no signature. Freeze through `owner/prepare`, effective once the owner's wallet signs on the confirm page, or the DAO's vote passes, before the intent expires. The DAO stop page, done by the DAO's vote, ends every app's consent and turns autopilot off | Partly | **Wallet owner:** after `autopilot/stop`, swaps still go out through Run now, autopilot turned on again, another app's `executePlan`, and approved proposals; freeze stops every send, once signed within minutes (#133). **DAO:** the stop ends those app paths but doesn't freeze or revoke the grant, and a freeze needs the DAO's vote within the same minutes, impractical for most DAOs (platform#20). Details in #95; section 4, item 7 |
-| Ledger export | `ledger`, `ledgerCsv`, `reconcileBooks`, `activity` and `paymentHistory`, app-route reads under `read` | Have | Nothing new |
+| Plan's procedure | What already meets it | Remaining boundary |
+|---|---|---|
+| Adaptive DCA strategy schemas | Ballast's bands, DCA units and whipsaw state live in `packages/core`; `watch` sends their exact legs through `proposals/create`. The platform saves target weights, minimum leg, cost limit, autopilot settings and optional cash floor | No new procedure is needed for the current proposal flow. Signing a DCA schedule itself would be a different requirement |
+| Escalation and approval gates | Ballast evaluates levels, records decisions and proposes through owner-approved swaps; DAO-owned proposals use votes. Autopilot runs under its binding grant and `maxUsd` ceiling | The ceiling applies only to autopilot, not `treasury-execute` plans. Treasury does not request that scope. For payout agents, an amount-only hold and a DAO's app-route vote on a held payout remain separate gaps |
+| Emergency-stop orchestration | Stop autopilot immediately; a freeze refuses new sends once the signed freeze takes effect, after wallet confirmation or the DAO's vote. This meets the wallet-owner interpretation accepted in ADR 3 | A DAO still needs its vote within the intent's minutes (platform#20); stopping app access alone does not freeze the agent |
+| Ledger export | `ledger`, `ledgerCsv`, `reconcileBooks`, `activity` and `paymentHistory` are app reads | No new procedure |
 
-[ADR 4](adr/0004-platform-extensions.md) settles these: no new procedures or contracts, and one refinement to the cash floor already planned on MultiAgency/platform#23. The two remaining payout gaps are a hold only above an amount and a DAO's vote on a held payout through an app. Approval of a held withdrawal to a NEAR account shipped in SDK 0.5.5 (platform#42), offline- and stack-tested on the platform, not mainnet-observed (3.2). These concern payout agents; a Treasury agent makes no payouts.
+[ADR 4](adr/0004-platform-extensions.md) records the decision: no new procedures or contracts for these needs. The cash floor shipped in 0.5.3 and Treasury carries it through mandate proposals; overview visibility remains a follow-up. Approval of a held NEAR withdrawal shipped in 0.5.5 (platform#42), with the evidence limits in 3.2. The two remaining payout gaps concern payout agents, not Treasury.
 
-## 4. Improvements to the SDK going forward
+## 4. Remaining follow-ups
 
-Ordered by how much they would remove from this app.
+These separate current app/platform work from requests already satisfied. They do not reopen ADR 3 or ADR 4's accepted scope decisions.
 
-1. **Typed refusals everywhere.** Return every gateway 4xx as a refused result with a stable code (bad signature, expired, rate limited with `Retry-After`) instead of `unknown`. That removes this app's local NEP-413 check and its status-code guessing (2.4, 2.5).
-2. **One owner surface.** Publish the app-route procedures in 3.1, or state which ones won't come, so owner UIs can move to `/apps/v1` without losing pages.
-3. **Policy fields for app-side limits.** Venue exposure caps in the signed owner policy (the cash floor shipped in the strategy, SDK 0.5.3, and `overview` should report it: 3.2). The platform would then refuse what Ballast refuses, and the app-side checks become a second line instead of the only one.
-4. **A budget-aware client.** Expose the deployment's remaining call budget, or a client-side limiter that shares it across processes, instead of each app estimating it.
-5. **Reads the engines need.** Venue-level holdings, quoted slippage, rolling 24 h turnover and orders in the last hour as typed reads. These would feed the policy engine without app-side counters.
-6. **Proposal legs from intents.** A helper that turns a sized intent (asset, side, USD size) into proposal legs in raw units with the token's decimals. This would make A10.1 a thin mapping.
-7. **Emergency stop.** A freeze that takes effect at once and is confirmed afterwards, with its own audit event.
-8. **One owner action of a kind at a time, on the platform.** `prepare` refuses a second agent creation while one is open (`src/owner-intents.ts`), but prepares a second freeze, unfreeze, grant, revocation or policy edit while the first is still submitted or waiting for a DAO's vote, so a DAO can be filed the same action twice. Treasury's server holds that today (`apps/server/src/owner-action.ts`: a submitted action, or a DAO's request whose vote is open, holds another of its kind, and a freeze and an unfreeze hold each other; a wallet's unsigned intent holds nothing). On the platform, every app would get it, and Treasury's check becomes the second line.
-9. **Discovery flags in the schema.** Move `selfServiceTreasury` and similar flags into `gatewayDiscovery`'s typed answer.
-10. **Organization ids that accept NEAR accounts.** Allow dots, or ship the mapping, so every app maps owners the same way.
-11. **Idempotent, listable DAO requests.** A request id on `daoConsents.file` and `daoVotes.file`, a list by organization, agent and proposal, and a state read that doesn't relay (3.4).
-12. **Run ids for `autopilot/tick`.** Accept a request id and return the run it started, so a lost answer can be followed instead of guessed (3.5).
-13. **Test fixtures.** Publish the simulated stack's controls (fund, drop a response, sign as owner) as a supported package, with a documented way to let a developer's own wallet key own a local agent. Today that needs a local patch to the platform's test provider.
+1. **Expose `cashFloor` in `overview`.** Compare targets, cost and floor in the existing proposer read, including an agent whose allocations already match. A separate owner floor-setting control is still future design work (3.2).
+2. **Prevent duplicate pending owner actions on the platform.** At this pin, creation has a guard, but other kinds can be prepared again while submitted or awaiting a DAO vote (`platform/src/owner-intents.ts`). Treasury's phase-based guard holds another of the same kind, makes freeze/unfreeze hold each other, and lets unsigned wallet preparations expire without delaying an emergency stop. Platform enforcement would cover other apps too.
+3. **Expose and coordinate the shared credential budget.** Keep the existing typed 429/backoff behavior; add visibility or shared limiting rather than claiming those signals are missing. Per-Organization limits are tracked separately (platform#59).
+4. **Improve DAO request recovery and types.** Idempotent filing, request lists, complete state payloads, typed check URLs and an effectless read would remove app bookkeeping (3.4).
+5. **Identify Run now attempts and close the app's retry gap.** A caller request id and returned run id would let Treasury recover a lost answer. The current UI warning is not a retained retry hold (3.5).
+6. **Supply read-only quote and venue/usage context where needed.** Ballast already converts intents with `legsFor`; a new proposal-leg procedure is not required. Richer reads could improve detectors without granting `treasury-execute` (3.2).
+7. **Distinguish test support from simulator completeness.** 0.5.5 supplies `@multiagency/sdk/testing`'s `payoutDouble` and more stack controls, including payee signing and failed/refunded withdrawals. The double models payouts, not Treasury owner workflows, and neither it nor the simulator proves provider budget concurrency. Treasury still needs its own fakes and stack scenarios; no local platform patch is required for the documented tests.
 
 ## 5. Delivery boundaries
 
-Issue status and acceptance evidence belong on the issues, rather than in a snapshot of #104's branch.
+Issue status and acceptance evidence belong on the issues; this report describes the code at its stated pin.
 
-- #60 is the pure conversion from an engine intent to exact raw-unit proposal legs. #61 adds owner reads and request recovery. Neither alone wires the Ballast engine into watch.
-- Engine integration still needs decisions about oracle sources and history, persistent band/whipsaw/DCA state, policy context, and where the owner selects Ballast.
-- The running server records through the hash-chained audit store, and anchors its head hourly on FastData KV (#55), with the decision and the key's threat model on #55. Every Ballast decision is recorded there with its inputs, and `check:replay` replays them (#54).
-- Owner-UI additions from #104 remain held while the app-route decision is settled. Creation (#12) should use the existing app setup API, with Treasury support added to the stack for end-to-end coverage.
-- History examples remain synthetic until H5 supplies data; mandate defaults and sleeve labels remain unapproved pending H8/H6.
+- **Ballast integration is implemented.** The deployment's validated watch configuration enables it; the server persists price history and band/whipsaw/DCA state beside its request records, evaluates policy and creates proposals. #60 and #61 were component slices, not outstanding integration blockers.
+- **Mandate defaults, sleeve labels and price-source choices are recorded in ADR 3.** An individual owner's allocation still needs adoption/signing; accepted defaults do not authorize an agent to trade. The separate H8 `approvalsRequired` question remains open: it checks the number of named approvers but does not enforce that many execution approvals.
+- **Price and backtest evidence differ.** H9 calibrated detectors using real Coinbase hourly NEAR history (data digest and results in ADR 3). The three independent live price fetchers remain unfinished; `watch` still has an explicit single-source mode. `docs/stabilization-backtest.md` and `docs/diversified-backtest.md` remain synthetic reports with their own limitations, rather than proof of risk thresholds or multi-asset performance (#220, #221).
+- **Risk and diversification have remaining acceptance work.** Real-history risk validation, a full stack crash-to-approved-execution scenario, additional asset/price support and multi-sleeve risk assessment remain distinct tasks. Watch rejects combining `risk` and `diversification` until that assessment exists (ADR 6).
+- **Audit/replay are implemented; anchoring is configured.** The server uses a hash-chained audit store and records Ballast/risk inputs for `check:replay`. FastData KV anchoring runs when its account/key are configured; it is not an unconditional property of every server (#54, #55).
+- **Setup and live acceptance are separate.** Upstream simulated tests cover hosted Treasury setup/creation, while Treasury's own setup integration currently uses fakes. Operator host access, live settlement and production readiness are separate milestones.
 
 ## Appendix: running the app locally
 
-Follow the current README and `web/PLATFORM-SESSION.md` for the pinned platform stack, owner UI and proposals page. Use the stack's supplied owner wallet; signing in with another real wallet is not a supported fixture at this pin. No local platform patch is required for the documented tests.
+Follow the current README and `web/PLATFORM-SESSION.md` for the one browser app, app server and their unit/stack commands. Both SDK pins are 0.5.5; the simulated platform pin is `2e7b1e6`. Use the supplied simulated wallet/signing controls and the stack's own CA as documented. No local platform patch is required. These tests simulate external systems and do not establish deployed host availability or mainnet outcomes.
