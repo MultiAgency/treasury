@@ -122,6 +122,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         policyHistory: () => call(contract.policyHistoryRead, `${base}/policy-history`),
         /** The owner's actions and where each stands (#136): the platform's record, across devices. */
         ownerActions: () => call(contract.ownerActionsRead, `${base}/owner/actions`),
+        /** The stabilization agent's latest recorded assessment (#220): level, projection, scenarios and recommendations. */
+        risk: () => call(contract.riskRead, `${base}/risk`),
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
@@ -213,6 +215,7 @@ export type SweepRun = z.output<typeof contract.sweepRun>;
 export type BooksRead = z.output<typeof contract.booksRead>;
 export type StrategyRead = z.output<typeof contract.strategyRead>;
 export type StrategyProposal = z.output<typeof contract.strategyProposal>;
+export type RiskReport = z.output<typeof contract.riskReport>;
 export type AssistantAnswer = z.output<typeof contract.assistantAnswer>;
 export type AssistantDraft = z.output<typeof contract.assistantDraft>;
 export type GrantPrepared = z.output<typeof contract.grantPrepared>;

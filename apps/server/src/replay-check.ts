@@ -1,9 +1,10 @@
-import { replayAuditLog } from "../../../packages/core/src/index.ts";
+import { replayAuditLog, replayRiskLog } from "../../../packages/core/src/index.ts";
 import { readAuditLog, verifyChain } from "./chain.ts";
 
 // The replay check A7.2 needs (#54): an audit log end to end, the hash chain first (`verifyChain`), then every recorded
-// decision replayed through the engines (`replayAuditLog`), naming the first record that differs. Run it on the server,
-// against the live log, or on a copy of it with its closed segments beside it (#173), every segment read in order:
+// decision and risk assessment replayed through the engines (`replayAuditLog`, `replayRiskLog`), naming the first record
+// that differs. Run it on the server, against the live log, or on a copy of it with its closed segments beside it (#173),
+// every segment read in order:
 //
 //   pnpm --filter @treasury/server check:replay <audit log>
 //   node src/replay-check.ts /data/audit.jsonl        (in the deployed image, from apps/server)
@@ -14,7 +15,9 @@ export function checkAuditLog(text: string): { ok: boolean; message: string } {
   if (!chain.ok) return { ok: false, message: `the chain is broken at line ${chain.line}: ${chain.reason}` };
   const replay = replayAuditLog(text);
   if (!replay.ok) return { ok: false, message: `decision ${replay.index + 1} (seq ${replay.seq}) differs in its ${replay.part}:\n${JSON.stringify({ recorded: replay.recorded, replayed: replay.replayed }, null, 2)}` };
-  return { ok: true, message: `ok: ${chain.count} records chain to ${chain.head}; ${replay.count} decisions replay the same` };
+  const risk = replayRiskLog(text);
+  if (!risk.ok) return { ok: false, message: `risk assessment ${risk.index + 1} (seq ${risk.seq}) differs:\n${JSON.stringify({ recorded: risk.recorded, replayed: risk.replayed }, null, 2)}` };
+  return { ok: true, message: `ok: ${chain.count} records chain to ${chain.head}; ${replay.count} decisions and ${risk.count} risk assessments replay the same` };
 }
 
 if (import.meta.main) {

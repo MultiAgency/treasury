@@ -20,6 +20,7 @@ import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
 import { createHolds, createRequests } from "./requests.ts";
+import { createRiskReader, type RiskEntry } from "./risk.ts";
 import { createSessions } from "./sessions.ts";
 import { createSignIn } from "./signin.ts";
 import { createStrategyProposals, fileProposalRecords, memoryProposalRecords } from "./strategy-proposals.ts";
@@ -32,7 +33,7 @@ await credential.get(); // Refuse to start without a readable 0600 credential.
 // The audit trail is a hash chain (A7, #53). A log in the old plain format is moved aside first (#90), never chained over.
 const asidePlain = await movePlainLogAside(settings.TREASURY_AUDIT_FILE);
 if (asidePlain) console.log(JSON.stringify({ event: "audit_plain_log_moved", to: asidePlain }));
-const audit = chainedFileAudit<AuditEntry | AnchorEntry | DecisionEntry>(settings.TREASURY_AUDIT_FILE);
+const audit = chainedFileAudit<AuditEntry | AnchorEntry | DecisionEntry | RiskEntry>(settings.TREASURY_AUDIT_FILE);
 await audit.check(); // Refuse to start without an audit trail it can append to, or with one whose chain is broken.
 
 const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: settings.SESSION_MAX_MS });
@@ -118,6 +119,8 @@ const handler = createServer({
   tokenRequestsPerHour: settings.TOKEN_REQUESTS_PER_HOUR,
   tokenBudgetPerHour: settings.TOKEN_BUDGET_PER_HOUR,
   settle,
+  // The stabilization agent's latest record for the owner's report (#220): read from the audit log, never computed here.
+  latestRisk: createRiskReader(settings.TREASURY_AUDIT_FILE),
   ...(assistant && { assistant, auditLog }),
   // Refuse to start without the page's files when a build is named.
   ...(settings.TREASURY_PAGE_DIR && { page: await loadPage(settings.TREASURY_PAGE_DIR) }),

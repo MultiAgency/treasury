@@ -16,6 +16,7 @@ import { Portfolio } from "./portfolio";
 import { ProposalDetail } from "./proposal-detail";
 import { ProposalList } from "./proposal-list";
 import { agentReads, failureOf, setupReads } from "./queries";
+import { ForwardRisk, RiskPanel } from "./risk";
 import { SignedIn, SignIn } from "./session";
 import { AppShell } from "./shell";
 import { CreateAgent, DaoSetup, Home } from "./setup";
@@ -159,6 +160,7 @@ export function HomePage() {
   return <div className="flex flex-col gap-4">
     <NeedsDecision reads={reads} identity={identity} connected={connected} />
     {connected ? <Standing reads={reads} identity={identity} /> : null}
+    {connected ? <ForwardRisk reads={reads} /> : null}
     {connected ? <Portfolio reads={reads} agent={identity.agent} /> : null}
     <Connection reads={reads} identity={identity} />
   </div>;
@@ -185,7 +187,7 @@ export function ProposalPage() {
 /** Strategy (`…/strategy`): the schedule, its grant and the strategy's editor. */
 export function StrategyPage() {
   const { reads, identity } = useAgent();
-  return <WhenConnected><Autopilot reads={reads} identity={identity} /></WhenConnected>;
+  return <WhenConnected><Autopilot reads={reads} identity={identity} /><RiskPanel reads={reads} /></WhenConnected>;
 }
 
 /** Funding (`…/funding`). */
