@@ -87,6 +87,18 @@ An agent's watch config may carry a `diversification` block: sleeves, class and 
 - **Bridge risk numbers** for each route, so the venue caps are assessed rather than named defaults.
 - **The H5 fetchers,** so a sleeve's oracle has three independent sources instead of `OVERVIEW_ORACLE`'s one.
 
+## Amendment: NEAR Intents read live, the hedge, and the stabilization agent on the book
+
+**Status:** proposed by Harjaap, 2026-11-10, in the PR that finishes #221's code. It changes none of the rules above and answers three of the open items below.
+
+- **A live NEAR Intents layer, no signing key.** The registry was written against NEAR Intents' token list read once. The server now reads it (and dry-run quotes) from 1Click's public, keyless API: bounded by a timeout, a size limit, a rate limit and a short cache, recorded in the audit log by hash, with a placeholder account in every quote so nothing of the treasury's is sent. `registryDrift` reports where the registry and the list disagree (id, decimals, chain, price missing, stale or off peg), and the list prices assets the platform doesn't list yet. It is data, not authority: an asset's being on the list doesn't make it tradable. **Execution stays on platform proposals**, so this adds no credential and nothing to the threat model beyond one outbound read. Rejected: signing Intents swaps from the app server, which would need a key the platform's signed policy doesn't bind.
+- **The registry gains SOL and the Solana bridge.** Gold is `XAUT` alone: `PAXG` isn't on the list (read 2026-11-10), and no tokenized T-bill is.
+- **A hedge planner (`hedge.ts`).** For the owner's hedge sleeves (gold, other chains' majors): trim over the ceiling, move volatile assets into the sleeve once forward risk reaches `hedgeAtLevel`, top up from the reserve when calm, and keep a stablecoin split on its peg. Each move is judged on the book after its funding sale by `checkBookExposure`, against a fresh dry quote's whole cost (spread, impact and the service's fee) and the reserve above the cash floor, and holds from L1 as Ballast's buys do. A move is `executable` only when the platform lists both assets, a fresh quote covers it and the book allows it; otherwise it is listed `blocked` with each reason, so the owner sees what the book would do the day the platform lists gold. A class with no cap isn't allowed: gold needs the owner's `rwa` class cap.
+- **The leg shape ADR 6 left open.** `swapLegsFor` builds the swap between any two proposal assets, by `legsFor`'s own arithmetic, so a stablecoin split's move, a hedge into a second volatile asset and a rebalance between sleeves are one leg, not two proposals. Today it is exercised by ETH (the one platform-listed major beside wNEAR) and by the plan's stablecoin moves, which stay blocked while USDC is the only listed stablecoin.
+- **The stabilization agent assesses the multi-sleeve book.** A holding may name the bridges it crossed (`via`), so a bridge outage cuts off what came over it and stops trading in it; a de-risk sell is the largest asset the swap can price (an unlisted BTC is never the sale, though it counts towards the drawdown it is sized against); each volatile sleeve's own hourly history feeds the projection; gold, a price exposure, is a risk asset. A watch entry may therefore carry `risk` beside `diversification`, and the load-time refusal is gone. A two-asset book's records, digests and replays are unchanged.
+
+What is still the platform's: BTC, SOL, XAUT and a second stablecoin as proposal assets (the hedge proposes them the day they are listed, with no change here), a tokenized T-bill and whether an agent may hold one, and bridge risk numbers to replace `BRIDGE_CAP_PCT`. What is still open here: `watch` doesn't act on a hedge on its own (the owner proposes a move from the page), and the three-independent-source price oracle (H5) isn't built: the dry quote is one more source, not a replacement for it.
+
 ## Rejected
 
 - **Trading BTC now.** The registry can describe it, but a proposal naming it is refused. Adding it to `PROPOSAL_ASSETS` here would fake platform support.
@@ -106,5 +118,5 @@ An agent's watch config may carry a `diversification` block: sleeves, class and 
 - A listed RWA's exact NAV and redemption terms, and whether an agent can hold it.
 - The second stablecoin's price source, and the first one that isn't the platform's own quote.
 - Bridge risk numbers to replace `BRIDGE_CAP_PCT`.
-- A stablecoin-to-stablecoin leg: `legsFor` builds volatile ↔ reserve swaps, so a split move needs either a second leg shape or two proposals.
-- The stabilization agent (ADR 5) on a diversified book: until it assesses the multi-sleeve book, a watch entry with both `risk` and `diversification` is refused at load.
+- ~~A stablecoin-to-stablecoin leg~~ — answered by `swapLegsFor` (see the amendment).
+- ~~The stabilization agent (ADR 5) on a diversified book~~ — answered: it assesses the multi-sleeve book (see the amendment).

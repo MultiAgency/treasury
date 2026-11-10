@@ -106,6 +106,18 @@ test("with no hedge block there is no plan, only the registry; with NEAR Intents
   assert.deepEqual(down.plan!.moves.map(m => m.blocked.map(b => b.code)), [["no_quote"]]);
 });
 
+test("a move whose swap can't be built isn't executable: a mandate that doesn't compile against the book blocks it, said in the plan's notes", async () => {
+  configured = { ...ETH_HEDGE, operatingCashMonths: 1 };
+  const hedge = await read();
+  const move = hedge.plan!.moves.find(m => m.to === "ETH")!;
+  assert.deepEqual([move.status, move.canPropose, move.blocked.map(b => b.code)], ["blocked", false, ["invalid"]]);
+  assert.ok(hedge.plan!.notes.some(n => /mandate doesn't compile.*at least 6 months of operating cash/.test(n)), hedge.plan!.notes.join(" | "));
+  reset();
+  assert.deepEqual((await propose({ requestId: "hedge-7", move: move.id })).body, { ok: false, kind: "refused", code: "move_not_available" });
+  assert.deepEqual(creates(), []);
+  configured = ETH_HEDGE;
+});
+
 /** The read with another provider, on a server of its own. */
 async function createServerWith(intents: unknown) {
   const other = await testServer({ platform: fake.platform, wallets: [owner], ballastSettings: () => ETH_HEDGE, intents } as never);
@@ -161,4 +173,20 @@ test("someone else's agent is not_owner and nothing of NEAR Intents or the platf
   assert.deepEqual((await propose({ requestId: "hedge-6", move: "rebalance:USDC>ETH" }, intruderCookie)).body, { ok: false, kind: "not_owner" });
   assert.ok(fake.calls.every(call => call.startsWith("identity ")), fake.calls.join());
   assert.equal(stubTokens(Date.now()).length > 0, true);
+});
+
+test("the assistant's hedge tool answers what the page shows, trimmed, and is a read: no proposal, no platform write", async () => {
+  const { hedgeTool, HEDGE_TOOL } = await import("../src/hedge-tool.ts");
+  reset();
+  const out = await hedgeTool({ platform: fake.platform as never, organization: "owner--near", agent: "portfolio", who: "owner.near", settings: ETH_HEDGE, intents: stub, now: Date.now });
+  assert.ok(!("error" in out));
+  const content = (out as { content: { moves: { id: string; status: string }[]; registry: { symbol: string; platformCanTrade: boolean }[]; intents: { source: string } } }).content;
+  assert.deepEqual(content.moves.map(m => [m.id, m.status]), [["rebalance:USDC>ETH", "executable"]]);
+  assert.equal(content.registry.find(r => r.symbol === "XAUT")!.platformCanTrade, false);
+  assert.equal(content.intents.source, "stub");
+  assert.equal(HEDGE_TOOL.name, "get_hedge_plan");
+  assert.deepEqual(HEDGE_TOOL.input_schema.properties, {});
+  assert.deepEqual(creates(), []);
+  const failed = await hedgeTool({ platform: { reads: { overview: async () => ({ ok: false, kind: "unavailable" }) } } as never, organization: "o", agent: "a", who: "x", settings: ETH_HEDGE, now: Date.now });
+  assert.deepEqual(failed, { error: "the agent's overview couldn't be read, so the hedge can't be planned" });
 });

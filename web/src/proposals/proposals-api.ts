@@ -116,6 +116,13 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         overview: () => call(contract.overviewRead, `${base}/overview`),
         /** The diversified book (#221): holdings and venues with their caps, the stablecoin split and each phase's status. */
         diversification: () => call(contract.diversificationRead, `${base}/diversification`),
+        /** The hedge plan (#221): NEAR Intents' live list against the registry, and the moves into gold and other chains' assets. */
+        hedge: () => call(contract.hedgeRead, `${base}/hedge`),
+        /**
+         * One hedge move proposed for approval, as a rebalance is: planned again by the server, which builds the swap. Under a
+         * `requestId` the page names, so after a lost answer the proposal is found by it (`request`), not asked again.
+         */
+        proposeHedge: (requestId: string, move: string) => call(contract.rebalanceMade, `${base}/hedge/propose`, { method: "POST", body: contract.hedgeProposeRequest.parse({ requestId, move }) }),
         activity: () => call(contract.activityRead, `${base}/activity`),
         held: () => call(contract.heldRead, `${base}/held`),
         unresolved: () => call(contract.unresolvedRead, `${base}/unresolved`),
@@ -206,6 +213,7 @@ export type ProposalRead = z.output<typeof contract.proposalRead>;
 export type PolicyHistoryRead = z.output<typeof contract.policyHistoryRead>;
 export type OverviewRead = z.output<typeof contract.overviewRead>;
 export type DiversificationRead = z.output<typeof contract.diversificationRead>;
+export type HedgeRead = z.output<typeof contract.hedgeRead>;
 export type ActivityRead = z.output<typeof contract.activityRead>;
 export type RunsRead = z.output<typeof contract.runsRead>;
 export type RecordingRead = z.output<typeof contract.recordingRead>;

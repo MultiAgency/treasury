@@ -99,10 +99,10 @@ test("answers that aren't an object for the terms are refused, never defaulted",
 test("the phase status says exactly what the platform blocks: two cross-chain majors, a second stablecoin, a listed T-bill", () => {
   const d = compiled(answers).diversification!;
   const status = diversificationPhases(d);
-  // ETH is a cross-chain major; wNEAR is native, and BTC isn't a proposal asset, so phase 1 isn't met.
+  // ETH is a cross-chain major; wNEAR is native, and BTC and SOL aren't proposal assets, so phase 1 isn't met.
   assert.equal(status.phases[0].on, false);
   assert.match(status.phases[0].reasons.join(" | "), /phase 1 needs two cross-chain majors, and the mandate has 1/);
-  assert.match(status.phases[0].reasons.join(" | "), /BTC isn't among the platform's proposal assets/);
+  assert.match(status.phases[0].reasons.join(" | "), /BTC, SOL aren't among the platform's proposal assets/);
   assert.equal(status.phases[1].on, false);
   assert.match(status.phases[1].reasons.join(" | "), /a second stablecoin needs the platform to list one \(USDT, USDC\.e/);
   assert.equal(status.phases[2].on, false);
@@ -145,5 +145,5 @@ test("once the platform lists a second stablecoin and a T-bill, phases 2 and 3 r
   assert.equal(status.phases[1].on, true);
   assert.equal(status.phases[2].on, true);
   assert.equal(status.phases[0].on, false, "BTC still isn't listed, so there is still one cross-chain major");
-  assert.match(status.phases[0].reasons.join(" "), /BTC isn't among the platform's proposal assets/);
+  assert.match(status.phases[0].reasons.join(" "), /BTC, SOL aren't among the platform's proposal assets/);
 });

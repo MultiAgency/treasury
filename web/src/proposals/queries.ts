@@ -41,6 +41,8 @@ export function agentReads(name: string) {
     overview: queryOptions({ queryKey: [...key, "overview"], queryFn: async () => answered(await agent.overview()), retry: false }),
     /** The diversified book (#221): one more server read, which is one platform `overview` read, when the page shows it. */
     diversification: queryOptions({ queryKey: [...key, "diversification"], queryFn: async () => answered(await agent.diversification()), retry: false }),
+    /** The hedge plan (#221): an overview read, NEAR Intents' cached list and a few dry quotes, read when the page shows it and on "Check again". */
+    hedge: queryOptions({ queryKey: [...key, "hedge"], queryFn: async () => answered(await agent.hedge()), retry: false }),
     activity: queryOptions({ queryKey: [...key, "activity"], queryFn: async () => answered(await agent.activity()), retry: false }),
     held: queryOptions({ queryKey: [...key, "held"], queryFn: async () => answered(await agent.held()), retry: false }),
     unresolved: queryOptions({ queryKey: [...key, "unresolved"], queryFn: async () => answered(await agent.unresolved()), retry: false }),
@@ -81,7 +83,7 @@ export function agentReads(name: string) {
  * before it for up to that long.
  */
 export function refreshPortfolio(client: QueryClient, reads: ReturnType<typeof agentReads>) {
-  for (const read of [reads.overview, reads.diversification, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books, reads.proposals, reads.strategy, reads.autopilot, reads.daoRequests])
+  for (const read of [reads.overview, reads.diversification, reads.hedge, reads.activity, reads.held, reads.unresolved, reads.runs, reads.books, reads.proposals, reads.strategy, reads.autopilot, reads.daoRequests])
     void client.invalidateQueries({ queryKey: read.queryKey });
 }
 

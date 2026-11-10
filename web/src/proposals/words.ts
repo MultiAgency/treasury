@@ -54,6 +54,7 @@ const PROPOSAL: Record<string, string> = {
   too_many_proposals: "This agent already has as many open proposals as it may. Approve, reject or wait for some, then ask again.",
   not_proposable: "The platform can't propose a rebalance for this agent now: check its strategy and policy. Nothing was proposed.",
   request_conflict: "That request was already used for another proposal. Nothing was proposed. Ask again.",
+  move_not_available: "That hedge move isn't available any more: the platform's list, a fresh NEAR Intents quote or a cap no longer allows it. Nothing was proposed. Read the plan again.",
 };
 
 /** The owner actions the frame offers (#133): a freeze, an unfreeze. */

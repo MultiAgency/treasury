@@ -119,22 +119,27 @@ export async function buildHedge(deps: HedgeDeps, { who, organization, agent, ov
   // The swap each executable move would propose, at the platform's own prices (the list's, for an asset the book doesn't hold).
   const compiled = compileMandate(mandateAnswersOf(settings, total), settings.profile as ProfileName);
   const slippageBps = compiled.ok ? compiled.mandate.limits.policy.maxSlippageBps : null;
-  if (slippageBps === null) notes.push("the mandate doesn't compile against this book, so no swap can be built for a proposal");
+  if (!compiled.ok) notes.push(`the mandate doesn't compile against this book, so no swap can be built for a proposal: ${compiled.problems.join("; ")}`);
   const decimals = Object.fromEntries(Object.entries(PROPOSAL_TOKENS).map(([id, token]) => [id, token.decimals]));
   const priceOf = (symbol: string): string | undefined => {
     const row = overview.book.find(r => entryOf(r)?.symbol === symbol);
     const price = row?.price ?? prices[symbol];
     return price !== undefined && price !== null && price > 0 ? decimalOf(price) : undefined;
   };
-  for (const move of plan.moves) {
-    if (move.status !== "executable" || slippageBps === null) continue;
+  // An executable move whose swap can't be built isn't executable: the page offers a proposal only for a move that has one.
+  const moves = plan.moves.map((move): HedgeMove => {
+    if (move.status !== "executable") return move;
+    const unbuilt = (reason: string): HedgeMove => ({ ...move, status: "blocked", blocked: [{ code: "invalid", reason }] });
+    if (slippageBps === null) return unbuilt("the mandate doesn't compile against this book, so no swap can be built");
     const from = ASSET_REGISTRY[move.from]!, to = ASSET_REGISTRY[move.to]!, size = centsDown(move.sizeUsd);
     const [fromPrice, toPrice] = [priceOf(move.from), priceOf(move.to)];
-    if (size === undefined || fromPrice === undefined || toPrice === undefined || from.id === null || to.id === null) continue;
+    if (size === undefined || fromPrice === undefined || toPrice === undefined || from.id === null || to.id === null) return unbuilt("the move is under a cent, or an asset has no usable price to size its swap");
     const built = swapLegsFor({ from: from.id, to: to.id, sizeUsd: size, prices: { [from.id]: fromPrice, [to.id]: toPrice }, decimals, maxSlippageBps: slippageBps });
-    if (built.ok) legs.set(move.id, built.legs[0]);
-  }
-  return { read: { ...read, plan: { moves: plan.moves.map(m => moveRead(m, legs.has(m.id))), notes: [...notes, ...plan.notes] }, problems: [] }, legs };
+    if (!built.ok) return unbuilt(`no swap could be built (${built.code})`);
+    legs.set(move.id, built.legs[0]);
+    return move;
+  });
+  return { read: { ...read, plan: { moves: moves.map(m => moveRead(m, legs.has(m.id))), notes: [...notes, ...plan.notes] }, problems: [] }, legs };
 }
 
 const moveRead = (m: HedgeMove, canPropose: boolean): NonNullable<HedgeRead["plan"]>["moves"][number] => ({
