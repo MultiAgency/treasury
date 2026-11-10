@@ -33,3 +33,9 @@ test("a wallet owner needs owner actions allowed, a DAO member needs filing role
   assert.deepEqual(revokeControls({ ownerScope: false, signer: "dao", canPropose: false }), { kind: "needs-member" });
   assert.deepEqual(revokeControls({ ownerScope: false, signer: "dao", canPropose: true }), { kind: "ready", label: "Propose to revoke" });
 });
+
+test("a revocation's phase takes priority over an older stage for both holding and release", () => {
+  const base = { type: "grant_revoke", correlationId: "revoke", signer: "dao" as const, expiresAt: new Date(NOW - 1).toISOString() };
+  assert.equal(waitingRevocation({ actions: [{ ...base, stage: "prepared", phase: "submitted" }], now: NOW })?.why, "submitted");
+  assert.equal(waitingRevocation({ actions: [{ ...base, stage: "submitted", phase: "settled" }], now: NOW }), undefined);
+});

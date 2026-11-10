@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import { accountId } from "../../../apps/server/src/contract.ts";
-import { isFinal } from "../../../apps/server/src/owner-action.ts";
+import { isFinal, outcomeOf, statusPhase, statusText } from "../../../apps/server/src/owner-action.ts";
 import { Button, Card, ErrorBox, errorMessage, input, Loading, Note, QueryError } from "../shared/ui";
 import { DaoRequestView } from "./dao-request";
 import type { ConsentText, Creation, CreationStatus, Identity } from "./proposals-api";
@@ -12,7 +12,7 @@ import { filedText, fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { file, sign, WrongAccount } from "./wallet";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
-import { failureText } from "./words";
+import { creationWords, failureText } from "./words";
 
 const agentLink = (agent: string) => `/agents/${encodeURIComponent(agent)}`;
 
@@ -219,7 +219,7 @@ type Reads = ReturnType<typeof agentReads>;
 /**
  * Creating a reserved agent, under its setup: a wallet owner signs on the platform's confirm page, which this page
  * links to; a DAO's member files the creation for the DAO's vote, which must pass before it expires, in minutes. Its
- * status is read every few seconds until it's final; once submitted, the agent's identity is read again, and the page
+ * status is read every few seconds until it's final; once settled, the agent's identity is read again, and the page
  * moves on to connecting it.
  */
 export function CreateAgent({ reads, identity }: { reads: Reads; identity: Identity }) {
@@ -245,10 +245,11 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
       return read.value;
     },
     enabled: created !== undefined, retry: false,
-    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data) ? false : 5_000,
   });
-  const stage = status.data?.stage;
-  useEffect(() => { if (stage === "submitted") void client.invalidateQueries({ queryKey: reads.identity.queryKey }); }, [stage, client, reads]);
+  const phase = statusPhase(status.data);
+  const outcome = outcomeOf(status.data);
+  useEffect(() => { if (phase === "settled") void client.invalidateQueries({ queryKey: reads.identity.queryKey }); }, [phase, client, reads]);
 
   const create = async () => {
     setBusy(true);
@@ -293,11 +294,11 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
             {created.dao && <>
               <p>Your wallet files the DAO's proposal to create the agent{filesAndVotes(created.dao.transaction) ? " and casts your approval" : ""}. The vote must pass by {when(created.expiresAt)}, or the creation expires unsigned.</p>
               <p className="text-sm">The DAO's proposal and every vote on it are public and permanent.</p>
-              {held ? null : <Button disabled={busy} onClick={() => fileDao(created)}>{busy ? "Waiting for the wallet…" : fileLabel(created.dao.transaction)}</Button>}
+              {held || isFinal(status.data) ? null : <Button disabled={busy} onClick={() => fileDao(created)}>{busy ? "Waiting for the wallet…" : fileLabel(created.dao.transaction)}</Button>}
             </>}
             <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly."
-              : !stage ? "Reading its status…" : STAGE_WORDS[stage]}</p>
-            {(stage === "expired" || stage === "failed") && <Button variant="outline" disabled={busy} onClick={create}>Create it again</Button>}
+              : statusText(status.data, creationWords)}</p>
+            {(outcome === "expired" || outcome === "failed") && <Button variant="outline" disabled={busy} onClick={create}>Create it again</Button>}
           </>}
         {notice && <p role="status" className="text-sm">{notice}</p>}
         <ErrorBox error={error} />
@@ -307,12 +308,3 @@ export function CreateAgent({ reads, identity }: { reads: Reads; identity: Ident
     {lapsed && identity.signer === "wallet" && <SetUp account={identity.account} again />}
   </section>;
 }
-
-const STAGE_WORDS: Record<CreationStatus["stage"], string> = {
-  voting: "Waiting for the signature.",
-  submitting: "Signed; the platform is submitting it.",
-  submitted: "Created. Reading the agent again…",
-  expired: "It expired before it was signed. Nothing was created.",
-  failed: "The platform couldn't create it. Nothing was created.",
-  unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
-};

@@ -3,7 +3,7 @@
 // With its extensions: test/freeze-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { awaiting, holdsEach, type OwnerActionRecord } from "../../../apps/server/src/owner-action.ts";
 
-type Action = Pick<OwnerActionRecord, "type" | "stage" | "signer" | "expiresAt" | "correlationId">;
+type Action = Pick<OwnerActionRecord, "type" | "stage" | "phase" | "signer" | "expiresAt" | "correlationId">;
 
 /**
  * What a freeze or unfreeze waits on, if anything, as `awaiting` decides it (the server holds by the same rule).

@@ -83,6 +83,44 @@ test("a wallet owner freezes: the intent to sign here, submitted once, followed 
   }
 });
 
+test("owner action status retains the platform's phase and outcome without forwarding private details; older responses keep their shape", async t => {
+  reset();
+  const answers = [
+    { stage: "submitting", phase: "submitted", status: "PROCESSING", failureCode: null },
+    { stage: "submitted", phase: "settled", status: "FAILED", failureCode: "policy_refused" },
+    { stage: "unknown", phase: "open" },
+    { stage: "voting" },
+    { stage: "submitted" },
+  ] as const;
+  let index = 0;
+  t.mock.method(fake.platform.owner, "status", async () => ({ ok: true as const,
+    value: { ...answers[index++]!, error: "private platform detail", signedData: { signature: "private signature" }, intent: { secret: true } } }));
+  for (const expected of answers) {
+    const read = await call("GET", "owner/actions/status-fixture");
+    assert.deepEqual([read.status, read.body], [200, { ok: true, value: expected }]);
+    assert.deepEqual(contract.ownerActionStatus.parse(read.body.value), expected);
+  }
+});
+
+test("owner action guards use phase first: a submitted signature stays held after expiry, and a settled failure releases the hold", async () => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  const cases = [
+    { stage: "expired", phase: "submitted", status: "PROCESSING", held: true },
+    { stage: "submitted", phase: "settled", status: "FAILED", held: false },
+    { stage: "submitted", phase: "open", status: null, held: false },
+    { stage: "submitted", phase: "expired", status: null, held: false },
+  ] as const;
+  for (const { held, ...action } of cases) {
+    reset();
+    fake.readAnswers.ownerActions = [{ ok: true, value: [{ correlationId: "earlier-freeze", type: "agent_freeze", expiresAt: expired,
+      signer: "wallet", ownerSucceeded: false, failureCode: action.status === "FAILED" ? "provider_refused" : null, payment: null, ...action }] }];
+    const prepared = await call("POST", "unfreeze");
+    if (held) assert.deepEqual(prepared.body, { ok: false, kind: "refused", code: "action_pending" });
+    else assert.equal(prepared.status, 200, prepared.text);
+    assert.equal(prepares().length, held ? 0 : 1, JSON.stringify(action));
+  }
+});
+
 test("a freeze and an unfreeze hold each other while either's outcome is unknown: one submitted, or a DAO's request waiting for its vote", async () => {
   reset();
   // Only prepared, never signed: nothing is unknown, and a reload mid-signature must not delay an emergency stop.

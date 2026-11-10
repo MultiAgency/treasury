@@ -55,6 +55,38 @@ test("a wallet owner whose connection allows owner actions signs the grant's int
   assert.deepEqual(audit.map(entry => [entry.action, entry.stage]), [["grant", "attempt"], ["grant", "result"], ["grant-submit", "attempt"], ["grant-submit", "result"]]);
 });
 
+test("grant status retains phase and a failed provider outcome while legacy status responses stay unchanged", async t => {
+  reset();
+  const answers = [
+    { stage: "submitted", phase: "settled", status: "SUCCESS", failureCode: null },
+    { stage: "submitted", phase: "settled", status: "FAILED", failureCode: "grant_denied" },
+    { stage: "submitting", phase: "submitted", status: "UNKNOWN" },
+    { stage: "voting" },
+  ] as const;
+  let index = 0;
+  t.mock.method(fake.platform.owner, "status", async () => ({ ok: true as const, value: { ...answers[index++]!, error: "private provider detail" } }));
+  for (const expected of answers) {
+    const read = await call("GET", "grant/status-fixture");
+    assert.deepEqual([read.status, read.body], [200, { ok: true, value: expected }]);
+    assert.deepEqual(contract.ownerActionStatus.parse(read.body.value), expected);
+  }
+});
+
+test("grant guards follow phase: submitted past expiry stays held, while a settled failure permits a new authorization", async t => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  for (const phase of ["submitted", "settled"] as const) {
+    reset();
+    const actions = t.mock.method(fake.platform.grant, "actions", async () => ({ ok: true as const, value: [{ correlationId: "earlier-grant", type: "grant_issue",
+      expiresAt: expired, signer: "wallet" as const, stage: phase === "submitted" ? "expired" as const : "submitted" as const, phase,
+      ownerSucceeded: false, status: phase === "submitted" ? "PROCESSING" : "FAILED", failureCode: null, payment: null }] }));
+    const prepared = await call("POST", "grant", { expectedDigest: DIGEST });
+    if (phase === "submitted") assert.deepEqual(prepared.body, { ok: false, kind: "refused", code: "grant_pending" });
+    else assert.equal(prepared.status, 200, prepared.text);
+    assert.equal(prepares().length, phase === "submitted" ? 0 : 1);
+    actions.mock.restore();
+  }
+});
+
 test("nothing is prepared for a changed strategy, with autopilot on, without owner actions allowed, or while a grant waits", async () => {
   reset();
   assert.deepEqual((await call("POST", "grant", { expectedDigest: `sha256:${"b".repeat(64)}` })).body, { ok: false, kind: "refused", code: "strategy_changed" });

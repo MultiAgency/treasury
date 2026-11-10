@@ -140,10 +140,13 @@ export const creation = z.strictObject({
   confirm: z.strictObject({ url: z.string(), expiresAt: z.string() }).optional(),
   dao: z.strictObject({ transaction: memberTransaction }).optional(),
 });
-/** Where a creation stands, as the platform's `owner/status` answers it. */
+/** Where a creation stands, retaining the platform's optional phase and provider outcome alongside legacy stage. */
+const ownerStatusShape = ownerOutputs["owner/status"].shape;
 export const creationStatus = z.strictObject({
-  stage: z.enum(["submitted", "submitting", "expired", "failed", "voting", "unknown"]),
-  failureCode: z.string().nullable().optional(),
+  stage: ownerStatusShape.stage,
+  failureCode: ownerStatusShape.failureCode,
+  phase: ownerStatusShape.phase,
+  status: ownerStatusShape.status,
 });
 
 /**

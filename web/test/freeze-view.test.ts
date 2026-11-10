@@ -22,6 +22,11 @@ test("nothing is waited on for an action that was only prepared for a wallet, on
   assert.equal(waitingStop({ actions: [], now: NOW }), undefined);
 });
 
+test("a stop's explicit phase holds submitted actions beyond expiry and releases a settled action despite its stage", () => {
+  assert.equal(waitingStop({ actions: [{ ...action("agent_freeze", "prepared", "dao", gone), phase: "submitted" }], now: NOW })?.why, "submitted");
+  assert.equal(waitingStop({ actions: [{ ...action("agent_unfreeze", "submitted"), phase: "settled" }], now: NOW }), undefined);
+});
+
 test("the control offered: Freeze while it runs, Unfreeze while frozen, and a DAO's member proposes", () => {
   const base = { connected: true, ownerScope: true, signer: "wallet" as const, canPropose: true };
   assert.deepEqual(stopControls({ ...base, frozen: false }), { kind: "ready", action: "freeze", label: "Freeze" });

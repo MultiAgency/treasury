@@ -90,3 +90,12 @@ test("a proposal whose verdict waits for the DAO's vote is listed as the vote on
     daoRequests: [{ id: "v".repeat(64), kind: "vote", proposal: id, verdict: "approve", votingUntil: NOW + HOUR }], now: NOW });
   assert.deepEqual(need.map(item => [item.kind, item.target]), [["dao-vote", { page: "proposal", id }], ["open-proposal", { page: "proposal", id: "other" }]]);
 });
+
+test("the home follows an owner action's phase before its older stage when listing a DAO vote", () => {
+  const base = { type: "agent_freeze", signer: "dao" as const, expiresAt: new Date(NOW + HOUR).toISOString() };
+  const need = needsDecision({ proposals: [], unresolved: [], daoRequests: [], now: NOW, ownerActions: [
+    { ...base, correlationId: "voting", stage: "settled", phase: "open" },
+    { ...base, correlationId: "finished", stage: "prepared", phase: "settled" },
+  ] });
+  assert.deepEqual(need.map(item => item.key), ["action-voting"]);
+});
