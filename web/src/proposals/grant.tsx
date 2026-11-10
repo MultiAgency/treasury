@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Signature } from "@phosphor-icons/react";
 import { useEffect, useRef, useState } from "react";
 import { Button, ErrorBox, errorMessage, Spinner } from "../shared/ui";
-import { isFinal, type StageWords } from "../../../apps/server/src/owner-action.ts";
+import { isFinal, outcomeOf, statusText } from "../../../apps/server/src/owner-action.ts";
 import { FromAssistant } from "./assistant-note";
 import { useWaiting } from "./owner-flow";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
@@ -13,18 +13,9 @@ import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
 import { filedText } from "./dao-filing";
-import { failureText } from "./words";
+import { failureText, grantWords } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
-
-const STAGE_WORDS: StageWords = {
-  voting: "Waiting for the signature, or for the DAO's vote.",
-  submitting: "Signed; the platform is submitting it.",
-  submitted: "Authorized: the grant binds this strategy once the agent takes it up.",
-  expired: "It expired before it was signed. Nothing took effect. Authorize the strategy again.",
-  failed: "The platform couldn't issue the grant. Nothing took effect.",
-  unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
-};
 
 /**
  * Authorizing the saved strategy: a grant bound to its digest, which autopilot and Run now need. A wallet owner signs
@@ -49,15 +40,15 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
       return read.value;
     },
     enabled: grant !== undefined, retry: false,
-    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data) ? false : 5_000,
   });
-  const stage = status.data?.stage;
+  const outcome = outcomeOf(status.data);
   // Another grant awaiting its outcome: the server would refuse a second (`grant_pending`), so it isn't offered.
   const records = useWaiting(reads, "grant_issue");
   const earlier = records.waiting !== undefined && records.waiting.correlationId !== grant?.correlationId ? records.waiting : undefined;
-  useEffect(() => { if (stage === "submitted") void client.invalidateQueries({ queryKey: reads.strategy.queryKey }); }, [stage, client, reads]);
+  useEffect(() => { if (outcome === "succeeded") void client.invalidateQueries({ queryKey: reads.strategy.queryKey }); }, [outcome, client, reads]);
   // One that ended without taking effect is over: a new one may be started, and a return doesn't resume it.
-  useEffect(() => { if (stage === "expired" || stage === "failed") forgetGrant(reads.name); }, [stage, reads.name]);
+  useEffect(() => { if (outcome === "expired" || outcome === "failed") forgetGrant(reads.name); }, [outcome, reads.name]);
   const dao = identity.signer === "dao";
 
   const authorize = async () => {
@@ -105,7 +96,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
     }
   };
 
-  const canStart = (!grant || (isFinal(stage) && stage !== "submitted")) && !earlier && !records.reading && !busy && (dao ? identity.access.canPropose : ownerAllowed);
+  const canStart = (!grant || outcome === "expired" || outcome === "failed") && !earlier && !records.reading && !busy && (dao ? identity.access.canPropose : ownerAllowed);
   // The assistant's grant draft (#219) opens this review, as Authorize does; nothing is signed until the owner says so in it.
   const [fromAssistant, setFromAssistant] = useState(false);
   // Each new ask once: one made before this mounted (the counter it starts with) isn't opened again.
@@ -121,7 +112,7 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
     {earlier && <p role="status" className="text-xs">{earlier.why === "vote" ? "An earlier grant is waiting for the DAO's vote." : "An earlier grant's outcome isn't known yet."} Another can't be started until it is.</p>}
     {grant?.confirm && <p className="text-xs text-muted-foreground">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={grant.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>.
       It expires {when(grant.confirm.expiresAt)}.</p>}
-    {grant && <p role="status" className="text-xs">{!stage ? "Reading its status…" : STAGE_WORDS[stage] ?? stage}</p>}
+    {grant && <p role="status" className="text-xs">{statusText(status.data, grantWords)}</p>}
     {notice && <p role="status" className="text-xs">{notice}</p>}
     <ErrorBox error={error} />
     <ReviewDialog open={reviewing} busy={busy} onClose={() => setReviewing(false)} title="Authorize this saved strategy?"

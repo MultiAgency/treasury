@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useReducer, useState, type ReactNode } from "react";
-import { isFinal, type StageWords } from "../../../apps/server/src/owner-action.ts";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
+import { isFinal, outcomeOf, statusText, type OwnerOutcome, type PhaseWords } from "../../../apps/server/src/owner-action.ts";
 import { ErrorBox, errorMessage } from "../shared/ui";
 import { waitingOn } from "./freeze-view";
 import type { Identity, OwnerActionPrepared, Result } from "./proposals-api";
@@ -43,13 +43,13 @@ export function useOwnerFlow({ reads, identity, kind, words, reviewDao = false, 
   reads: Reads; identity: Identity;
   /** The kind of action: an earlier one that holds it (`holdsEach`, as the server holds) holds this one too. */
   kind: string;
-  /** The words for each stage: what has happened to this kind of action. */
-  words: StageWords;
+  /** The words for each phase and its terminal outcome. */
+  words: PhaseWords;
   reviewDao?: boolean;
   /** Whether the platform's records may be read yet (the stop reads them only once the agent is connected). */
   enabled?: boolean;
-  /** Called once with the stage an action reached when it is final. */
-  onFinal?: (stage: "submitted" | "expired" | "failed") => void;
+  /** Called once with an action's final outcome; settlement alone doesn't establish success. */
+  onFinal?: (outcome: OwnerOutcome) => void;
 }) {
   const client = useQueryClient();
   const [action, setAction] = useState<OwnerActionPrepared>();
@@ -66,14 +66,21 @@ export function useOwnerFlow({ reads, identity, kind, words, reviewDao = false, 
       return read.value;
     },
     enabled: action !== undefined, retry: false,
-    refetchInterval: query => isFinal(query.state.data?.stage) ? false : 5_000,
+    refetchInterval: query => isFinal(query.state.data) ? false : 5_000,
   });
-  const stage = status.data?.stage;
-  const inFlight = action !== undefined && !isFinal(stage);
+  const outcome = outcomeOf(status.data);
+  const inFlight = action !== undefined && !isFinal(status.data);
   const { waiting } = useWaiting(reads, kind, { enabled, poll: inFlight || toFile !== undefined });
   const holding = waiting !== undefined || inFlight || toFile !== undefined;
   const refresh = () => [reads.overview, reads.ownerActions, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
-  useEffect(() => { if (isFinal(stage)) { refresh(); onFinal?.(stage); } }, [stage]);
+  const notified = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (action && outcome && notified.current !== action.correlationId) {
+      notified.current = action.correlationId;
+      refresh();
+      onFinal?.(outcome);
+    }
+  }, [action?.correlationId, outcome]);
 
   const dao = identity.signer === "dao";
   const sendFiled = async (prepared: OwnerActionPrepared) => {
@@ -126,7 +133,7 @@ export function useOwnerFlow({ reads, identity, kind, words, reviewDao = false, 
   const progress: ReactNode = <>
     {holding && !toFile && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" ? "Waiting for the vote or signature on an earlier one." : "An earlier one's outcome isn't known yet."} Nothing more of its kind can be sent until it is.</p>}
     {action?.confirm && <p className="text-sm">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={action.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>. It expires {when(action.confirm.expiresAt)}.</p>}
-    {action && <p role="status" className="text-sm">{!stage ? "Reading its status…" : words[stage] ?? stage}</p>}
+    {action && <p role="status" className="text-sm">{statusText(status.data, words)}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
     <ErrorBox error={error} />
   </>;

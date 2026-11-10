@@ -13,7 +13,7 @@ import { checkConsent, consentFor, consentText, liveConsents, organizationOf, wi
 import { offerFor } from "./dao-offer.ts";
 import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
-import { awaiting, holdsEach } from "./owner-action.ts";
+import { awaiting, holdsEach, statusPhase } from "./owner-action.ts";
 import { changesNothing } from "./policy-edit.ts";
 import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
@@ -380,7 +380,10 @@ async function ownerStatus(identity: Admitted, id: string | undefined, status: P
   const { agent, owner } = identity;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(id ?? "")) return refused(400, "bad_request");
   const read = await relay(() => status(organizationOf(owner), agent, id!), agent);
-  if (read.ok) return ok({ stage: read.value.stage, ...(read.value.failureCode !== undefined && { failureCode: read.value.failureCode }) });
+  if (read.ok) return ok({ stage: read.value.stage,
+    ...(read.value.phase !== undefined && { phase: read.value.phase }),
+    ...(read.value.status !== undefined && { status: read.value.status }),
+    ...(read.value.failureCode !== undefined && { failureCode: read.value.failureCode }) });
   log("platform_owner_status_failed", { agent, ...failure(read) });
   return read.kind === "refused" && read.status === 404 ? refused(404, codes.missing) : read.kind === "forbidden" ? refused(409, codes.forbidden) : unavailable();
 }
@@ -806,9 +809,9 @@ export const routes: Route[] = [
     method: "GET", path: "/api/agents/:agent/creation/:id", access: "owner", needs: "read",
     async handle({ identity, params }, { platform }) {
       const reply = await ownerStatus(identity!, params.id, platform.creation.status, { missing: "no_creation", forbidden: "not_set_up" });
-      // Created: the agent has an ID now, so its identity is read fresh. The page reads the agent next, and the identity
-      // cached from before (`platform.ts`, a minute) would still say it isn't created.
-      if (reply.body.ok && (reply.body.value as { stage: string }).stage === "submitted") await platform.identity(identity!.agent, { fresh: true });
+      // A settled creation may have changed the agent's identity. Read it fresh so the next page sees the current ID
+      // rather than the identity cached from before (`platform.ts`, a minute), without assuming the action succeeded.
+      if (reply.body.ok && statusPhase(reply.body.value as z.output<typeof contract.creationStatus>) === "settled") await platform.identity(identity!.agent, { fresh: true });
       return reply;
     },
   },

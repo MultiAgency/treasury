@@ -395,3 +395,25 @@ test("setup texts share the account's setup request limit, and a refused text as
     assert.equal(isolated.calls.filter(call => call === "consents.nonce").length, 1);
   } finally { limited.server.close(); }
 });
+
+test("creation status retains phase and provider outcome, refreshing identity only for a settled phase or its legacy equivalent", async () => {
+  clean();
+  const cookie = await signIn(owner), agent = fake.reservations[owner.accountId]!;
+  const freshReads = () => fake.calls.filter(made => made === `identity ${agent} (fresh)`).length;
+  const cases = [
+    { expected: { stage: "unknown", phase: "open" }, refresh: false },
+    { expected: { stage: "submitted", phase: "submitted", status: "PROCESSING" }, refresh: false },
+    { expected: { stage: "submitting", phase: "settled", status: "FAILED", failureCode: "creation_denied" }, refresh: true },
+    { expected: { stage: "submitted", phase: "settled", status: "SUCCESS", failureCode: null }, refresh: true },
+    { expected: { stage: "voting" }, refresh: false },
+    { expected: { stage: "submitted" }, refresh: true },
+  ] as const;
+  for (const { expected, refresh } of cases) {
+    fake.statusAnswers.push({ ok: true, value: { ...expected, error: "private creation detail", signedData: { signature: "private signature" } } } as never);
+    const before = freshReads();
+    const read = await json(await call("GET", `/api/agents/${agent}/creation/status-fixture`, { cookie }));
+    assert.deepEqual(read, { status: 200, body: { ok: true, value: expected } });
+    assert.deepEqual(contract.creationStatus.parse(read.body.value), expected);
+    assert.equal(freshReads() - before, refresh ? 1 : 0, JSON.stringify(expected));
+  }
+});

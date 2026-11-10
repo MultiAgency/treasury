@@ -5,7 +5,8 @@ import { DataTable, FilterChips, td, th, tr, TokenChip, ValuePill, type FilterOp
 import { PanelTitle } from "@/components/ui/stat";
 import { ago, describeRequest, usd } from "../shared/format";
 import { Badge, Button, Card, Loading, Note, QueryError, short, statusTone, type Tone } from "../shared/ui";
-import { actionName, actionStanding, history, pageCount, pageOf, runSummary, unresolvedAnchor, type RunStage } from "./activity-view";
+import { actionBadge, actionName, actionStanding, history, pageCount, pageOf, runSummary, unresolvedAnchor, type RunStage } from "./activity-view";
+import { actionPhase } from "../../../apps/server/src/owner-action.ts";
 import { assetColors } from "./book";
 import { PageLink } from "./nav";
 import { agentAddress, runAddress } from "./pages";
@@ -53,11 +54,6 @@ function HistoryRow({ reads, row, book }: { reads: Reads; row: Row; book: Parame
     </span>}
   </li>;
 }
-
-/** Where an owner action stands, as a status. */
-const STAGE: Record<string, { label: string; tone: Tone }> = {
-  prepared: { label: "Waiting", tone: "warning" }, submitted: { label: "Submitting", tone: "info" }, expired: { label: "Expired", tone: "neutral" },
-};
 
 /**
  * The agent's activity (#136): operations without a proven outcome, the full history (every row the platform keeps,
@@ -140,12 +136,13 @@ export function Activity({ reads, identity }: { reads: Reads; identity: Identity
             : actions.data.length === 0 ? <p className="text-sm text-muted-foreground" role="status">No owner actions yet.</p>
             : <ul aria-label="Owner actions" className="flex flex-col divide-y divide-border text-sm">
               {actions.data.map(action => {
-                const stage = action.stage === "settled" ? (action.ownerSucceeded ? { label: "Done", tone: "success" as Tone } : { label: "Failed", tone: "destructive" as Tone }) : STAGE[action.stage]!;
+                const badge = actionBadge(action);
+                const open = actionPhase(action) === "open";
                 const standing = actionStanding(action);
                 return <li key={action.correlationId} className="flex flex-col gap-1 py-2 first:pt-0 last:pb-0">
-                  <span className="flex items-center justify-between gap-3"><span className="font-medium">{actionName(action.type)}</span><Badge tone={stage.tone}>{stage.label}</Badge></span>
-                  {(standing !== stage.label || action.stage === "prepared") && <span className="text-xs text-muted-foreground">
-                    {standing !== stage.label && standing}{action.stage === "prepared" && <> · expires <At iso={action.expiresAt} /></>}
+                  <span className="flex items-center justify-between gap-3"><span className="font-medium">{actionName(action.type)}</span><Badge tone={badge.tone}>{badge.label}</Badge></span>
+                  {(standing !== badge.label || open) && <span className="text-xs text-muted-foreground">
+                    {standing !== badge.label && standing}{open && <> · expires <At iso={action.expiresAt} /></>}
                   </span>}
                 </li>;
               })}

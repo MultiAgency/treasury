@@ -1,6 +1,7 @@
 // What the Activity page shows (#136), from the owner reads: pure, so it's tested without a browser.
 // With its extensions: test/activity-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import type { ActivityRead, RecordingRead } from "./proposals-api.ts";
+import { actionPhase, outcomeOf, type OwnerActionRecord } from "../../../apps/server/src/owner-action.ts";
 
 /** Rows to a page: `activity` answers every row at once, and the browser pages through them (no further reads). */
 export const PAGE_SIZE = 50;
@@ -22,7 +23,27 @@ export function pageOf<R>(rows: readonly R[], page: number, size = PAGE_SIZE): R
 /** The anchor of an operation without a proven outcome, by its journal key. */
 export const unresolvedAnchor = (key: string) => `unresolved-${key.replace(/[^A-Za-z0-9_.:-]/g, "_")}`;
 
-type OwnerAction = { type: string; stage: "settled" | "submitted" | "expired" | "prepared"; expiresAt: string; ownerSucceeded: boolean; failureCode: string | null; signer: "dao" | "wallet" };
+type OwnerAction = Pick<OwnerActionRecord, "type" | "stage" | "phase" | "expiresAt" | "ownerSucceeded" | "failureCode" | "signer"> & Partial<Pick<OwnerActionRecord, "status">>;
+
+// The record and status read share a phase, though their older stage names differ. An absent provider outcome is
+// unconfirmed, rather than proof that a settled action failed or succeeded.
+const actionOutcome = (action: OwnerAction) => outcomeOf({ stage: "unknown", phase: actionPhase(action), status: action.status ?? undefined, failureCode: action.failureCode });
+
+/** The owner's action badge follows the same phase and outcome as its detailed words. */
+export function actionBadge(action: OwnerAction): { label: string; tone: "warning" | "info" | "neutral" | "success" | "destructive" } {
+  switch (actionPhase(action)) {
+    case "open": return { label: "Waiting", tone: "warning" };
+    case "submitted": return { label: "Submitting", tone: "info" };
+    case "expired": return { label: "Expired", tone: "neutral" };
+    case "settled": {
+      const outcome = actionOutcome(action);
+      return outcome === "succeeded" ? { label: "Done", tone: "success" }
+        : outcome === "failed" ? { label: "Failed", tone: "destructive" }
+        : outcome === "expired" ? { label: "Expired", tone: "neutral" }
+        : { label: "Outcome unconfirmed", tone: "warning" };
+    }
+  }
+}
 
 const ACTIONS: Record<string, string> = {
   grant_issue: "Strategy grant", grant_revoke: "Revoke a grant", agent_freeze: "Freeze", agent_unfreeze: "Unfreeze", policy_update: "Policy change",
@@ -31,13 +52,19 @@ const ACTIONS: Record<string, string> = {
 /** What an owner action is, in the owner's words; a kind this page doesn't know is shown as the platform names it. */
 export const actionName = (type: string) => ACTIONS[type] ?? type;
 
-/** Where an owner action stands, in words: decided by its stage and outcome, never by free text. */
+/** Where an owner action stands, in words: its phase takes priority, and settlement alone isn't success. */
 export function actionStanding(action: OwnerAction): string {
-  switch (action.stage) {
-    case "prepared": return action.signer === "dao" ? "Waiting for the DAO's vote" : "Waiting for the owner's signature";
+  switch (actionPhase(action)) {
+    case "open": return action.signer === "dao" ? "Waiting for the DAO's vote" : "Waiting for the owner's signature";
     case "submitted": return "Signed: the platform is submitting it";
     case "expired": return "Expired before it was signed or voted on: nothing took effect";
-    case "settled": return action.ownerSucceeded ? "Done" : `Failed${action.failureCode ? ` (${action.failureCode})` : ""}: nothing took effect`;
+    case "settled": {
+      const outcome = actionOutcome(action);
+      return outcome === "succeeded" ? "Done"
+        : outcome === "failed" ? `Reported outcome: ${action.status}${action.failureCode ? ` (${action.failureCode})` : ""}`
+        : outcome === "expired" ? "Expired before it was signed or voted on: nothing took effect"
+        : "The action ended without a confirmed outcome";
+    }
   }
 }
 

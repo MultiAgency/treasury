@@ -791,7 +791,7 @@ test("a freeze whose outcome is unknown holds both controls, after a reload too,
   const stop = page.getByRole("region", { name: "Emergency stop" });
   await visible(stop.getByRole("button", { name: "Freeze" }));
   // The platform's own record, as it reads when a freeze was submitted and its outcome isn't recorded yet.
-  const submitted = { correlationId: "held-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(), signer: "wallet", stage: "submitted", ownerSucceeded: false, status: null, failureCode: null, payment: null };
+  const submitted = { correlationId: "held-freeze", type: "agent_freeze", expiresAt: new Date(Date.now() - 60_000).toISOString(), signer: "wallet", stage: "prepared", phase: "submitted", ownerSucceeded: false, status: null, failureCode: null, payment: null };
   await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [submitted] } }));
   await page.reload();
   await visible(stop.getByText(/outcome isn't known yet/));
@@ -803,11 +803,36 @@ test("a freeze whose outcome is unknown holds both controls, after a reload too,
   assert.equal(await stop.getByRole("button", { name: "Freeze" }).isDisabled(), true, "and on another page");
   // The platform records it settled: the hold ends.
   await page.unroute("**/api/agents/*/owner/actions");
-  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [{ ...submitted, stage: "settled", ownerSucceeded: true, status: "SUCCESS" }] } }));
+  await page.route("**/api/agents/*/owner/actions", route => route.fulfill({ json: { ok: true, value: [{ ...submitted, stage: "submitted", phase: "settled", status: "FAILED" }] } }));
   await page.reload();
   await visible(stop.getByRole("button", { name: "Freeze" }));
   await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 30_000 });
   await page.unroute("**/api/agents/*/owner/actions");
+  assert.deepEqual(unexpected, []);
+});
+
+test("a settled failed freeze reports failure and releases its control without claiming it took effect", { timeout: 90_000 }, async () => {
+  const freeze = "**/api/agents/*/freeze", status = "**/api/agents/*/owner/actions/failed-freeze";
+  await page.route(freeze, route => route.fulfill({ json: { ok: true, value: {
+    correlationId: "failed-freeze", expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    confirm: { url: `${origin}/confirm/failed-freeze`, expiresAt: new Date(Date.now() + 600_000).toISOString() },
+  } } }));
+  await page.route(status, route => route.fulfill({ json: { ok: true, value: { stage: "submitted", phase: "settled", status: "FAILED", failureCode: "provider_refused" } } }));
+  try {
+    await page.goto(here("/proposals"));
+    const stop = page.getByRole("region", { name: "Emergency stop" });
+    const freezeButton = stop.getByRole("button", { name: "Freeze", exact: true });
+    await visible(freezeButton);
+    await freezeButton.click();
+    await dialog("Freeze this agent?").getByRole("button", { name: "Sign and freeze" }).click();
+    await visible(stop.getByText("The platform couldn't carry it out. Nothing took effect.", { exact: true }));
+    assert.equal(await stop.getByText("Done: the platform has it.", { exact: true }).count(), 0);
+    await page.waitForFunction(() => !document.querySelector("#emergency-stop button[disabled]"), undefined, { timeout: 10_000 });
+    assert.equal(await freezeButton.isEnabled(), true);
+  } finally {
+    await page.unroute(freeze);
+    await page.unroute(status);
+  }
   assert.deepEqual(unexpected, []);
 });
 

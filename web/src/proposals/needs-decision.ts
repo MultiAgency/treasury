@@ -21,7 +21,7 @@ export type Need = {
 
 type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
 type Unresolved = { key: string; kind: string; at: string };
-type OwnerAction = Pick<OwnerActionRecord, "correlationId" | "type" | "stage" | "signer" | "expiresAt">;
+type OwnerAction = Pick<OwnerActionRecord, "correlationId" | "type" | "stage" | "phase" | "signer" | "expiresAt">;
 
 const byDeadline = (a: ProposalView, b: ProposalView) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt);
 const live = (view: ProposalView, now: number) => Date.parse(view.expiresAt) > now;

@@ -1,7 +1,7 @@
 import type { ProposalState } from "@multiagency/sdk";
 import type { Outcome } from "../shared/execution-outcome.ts";
 import type { Failure } from "./proposals-api.ts";
-import type { StageWords } from "../../../apps/server/src/owner-action.ts";
+import type { PhaseWords } from "../../../apps/server/src/owner-action.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */
 export type Context = "read" | "sign-in" | "setup" | "consent" | "proposal" | "funding" | "autopilot" | "owner-action";
@@ -141,12 +141,34 @@ export const scopeList = (scopes: readonly string[]) => [...scopes]
   .sort((a, b) => (SCOPE_ORDER.indexOf(a) + 1 || 99) - (SCOPE_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b))
   .join(", ").replace(/, ([^,]*)$/, " and $1");
 
-/** What has happened to a grant's revocation, by its stage. */
-export const revokeWords: StageWords = {
-  voting: "Waiting for the signature, or for the DAO's vote.",
-  submitting: "Signed; the platform is submitting it.",
-  submitted: "Done: the platform has the revocation, and the grant no longer acts.",
+/** What has happened to a grant's revocation, by its phase and outcome. */
+export const revokeWords: PhaseWords = {
+  open: "Waiting for the signature, or for the DAO's vote.",
+  submitted: "Signed; the platform is submitting it.",
+  settled: "Done: the platform has the revocation, and the grant no longer acts.",
   expired: "It expired before it was signed or voted on. The grant is still live.",
   failed: "The platform couldn't carry it out. The grant is still live.",
   unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
+  unconfirmed: "The revocation ended without a confirmed outcome. Read the grant's current state before acting again.",
+};
+
+/** Grant and creation progress use the same outcome checks as the controls that allow another attempt. */
+export const grantWords: PhaseWords = {
+  open: "Waiting for the signature, or for the DAO's vote.",
+  submitted: "Signed; the platform is submitting it.",
+  settled: "Authorized: the grant binds this strategy once the agent takes it up.",
+  expired: "It expired before it was signed. Nothing took effect. Authorize the strategy again.",
+  failed: "The platform couldn't issue the grant. Nothing took effect.",
+  unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
+  unconfirmed: "The grant ended without a confirmed outcome. Read the saved strategy before authorizing it again.",
+};
+
+export const creationWords: PhaseWords = {
+  open: "Waiting for the signature.",
+  submitted: "Signed; the platform is submitting it.",
+  settled: "Created. Reading the agent again…",
+  expired: "It expired before it was signed. Nothing was created.",
+  failed: "The platform couldn't create it. Nothing was created.",
+  unknown: "Its outcome isn't known yet. Nothing is sent again from here.",
+  unconfirmed: "The creation ended without a confirmed outcome. Read the agent's current state before creating it again.",
 };

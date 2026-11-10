@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionName, actionStanding, history, pageCount, pageOf, PAGE_SIZE, runSummary, unresolvedAnchor } from "../src/proposals/activity-view.ts";
+import { actionBadge, actionName, actionStanding, history, pageCount, pageOf, PAGE_SIZE, runSummary, unresolvedAnchor } from "../src/proposals/activity-view.ts";
 
 const row = (at: string, correlationId?: string) => ({ at, kind: "swap", request: {}, ...(correlationId !== undefined && { correlationId }) });
 
@@ -40,9 +40,35 @@ test("where an owner action stands is decided by its stage and outcome", () => {
   assert.equal(actionStanding(action("prepared", { signer: "dao" })), "Waiting for the DAO's vote");
   assert.equal(actionStanding(action("submitted")), "Signed: the platform is submitting it");
   assert.match(actionStanding(action("expired")), /^Expired before it was signed or voted on: nothing took effect$/);
-  assert.equal(actionStanding(action("settled", { ownerSucceeded: true })), "Done");
-  assert.equal(actionStanding(action("settled")), "Failed: nothing took effect");
-  assert.equal(actionStanding(action("settled", { failureCode: "policy_changed" })), "Failed (policy_changed): nothing took effect");
+  assert.equal(actionStanding(action("settled", { ownerSucceeded: true, status: "SUCCESS" })), "Done");
+  assert.equal(actionStanding(action("settled", { status: "FAILED" })), "Reported outcome: FAILED");
+  assert.equal(actionStanding(action("settled", { status: "FAILED", failureCode: "policy_changed" })), "Reported outcome: FAILED (policy_changed)");
+  assert.equal(actionStanding(action("settled")), "The action ended without a confirmed outcome");
+});
+
+test("owner action badges and details use the phase before a conflicting legacy stage and prove terminal outcomes", () => {
+  const base = { type: "agent_freeze", stage: "prepared" as const, expiresAt: "2026-11-06T13:00:00Z", ownerSucceeded: false, failureCode: null, signer: "wallet" as const };
+  const submitted = { ...base, phase: "submitted" as const };
+  assert.deepEqual(actionBadge(submitted), { label: "Submitting", tone: "info" });
+  assert.equal(actionStanding(submitted), "Signed: the platform is submitting it");
+  const settled = { ...base, stage: "submitted" as const, phase: "settled" as const };
+  const failed = { ...settled, status: "FAILED", ownerSucceeded: true };
+  assert.deepEqual(actionBadge(failed), { label: "Failed", tone: "destructive" });
+  assert.equal(actionStanding(failed), "Reported outcome: FAILED");
+  assert.deepEqual(actionBadge({ ...settled, status: "SUCCESS" }), { label: "Done", tone: "success" });
+  for (const status of [null, "UNRECOGNIZED"]) {
+    assert.deepEqual(actionBadge({ ...settled, status }), { label: "Outcome unconfirmed", tone: "warning" });
+    assert.equal(actionStanding({ ...settled, status }), "The action ended without a confirmed outcome");
+  }
+  assert.deepEqual(actionBadge({ ...settled, status: "EXPIRED", failureCode: "signing_window_closed" }), { label: "Expired", tone: "neutral" });
+});
+
+test("an approval vote's released payout may be refunded after the vote succeeded", () => {
+  const action = { type: "approval_vote", stage: "submitted" as const, phase: "settled" as const, expiresAt: "2026-11-06T13:00:00Z",
+    signer: "wallet" as const, ownerSucceeded: true, status: "REFUNDED", failureCode: "provider_refund" };
+  assert.deepEqual(actionBadge(action), { label: "Failed", tone: "destructive" });
+  assert.equal(actionStanding(action), "Reported outcome: REFUNDED (provider_refund)");
+  assert.doesNotMatch(actionStanding(action), /nothing took effect/);
 });
 
 const metadata = { eventId: "e", source: "tick", recordRef: "r", recordedAt: null, observedAt: null, timing: "unknown" };
