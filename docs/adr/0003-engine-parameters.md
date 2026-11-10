@@ -1,6 +1,6 @@
 # 3. The engine's parameters: price sources, rules map, profiles, calibration and escalation
 
-**Status:** accepted, 2026-11-06 (#156); proposed by Harjaap, owner of H5, H6, H8, H9 and H11. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95. **H11 amended** 2026-11-09 by James as lead maintainer: the level is worked out on every tick, and the owner's approval and the freeze are the human controls ([H11](#h11-escalation-and-alerting)). Harjaap may reopen it.
+**Status:** accepted, 2026-11-06 (#156); proposed by Harjaap, owner of H5, H6, H8, H9 and H11. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95. **H11 amended** 2026-11-09 (#231): the level is worked out on every tick, and the owner's approval and the freeze are the human controls ([H11](#h11-escalation-and-alerting)). Harjaap may reopen it.
 
 Every value below is either changed in this PR (marked **changed**) or kept as it already is in code (marked **kept**), so the code and this page agree. Anything not decided here is listed under [Open](#open).
 
