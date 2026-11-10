@@ -33,11 +33,11 @@ test("fewer than 3 months to the floor is L1 and fewer than 1 is L2; exactly 3 o
   assert.deepEqual(levels({ monthsToFloor: -2 }), ["runway:2"], "already under the floor");
 });
 
-test("a projection that couldn't be made is L1, with its reason, and joins the regime as a source problem", () => {
+test("a projection that couldn't be made is L1, with its reason, and joins the regime as forward risk: buys hold, sells don't", () => {
   const found = detectForwardRisk({ usable: false, reasons: ["wNEAR: no price history"], ...CONSERVATIVE_PROJECTION }, calmScenarios, T);
   assert.deepEqual(found.map(d => [d.detector, d.level]), [["projection", 1]]);
   assert.match(found[0]!.reason, /no price history/);
-  assert.equal(regimeFrom(found), "source-stress");
+  assert.equal(regimeFrom(found), "forward-risk");
 });
 
 test("a scenario that leaves the stables under the floor is L1, naming it; the forward detections join the regime as forward-risk", () => {

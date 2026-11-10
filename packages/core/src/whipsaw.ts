@@ -16,7 +16,7 @@ export const WHIPSAW_DEFAULTS = {
 
 export type WhipsawLimits = { cooldownMs: number; reversalLockMs: number; hysteresisPct: number };
 
-/** `normal` is the only regime the engine trades in; any other holds. */
+/** The engine trades freely only in `normal`; `forward-risk` holds buys (ADR 5), and any other regime holds every trade. */
 export type Regime = "normal" | "fast-move" | "thin-liquidity" | "source-stress" | "forward-risk" | "system-fault";
 
 export type WhipsawState = {
@@ -78,7 +78,8 @@ export function gate(p: Intent, state: WhipsawState, regime: Regime, now: number
   if (p.action === "hold") return p;
   const bad = whipsawProblems(limits);
   if (bad.length > 0) return hold(p, `invalid anti-whipsaw configuration: ${bad.join("; ")}`);
-  if (regime !== "normal") return hold(p, `regime ${regime}: not trading`);
+  // Forward risk (#220, ADR 5) holds buys only: a trim lowers the risk the forward detections are about.
+  if (regime === "forward-risk" ? p.action === "buy-volatile" : regime !== "normal") return hold(p, regime === "forward-risk" ? "regime forward-risk: buys held" : `regime ${regime}: not trading`);
   const badState = stateProblems(state);
   if (badState.length > 0) return hold(p, `unusable anti-whipsaw state: ${badState.join("; ")}`);
   if (heldBy(p.zone, state.disarmed)) return hold(p, `a trade was already proposed in ${state.disarmed}: ${p.zone} waits to re-arm`);
@@ -112,9 +113,16 @@ function line(zone: BandZone, bands: Bands): number | undefined {
 export function nextState(state: WhipsawState, intent: Intent, deviationPct: number | null, now: number,
   limits: WhipsawLimits = WHIPSAW_DEFAULTS, bands: Bands = BAND_DEFAULTS): WhipsawState {
   if (whipsawProblems(limits).length > 0 || bandProblems(bands).length > 0) return state;
-  // A trade outside the bands (the stabilization agent's de-risk sell) has no zone to disarm: recording `hold` there
-  // would make the state unreadable (`stateProblems`) and hold every later trade.
-  if (intent.action !== "hold") return { lastActionAt: now, lastAction: intent.action, ...(intent.zone !== "hold" && { disarmed: intent.zone }) };
+  if (intent.action !== "hold") {
+    // A trade outside the bands (the stabilization agent's de-risk sell) has no zone of its own to disarm: recording
+    // `hold` would make the state unreadable (`stateProblems`) and hold every later trade. It keeps a zone already
+    // disarmed on its own side, so Ballast doesn't trade that zone again before the retreat; one on the other side
+    // goes, since the state holds a disarmed zone only on the last action's side, and the reversal lock covers it.
+    const kept = intent.zone === "hold" && state.disarmed !== undefined
+      && ACTION_OF[SIDES.findIndex(zones => zones.includes(state.disarmed!))] === intent.action ? state.disarmed : undefined;
+    const disarmed = intent.zone !== "hold" ? intent.zone : kept;
+    return { lastActionAt: now, lastAction: intent.action, ...(disarmed !== undefined && { disarmed }) };
+  }
   if (state.disarmed === undefined || deviationPct === null) return state;
   let zone: BandZone | undefined = state.disarmed;
   while (zone !== undefined) {

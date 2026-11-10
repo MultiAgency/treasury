@@ -44,8 +44,8 @@ function overview(price: number, volatileUsd: number, stableUsd: number, now: nu
 }
 
 async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk = RISK, ballast: ballastChanges = SETTINGS,
-  price = 2, volatileUsd = 40_000, stableUsd = 60_000 }:
-  { pct?: number; days?: number; seeded?: boolean; withRisk?: boolean; risk?: RiskSettings; ballast?: BallastSettings; price?: number; volatileUsd?: number; stableUsd?: number } = {}) {
+  price = 2, volatileUsd = 40_000, stableUsd = 60_000, autopilotOn = false }:
+  { pct?: number; days?: number; seeded?: boolean; withRisk?: boolean; risk?: RiskSettings; ballast?: BallastSettings; price?: number; volatileUsd?: number; stableUsd?: number; autopilotOn?: boolean } = {}) {
   const dir = tempDir("treasury-risk-");
   const clock = { now: T0 };
   const requests = await createRequests(join(dir, "requests.json"));
@@ -58,7 +58,7 @@ async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk 
   const platform: WatchPlatform = {
     overview: async () => ({ ok: true, value: answers.overview }),
     unresolved: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["unresolved"]>>,
-    autopilot: async () => ({ ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
+    autopilot: async () => ({ ok: true, value: { on: autopilotOn, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
     strategy: async () => ({ ok: true, value: { strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000 }, minLegUsd: 1, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } },
       digest: `sha256:${"c".repeat(64)}` } }) as unknown as Awaited<ReturnType<WatchPlatform["strategy"]>>,
     list: async () => ({ ok: true, value: { proposals: [...stored.values()] } }),
@@ -87,6 +87,19 @@ async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk 
   return { dir, clock, answers, stored, sent, history, states, requests, audit, watch, watched, entries,
     tick: () => watch.tick(watched), log: () => readFile(audit.file, "utf8") };
 }
+
+test("with autopilot on, the risk agent still assesses and recommends pausing it, while Ballast proposes nothing", async () => {
+  const w = await world({ autopilotOn: true });
+  const event = await w.tick();
+  assert.equal(event.held, "autopilot", JSON.stringify(event));
+  const risk = event.risk as { level: number; recommendations: string[] };
+  assert.ok(risk.level >= 2, JSON.stringify(risk));
+  assert.ok(risk.recommendations.includes("pause-autopilot"), JSON.stringify(risk));
+  assert.equal(w.sent.length, 0, "nothing proposed while autopilot runs");
+  const entries = await w.entries();
+  assert.deepEqual(entries.map(e => e.entry.kind), ["risk"], "an assessment, and no Ballast decision");
+  assert.equal("requestId" in entries[0]!.entry, false, "no request named for a de-risk that isn't proposed");
+});
 
 test("a crash raises the forward level and proposes one de-risk sell for the owner, recorded before anything acts", async () => {
   const w = await world();

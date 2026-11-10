@@ -30,7 +30,7 @@ Each profile's drawdown and shortfall steps scale with its volatile weight, so t
 
 ## Fail-closed rules
 
-- **Unreadable inputs give the conservative answer, never an exception and never a trade.** A projection that can't be made is L1 with its reasons; the recommendation is to hold buys, nothing is sized, and the regime is `source-stress`. An unreadable assessment input is L1 with `risk-config`, the regime is `system-fault`, and the only recommendation is to hold buys.
+- **Unreadable inputs give the conservative answer, never an exception and never a trade.** A projection that can't be made is L1 with its reasons; the recommendation is to hold buys, nothing is sized, and the regime is `forward-risk`, which holds buys and lets Ballast's sells through. An unreadable assessment input is L1 with `risk-config`, the regime is `system-fault`, and the only recommendation is to hold buys.
 - **Unreadable thresholds refuse.** `riskThresholdProblems` checks every step's range and order (and the target's relation to the drawdown steps); a set it refuses makes the forward detection `risk-config` and sizes nothing. The server validates `ballast.risk` with the same function at startup.
 - **A scenario that leaves the stables under the floor is L1**, naming it: a plausible depeg, outage or spend overrun holds buys while nothing better can be sized.
 - **Only a usable projection is sized.** The conservative stand-in (100% drawdown, no runway, a certain breach) is never a basis for a sell.

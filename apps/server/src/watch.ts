@@ -303,7 +303,13 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
         strategy: () => platform.strategy(organization, agent), proposals: strategyProposals });
       if (unresolved.value.length) { await settleHold(watched, "unresolved-operations", event); return event({ held: "unresolved", operations: unresolved.value.length }); }
       // Two proposers on one agent would race; turning autopilot off is the owner's call.
-      if (autopilot.value.on) { await settleHold(watched, "autopilot-on", event); return event({ held: "autopilot" }); }
+      if (autopilot.value.on) {
+        await settleHold(watched, "autopilot-on", event);
+        // The risk agent still assesses an agent whose autopilot runs, and may recommend pausing it; Ballast proposes nothing.
+        const assessed = watched.risk && watched.ballast && ballast ? await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, true) : undefined;
+        const risk = assessed && "risk" in assessed ? assessed.risk : undefined;
+        return event({ held: "autopilot", ...(risk !== undefined && { risk }) });
+      }
       if (overview.value.notInForce) { await settleHold(watched, "policy-not-in-force", event); return event({ held: "policy not in force", notInForce: overview.value.notInForce }); }
       // Past every hold: one that was reported has ended.
       await settleHold(watched, null, event);

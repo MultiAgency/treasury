@@ -256,10 +256,13 @@ export function createBallast({ history, states, audit, now = Date.now }: {
           },
         };
         riskAssessment = assessRisk(riskInput);
-        if (riskAssessment.derisk?.proposal) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
         await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
           ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
       }
+      // While autopilot runs, Ballast decides nothing: the risk agent has assessed it and recommended pausing it if needed.
+      if (autopilotOn === true) return { skipped: "autopilot", ...(riskAssessment && { risk: riskEventOf(riskAssessment) }) };
       // The forward detections join the regime and the level once: buys hold at L1+, and every policy check sees the
       // higher of the forward level and Ballast's own. Without a risk block nothing changes.
       const forward = riskAssessment?.detections ?? [];

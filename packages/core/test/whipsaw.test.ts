@@ -21,6 +21,27 @@ test("any regime but normal holds", () => {
   }
 });
 
+test("forward risk (#220) holds buys and lets sells through: a raised forward level never stops Ballast trimming", () => {
+  const held = gate(buy(), none, "forward-risk", NOW);
+  assert.deepEqual([held.action, held.sizeUsd], ["hold", 0]);
+  assert.match(held.reason, /forward-risk/);
+  assert.deepEqual(gate(sell(), none, "forward-risk", NOW), sell());
+  assert.match(gate(sell(), { lastActionAt: NOW - 1, lastAction: "sell-volatile" }, "forward-risk", NOW).reason, /cooling down/, "the rest of the gate still applies");
+});
+
+test("a de-risk sell (outside the bands, #220) keeps a trim zone Ballast disarmed, and drops a DCA one, so the state stays readable", () => {
+  const derisk: Intent = { ...sell(), zone: "hold" };
+  const trimmed: WhipsawState = { lastActionAt: NOW - 2 * HOUR, lastAction: "sell-volatile", disarmed: "trim-1" };
+  const afterTrim = nextState(trimmed, derisk, 25, NOW);
+  assert.deepEqual(afterTrim, { lastActionAt: NOW, lastAction: "sell-volatile", disarmed: "trim-1" });
+  assert.match(gate(sell("trim-1"), afterTrim, "normal", NOW + 2 * HOUR).reason, /already proposed in trim-1/, "trim-1 still waits to re-arm");
+  const bought: WhipsawState = { lastActionAt: NOW - 2 * HOUR, lastAction: "buy-volatile", disarmed: "dca-1" };
+  const afterBuy = nextState(bought, derisk, -25, NOW);
+  assert.deepEqual(afterBuy, { lastActionAt: NOW, lastAction: "sell-volatile" });
+  assert.deepEqual(stateProblems(afterTrim), []);
+  assert.deepEqual(stateProblems(afterBuy), []);
+});
+
 test("a second action inside the cooldown holds; exactly at the cooldown it passes", () => {
   const state = { lastActionAt: NOW - HOUR + 1, lastAction: "buy-volatile" as const };
   assert.match(gate(buy("dca-2"), state, "normal", NOW).reason, /cooling down/);
