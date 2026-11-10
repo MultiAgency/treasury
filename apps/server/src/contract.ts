@@ -413,7 +413,8 @@ export const riskRead = z.strictObject({ risk: riskReport.nullable() });
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
  *   `too_large`, `rate_limited`, `platform_rate_limited` (the platform's limit on the deployment's calls: nothing was done), `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
- *   `consent_refused`, a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
+ *   `consent_refused`, `owner_stopped` (the owner's wallet stop came after the text's nonce: a new text, and a new
+ *   signature; a setup's too), a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `creation_refused`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,
  *   `not_connected`, `signature_invalid`, or the platform's `invalidated`, `withdrawn`, `policy_not_in_force`, a new proposal's `nothing_to_propose`, `too_many_proposals`, `not_proposable`, `request_conflict`, a read's `not_found`, a funding code: `dao_funding_fixed`, `funding_refused`, an autopilot code: `autopilot_refused`, `autopilot_not_stopped`, a strategy code: `strategy_refused`, or a grant code: `strategy_changed`, `autopilot_on`, `approve_only`, `grant_pending`, `owner_not_allowed`, `grant_refused`, `no_grant`);
  * - `unavailable` (503): the platform or the chain didn't answer, or the server is misconfigured. Trying again later

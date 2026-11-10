@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { consentMessage, parseConsentMessage } from "@multiagency/sdk";
 import type { Identity } from "./contract.ts";
 import type { ConsentRecord } from "./platform.ts";
@@ -40,11 +39,11 @@ export const consentFor = ({ identity, deployment, owner = false, now = Date.now
   });
 
 /**
- * The consent text for the owner's wallet to sign, with a fresh 32-byte nonce, and the recipient to sign it for: the
- * platform's host, never this server's.
+ * The consent text for the owner's wallet to sign, with the nonce the platform issued for it, and the recipient to sign
+ * it for: the platform's host, never this server's.
  */
-export function consentText(expected: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }) {
-  return { message: consentFor(expected), nonce: randomBytes(32).toString("base64"), recipient: expected.identity.host };
+export function consentText(expected: { identity: Identity & { agentId: string }; deployment: string; owner?: boolean; now?: number }, nonce: string) {
+  return { message: consentFor(expected), nonce, recipient: expected.identity.host };
 }
 
 /**

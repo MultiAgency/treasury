@@ -79,9 +79,13 @@ export type Platform = {
     reject(organization: string, agent: string, input: { id: string; signed: Signed }): Promise<ProposalAnswer>;
     execute(organization: string, agent: string, id: string): Promise<ProposalAnswer>;
   };
-  /** This deployment's consents: an Organization's, the owner's signed consent stored, or one revoked. */
+  /**
+   * This deployment's consents: an Organization's, the owner's signed consent stored, or one revoked; and the NEP-413
+   * nonce the owner signs each consent or setup text with.
+   */
   consents: {
     list(organization: string): ReturnType<App["consents"]["list"]>;
+    nonce(): ReturnType<App["consents"]["nonce"]>;
     submit(submission: Parameters<App["consents"]["submit"]>[0]): ReturnType<App["consents"]["submit"]>;
     revoke(id: string): ReturnType<App["consents"]["revoke"]>;
   };
@@ -262,6 +266,7 @@ export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs
   };
   const consents: Platform["consents"] = {
     list: async organization => (await client()).consents.list(organization),
+    nonce: async () => (await client()).consents.nonce(),
     submit: async submission => (await client()).consents.submit(submission),
     revoke: async id => (await client()).consents.revoke(id),
   };

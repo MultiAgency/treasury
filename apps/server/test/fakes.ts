@@ -13,6 +13,8 @@ export const ORIGIN = `https://${HOST}`;
  * `stale` gives an agent's previous owner, as a reused answer from before a transfer would: a read that isn't fresh
  * answers it as cached, and `recreated` gives an agent's earlier ID the same way. `unborn` names agents not created yet, and `daos` agents whose owner is a DAO (`signer: "dao"`). Consents are kept as the platform keeps them, under the
  * Organization the signed text names; `consentAnswers` queues answers that `consents.submit` gives before storing.
+ * Consent nonces are issued in order (`nonceAnswers` queues answers instead); `stop` is the owner's wallet stop, after
+ * which a consent or setup is stored only if its text's nonce was issued after the stop, as the platform does.
  */
 export function fakePlatform(owners: Record<string, string>, { failing = {}, foreign = [], stale = {}, unborn = [], recreated = {}, daos = [], daoNext = () => 0 }: {
   failing?: Record<string, IdentityAnswer>; foreign?: string[]; stale?: Record<string, string>; unborn?: string[]; recreated?: Record<string, string>; daos?: string[];
@@ -22,6 +24,14 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
   const calls: string[] = [];
   const consents: ConsentRecord[] = [];
   const consentAnswers: Awaited<ReturnType<Platform["consents"]["submit"]>>[] = [];
+  const nonceAnswers: Awaited<ReturnType<Platform["consents"]["nonce"]>>[] = [];
+  const issued: string[] = [];
+  const stops: Record<string, number> = {};
+  /** The owner's wallet stop: every nonce issued so far may have been signed before it. */
+  const stop = (owner: string) => { stops[owner] = issued.length; };
+  const signedBeforeStop = (owner: string, nonce: string) => owner in stops && !(issued.indexOf(nonce) >= stops[owner]!);
+  const ownerStopped = { ok: false as const, kind: "refused" as const, status: 409, code: "owner_stopped",
+    error: "The owner stopped this agent's app access, and this text may have been signed before that." };
   /**
    * DAO consent requests as the platform keeps them, each with a fresh hash, and whether the DAO's vote has passed
    * (`signed`), ended it (`ended`: 410 after its voting deadline, 409 after a stop) or not yet. `daoAnswers` queues answers
@@ -199,11 +209,22 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
         calls.push(`consents.list ${organization}`);
         return { ok: true, value: { consents: consents.filter(consent => consent.organization === organization) } };
       },
+      async nonce() {
+        calls.push("consents.nonce");
+        const queued = nonceAnswers.shift();
+        if (queued) return queued;
+        const bytes = Buffer.alloc(32);
+        bytes.writeUInt32BE(issued.length + 1);
+        const nonce = bytes.toString("base64");
+        issued.push(nonce);
+        return { ok: true, value: { nonce, issuedAt: Date.now() } };
+      },
       async submit(submission) {
         calls.push(`consents.submit ${submission.nonce}`);
         const queued = consentAnswers.shift();
         if (queued) return queued;
         const text = parseConsentMessage(submission.message)!;
+        if (signedBeforeStop(text.owner, submission.nonce)) return ownerStopped;
         const { type: _type, version: _version, expiresAt, ...rest } = text;
         const consent = { ...rest, id: `c${consents.length + 1}`.padEnd(64, "0"), expiresAt: Date.parse(expiresAt), createdAt: 0,
           publicKey: submission.publicKey, revoked: false, revokedAt: null };
@@ -288,6 +309,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
       const queued = setupAnswers.shift();
       if (queued) return queued;
       const text = parseSetupMessage(submission.message)!;
+      if (signedBeforeStop(text.owner, submission.nonce)) return ownerStopped;
       const found = reservations[text.owner];
       if (found && !unborn.includes(found)) return { ok: false, kind: "refused", status: 409, error: "This owner's agent for that area is already created." };
       return { ok: true, value: reserve(text.owner, text.organization, text.deployment, text.host, Date.parse(text.expiresAt), submission.publicKey) };
@@ -467,7 +489,7 @@ export function fakePlatform(owners: Record<string, string>, { failing = {}, for
     found.state = verdict === "approve" ? "approved" : "rejected";
     return { ok: true, value: shown(found) };
   }
-  return { platform, calls, consents, consentAnswers, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns, schedules, autopilotAnswers, grants, grantAnswers,
+  return { platform, calls, consents, consentAnswers, nonceAnswers, issued, stop, proposals, proposalAnswers, daoRequests, daoAnswers, daoVotes, voteAnswers, treasuries, deposits, fundingAnswers, sweepRuns, schedules, autopilotAnswers, grants, grantAnswers,
     reservations, setupAnswers, daoSetups, daoSetupAnswers, creations, creationAnswers, statusAnswers, create, reads, readAnswers };
 }
 

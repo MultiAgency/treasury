@@ -54,11 +54,12 @@ function SetUp({ account, again = false }: { account: string; again?: boolean })
   const [review, setReview] = useState<Review>();
   const [error, setError] = useState<string>();
 
-  const prepare = async () => {
+  /** Asks the server for the setup text; one asked for again (`notice` says why) keeps the dialog open until it arrives. */
+  const prepare = async (notice?: string) => {
     setError(undefined);
-    setReview({ phase: "reading" });
+    if (!notice) setReview({ phase: "reading" });
     const text = await api.setupText();
-    if (text.ok) return setReview({ phase: "review", text: text.value });
+    if (text.ok) return setReview({ phase: "review", text: text.value, notice });
     setReview(undefined);
     setError(failureText(text, "setup"));
   };
@@ -73,8 +74,10 @@ function SetUp({ account, again = false }: { account: string; again?: boolean })
       return setReview({ phase: "review", text, notice: `Your wallet signed as ${signed.accountId}, but you're signed in as ${account}. Nothing was sent. Sign with ${account}.` });
     }
     const done = await api.setup({ message: text.message, nonce: text.nonce, publicKey: signed.publicKey, signature: signed.signature });
-    setReview(undefined);
     if (done.ok) return location.assign(agentLink(done.value.agent));
+    // The owner's wallet stop came after the text's nonce: a new text, and a new signature.
+    if (done.kind === "refused" && done.code === "owner_stopped") return prepare(failureText(done, "setup"));
+    setReview(undefined);
     setError(failureText(done, "setup"));
     void client.invalidateQueries({ queryKey: setupReads.mine.queryKey });
   };
@@ -84,7 +87,7 @@ function SetUp({ account, again = false }: { account: string; again?: boolean })
     <Card>
       <div className="flex flex-col items-start gap-3">
         <p>{again ? "Setting it up again reserves this agent for another hour; you create it next, here." : "You have no Treasury here yet. Setting one up reserves a Treasury agent for your account; you create it next, on the platform's own page."}</p>
-        <Button disabled={review !== undefined} onClick={prepare}>{review?.phase === "reading" ? "Preparing…" : again ? "Set it up again" : "Set up a Treasury"}</Button>
+        <Button disabled={review !== undefined} onClick={() => prepare()}>{review?.phase === "reading" ? "Preparing…" : again ? "Set it up again" : "Set up a Treasury"}</Button>
         <ErrorBox error={error} />
       </div>
     </Card>
