@@ -40,7 +40,14 @@ export function strategyProblems(strategy: unknown, policyAssets: "any" | readon
     .map(([asset]) => `targetBps: ${asset} is outside the policy's assets`);
 }
 
-/** The same targets and cost limit: what a mandate proposal is compared by, since the rest stays as saved. */
+/** The floor's amount and counted assets; asset order carries no meaning. */
+type Floor = { usd: number; assets: readonly string[] };
+const sameAssets = (a: readonly string[], b: readonly string[]) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+const sameFloor = (a: Floor | undefined, b: Floor | undefined) =>
+  a?.usd === b?.usd && sameAssets(a?.assets ?? [], b?.assets ?? []);
+/** An asset's symbol as the owner reads it, from the registry; its ID when the registry doesn't know it. */
+const symbolOf = (id: string) => Object.values(ASSET_REGISTRY).find(entry => entry.id === id)?.symbol ?? id;
+/** The targets and cost limit the mandate chooses, apart from its cash floor. */
 const sameAim = (a: Pick<ProposedStrategy, "targetBps" | "maxCostBps">, b: Pick<ProposedStrategy, "targetBps" | "maxCostBps">) =>
   a.maxCostBps === b.maxCostBps && Object.keys({ ...a.targetBps, ...b.targetBps }).every(asset => (a.targetBps[asset] ?? 0) === (b.targetBps[asset] ?? 0));
 
@@ -108,11 +115,12 @@ export type MandateNote = { proposed: string } | { skipped: string; [detail: str
  * profile compiles to, when that differs from the saved one, none of its own is open, and the owner didn't decline that
  * same strategy (a declined one isn't proposed again until what the profile compiles to changes). Its weights map as
  * volatile → wNEAR, reserve and cash → USDC, every other asset 0; the cost limit is the profile's slippage limit, and the
- * other fields stay as saved. It reads the saved strategy only when it proposes; the targets come from `overview`.
+ * other fields stay as saved. The targets come from `overview`; the saved strategy is read when the last proposal's
+ * floor differs from the compiled one, to preserve any stronger saved floor before comparing them.
  */
 export async function proposeMandate({ agent, settings, overview, strategy, proposals }: {
   agent: string; settings: BallastSettings; overview: OwnerOutput<"overview">;
-  /** The saved strategy, read only when there is something to propose. */
+  /** The saved strategy, read when the overview and last proposal don't establish a match. */
   strategy: () => Promise<{ ok: true; value: OwnerOutput<"strategy/get"> } | { ok: false; kind: string }>;
   proposals: StrategyProposals;
 }): Promise<MandateNote> {
@@ -148,26 +156,54 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
     targetBps[PROPOSAL_ASSETS.USDC] = (weights.reservePct + weights.cashPct) * 100;
   }
   const aim = { targetBps, maxCostBps: limits.policy.maxSlippageBps };
+  // The mandate's cash floor (ADR 4) on the platform: its months of operating cash times the monthly spend, rounded up to
+  // the whole dollars the platform takes, counted in the stablecoins it manages for this book.
+  const stableIds = diversification
+    ? Object.keys(diversification.stableSplit).map(coin => ASSET_REGISTRY[coin]?.id).filter((id): id is string => typeof id === "string" && id in targetBps)
+    : [PROPOSAL_ASSETS.USDC];
+  const mandateFloor = stableIds.length > 0 ? { usd: Math.ceil(compiled.cashFloorUsd), assets: [...stableIds].sort() } : undefined;
   const saved = { targetBps: Object.fromEntries(Object.entries(overview.target).map(([asset, share]) => [asset, Math.round(share * 10_000)])), maxCostBps: overview.rebalance.maxCostBps };
   if (sameAim(aim, saved)) return { skipped: "matches the saved strategy" };
   const last = proposals.last(agent, "mandate");
-  if (last && sameAim(aim, last.strategy) && !last.closed) return { skipped: "open", id: last.id };
-  if (last && sameAim(aim, last.strategy) && last.closed?.outcome === "declined") return { skipped: "declined", id: last.id };
+  // An exact match needs no read. A different floor may be the owner's stronger saved one: read it before deciding,
+  // rather than treating a changed mandate as the one already open or declined.
+  const previousMatch = (floor: Floor | undefined): MandateNote | undefined => {
+    if (!last || !sameAim(aim, last.strategy) || !sameFloor(floor, last.strategy.cashFloor)) return undefined;
+    if (!last.closed) return { skipped: "open", id: last.id };
+    if (last.closed.outcome === "declined") return { skipped: "declined", id: last.id };
+    return undefined;
+  };
+  const matching = previousMatch(mandateFloor);
+  if (matching) return matching;
 
   const read = await strategy();
   if (!read.ok) return { skipped: "strategy unread", kind: read.kind };
   const { strategy: now, digest } = read.value;
-  if (sameAim(aim, now)) return { skipped: "matches the saved strategy" };
+  // Amounts are comparable only over the same assets. Narrowing the set also changes which swaps count as recovery
+  // under the floor, so different sets need separate constraints, which the platform's single floor can't hold.
+  const savedFloor = now.cashFloor ? { usd: now.cashFloor.usd, assets: now.cashFloor.assets } : undefined;
+  let floor = savedFloor ?? mandateFloor;
+  if (savedFloor && mandateFloor) {
+    if (!sameAssets(savedFloor.assets, mandateFloor.assets)) {
+      if (last && !last.closed) await proposals.close(agent, last.id, "superseded");
+      return { skipped: "cash floor assets conflict" };
+    }
+    floor = { usd: Math.max(savedFloor.usd, mandateFloor.usd), assets: mandateFloor.assets };
+  }
+  if (sameAim(aim, now) && sameFloor(floor, savedFloor)) return { skipped: "matches the saved strategy" };
+  const unchanged = previousMatch(floor);
+  if (unchanged) return unchanged;
   const answers = `monthly spend ${settings.monthlySpendUsd} USD, ${settings.operatingCashMonths} months of operating cash, approvers ${settings.approvers.join(", ")}, destinations ${settings.destinations.join(", ")}`;
   const proposed = await proposals.propose({
     agent, from: "mandate", against: digest, policyAssets: policy.assets,
     strategy: { ...aim, minLegUsd: now.minLegUsd, autopilot: { everyMin: now.autopilot.everyMin, maxUsd: now.autopilot.maxUsd },
-      ...(now.cashFloor && { cashFloor: { usd: now.cashFloor.usd, assets: now.cashFloor.assets } }) },
+      ...(floor && { cashFloor: floor }) },
     reasons: (`Ballast's ${settings.profile} profile: ${weights.volatilePct}% volatile${diversification
         ? ` across ${diversification.sleeves.map(s => `${s.asset} ${s.targetPct}%`).join(", ")}`
         : " in wNEAR"}, and ${weights.reservePct}% reserve and ${weights.cashPct}% operating cash${diversification
         ? ` across ${Object.entries(diversification.stableSplit).map(([coin, share]) => `${coin} ${share}%`).join(", ")}`
-        : " in USDC"}; every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%. The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
+        : " in USDC"}; every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%.${floor
+        ? ` The cash floor is ${floor.usd} USD in ${floor.assets.map(symbolOf).join(", ")}; adopting a changed floor asks for the grant again.` : ""} The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
   });
   if (proposed.ok) return { proposed: proposed.id };
   return "full" in proposed ? { skipped: "proposals full" } : { skipped: "invalid", problems: proposed.problems };

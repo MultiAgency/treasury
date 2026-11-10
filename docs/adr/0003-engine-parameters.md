@@ -49,7 +49,7 @@ Each rule is enforced in one or more places. The platform's signed policy always
 | ≤ 10 orders an hour | `ORDER_RATE` | `max_actions_per_hour: 10` | — |
 | Slippage ≤ 50 bps | `SLIPPAGE`, quote against the oracle median | The proposal's `minAmountOut` (`legsFor`), enforced at execution | — |
 | Venue exposure | `VENUE_EXPOSURE` (see below) | — | — |
-| Six-month cash floor | `CASH_FLOOR` | The strategy's `cashFloor` (SDK 0.5.3), which this app doesn't set yet (ADR 4) | — |
+| Six-month cash floor | `CASH_FLOOR` | The strategy's `cashFloor` (SDK 0.5.3), set from the mandate by Ballast's strategy proposals once the owner adopts one (ADR 4) | — |
 | Assets and actions | Mandate `assets` | `assets: [wNEAR, USDC]`, `actions: ["swap"]` for trading (payroll adds `transfer`) | — |
 | Destinations | Mandate `destinations` | `destinations.mode: "only"` with the mandate's list | — |
 | Levels L1–L3 | `LEVEL` | — | L2 and L3 trades are proposals the owner approves |
