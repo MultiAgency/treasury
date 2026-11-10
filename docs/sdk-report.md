@@ -63,9 +63,9 @@ Owner UIs move to `/apps/v1` (platform#14). The procedures below need an app-rou
 
 | Gap | Why the app needs it | Issue |
 |---|---|---|
-| Approving a held withdrawal to a NEAR account | Still reject-only at `c671872`: "approving a held withdrawal isn't available yet: its approval can't be verified" (the platform's `src/payment-approval.ts`). A candidate for #62's contracts | #62 |
+| Approving a held withdrawal to a NEAR account | Shipped in SDK 0.5.5: an `approval_vote` on a held withdrawal to a NEAR account is verified like a transfer's (the provider's request hash recomputed with `flow` `withdraw` and chain `near`), and refused unless its destination asset is the token withdrawn, or if it names fields outside those observed on mainnet (the platform's `src/payment-approval.ts`). Offline- and stack-tested there, not mainnet-observed. A payout feature: a Treasury agent makes no payouts | #62, platform#42 |
 | Emergency-stop requirements | Settled by ADR 3: the freeze meets A14. A wallet owner freezes from the app (#133); a DAO's freeze vote must pass within the intent's minutes | #95, platform#20 |
-| Venue exposure and cash floor in the signed policy | Venue exposure is enforced app-side only; the platform would allow a trade it refuses. The cash floor is the platform's since SDK 0.5.3, in the strategy (`cashFloor`), and this app doesn't set it yet | #49, #62, platform#23 |
+| Venue exposure and cash floor in the signed policy | Venue exposure is enforced app-side only; the platform would allow a trade it refuses. The cash floor is the platform's since SDK 0.5.3, in the strategy (`cashFloor`), and this app sets it through Ballast's mandate proposals. `overview` doesn't report it, so a proposer comparing against the overview can't see whether it's saved without another read: `overview` should carry `cashFloor` beside `target` | #49, #62, platform#23 |
 | Treasury setup on production and the simulated stack | Creation runs through the app server (#117), but at `c671872` only staging offers the `treasury` area; production and the stack offer payables only | #12 |
 | Staging access and production readiness | Staging is granted (#95): its host, the `multiagency-treasury` deployment and its network. Production readiness is still to confirm; SDK support does not establish access | #95 |
 | Budget visibility, `Retry-After`, and typed 429 | A shared deployment limit already exists (1,200 calls/hour); explicit budget and backoff signals are missing | platform#15 |
@@ -116,7 +116,7 @@ The plan proposes new procedures for four needs, as #62 quotes it; the task card
 | Emergency-stop orchestration | `autopilot/stop` at once, with no signature. Freeze through `owner/prepare`, effective once the owner's wallet signs on the confirm page, or the DAO's vote passes, before the intent expires. The DAO stop page, done by the DAO's vote, ends every app's consent and turns autopilot off | Partly | **Wallet owner:** after `autopilot/stop`, swaps still go out through Run now, autopilot turned on again, another app's `executePlan`, and approved proposals; freeze stops every send, once signed within minutes (#133). **DAO:** the stop ends those app paths but doesn't freeze or revoke the grant, and a freeze needs the DAO's vote within the same minutes, impractical for most DAOs (platform#20). Details in #95; section 4, item 7 |
 | Ledger export | `ledger`, `ledgerCsv`, `reconcileBooks`, `activity` and `paymentHistory`, app-route reads under `read` | Have | Nothing new |
 
-[ADR 4](adr/0004-platform-extensions.md) settles these: no new procedures or contracts, and one refinement to the cash floor already planned on MultiAgency/platform#23. The payout gaps (a hold above an amount, a DAO's vote on a held payout, approving a held withdrawal) are real for payout agents, not for a Treasury agent, which makes no payouts.
+[ADR 4](adr/0004-platform-extensions.md) settles these: no new procedures or contracts, and one refinement to the cash floor already planned on MultiAgency/platform#23. The two remaining payout gaps are a hold only above an amount and a DAO's vote on a held payout through an app. Approval of a held withdrawal to a NEAR account shipped in SDK 0.5.5 (platform#42), offline- and stack-tested on the platform, not mainnet-observed (3.2). These concern payout agents; a Treasury agent makes no payouts.
 
 ## 4. Improvements to the SDK going forward
 
@@ -124,16 +124,17 @@ Ordered by how much they would remove from this app.
 
 1. **Typed refusals everywhere.** Return every gateway 4xx as a refused result with a stable code (bad signature, expired, rate limited with `Retry-After`) instead of `unknown`. That removes this app's local NEP-413 check and its status-code guessing (2.4, 2.5).
 2. **One owner surface.** Publish the app-route procedures in 3.1, or state which ones won't come, so owner UIs can move to `/apps/v1` without losing pages.
-3. **Policy fields for app-side limits.** Venue exposure caps and a cash floor in the signed owner policy. The platform would then refuse what Ballast refuses, and the app-side checks become a second line instead of the only one.
+3. **Policy fields for app-side limits.** Venue exposure caps in the signed owner policy (the cash floor shipped in the strategy, SDK 0.5.3, and `overview` should report it: 3.2). The platform would then refuse what Ballast refuses, and the app-side checks become a second line instead of the only one.
 4. **A budget-aware client.** Expose the deployment's remaining call budget, or a client-side limiter that shares it across processes, instead of each app estimating it.
 5. **Reads the engines need.** Venue-level holdings, quoted slippage, rolling 24 h turnover and orders in the last hour as typed reads. These would feed the policy engine without app-side counters.
 6. **Proposal legs from intents.** A helper that turns a sized intent (asset, side, USD size) into proposal legs in raw units with the token's decimals. This would make A10.1 a thin mapping.
 7. **Emergency stop.** A freeze that takes effect at once and is confirmed afterwards, with its own audit event.
-8. **Discovery flags in the schema.** Move `selfServiceTreasury` and similar flags into `gatewayDiscovery`'s typed answer.
-9. **Organization ids that accept NEAR accounts.** Allow dots, or ship the mapping, so every app maps owners the same way.
-10. **Idempotent, listable DAO requests.** A request id on `daoConsents.file` and `daoVotes.file`, a list by organization, agent and proposal, and a state read that doesn't relay (3.4).
-11. **Run ids for `autopilot/tick`.** Accept a request id and return the run it started, so a lost answer can be followed instead of guessed (3.5).
-12. **Test fixtures.** Publish the simulated stack's controls (fund, drop a response, sign as owner) as a supported package, with a documented way to let a developer's own wallet key own a local agent. Today that needs a local patch to the platform's test provider.
+8. **One owner action of a kind at a time, on the platform.** `prepare` refuses a second agent creation while one is open (`src/owner-intents.ts`), but prepares a second freeze, unfreeze, grant, revocation or policy edit while the first is still submitted or waiting for a DAO's vote, so a DAO can be filed the same action twice. Treasury's server holds that today (`apps/server/src/owner-action.ts`: a submitted action, or a DAO's request whose vote is open, holds another of its kind, and a freeze and an unfreeze hold each other; a wallet's unsigned intent holds nothing). On the platform, every app would get it, and Treasury's check becomes the second line.
+9. **Discovery flags in the schema.** Move `selfServiceTreasury` and similar flags into `gatewayDiscovery`'s typed answer.
+10. **Organization ids that accept NEAR accounts.** Allow dots, or ship the mapping, so every app maps owners the same way.
+11. **Idempotent, listable DAO requests.** A request id on `daoConsents.file` and `daoVotes.file`, a list by organization, agent and proposal, and a state read that doesn't relay (3.4).
+12. **Run ids for `autopilot/tick`.** Accept a request id and return the run it started, so a lost answer can be followed instead of guessed (3.5).
+13. **Test fixtures.** Publish the simulated stack's controls (fund, drop a response, sign as owner) as a supported package, with a documented way to let a developer's own wallet key own a local agent. Today that needs a local patch to the platform's test provider.
 
 ## 5. Delivery boundaries
 

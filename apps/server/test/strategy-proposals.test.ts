@@ -98,6 +98,103 @@ test("the mandate proposer proposes what the profile compiles to, with the other
   assert.equal(reads.count, 1);
 });
 
+test("a mandate proposal carries the mandate's cash floor (ADR 4), rounded up to whole dollars, and never lowers a higher saved one", async () => {
+  const differing = overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 });
+  const base = { ...strategy, targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 } };
+  const floorOf = async (saved: object, settings = SETTINGS) => {
+    const { proposals } = store();
+    const note = await proposeMandate({ agent: "portfolio", settings, overview: differing, strategy: savedRead(saved), proposals });
+    assert.ok("proposed" in note, JSON.stringify(note));
+    const [open] = proposals.open("portfolio");
+    return { floor: open!.strategy.cashFloor, reasons: open!.reasons };
+  };
+  // None saved: the mandate's, 6 months of 2,000 USD, counted in USDC.
+  const set = await floorOf(base);
+  assert.deepEqual(set.floor, { usd: 12_000, assets: [USDC] });
+  assert.match(set.reasons, /The cash floor is 12000 USD in USDC/);
+  // A lower saved floor is raised to the mandate's; a higher one is kept as the owner set it.
+  assert.deepEqual((await floorOf({ ...base, cashFloor: { usd: 5_000, assets: [USDC] } })).floor, { usd: 12_000, assets: [USDC] });
+  assert.deepEqual((await floorOf({ ...base, cashFloor: { usd: 20_000, assets: [USDC] } })).floor, { usd: 20_000, assets: [USDC] });
+  // Cents round up, so the floor is never under the mandate's: 6 months of 2,000.25 USD is 12,001.50, proposed as 12,002.
+  assert.deepEqual((await floorOf(base, { ...SETTINGS, monthlySpendUsd: 2_000.25 })).floor, { usd: 12_002, assets: [USDC] });
+});
+
+test("different cash floor asset scopes require an explicit choice rather than replacing the owner's constraint", async () => {
+  const differing = overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 });
+  const base = { ...strategy, targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 } };
+  // Platform recovery permits a swap that increases counted cash even while below the floor. Narrowing a broad
+  // USDC/wNEAR floor to USDC would newly permit wNEAR -> USDC when its fee lowers the original counted total, so an
+  // intersection is not a substitute for both original constraints. Disjoint scopes cannot be combined either.
+  for (const assets of [[USDC, WNEAR], [WNEAR, USDC], [WNEAR]]) {
+    const { proposals, audited } = store();
+    const saved = { ...base, cashFloor: { usd: 20_000, assets } };
+    const note = await proposeMandate({ agent: "portfolio", settings: SETTINGS, overview: differing, strategy: savedRead(saved), proposals });
+    assert.deepEqual(note, { skipped: "cash floor assets conflict" }, JSON.stringify(assets));
+    assert.deepEqual([proposals.open("portfolio"), audited], [[], []], "a conflicting floor is never proposed or recorded");
+    assert.deepEqual(saved.cashFloor, { usd: 20_000, assets }, "the owner's saved constraint stays unchanged");
+  }
+});
+
+test("a changed operating cash requirement replaces an open proposal and reconsiders a declined one with the same targets", async () => {
+  const differing = overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 });
+  const saved = { ...strategy, targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 } };
+  for (const [initialSpend, nextSpend] of [[2_000, 3_000], [3_000, 2_000]] as const) for (const declined of [false, true]) {
+    const { proposals, clock } = store();
+    const run = (settings: BallastSettings) => proposeMandate({ agent: "portfolio", settings, overview: differing, strategy: savedRead(saved), proposals });
+    const first = await run({ ...SETTINGS, monthlySpendUsd: initialSpend });
+    assert.ok("proposed" in first, JSON.stringify(first));
+    const [original] = proposals.open("portfolio");
+    assert.deepEqual(original!.strategy.cashFloor, { usd: initialSpend * 6, assets: [USDC] });
+    if (declined) await proposals.close("portfolio", original!.id, "declined");
+    clock.now += 1;
+
+    const changed = await run({ ...SETTINGS, monthlySpendUsd: nextSpend });
+    assert.ok("proposed" in changed, `${declined ? "declined" : "open"}, spend ${initialSpend} to ${nextSpend}: ${JSON.stringify(changed)}`);
+    const [replacement] = proposals.open("portfolio");
+    assert.equal(proposals.open("portfolio").length, 1);
+    assert.notEqual(replacement!.id, original!.id);
+    assert.deepEqual(replacement!.strategy.cashFloor, { usd: nextSpend * 6, assets: [USDC] });
+    assert.deepEqual(replacement!.strategy.targetBps, original!.strategy.targetBps, "the allocation did not change");
+    assert.equal(replacement!.strategy.maxCostBps, original!.strategy.maxCostBps, "the cost limit did not change");
+    assert.equal(proposals.find("portfolio", original!.id), undefined, "the old proposal cannot be adopted");
+    assert.ok(replacement!.reasons.includes(`monthly spend ${nextSpend} USD`));
+  }
+});
+
+test("a higher saved floor is read before keeping the same effective proposal open or declined", async () => {
+  const { proposals } = store();
+  const differing = overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 });
+  const saved = { ...strategy, targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 }, cashFloor: { usd: 20_000, assets: [USDC] } };
+  const run = (settings = SETTINGS) => proposeMandate({ agent: "portfolio", settings, overview: differing, strategy: savedRead(saved), proposals });
+  const first = await run();
+  assert.ok("proposed" in first, JSON.stringify(first));
+  const [original] = proposals.open("portfolio");
+  assert.deepEqual(original!.strategy.cashFloor, { usd: 20_000, assets: [USDC] });
+  reads.count = 0;
+  assert.deepEqual(await run(), { skipped: "open", id: original!.id });
+  assert.deepEqual(proposals.open("portfolio").map(p => p.id), [original!.id]);
+  await proposals.close("portfolio", original!.id, "declined");
+  assert.deepEqual(await run({ ...SETTINGS, monthlySpendUsd: 3_000 }), { skipped: "declined", id: original!.id });
+  assert.equal(reads.count, 2, "both decisions compare against the saved floor rather than only the mandate's lower amount");
+  assert.deepEqual(proposals.open("portfolio"), [], "a changed mandate whose effective floor is unchanged does not reopen the proposal");
+});
+
+test("conflicting saved cash assets close an older open proposal instead of leaving its unsafe floor adoptable", async () => {
+  for (const assets of [[WNEAR], [USDC, WNEAR]]) {
+    const { proposals } = store();
+    const older = await proposals.propose({ agent: "portfolio", from: "mandate", strategy: { ...strategy, cashFloor: { usd: 20_000, assets } },
+      reasons: "An earlier mandate proposal", against: DIGEST, policyAssets: "any" });
+    assert.ok(older.ok);
+    const saved = { ...strategy, targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 }, cashFloor: { usd: 20_000, assets } };
+    const note = await proposeMandate({ agent: "portfolio", settings: SETTINGS, overview: overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 }),
+      strategy: savedRead(saved), proposals });
+    assert.deepEqual(note, { skipped: "cash floor assets conflict" });
+    assert.deepEqual(proposals.open("portfolio"), []);
+    assert.equal(proposals.find("portfolio", older.id), undefined);
+    assert.equal(proposals.last("portfolio", "mandate")!.closed!.outcome, "superseded");
+  }
+});
+
 test("the mandate proposer proposes nothing, and reads no strategy, when the saved one matches, its own is open, or the owner declined that strategy", async () => {
   const { proposals } = store();
   reads.count = 0;
