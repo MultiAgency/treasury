@@ -99,6 +99,91 @@ Read-only, from outside:
   addresses getting through would mean too many hops: a client naming its own address gets round the limit. Checked on
   2026-11-05 with `1`: varied, repeated and absent spoofed addresses all drew on one budget, the caller's.
 
+### Audit anchor monitor
+
+`anchor-check.yml` is configured for minute 17 of every hour, UTC. GitHub can
+[delay or drop scheduled runs](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows#scheduled-workflows-running-at-unexpected-times).
+Failed-run alerts cover runs that execute. The optional external heartbeat below detects missing successful checks
+only after its check, GitHub secret and alert routing are configured and verified. Inspect the recent runs, including
+their event, commit and all statuses:
+
+```sh
+gh run list --repo MultiAgency/treasury --workflow anchor-check.yml --all --branch main --limit 10 \
+  --json databaseId,event,headSha,createdAt,status,conclusion,url
+```
+
+For a fresh check, dispatch the workflow on `main`. Its script only reads FastData KV and NEAR; it creates no anchor
+and moves no funds:
+
+```sh
+gh workflow run anchor-check.yml --repo MultiAgency/treasury --ref main
+```
+
+Use the returned run URL, or repeat the list above and identify the new `workflow_dispatch` run by its creation time
+and intended `main` commit. Replace `RUN_ID` below with that run's numeric ID. Follow that exact run to completion and
+require `status: completed` and `conclusion: success`; check its `headSha` and the "The key's history, confirmed on chain"
+step for the checked network, account, key and newest anchor. A dispatch command succeeding alone proves no check result.
+
+```sh
+gh run watch RUN_ID --repo MultiAgency/treasury --exit-status
+gh run view RUN_ID --repo MultiAgency/treasury --json headSha,event,status,conclusion,url
+```
+
+A successful manual check verifies anchor health at that time. Scheduled delivery has recovered only when later runs
+with `event: schedule` arrive. Both manual and scheduled successes renew the optional external heartbeat.
+
+Verified on 2026-11-10: at 16:20 UTC, the newest scheduled run had
+[passed at 09:53 UTC](https://github.com/MultiAgency/treasury/actions/runs/42794403878), with no newer run visible while
+the workflow remained active. A [manual check](https://github.com/MultiAgency/treasury/actions/runs/42854361504) of
+`main` at `2b3bc0d` passed at 16:25:46 UTC. This confirmed anchor health without establishing restored hourly delivery.
+
+Rechecked on 2026-11-11: scheduled successes had resumed, including
+[15:14 UTC](https://github.com/MultiAgency/treasury/actions/runs/43046398925), but the preceding runs began at 06:26 UTC
+that day and 23:24 UTC the previous day. Those seven- and nine-hour gaps still do not establish hourly delivery.
+
+**Activate the external heartbeat:**
+
+First land this workflow and helper on the repository's default branch, `main`. Confirm repository Actions are enabled
+and `anchor-check.yml` is active. Review the repository variables `ANCHOR_NETWORK`, `ANCHOR_ACCOUNT`, `ANCHOR_KEY`,
+`ANCHOR_INTERVAL_S` and `ANCHOR_SINCE` against the intended deployment; the existing optional `FASTNEAR_API_KEY` secret
+belongs only to the anchor-check step. The heartbeat uses no new application or signing credential.
+
+1. In your own Healthchecks.io account, create one check named `Treasury audit anchor check`. Use a Simple schedule
+   with **Period 1 hour** and **Grace Time 2 hours**: an alert is due after three hours without a successful ping.
+   Keep it unpaused, allow only POST and leave request-body content filtering off. These are
+   [Healthchecks' check settings](https://healthchecks.io/docs/configuring_checks/).
+2. Route its alerts to the operator's chosen email and verify receipt of Healthchecks' test notification. Store only
+   its single-check `https://hc-ping.com/<uuid>` URL as the repository Actions secret `ANCHOR_CHECK_PING_URL`, following
+   [Healthchecks' GitHub Actions guidance](https://healthchecks.io/docs/github_actions/). The URL is a bearer credential:
+   never put it in chat, a commit, a Railway variable, or a command argument. In your own terminal, the following reads
+   it silently and passes it to `gh` on stdin; paste the URL at the hidden input and press Enter:
+
+   ```sh
+   read -r -s anchor_check_ping_url
+   printf '%s' "$anchor_check_ping_url" | gh secret set ANCHOR_CHECK_PING_URL --repo MultiAgency/treasury
+   unset anchor_check_ping_url
+   ```
+
+3. Dispatch and verify the exact `main` run as above. After the anchor check succeeds, its last step sends a bodyless
+   HTTPS POST with no redirects, at most three attempts of ten seconds each. It accepts only HTTP 200 with the exact
+   `OK` body, rejecting the [ping API's](https://healthchecks.io/docs/http_api/) unknown-check and rate-limited replies.
+   Even exact `OK` does not prove renewal when content filtering or sticky pausing ignores a ping. A missing secret
+   emits an explicit notice and sends nothing. A ping failure fails the workflow without logging the URL or response.
+   Confirm a matching success event and an unpaused, healthy check in Healthchecks.
+4. Verify a missing-heartbeat alert and recovery in a controlled test before treating alerting as active. After a
+   confirmed success, withhold pings for more than three hours **without pausing the Healthchecks check**; verify the
+   operator receives the down notification, then resume a successful check and verify recovery. A separate temporary
+   check with shorter period and grace can exercise notification routing first. Any successful manual dispatch also
+   resets the real check's three-hour window. Restore workflow delivery and confirm later `schedule` runs arrive.
+
+Healthchecks account/check creation, GitHub configuration and notification verification are operator steps; this
+repository does not provision them.
+
+The heartbeat needs no Treasury or Platform credential. An alert means no successful check was confirmed within the
+three-hour window: inspect workflow delivery, the anchor-check step and heartbeat delivery to locate the failure.
+The anchor script's freshness allowance stays a day, two anchor intervals and ten minutes; the heartbeat does not
+change that allowance or make GitHub deliver its schedule on time. See the [credential threat model](app-server.md#audit-monitor-credential).
+
 ## Rollback
 
 Redeploy the previous deployment (`railway deployment list`, then redeploy it in the dashboard). State stays on the

@@ -40,6 +40,6 @@ pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-ki
 pnpm backtest:diversified                    # rewrites docs/diversified-backtest.md from the seeded synthetic history
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `2e7b1e6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `2e7b1e6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` is configured to check the audit log's anchors on chain hourly, with best-effort GitHub scheduling. Failed-run alerts don't detect missing runs; an optional external heartbeat covers that gap once activated. See [the operator checks](docs/deploy.md#audit-anchor-monitor).
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
