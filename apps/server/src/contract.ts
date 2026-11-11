@@ -344,7 +344,6 @@ export const strategyProposalRequest = z.strictObject({ strategy: strategyInput,
 export const strategyProposed = z.strictObject({ id: strategyProposal.shape.id });
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
-/** The NEP-413 intent a wallet owner signs in their wallet, exactly as the platform prepared it. */
 /**
  * A grant prepared for the owner: for a wallet owner, the intent their wallet signs here (or, for one the platform
  * holds, its confirm page); for a DAO, the transaction a member files for the DAO's vote. It expires at `expiresAt`.
