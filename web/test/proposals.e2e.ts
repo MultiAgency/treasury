@@ -26,6 +26,7 @@ import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
 import { signOnConfirmPage } from "./confirm-page.ts";
+import type { Creation } from "../src/proposals/proposals-api.ts";
 import { ETH, fundPublic, setTargets, signOwner, signOwnerDelegate, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
@@ -149,6 +150,55 @@ async function ensureConnected() {
     await connection.getByRole("button", { name: "Connect", exact: true }).click();
     await dialog("Connect this agent to the Treasury app?").getByRole("button", { name: "Sign and connect" }).click();
     await visible(connection.getByRole("status").filter({ hasText: /^Connected: / }));
+  }
+}
+
+/** Creation responses are intercepted before reaching the platform: these recovery cases leave no real operation unresolved. */
+async function withCreationRoutes(check: (fixture: {
+  creation: Creation; calls: { prepare: number; review: number; submit: number }; state: {
+    record: boolean; phase: "open" | "submitted" | "settled"; abortSubmit: boolean; pastExpiry: boolean; created: boolean;
+    actionsRefusal?: string; reviewRefusal?: string; prepareRefusal?: string; fresh?: Creation; beforeReview?: () => Promise<void>;
+  }; messages: () => Promise<string[]>; reload: () => Promise<void>;
+}) => Promise<void>) {
+  const base = `${origin}/api/agents/${target.agent}`, id = "mock-creation";
+  const creation: Creation = { correlationId: id, expiresAt: new Date(Date.now() + 600_000).toISOString(),
+    intent: { standard: "nep413", payload: { message: "Create the reviewed Treasury agent with its owner and policy.", recipient: "provider.test", nonce: Buffer.alloc(32, 2).toString("base64") } },
+    review: { agent: target.agent, owner, host: new URL(stack.state().dashboard).host, publicKey: stack.state().testPublicKey } };
+  const calls = { prepare: 0, review: 0, submit: 0 };
+  const state: Parameters<typeof check>[0]["state"] = { record: false, phase: "open", abortSubmit: false, pastExpiry: false, created: false };
+  const routes: [string, (route: Route) => Promise<void>][] = [
+    [base, route => route.fulfill({ json: { ok: true, value: { agent: target.agent, owner, agentId: state.created ? stack.state().treasury.agentId : null, host: creation.review!.host, signer: "wallet", account: owner,
+      access: { canSign: true, canPropose: false, canVote: false, canExecute: true, canManage: true } } } })],
+    [`${base}/owner/actions`, route => route.fulfill(state.actionsRefusal ? { status: 409, json: { ok: false, kind: "refused", code: state.actionsRefusal } }
+      : { json: { ok: true, value: state.record ? [{ correlationId: id, type: "agent_create", signer: "wallet", stage: state.phase === "open" ? "prepared" : "submitted", phase: state.phase,
+        expiresAt: state.pastExpiry ? new Date(Date.now() - 60_000).toISOString() : creation.expiresAt, ownerSucceeded: false, status: null, failureCode: null, payment: null }] : [] } })],
+    [`${base}/creation`, async route => { calls.prepare++; state.record = true; await route.fulfill(state.prepareRefusal
+      ? { status: 409, json: { ok: false, kind: "refused", code: state.prepareRefusal } } : { json: { ok: true, value: creation } }); }],
+    [`${base}/creation/${id}/review`, async route => { calls.review++; await state.beforeReview?.(); await route.fulfill(state.reviewRefusal
+      ? { status: 409, json: { ok: false, kind: "refused", code: state.reviewRefusal } } : { json: { ok: true, value: state.fresh ?? creation } }); }],
+    [`${base}/creation/${id}`, async route => { if (state.phase === "settled") state.created = true;
+      await route.fulfill({ json: { ok: true, value: { stage: state.phase === "open" ? "unknown" : state.phase === "settled" ? "submitted" : "submitting", phase: state.phase,
+        ...(state.phase === "settled" && { status: "SUCCESS" }) } } }); }],
+    [`${base}/owner/actions/${id}/submit`, async route => { calls.submit++; state.phase = "submitted"; if (state.abortSubmit) await route.abort("failed");
+      else await route.fulfill({ json: { ok: true, value: { status: "PENDING", failureCode: null } } }); }],
+  ];
+  const trackSigning = () => page.evaluate(() => {
+    const host = window as unknown as { __localSign: (payload: { message: string }) => Promise<unknown>; __creationMessages: string[] };
+    const sign = host.__localSign;
+    host.__creationMessages = [];
+    host.__localSign = payload => { host.__creationMessages.push(payload.message); return sign(payload); };
+  });
+  for (const [path, handler] of routes) await page.route(path, handler);
+  try {
+    await page.goto(here());
+    await signInIfAsked(page.getByRole("region", { name: "Create the agent", exact: true }));
+    await trackSigning();
+    await check({ creation, calls, state, messages: () => page.evaluate(() => (window as unknown as { __creationMessages?: string[] }).__creationMessages ?? []),
+      reload: async () => { await page.reload(); await trackSigning(); } });
+  } finally {
+    await page.goto(`${origin}/`);
+    await page.waitForLoadState("networkidle");
+    for (const [path, handler] of routes) await page.unroute(path, handler);
   }
 }
 
@@ -1383,4 +1433,181 @@ test("the owner issues a token for software acting for them: it reads and propos
   const refused = await call("GET", "overview");
   assert.deepEqual([refused.status, await refused.json()], [401, { ok: false, kind: "refused", code: "invalid_token" }]);
   assert.deepEqual(unexpected, []);
+});
+
+test("hosted creation: the exact intent is reviewed, reread before signing, and wallet refusal resumes without another preparation", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ creation, calls, messages }) => {
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    await visible(review);
+    assert.equal(await review.getByLabel("Text to sign", { exact: true }).innerText(), creation.intent!.payload.message);
+    assert.deepEqual(await messages(), [], "preparing never opens the wallet signature prompt");
+    assert.deepEqual(await axe(), [], "the readable creation review is accessible");
+    await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(review.getByRole("alert").filter({ hasText: "The wallet didn't sign" }));
+    assert.deepEqual([calls.prepare, calls.review, calls.submit], [1, 1, 0]);
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(page.getByRole("status").filter({ hasText: "Signed; the platform is submitting it." }));
+    assert.deepEqual([calls.prepare, calls.review, calls.submit], [1, 2, 1]);
+    assert.deepEqual(await messages(), [creation.intent!.payload.message]);
+  });
+});
+
+test("hosted creation: changed review bytes are shown again before any wallet signature", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ creation, calls, state, messages }) => {
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    await visible(review);
+    state.fresh = { ...creation, intent: { ...creation.intent!, payload: { ...creation.intent!.payload, message: "Updated creation terms to review." } } };
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(review.getByRole("alert").filter({ hasText: "The creation changed" }));
+    assert.equal(await review.getByLabel("Text to sign", { exact: true }).innerText(), state.fresh.intent!.payload.message);
+    assert.deepEqual(await messages(), []);
+    assert.equal(calls.submit, 0);
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(page.getByRole("status").filter({ hasText: "Signed; the platform is submitting it." }));
+    assert.deepEqual(await messages(), [state.fresh.intent!.payload.message]);
+  });
+});
+
+test("hosted creation: canceling and reopening resumes the unsigned review", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ creation, calls, messages }) => {
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    await visible(review);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    await visible(review);
+    assert.equal(await review.getByLabel("Text to sign", { exact: true }).innerText(), creation.intent!.payload.message);
+    assert.equal(calls.submit, 0);
+    assert.deepEqual(await messages(), []);
+  });
+});
+
+test("hosted creation: navigating to a cached agent during the final review read cannot sign the departed agent", { timeout: 60_000 }, async () => {
+  const second = "cached-creation", base = `${origin}/api/agents/${second}`;
+  const identity = async (route: Route) => route.fulfill({ json: { ok: true, value: { agent: second, owner, account: owner, agentId: null,
+    host: new URL(stack.state().dashboard).host, signer: "wallet", access: { canSign: true, canPropose: false, canVote: false, canExecute: true, canManage: true } } } });
+  const actions = async (route: Route) => route.fulfill({ json: { ok: true, value: [] } });
+  await page.route(base, identity);
+  await page.route(`${base}/owner/actions`, actions);
+  const navigate = async (agent: string) => {
+    // A browser-history navigation preserves React and the query cache. A full document load would miss scope reuse.
+    await page.evaluate(path => { history.pushState({}, "", path); dispatchEvent(new PopStateEvent("popstate", { state: history.state })); }, `/agents/${agent}/`);
+    await visible(page.getByRole("main").getByText(agent, { exact: true }));
+    await visible(page.getByRole("region", { name: "Create the agent", exact: true }));
+  };
+  try {
+    await withCreationRoutes(async ({ calls, state, messages }) => {
+      await navigate(second);
+      await navigate(target.agent);
+      await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+      let release!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      state.beforeReview = () => gate;
+      try {
+        const requested = page.waitForRequest(request => request.url().endsWith("/creation/mock-creation/review"));
+        await dialog("Create this Treasury agent?").getByRole("button", { name: "Sign and create" }).click();
+        await requested;
+        await navigate(second);
+        release();
+        await page.waitForLoadState("networkidle");
+        assert.deepEqual(await messages(), [], "the old scope cannot reach the wallet after its review read returns");
+        assert.equal(calls.submit, 0);
+      } finally { release(); }
+    });
+  } finally {
+    await page.unroute(base, identity);
+    await page.unroute(`${base}/owner/actions`, actions);
+  }
+});
+
+test("hosted creation: a lost submission stays held after reload and signing expiry without another signature or POST", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ calls, state, messages, reload }) => {
+    state.abortSubmit = true;
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    await dialog("Create this Treasury agent?").getByRole("button", { name: "Sign and create" }).click();
+    await visible(page.getByRole("alert").filter({ hasText: "The answer was lost" }));
+    assert.equal((await messages()).length, 1);
+    state.pastExpiry = true;
+    await reload();
+    const create = page.getByRole("button", { name: "Create the agent", exact: true });
+    await visible(page.getByRole("status").filter({ hasText: "An earlier one's outcome isn't known" }));
+    assert.ok(await create.count() === 0 || await create.isDisabled(), "the durable submitted phase survives expiry and reload");
+    assert.deepEqual([calls.prepare, calls.submit], [1, 1]);
+    state.phase = "settled";
+    await reload();
+    await visible(page.getByRole("region", { name: "Connection", exact: true }));
+    assert.equal(await page.getByRole("region", { name: "Create the agent", exact: true }).count(), 0, "settled creation status refreshes the cached unborn identity without another prepare");
+    assert.deepEqual([calls.prepare, calls.submit], [1, 1]);
+  });
+});
+
+test("hosted creation: proven expired setup offers renewal, including expiry during review", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ calls, state, messages, reload }) => {
+    state.actionsRefusal = "not_set_up";
+    await reload();
+    await visible(page.getByRole("button", { name: "Set it up again", exact: true }));
+    assert.equal(calls.prepare, 0, "ended authority never prepares another creation");
+    state.actionsRefusal = undefined;
+    await reload();
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    state.reviewRefusal = "not_set_up";
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(review.getByRole("alert").filter({ hasText: "The setup this agent was reserved with has lapsed" }));
+    assert.equal(await review.getByRole("button", { name: "Sign and create" }).isDisabled(), true, "an ended review isn't offered for signing");
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await visible(page.getByRole("button", { name: "Set it up again", exact: true }));
+    assert.equal(await page.getByRole("button", { name: "Create the agent", exact: true }).isDisabled(), true, "renew the ended setup before creating");
+    assert.deepEqual(await messages(), []);
+    assert.equal(calls.submit, 0);
+  });
+});
+
+test("hosted creation: a reread that finds it submitted elsewhere or expired ends the review, then the page follows it or offers another", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ calls, state, messages }) => {
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    // Another tab signed it meanwhile: the platform's record reads it submitted.
+    state.reviewRefusal = "action_pending";
+    state.phase = "submitted";
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(review.getByRole("alert"));
+    assert.equal(await review.getByRole("button", { name: "Sign and create" }).isDisabled(), true, "the reviewed text isn't offered again");
+    assert.equal(calls.review, 1);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    await visible(page.getByRole("status").filter({ hasText: "Signed; the platform is submitting it." }));
+    assert.deepEqual(await messages(), []);
+    assert.deepEqual([calls.prepare, calls.submit], [1, 0]);
+  });
+  await withCreationRoutes(async ({ calls, state, messages }) => {
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    const review = dialog("Create this Treasury agent?");
+    // Its signing window closed while the owner read it: the platform's record reads it expired.
+    state.reviewRefusal = "creation_expired";
+    state.pastExpiry = true;
+    await review.getByRole("button", { name: "Sign and create" }).click();
+    await visible(review.getByRole("alert").filter({ hasText: "This creation expired unsigned" }));
+    assert.equal(await review.getByRole("button", { name: "Sign and create" }).isDisabled(), true);
+    await review.getByRole("button", { name: "Cancel", exact: true }).click();
+    state.reviewRefusal = undefined;
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    await visible(dialog("Create this Treasury agent?"));
+    assert.equal(await dialog("Create this Treasury agent?").getByRole("button", { name: "Sign and create" }).isDisabled(), false, "a new review is offered again");
+    assert.deepEqual(await messages(), []);
+    assert.deepEqual([calls.prepare, calls.submit], [2, 0]);
+  });
+});
+
+test("hosted creation: a lost unsigned review explains expiry recovery instead of exposing its refusal code", { timeout: 60_000 }, async () => {
+  await withCreationRoutes(async ({ state, calls, messages }) => {
+    state.prepareRefusal = "creation_review_unavailable";
+    await page.getByRole("button", { name: "Create the agent", exact: true }).click();
+    await visible(page.getByRole("alert").filter({ hasText: "Wait for its signing window to expire" }));
+    assert.equal(await page.getByText("The server refused the request (creation_review_unavailable).", { exact: true }).count(), 0);
+    assert.deepEqual(await messages(), []);
+    assert.equal(calls.submit, 0);
+  });
 });

@@ -20,6 +20,9 @@ const SETUP: Record<string, string> = {
   setup_refused: "The platform didn't accept the setup. Nothing was set up.",
   owner_stopped: "Your wallet stopped app access after this text was prepared, so the platform can't tell it was signed after the stop. Nothing was set up. Review the new text and sign again.",
   not_set_up: "The setup this agent was reserved with has lapsed: it's good for an hour. Set it up again, then create it.",
+  creation_changed: "The owner, setup key or creation changed. Nothing was signed. Close this review and check the agent again.",
+  creation_expired: "This creation expired unsigned. Close the review and prepare it again.",
+  creation_review_unavailable: "This unsigned creation's review is no longer available in this server. Wait for its signing window to expire, then prepare it again. Nothing is signed again automatically.",
   already_created: "This agent is already created.",
   creation_refused: "The platform refused the creation. Nothing was prepared. If one is already waiting for a signature or a vote, sign that one, or wait for it to expire, in minutes.",
   no_creation: "The platform has no record of that creation. Create the agent again.",
@@ -87,6 +90,15 @@ const FUNDING: Record<string, string> = {
 /** A failure in words for the owner, from its kind and code only. */
 /** Codes that read the same in every context. */
 const ANY: Record<string, string> = {
+  // Creation uses the shared owner-action flow, whose preparation/status reads retain these recovery instructions.
+  not_set_up: SETUP.not_set_up!,
+  already_created: SETUP.already_created!,
+  no_creation: SETUP.no_creation!,
+  creation_refused: SETUP.creation_refused!,
+  creation_changed: SETUP.creation_changed!,
+  creation_expired: SETUP.creation_expired!,
+  creation_review_unavailable: SETUP.creation_review_unavailable!,
+  action_pending: OWNER_ACTION.action_pending!,
   platform_rate_limited: "The platform is limiting this app's requests for now. Nothing was done; try again in a few minutes.",
   too_many_tokens: "This agent already has as many access tokens as it may. Revoke one you no longer use, then create another.",
   no_token: "That token has already ended, so there is nothing to revoke.",

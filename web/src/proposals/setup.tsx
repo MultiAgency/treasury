@@ -13,6 +13,8 @@ import { file, sign, WrongAccount } from "./wallet";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
 import { creationWords, failureText } from "./words";
+import { useOwnerFlow } from "./owner-flow";
+import { creationMatches, sameCreation } from "./creation-review";
 
 const agentLink = (agent: string) => `/agents/${encodeURIComponent(agent)}`;
 
@@ -86,7 +88,7 @@ function SetUp({ account, again = false }: { account: string; again?: boolean })
     <h2 id="set-up" className="text-xl font-semibold">{again ? "Set up your Treasury again" : "Set up your Treasury"}</h2>
     <Card>
       <div className="flex flex-col items-start gap-3">
-        <p>{again ? "Setting it up again reserves this agent for another hour; you create it next, here." : "You have no Treasury here yet. Setting one up reserves a Treasury agent for your account; you create it next, on the platform's own page."}</p>
+        <p>{again ? "Setting it up again reserves this agent for another hour; you create it next, here." : "You have no Treasury here yet. Setting one up reserves a Treasury agent for your account; you review and sign its creation next."}</p>
         <Button disabled={review !== undefined} onClick={() => prepare()}>{review?.phase === "reading" ? "Preparing…" : again ? "Set it up again" : "Set up a Treasury"}</Button>
         <ErrorBox error={error} />
       </div>
@@ -100,7 +102,7 @@ function SetUp({ account, again = false }: { account: string; again?: boolean })
       {review && review.phase !== "reading" && <>
         {review.phase === "review" && review.notice && <p role="alert" className="text-sm">{review.notice}</p>}
         <SignedText text={review.text.message} />
-        <Note>Nothing moves and no agent exists until you create it. Creating it is a separate signature, on the platform's confirm page.</Note>
+        <Note>Nothing moves and no agent exists until you create it. Creating it needs a separate signature, reviewed here or on the platform's confirm page.</Note>
       </>}
     </ReviewDialog>
   </section>;
@@ -217,12 +219,77 @@ export function DaoSetup({ dao }: { dao: string }) {
 type Reads = ReturnType<typeof agentReads>;
 
 /**
- * Creating a reserved agent, under its setup: a wallet owner signs on the platform's confirm page, which this page
- * links to; a DAO's member files the creation for the DAO's vote, which must pass before it expires, in minutes. Its
+ * Creating a reserved agent, under its setup: a wallet owner reviews readable text here or follows the platform's
+ * confirm link; a DAO's member files the creation for its vote, which must pass before it expires, in minutes. Its
  * status is read every few seconds until it's final; once settled, the agent's identity is read again, and the page
  * moves on to connecting it.
  */
 export function CreateAgent({ reads, identity }: { reads: Reads; identity: Identity }) {
+  const scope = JSON.stringify([identity.agent, identity.account, identity.owner, identity.host]);
+  return identity.signer === "wallet" ? <WalletCreation key={scope} reads={reads} identity={identity} /> : <DaoCreation key={scope} reads={reads} identity={identity} />;
+}
+
+function WalletCreation({ reads, identity }: { reads: Reads; identity: Identity }) {
+  const client = useQueryClient();
+  const [lapsed, setLapsed] = useState(false);
+  const flow = useOwnerFlow<Creation>({ reads, identity, kind: "agent_create", words: creationWords, resumeWaiting: true,
+    readStatus: id => reads.agent.creation(id),
+    reviewWallet: {
+      read: async reviewed => {
+        const fresh = await reads.agent.creationReview(reviewed.correlationId);
+        if (!fresh.ok && fresh.kind === "refused" && fresh.code === "not_set_up") setLapsed(true);
+        return fresh.ok && !creationMatches(fresh.value, identity) ? { ok: false, kind: "refused", code: "creation_changed" } : fresh;
+      },
+      same: sameCreation,
+      context: "setup",
+      closed: "The creation review was closed. Open it again before signing.",
+      changed: "The creation changed. Review the updated text, then sign again.",
+    },
+    onFinal: () => { void client.invalidateQueries({ queryKey: reads.identity.queryKey }); },
+  });
+  const recordsFailure = failureOf(flow.recordsError);
+  const needsSetup = lapsed || (recordsFailure?.kind === "refused" && recordsFailure.code === "not_set_up");
+  const prepare = () => flow.start(async () => {
+    const answer = await reads.agent.create();
+    if (!answer.ok) {
+      setLapsed(answer.kind === "refused" && answer.code === "not_set_up");
+      if (answer.kind === "refused" && answer.code === "already_created") void client.invalidateQueries({ queryKey: reads.identity.queryKey });
+    }
+    return answer.ok && answer.value.intent && !creationMatches(answer.value, identity)
+      ? { ok: false, kind: "refused", code: "creation_changed" } : answer;
+  });
+  const retry = flow.outcome === "expired" || flow.outcome === "failed";
+  return <section aria-labelledby="creation-title" className="flex flex-col gap-4">
+    <h2 id="creation-title" className="text-xl font-semibold">Create the agent</h2>
+    <Card>
+      <div className="flex flex-col items-start gap-3">
+        <p role="status">{needsSetup ? "This Treasury agent's setup ended before it was created. Set it up again below." : "This Treasury agent is set up but not created yet. Review its creation here, or on the platform's confirm page if the platform asks you to sign there."}</p>
+        {(!flow.action || retry) && <Button disabled={needsSetup || flow.busy || flow.holding || flow.reading || Boolean(flow.recordsError)} onClick={prepare}>
+          {flow.busy ? "Preparing…" : retry ? "Create it again" : "Create the agent"}
+        </Button>}
+        {flow.recordsError && !needsSetup && <p role="alert">Earlier creations couldn't be read. Reload to check before creating another.</p>}
+        {flow.progress}
+      </div>
+    </Card>
+    <ReviewDialog open={flow.toSign !== undefined} busy={flow.busy} onClose={flow.dropSigning} title="Create this Treasury agent?"
+      description="Review the exact text below. Your wallet signs it once; the app follows that creation's outcome. Nothing is traded by this signature."
+      actions={<Button disabled={flow.busy || flow.reviewEnded} onClick={flow.signNow}>{flow.busy ? "Checking and signing…" : "Sign and create"}</Button>}>
+      {flow.toSign?.intent && <>
+        <p>Agent <strong className="font-mono break-all">{identity.agent}</strong>, owned by <strong className="font-mono break-all">{identity.owner}</strong>, on {identity.host}.</p>
+        <p className="text-sm break-all">Signing recipient: {flow.toSign.intent.payload.recipient}. Expires {when(flow.toSign.expiresAt)}.</p>
+        <SignedText text={flow.toSign.intent.payload.message} />
+        <details className="text-sm"><summary>Signing details</summary>
+          <p className="break-all">Setup key: {flow.toSign.review?.publicKey}</p>
+          <p className="break-all">Nonce: {flow.toSign.intent.payload.nonce}</p>
+        </details>
+        <ErrorBox error={flow.error} />
+      </>}
+    </ReviewDialog>
+    {needsSetup && <SetUp account={identity.account} again />}
+  </section>;
+}
+
+function DaoCreation({ reads, identity }: { reads: Reads; identity: Identity }) {
   const client = useQueryClient();
   const [created, setCreated] = useState<Creation>();
   const [busy, setBusy] = useState(false);
