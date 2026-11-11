@@ -28,14 +28,15 @@ sleeves are 20% each within 5–25%, so the book's volatile ceiling is the same 
 | Run | Start value | Final value | Max drawdown | Trades | Trades per asset | Rejections by rule |
 | --- | --- | --- | --- | --- | --- | --- |
 | Two-asset (wNEAR/USDC) | 100,000.00 USD | 79,057.76 USD | 42.54% | 29 (7 buys, 22 sells) | wNEAR 29 | none |
-| Diversified (wNEAR+ETH/USDC) | 100,000.00 USD | 81,172.41 USD | 32.55% | 54 (14 buys, 40 sells) | ETH 30, wNEAR 24 | none |
+| Diversified (wNEAR+ETH/USDC) | 100,000.00 USD | 81,166.18 USD | 32.55% | 54 (14 buys, 40 sells) | ETH 30, wNEAR 24 | none |
 
 Difference in max drawdown: **9.98 points** (diversified less two-asset).
-Difference in final value: **2114.65 USD**.
+Difference in final value: **2108.42 USD**.
 
 Both runs are the same seeded provider (5–15 bps of slippage a fill, no fees) and the same band, sizing and policy
 engines. The single-sleeve equivalence is held by a core test: one wNEAR sleeve in the book harness makes exactly the
-trades and equity `calibrationReport` makes on the same series.
+trades and equity `calibrationReport` makes on the same series. As the server proposes at most one trade a tick, the
+diversified run proposes at most one an hourly instant: the first sleeve that passes, sells first.
 
 ## Venue caps
 
@@ -58,3 +59,5 @@ The script refuses to write the page if any fill would have taken a venue over i
 - **No stablecoin split or RWA.** The platform lists one stablecoin (USDC) and no tokenized T-bill, so both runs hold
   USDC and the RWA sleeve is off: the backtest can't exercise phases 2 and 3.
 - **No fees, no funding costs, no taxes,** and the same optimistic 5–15 bps fill model as the single-asset replay.
+- **No approval latency.** Every proposal that passes the checks fills at its own instant, as if the owner approved at
+  once; a live trade waits for the owner's signature or the DAO's vote, at a later price or not at all.

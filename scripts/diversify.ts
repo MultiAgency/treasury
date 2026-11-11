@@ -114,7 +114,8 @@ const lines = [
   "",
   "Both runs are the same seeded provider (5–15 bps of slippage a fill, no fees) and the same band, sizing and policy",
   "engines. The single-sleeve equivalence is held by a core test: one wNEAR sleeve in the book harness makes exactly the",
-  "trades and equity `calibrationReport` makes on the same series.",
+  "trades and equity `calibrationReport` makes on the same series. As the server proposes at most one trade a tick, the",
+  "diversified run proposes at most one an hourly instant: the first sleeve that passes, sells first.",
   "",
   "## Venue caps",
   "",
@@ -137,6 +138,8 @@ const lines = [
   "- **No stablecoin split or RWA.** The platform lists one stablecoin (USDC) and no tokenized T-bill, so both runs hold",
   "  USDC and the RWA sleeve is off: the backtest can't exercise phases 2 and 3.",
   "- **No fees, no funding costs, no taxes,** and the same optimistic 5–15 bps fill model as the single-asset replay.",
+  "- **No approval latency.** Every proposal that passes the checks fills at its own instant, as if the owner approved at",
+  "  once; a live trade waits for the owner's signature or the DAO's vote, at a later price or not at all.",
   "",
 ];
 
