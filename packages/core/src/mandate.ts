@@ -10,7 +10,7 @@ import { LEVEL_DEFAULTS, levelProblems, type Level } from "./levels.ts";
 import { POLICY_DEFAULTS, policyLimitProblems, type PolicyLimits } from "./policy.ts";
 import type { PolicyConfig } from "./check.ts";
 import type { WeightBounds } from "./sizing.ts";
-import { isNum, isPct, isPositive, isPositiveInt, report } from "./validate.ts";
+import { isNum, isPct, isPositive, report } from "./validate.ts";
 
 export const MANDATE_VERSION = 1;
 export type ProfileName = "conservative" | "balanced" | "growth";
@@ -25,8 +25,6 @@ export type Profile = {
   limits: PolicyLimits;
   /** The fewest months of operating cash this profile accepts as a floor. */
   minCashMonths: number;
-  /** Approvals needed for an order that calls for a human. */
-  approvalsRequired: number;
   /** The level the mandate starts at: 0 acts within limits; 2 asks a human for every order. */
   startLevel: Level;
 };
@@ -36,16 +34,16 @@ export const PROFILE_DEFAULTS: Readonly<Record<ProfileName, Profile>> = {
   conservative: {
     weights: { volatilePct: 20, reservePct: 30, cashPct: 50 }, bounds: { volatileMinPct: 5, volatileMaxPct: 30 },
     limits: { maxOrderPctOfTreasury: 1, maxDailyTurnoverPct: 5, maxOrdersPerHour: 5, maxSlippageBps: 30 },
-    minCashMonths: 9, approvalsRequired: 2, startLevel: 2,
+    minCashMonths: 9, startLevel: 2,
   },
   balanced: {
     weights: { volatilePct: 40, reservePct: 35, cashPct: 25 }, bounds: { volatileMinPct: 10, volatileMaxPct: 50 },
-    limits: POLICY_DEFAULTS, minCashMonths: 6, approvalsRequired: 1, startLevel: 0,
+    limits: POLICY_DEFAULTS, minCashMonths: 6, startLevel: 0,
   },
   growth: {
     weights: { volatilePct: 60, reservePct: 25, cashPct: 15 }, bounds: { volatileMinPct: 20, volatileMaxPct: 70 },
     limits: { maxOrderPctOfTreasury: 2, maxDailyTurnoverPct: 15, maxOrdersPerHour: 10, maxSlippageBps: 50 },
-    minCashMonths: 6, approvalsRequired: 1, startLevel: 0,
+    minCashMonths: 6, startLevel: 0,
   },
 };
 
@@ -80,7 +78,7 @@ export type Mandate = {
   assets: { volatile: string[]; stablecoins: string[] };
   destinations: string[];
   limits: { policy: PolicyLimits; exposure: ExposureLimits; l1OrderCapFactor: number };
-  governance: { approvers: string[]; approvalsRequired: number; startLevel: Level };
+  governance: { approvers: string[]; startLevel: Level };
   weights: Weights;
   bounds: WeightBounds;
   /** Always false here: the owner hasn't yet signed these weights (H8). */
@@ -139,7 +137,7 @@ export function mandateProblems(m: unknown): string[] {
   const stable = new Set(list(r, "assets.stablecoins", own(assets, "stablecoins"), SYMBOL, "asset symbol", true, false).map(s => s.toLowerCase()));
   r.need(!volatile.some(a => stable.has(a.toLowerCase())), "an asset cannot be both volatile and a stablecoin");
   list(r, "destinations", own(m, "destinations"), NEAR_ACCOUNT, "NEAR account", false, false);
-  const approvers = list(r, "governance.approvers", own(governance, "approvers"), NEAR_ACCOUNT, "NEAR account", false, false);
+  list(r, "governance.approvers", own(governance, "approvers"), NEAR_ACCOUNT, "NEAR account", false, false);
 
   const spend = own(exposure, "monthlySpendUsd"), months = own(exposure, "operatingCashMonths");
   r.need(isPositive(spend), "the spend rate must be above zero (a zero spend would switch the cash floor off)");
@@ -151,18 +149,16 @@ export function mandateProblems(m: unknown): string[] {
 
   const p = name as string;
   r.need(!isNum(months) || months >= profile.minCashMonths, `the ${p} profile needs at least ${profile.minCashMonths} months of operating cash, not ${show(months)}`);
-  r.need(approvers.length >= profile.approvalsRequired, `the ${p} profile needs ${profile.approvalsRequired} approver(s), not ${approvers.length}`);
   r.need(sameAs(own(m, "weights"), profile.weights), `the weights must be the ${p} profile's`);
   r.need(sameAs(own(m, "bounds"), profile.bounds), `the volatile bounds must be the ${p} profile's`);
   r.need(sameAs(own(limits, "policy"), profile.limits), `the policy limits must be the ${p} profile's`);
-  r.need(own(governance, "approvalsRequired") === profile.approvalsRequired && own(governance, "startLevel") === profile.startLevel, `the approvals required and start level must be the ${p} profile's`);
+  r.need(own(governance, "startLevel") === profile.startLevel, `the start level must be the ${p} profile's`);
 
   // The profile itself must be usable: a placeholder number that is out of range fails every mandate built on it.
   const w = profile.weights, b = profile.bounds;
   r.need(isPct(w.volatilePct) && isPct(w.reservePct) && isPct(w.cashPct) && Math.abs(w.volatilePct + w.reservePct + w.cashPct - 100) < 1e-9, "weights must each be above 0 and add to 100");
   r.need(b.volatileMinPct >= 0 && b.volatileMaxPct <= 100 && b.volatileMinPct <= b.volatileMaxPct && w.volatilePct >= b.volatileMinPct && w.volatilePct <= b.volatileMaxPct, "the volatile weight must sit inside its bounds");
   for (const problem of [...policyLimitProblems(profile.limits), ...levelProblems({ l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor, maxOrderPctOfTreasury: profile.limits.maxOrderPctOfTreasury })]) r.need(false, problem);
-  r.need(isPositiveInt(profile.approvalsRequired), "approvalsRequired must be a whole number of at least 1");
 
   // The diversified book's terms, read back as the compiler checks them: inside the profile, and only what's proposable.
   // More than one volatile asset can only come from the compiler with its terms, so a mandate missing them isn't one
@@ -182,8 +178,8 @@ export function mandateProblems(m: unknown): string[] {
 /**
  * Compiles the seven answers and a profile into a validated mandate. Every problem is reported, none is repaired.
  * Beyond type and range checks it rejects inconsistent answers: a cash floor below the profile's minimum months, a floor
- * the profile's cash weight can't hold (floor ÷ treasury over the cash share), fewer approvers than the profile needs,
- * and an asset listed as both volatile and a stablecoin.
+ * the profile's cash weight can't hold (floor ÷ treasury over the cash share), and an asset listed as both volatile and
+ * a stablecoin.
  */
 export function compileMandate(answers: unknown, profileName: unknown): CompileResult {
   const r = report();
@@ -203,10 +199,7 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
   for (const a of volatile) r.need(!stable.has(a.toLowerCase()), `${a} cannot be both volatile and a stablecoin`);
 
   let floor = 0;
-  if (profile) {
-    r.need(approvers.length >= profile.approvalsRequired, `the ${profileName as string} profile needs ${profile.approvalsRequired} approver(s), not ${approvers.length}`);
-    if (isNum(months)) r.need(months >= profile.minCashMonths, `the ${profileName as string} profile needs at least ${profile.minCashMonths} months of operating cash, not ${months}`);
-  }
+  if (profile && isNum(months)) r.need(months >= profile.minCashMonths, `the ${profileName as string} profile needs at least ${profile.minCashMonths} months of operating cash, not ${months}`);
   if (profile && isNum(spend) && isNum(months) && isNum(treasury) && spend > 0 && months > 0 && treasury > 0) {
     floor = spend * months;
     r.need(floor * 100 <= treasury * profile.weights.cashPct, `a cash floor of ${floor} USD is over the ${profile.weights.cashPct}% cash share of a ${treasury} USD treasury: the ${profileName as string} profile can't meet it`);
@@ -224,7 +217,7 @@ export function compileMandate(answers: unknown, profileName: unknown): CompileR
     version: MANDATE_VERSION, profile: profileName as ProfileName,
     assets: { volatile, stablecoins }, destinations,
     limits: { policy: { ...profile.limits }, exposure, l1OrderCapFactor: LEVEL_DEFAULTS.l1OrderCapFactor },
-    governance: { approvers, approvalsRequired: profile.approvalsRequired, startLevel: profile.startLevel },
+    governance: { approvers, startLevel: profile.startLevel },
     weights: { ...profile.weights }, bounds: { ...profile.bounds }, weightsApproved: false,
     ...(diversification && { diversification }),
   };
