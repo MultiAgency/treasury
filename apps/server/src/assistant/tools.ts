@@ -337,13 +337,15 @@ const BY_NAME = new Map<string, Tool<z.ZodType>>(TOOLS.map(entry => [entry.defin
 /**
  * The two agents the owner talks to (Agents page): the treasury assistant, which reads the whole app and drafts any change
  * for the owner to review, and the stabilization agent, which is held to forward risk: it reads the book, the risk records
- * and the runs, runs what-ifs, and drafts only a de-risk rebalance, an autopilot pause or a freeze. A tool outside an
+ * and the runs, runs what-ifs, and drafts only an autopilot pause or a freeze. Its de-risk is the sell the risk agent
+ * itself proposes on watch's tick, sized from the risk record; a rebalance to the saved targets isn't one (after a fall
+ * it buys more of the volatile asset), so it can't draft one. A tool outside an
  * agent's set isn't offered to it and isn't run if it asks, so what the stabilization agent may draft is the code's rule,
  * not the prompt's.
  */
 export type Persona = "treasury" | "stabilization";
 const STABILIZATION_TOOLS = new Set(["get_overview", "get_autopilot", "get_runs", "get_unresolved", "get_ballast_decisions", "list_proposals", "get_proposal",
-  "get_risk_report", "get_risk_history", "run_what_if", "draft_rebalance", "draft_autopilot", "draft_freeze", "open_page"]);
+  "get_risk_report", "get_risk_history", "run_what_if", "draft_autopilot", "draft_freeze", "open_page"]);
 export const toolNames = (persona: Persona): ReadonlySet<string> => persona === "stabilization" ? STABILIZATION_TOOLS : new Set(TOOLS.map(entry => entry.definition.name));
 export const toolDefinitions = (persona: Persona): ToolDefinition[] => TOOL_DEFINITIONS.filter(definition => toolNames(persona).has(definition.name));
 

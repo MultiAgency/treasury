@@ -136,8 +136,9 @@ test("the log reader finds an agent's newest records across segments, newest fir
 
 test("the stabilization agent is offered forward-risk tools only: no strategy, policy or grant draft, and none runs if asked", async () => {
   const names = toolNames("stabilization");
-  for (const forbidden of ["draft_strategy", "draft_policy_edit", "draft_grant"]) assert.equal(names.has(forbidden), false, forbidden);
-  for (const wanted of ["get_risk_report", "get_risk_history", "run_what_if", "draft_rebalance", "draft_autopilot", "draft_freeze", "open_page"]) assert.equal(names.has(wanted), true, wanted);
+  // A rebalance goes back to the saved targets, which after a fall buys more of the volatile asset: never a de-risk.
+  for (const forbidden of ["draft_strategy", "draft_policy_edit", "draft_grant", "draft_rebalance"]) assert.equal(names.has(forbidden), false, forbidden);
+  for (const wanted of ["get_risk_report", "get_risk_history", "run_what_if", "draft_autopilot", "draft_freeze", "open_page"]) assert.equal(names.has(wanted), true, wanted);
   assert.deepEqual(toolDefinitions("stabilization").map(d => d.name).sort(), [...names].sort());
   assert.ok(toolDefinitions("treasury").length > toolDefinitions("stabilization").length);
   const scope = { platform: {} as never, organization: "owner--near", agent: "portfolio", signer: "wallet", daoRequests: {} as never, now: () => 0 } as ToolScope;

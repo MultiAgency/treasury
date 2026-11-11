@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Badge, Button, ErrorBox, Spinner, input } from "../shared/ui";
 import { cn } from "@/lib/utils";
 import { openDraft } from "./assistant-drafts";
+import { busyKeys, changed, conversationKey, conversations, NONE, subscribe, version, type Entry } from "./conversations";
 import { SwapPreview } from "./assistant-note";
 import { AGENT_PAGES, agentAddress, type AgentPage } from "./pages";
 import type { AssistantAnswer, AssistantDraft, AssistantPersona } from "./proposals-api";
@@ -21,7 +22,6 @@ import { failureText } from "./words";
  * Nothing is sent from here: the flow it opens is where the owner submits and signs. A conversation is kept while the owner
  * moves between the agent's pages, per agent and per persona (the treasury assistant, or the stabilization agent).
  */
-type Entry = { role: "user"; text: string } | { role: "assistant"; answer: AssistantAnswer } | { role: "error"; text: string };
 type Turn = { role: "user" | "assistant"; text: string };
 type Source = AssistantAnswer["sources"][number];
 type Reads = ReturnType<typeof agentReads>;
@@ -55,20 +55,11 @@ export function useHandOff(agent: string) {
   };
 }
 
-// --- The conversations: one per agent and persona, kept outside the components so they survive moving between pages. ---
-const conversations = new Map<string, Entry[]>();
-const busyKeys = new Set<string>();
-const listeners = new Set<() => void>();
-let version = 0;
-const changed = () => { version++; for (const listener of listeners) listener(); };
-const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
-const keyOf = (agent: string, persona: AssistantPersona) => `${agent}:${persona}`;
-const NONE: Entry[] = [];
 
 /** One conversation's entries, whether an answer is being read, and asking. Earlier turns go back as text only; an answer's drafts and sources stay on the page. */
 export function useConversation(reads: Reads, persona: AssistantPersona) {
-  const key = keyOf(reads.name, persona);
-  useSyncExternalStore(subscribe, () => version);
+  const key = conversationKey(reads.name, persona);
+  useSyncExternalStore(subscribe, version);
   const entries = conversations.get(key) ?? NONE;
   const busy = busyKeys.has(key);
   const ask = async (text: string) => {

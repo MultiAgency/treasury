@@ -116,7 +116,8 @@ function AgentAutopilot({ reads, identity }: { reads: Reads; identity: Identity 
   // An autopilot control the assistant drafted opens its own confirmation here (#219): turning on and running once open the
   // review the buttons open; turning off is the Turn off button, which is said. Nothing is sent, and a control that can't be
   // used now says why instead of being tried.
-  useTakeDraft(reads.name, "autopilot", Boolean(s), draft => {
+  // Taken once autopilot's own state is read too: until then `on` reads false, and a pause would be answered "off already".
+  useTakeDraft(reads.name, "autopilot", Boolean(s) && schedule.data !== undefined, draft => {
     setError(undefined);
     if (!canControl) { setNotice("The assistant drafted an autopilot control, but autopilot needs a member who may both file and vote on proposals."); return; }
     if (draft.action === "off") { setNotice(on ? "The assistant suggested turning autopilot off: use Turn off below, which stops it at once." : "Autopilot is off already."); return; }

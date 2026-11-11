@@ -6,6 +6,7 @@ import { api } from "./queries";
 import { AccountSlot } from "./shell";
 import { sign } from "./wallet";
 import { failureText } from "./words";
+import { clearConversations } from "./conversations";
 
 /**
  * Signing in to this server: the owner's wallet signs the server's challenge, addressed to this server's own host, and
@@ -26,6 +27,7 @@ export function useSignIn() {
       try { signed = await sign(issued.value); } catch (problem) { return setError(`The wallet didn't sign: ${errorMessage(problem)}`); }
       const session = await api.signIn({ accountId: signed.accountId, publicKey: signed.publicKey, signature: signed.signature, nonce: issued.value.nonce });
       if (!session.ok) return setError(failureText(session, "sign-in"));
+      clearConversations();
       await client.resetQueries();
     } finally { setBusy(false); }
   };
@@ -58,6 +60,7 @@ export function SignedIn({ children }: { children: ReactNode }) {
     const ended = await api.signOut();
     setBusy(false);
     if (!ended.ok) return setError("Sign-out didn't complete, so you may still be signed in. Try again.");
+    clearConversations();
     await client.resetQueries();
   };
   const button = <Button variant="outline" size="sm" disabled={busy} onClick={signOut}>{busy ? "Signing out…" : "Sign out"}</Button>;

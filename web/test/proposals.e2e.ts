@@ -899,7 +899,8 @@ test("the Agents page shows the stabilization agent and the NEAR agent, each wit
   assert.deepEqual(await axe(), [], "the NEAR agent's autopilot draft");
   await open.click();
   await visible(page.getByRole("heading", { name: "Strategy", level: 1 }));
-  await visible(page.getByRole("status").filter({ hasText: /Autopilot is off already|use Turn off below/ }));
+  // Autopilot is off on the stack, so the draft says so; it is taken only once autopilot's own state is read.
+  await visible(page.getByRole("status").filter({ hasText: /^Autopilot is off already\.$/ }));
   assert.deepEqual(unexpected, []);
 });
 
