@@ -1,7 +1,8 @@
 // The replay harness for the diversified book (#221): `replay`'s loop with several volatile sleeves sharing one reserve
 // and one cash floor. Each sample is one instant for every sleeve: each asset's sources quote it, each oracle reads its
-// own history, each sleeve is decided by `evaluateSleeves`, and every trade goes through the policy and the book's venue
-// and class caps (`checkBookExposure`) before the simulated provider fills it. Deterministic, like `replay`.
+// own history, each sleeve is decided by `evaluateSleeves`, and a trade goes through the policy and the book's venue and
+// class caps (`checkBookExposure`) before the simulated provider fills it. As the server proposes at most one trade a tick,
+// at most one is proposed an instant. Deterministic, like `replay`.
 //
 // A book of one sleeve at the profile's weight and bounds, with the account capped at the profile's ceiling, makes the
 // trades `replay` makes on the same series: the test and the backtest (`scripts/diversify.ts`) both hold it to that.
@@ -59,8 +60,9 @@ export function bookReplayProblems(series: Readonly<Record<string, readonly Samp
 
 /**
  * Replays the book over `series` (one per sleeve, at the same instants, oldest first). Each sleeve keeps its own oracle
- * history, regime (its own market moves), anti-whipsaw state and DCA units. Per instant, sleeves trade sells first, as
- * `evaluateSleeves` orders them, each checked against the book as it stands after the trades before it.
+ * history, regime (its own market moves), anti-whipsaw state and DCA units. Per instant, as the server's tick does, the
+ * sleeves that want to trade are tried sells first, as `evaluateSleeves` orders them, and the first that passes the checks
+ * is the instant's one proposal; the rest wait for the next instant. Every sleeve that holds still updates its state.
  */
 export function replayBook(series: Readonly<Record<string, readonly Sample[]>>, start: BookStart, config: BookReplayConfig,
   seedHistory: Readonly<Record<string, readonly Sample[]>> = {}, registry: Readonly<Record<string, AssetEntry>> = ASSET_REGISTRY): BookReplayResult {
@@ -90,7 +92,9 @@ export function replayBook(series: Readonly<Record<string, readonly Sample[]>>, 
     const decided = evaluateSleeves(readings, { volatileUsd: Object.fromEntries(assets.map(a => [a, usd(a)])), reserveUsd: reserve, cashUsd: cash },
       config, states, regimes, config.engine);
 
+    let proposed = false;
     for (const { asset, intent: raw, config: engine } of decided) {
+      if (proposed && raw.action !== "hold") continue;
       const reading = readings[asset]!;
       // One id per sleeve and instant: the provider fills each id once.
       const intent = { ...raw, id: `${asset}-${raw.id}` };
@@ -116,6 +120,7 @@ export function replayBook(series: Readonly<Record<string, readonly Sample[]>>, 
       const verdict = book === null ? { ok: false as const, rule: "INVALID_INPUT" as const, detail: "the book can't be read", failed: ["INVALID_INPUT" as const] }
         : combineResults([checkPolicy(intent, ctx, config.policy), checkBookExposure(intent, book, config)]);
       if (verdict.ok === false) { record("rejected", verdict.detail, verdict.rule); continue; }
+      proposed = true;
       if (verdict.ok === "needs-approval") { record("needs-approval", verdict.reason); continue; }
 
       const result = provider.fill(intent, price[asset]!);

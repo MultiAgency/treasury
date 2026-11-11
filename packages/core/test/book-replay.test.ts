@@ -39,6 +39,16 @@ test("wNEAR and ETH sleeves each trade, and the run is deterministic", () => {
   assert.deepEqual(a, b);
 });
 
+test("at most one proposal an instant, as the server makes at most one a tick: the first sleeve that passes, sells first", () => {
+  const run = replayBook({ wNEAR: near, ETH: eth }, { volatileUsd: { wNEAR: 20_000, ETH: 20_000 }, reserveUsd: 35_000, cashUsd: 25_000 },
+    book([{ asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }, { asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25 }], { [VENUE_IDS.intents]: 50, [VENUE_IDS.omftEthereum]: 25 }), seed);
+  if (!run.ok) assert.fail("refused");
+  const proposed = new Map<number, number>();
+  for (const s of run.steps) if (s.outcome === "traded" || s.outcome === "needs-approval" || s.outcome === "fill-refused") proposed.set(s.at, (proposed.get(s.at) ?? 0) + 1);
+  assert.ok(proposed.size > 0, "the run proposes");
+  assert.deepEqual([...proposed.values()].filter(n => n > 1), []);
+});
+
 test("a BTC sleeve runs, but the platform doesn't list BTC, so every BTC trade is refused", () => {
   const btc = syntheticSeries({ startAt: T0, startPrice: 60_000, count: 60 * 24, stepMs: H, stepVolPct: 1, driftPct: 0, seed: 17 });
   const run = replayBook({ wNEAR: near, BTC: btc }, { volatileUsd: { wNEAR: 20_000, BTC: 20_000 }, reserveUsd: 35_000, cashUsd: 25_000 },
