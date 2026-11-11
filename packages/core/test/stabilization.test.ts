@@ -220,3 +220,22 @@ test("a recorded assessment replays to the same result; a changed input is named
   assert.deepEqual(replay.ok === false && [replay.index, replay.seq], [2, 12]);
   assert.equal(replayRiskRecords([{ kind: "risk", input: null as never, assessment: records[0]!.assessment }]).ok, false, "a broken record differs");
 });
+
+test("on a multi-asset book the de-risk sell is the largest asset the swap can price, not the largest asset: an unlisted BTC is never the sale (#221)", () => {
+  // 25,000 of unlisted BTC is the largest volatile holding; the platform can swap wNEAR, so that is what is sold.
+  const multi = [
+    { asset: WNEAR, symbol: "wNEAR", class: "volatile" as const, usd: 20_000, venue: "NEAR Intents" },
+    { asset: "nep141:btc.omft.near", symbol: "BTC", class: "volatile" as const, usd: 25_000, venue: "NEAR Intents", via: ["Bitcoin bridge"] },
+    { asset: USDC, symbol: "USDC", class: "stable" as const, usd: 55_000, venue: "NEAR Intents" },
+  ];
+  const history = { [WNEAR]: crash(50), "nep141:btc.omft.near": crash(50) };
+  const a = assessRisk(riskInput(crash(50), { book: multi, history }));
+  const derisk = a.recommendations.find(r => r.action === "de-risk");
+  assert.ok(derisk && derisk.action === "de-risk", "a de-risk is recommended");
+  assert.equal(derisk.asset, WNEAR);
+  assert.equal(derisk.into, USDC);
+  assert.ok(a.derisk?.proposal?.legs.ok, "the sell has legs");
+  // A bridge outage is a scenario of the multi-asset book, and it is replayable from its record like any other.
+  assert.ok(a.scenarios.some(s => s.id === "venue:Bitcoin bridge:7d"));
+  assert.deepEqual(replayRiskRecords([{ kind: "risk", input: riskInput(crash(50), { book: multi, history }), assessment: a }]), { ok: true, count: 1 });
+});

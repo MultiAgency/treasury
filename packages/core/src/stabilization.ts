@@ -185,11 +185,14 @@ const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "obj
 /** The de-risk sell's size: toward the target drawdown, within one order, the day's turnover left and the volatile floor. */
 function deriskSize(book: Book, p: Projection, t: RiskThresholds, trade: RiskTrade): { asset: string; into: string; sizeUsd: number; limit: string } | null {
   const byValue = (a: Book[number], b: Book[number]) => b.usd - a.usd || (a.asset < b.asset ? -1 : 1);
-  const volatile = book.filter(h => h.class === "volatile" && h.usd > 0).sort(byValue);
-  const stable = book.filter(h => h.class === "stable").sort(byValue);
+  // With the swap's pricing, only an asset it can price and size is sold or bought: a multi-asset book (#221) may hold
+  // one the platform can't swap, and the sell would never have legs. A book without pricing is sized as before.
+  const priced = (h: Book[number]) => trade.pricing === undefined || (Object.hasOwn(trade.pricing.prices, h.asset) && Object.hasOwn(trade.pricing.decimals, h.asset));
+  const volatile = book.filter(h => h.class === "volatile" && h.usd > 0 && priced(h)).sort(byValue);
+  const stable = book.filter(h => h.class === "stable" && priced(h)).sort(byValue);
   const sold = volatile[0], into = stable[0];
   if (!sold || !into) return null;
-  const total = book.reduce((sum, h) => sum + h.usd, 0), volatileUsd = volatile.reduce((sum, h) => sum + h.usd, 0);
+  const total = book.reduce((sum, h) => sum + h.usd, 0), volatileUsd = book.filter(h => h.class === "volatile").reduce((sum, h) => sum + h.usd, 0);
   const limits = trade.config.limits;
   const candidates: [number, string][] = [
     // A drawdown scales with the volatile holding, so selling this share of it brings the projection to the target.

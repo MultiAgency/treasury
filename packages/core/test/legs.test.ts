@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { centsDown, legsFor, PROPOSAL_ASSETS, type LegsInput } from "../src/legs.ts";
+import { centsDown, legsFor, PROPOSAL_ASSETS, swapLegsFor, type LegsInput, type SwapLegsInput } from "../src/legs.ts";
 
 const { USDC, wNEAR, ETH } = PROPOSAL_ASSETS;
 const DECIMALS = { [USDC]: 6, [wNEAR]: 24, [ETH]: 18 };
@@ -94,4 +94,27 @@ test("the band engine's numeric size becomes a string of whole cents, rounded do
   assert.equal(centsDown(1000), "1000.00");
   assert.equal(centsDown(0.009), undefined, "less than a cent");
   for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) assert.equal(centsDown(bad), undefined, String(bad));
+});
+
+const swap = (change: Partial<SwapLegsInput> = {}): SwapLegsInput =>
+  ({ from: USDC, to: ETH, sizeUsd: "1000", prices: { [USDC]: "1.00", [ETH]: "2000" }, decimals: DECIMALS, maxSlippageBps: 50, ...change });
+
+test("swapLegsFor builds any two proposal assets' swap by the same arithmetic as legsFor: the worked example between two volatile assets", () => {
+  // $1,000 of wNEAR at $2.50 is 400 wNEAR; the floor is $995 of ETH at $2,000, 0.4975 ETH.
+  assert.deepEqual(swapLegsFor(swap({ from: wNEAR, to: ETH, prices: { [wNEAR]: "2.50", [ETH]: "2000" } })),
+    { ok: true, legs: [{ from: wNEAR, to: ETH, amount: String(400n * e(24)), minAmountOut: String(4975n * e(14)) }] });
+  // The same figures through legsFor's own shape agree: a volatile-reserve swap is one swap leg.
+  assert.deepEqual(swapLegsFor(swap({ from: wNEAR, to: USDC, prices: { [wNEAR]: "2.50", [USDC]: "1.00" } })), legsFor(base()));
+  assert.deepEqual(swapLegsFor(swap({ from: USDC, to: wNEAR, prices: { [wNEAR]: "2.50", [USDC]: "1.00" } })), legsFor(base({ decision: { action: "buy-volatile", sizeUsd: "1000" } })));
+});
+
+test("swapLegsFor refuses what legsFor refuses: the same asset twice, an asset the platform doesn't list, a bad size or slippage, a missing price or decimals", () => {
+  assert.deepEqual(swapLegsFor(swap({ to: USDC })), { ok: false, code: "invalid_input" });
+  assert.deepEqual(swapLegsFor(swap({ to: "nep141:eth-0x68749665ff8d2d112fa859aa293f07a622782f38.omft.near" })), { ok: false, code: "invalid_input" });
+  for (const sizeUsd of ["0", "-1", "1e3", "", "1,000"]) assert.deepEqual(swapLegsFor(swap({ sizeUsd })), { ok: false, code: "invalid_input" });
+  for (const maxSlippageBps of [-1, 10_001, 1.5]) assert.deepEqual(swapLegsFor(swap({ maxSlippageBps })), { ok: false, code: "invalid_input" });
+  assert.deepEqual(swapLegsFor(swap({ prices: { [USDC]: "1" } })), { ok: false, code: "missing_price" });
+  assert.deepEqual(swapLegsFor(swap({ decimals: { [USDC]: 6 } })), { ok: false, code: "missing_decimals" });
+  assert.deepEqual(swapLegsFor(swap({ sizeUsd: "0.0000001" })), { ok: false, code: "below_one_unit" });
+  assert.deepEqual(swapLegsFor(null as never), { ok: false, code: "invalid_input" });
 });

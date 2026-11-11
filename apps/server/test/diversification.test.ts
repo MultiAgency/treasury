@@ -61,10 +61,10 @@ test("the route answers the book from its configured mandate terms: holdings, ve
   assert.deepEqual([intents.exposureUsd, intents.capPct, intents.capSource], [30_000, 50, "mandate"]);
   assert.deepEqual([bridge.exposureUsd, bridge.capPct, bridge.capSource], [15_000, 25, "mandate"]);
   assert.deepEqual(read.stablecoins, [{ symbol: "USDC", usd: 70_000, price: 1, sharePct: 100, targetPct: 100, peg: 0 }]);
-  // Phase 1 needs two cross-chain majors: ETH is one, wNEAR is native, BTC isn't listed. Phases 2 and 3 need the platform.
+  // Phase 1 needs two cross-chain majors: ETH is one, wNEAR is native, BTC and SOL aren't listed. Phases 2 and 3 need the platform.
   assert.equal(read.phases.length, 3);
   assert.ok(read.phases.every(p => !p.on));
-  assert.match(read.phases[0]!.reasons.join(" "), /BTC isn't among the platform's proposal assets/);
+  assert.match(read.phases[0]!.reasons.join(" "), /BTC, SOL aren't among the platform's proposal assets/);
   assert.match(read.phases[1]!.reasons.join(" "), /second stablecoin/);
   assert.match(read.phases[2]!.reasons.join(" "), /no tokenized T-bill/);
   assert.equal(fake.calls.filter(call => call === "reads.overview owner--near portfolio").length, 1, "one overview read at most");

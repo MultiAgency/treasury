@@ -32,8 +32,11 @@ export type StablePlan = {
   /** Each coin's peg level: 0 on peg, 2 or 3 off it (as `detectFaults`), 3 with no usable price. */
   peg: Record<string, Level>;
   moves: StableMove[];
-  /** Moves the plan wanted that the platform can't carry, with why. */
-  blocked: { asset: string; reason: string }[];
+  /**
+   * Moves the plan wanted that the platform can't carry, with why. `move` is the swap it wanted when the block is the
+   * platform's list (a coin that isn't a proposal asset): the hedge planner (#221) shows it as blocked, not as nothing.
+   */
+  blocked: { asset: string; reason: string; move?: StableMove }[];
 };
 
 /** What is wrong with a split, if anything: stablecoins from the registry, each above 0, adding to 100. */
@@ -80,8 +83,9 @@ export function planStableMoves(holdings: readonly StableHolding[], split: Stabl
   const moves: StableMove[] = [], blocked: StablePlan["blocked"] = [];
   const tradable = (c: string) => proposable(registry[c]!);
   const move = (from: string, to: string, sizeUsd: number, reason: string) => {
-    for (const c of [from, to]) if (!tradable(c)) { blocked.push({ asset: c, reason: `${c} isn't among the platform's proposal assets: ${reason}` }); return; }
-    moves.push({ from, to, sizeUsd: Math.min(sizeUsd, limits.maxMoveUsd), reason });
+    const wanted: StableMove = { from, to, sizeUsd: Math.min(sizeUsd, limits.maxMoveUsd), reason };
+    for (const c of [from, to]) if (!tradable(c)) { blocked.push({ asset: c, reason: `${c} isn't among the platform's proposal assets: ${reason}`, move: wanted }); return; }
+    moves.push(wanted);
   };
 
   const depegged = coins.filter(c => peg[c]! >= 2 && (held(c)?.usd ?? 0) > 0 && isPositive(held(c)?.price ?? null));

@@ -8,6 +8,8 @@ import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
 import { creationReviews, type CreationReviews } from "./creation-reviews.ts";
 import type { BallastSettings } from "./ballast.ts";
+import { buildHedge } from "./hedge.ts";
+import type { Intents } from "./intents.ts";
 import { diversificationView } from "./diversification.ts";
 import { sha256, type Audit } from "./audit.ts";
 import { checkConsent, consentFor, consentText, liveConsents, organizationOf, withOwner } from "./consent.ts";
@@ -93,6 +95,11 @@ export type Deps = {
    * the route answers that no assessment has been recorded.
    */
   latestRisk?: LatestRisk;
+  /**
+   * NEAR Intents' token list and dry-run quotes (#221): the hedge read's live prices and quotes. Without it, the read says
+   * NEAR Intents isn't connected and every move is blocked for want of a quote.
+   */
+  intents?: Intents;
   /**
    * Calls a single token may make an hour, apart from the account's own: a token is a credential the owner hands to software,
    * and each of its calls is a call against the platform's hourly budget, which every owner shares.
@@ -1095,6 +1102,48 @@ export const routes: Route[] = [
       const organization = organizationOf(owner);
       const answer = await relay(() => platform.reads.overview(organization, agent), agent);
       return answer.ok ? ok(diversificationView(answer.value, ballastSettings?.(organization, agent))) : readFailure(answer, agent, "overview");
+    },
+  },
+  {
+    // The hedge plan (#221): NEAR Intents' token list against the registry, and the moves into gold and other chains' assets
+    // from the agent's book, each executable or blocked with every reason. One overview read, the token list (cached) and a
+    // few dry quotes; nothing here proposes or signs.
+    method: "GET", path: "/api/agents/:agent/hedge", access: "owner", needs: "read",
+    async handle({ identity, account, actor }, { platform, ballastSettings, intents, latestRisk }) {
+      const { agent, owner } = identity!;
+      const organization = organizationOf(owner);
+      const answer = await relay(() => platform.reads.overview(organization, agent), agent);
+      if (!answer.ok) return readFailure(answer, agent, "overview");
+      const built = await buildHedge({ intents, latestRisk }, { who: actor ?? account!, organization, agent, overview: answer.value, settings: ballastSettings?.(organization, agent) });
+      return ok(built.read);
+    },
+  },
+  {
+    /**
+     * One hedge move proposed for the owner (or the DAO) to approve, as a rebalance is: the plan is made again here and the
+     * swap built from it, so nothing the browser sends but the move's id and a `requestId` it names is trusted, and a move
+     * that isn't executable now (not listed on the platform, no fresh quote, over a cap) is refused. The platform keeps one
+     * proposal per `requestId`, so after a lost answer the page finds it by `…/requests/:id`. Recorded before the platform is
+     * asked and after; nothing executes until the owner approves the exact swap with their own signature.
+     */
+    method: "POST", path: "/api/agents/:agent/hedge/propose", access: "owner-fresh", needs: "propose",
+    async handle({ body, account, actor, identity }, { platform, audit, ballastSettings, intents, latestRisk }) {
+      const { agent, owner } = identity!, who = actor ?? account!;
+      const input = parse(contract.hedgeProposeRequest, body);
+      if (input === undefined) return refused(400, "bad_request");
+      const organization = organizationOf(owner);
+      const overview = await relay(() => platform.reads.overview(organization, agent), agent);
+      if (!overview.ok) return readFailure(overview, agent, "overview");
+      const built = await buildHedge({ intents, latestRisk }, { who, organization, agent, overview: overview.value, settings: ballastSettings?.(organization, agent) });
+      const move = built.read.plan?.moves.find(m => m.id === input.move), swap = built.legs.get(input.move);
+      if (!move || !move.canPropose || !swap) return refused(409, "move_not_available");
+      await audit.append({ who, action: "propose", agent, subject: input.move, stage: "attempt" });
+      const made = await relay(() => platform.proposals.create(organization, agent, { requestId: input.requestId, legs: [swap],
+        expiresAt: new Date(Date.now() + REBALANCE_HOURS * 3_600_000).toISOString(),
+        note: `Hedge: move ${move.sizeUsd} USD of ${move.from} into ${move.to} through NEAR Intents`.slice(0, 280) }), agent);
+      const reply = made.ok ? ok({ proposal: made.value }) : proposalFailure(made, agent);
+      await recordResult(audit, { who, action: "propose", agent, subject: made.ok ? made.value.id : input.move, stage: "result", answer: audited(made, reply) });
+      return reply;
     },
   },
   readRoute("/api/agents/:agent/activity", "activity"),

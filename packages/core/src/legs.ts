@@ -72,6 +72,13 @@ export function legsFor(input: LegsInput): LegsResult {
   if (!ASSET_IDS.has(volatile) || !ASSET_IDS.has(reserve) || volatile === reserve) return refused("invalid_input");
   if (!Number.isInteger(maxSlippageBps) || maxSlippageBps < 0 || maxSlippageBps > 10_000) return refused("invalid_input");
   const [from, to] = action === "sell-volatile" ? [volatile, reserve] : [reserve, volatile];
+  return legBetween(from, to, size, prices, decimals, maxSlippageBps);
+}
+
+/** The one swap from `from` to `to` for a USD size already read as a decimal; the checks `legsFor` makes after its own. */
+function legBetween(from: string, to: string, size: { n: bigint; scale: number }, prices: Readonly<Record<string, string>>,
+  decimals: Readonly<Record<string, number>>, maxSlippageBps: number): LegsResult {
+  const refused = (code: LegsRefusal): LegsResult => ({ ok: false, code });
   const fromPrice = decimal(own(prices, from)), toPrice = decimal(own(prices, to));
   if (!fromPrice || !toPrice) return refused("missing_price");
   const fromDecimals = own(decimals, from), toDecimals = own(decimals, to);
@@ -86,6 +93,32 @@ export function legsFor(input: LegsInput): LegsResult {
   if (amount < 1n || minAmountOut < 1n) return refused("below_one_unit");
   if (amount > MAX_AMOUNT || minAmountOut > MAX_AMOUNT) return refused("invalid_input");
   return { ok: true, legs: [{ from, to, amount: String(amount), minAmountOut: String(minAmountOut) }] };
+}
+
+export type SwapLegsInput = {
+  /** Platform asset IDs (`PROPOSAL_ASSETS`); any other is `invalid_input`. */
+  from: string; to: string;
+  /** What is spent, in USD, as a decimal string (`centsDown`). */
+  sizeUsd: string;
+  prices: Readonly<Record<string, string>>;
+  decimals: Readonly<Record<string, number>>;
+  maxSlippageBps: number;
+};
+
+/**
+ * The one swap between any two proposal assets (#221): the leg shape `legsFor` can't build because it is always volatile
+ * against the reserve. A stablecoin split's move, a hedge into a second volatile asset, or a rebalance between sleeves is
+ * this leg. The same arithmetic as `legsFor`: the amount is `sizeUsd` of `from` and the floor `sizeUsd` of `to` less the
+ * slippage, each rounded down; refused with a code, never thrown.
+ */
+export function swapLegsFor(input: SwapLegsInput): LegsResult {
+  if (input === null || typeof input !== "object") return { ok: false, code: "invalid_input" };
+  const { from, to, sizeUsd, prices, decimals, maxSlippageBps } = input;
+  const size = decimal(sizeUsd);
+  if (!size) return { ok: false, code: "invalid_input" };
+  if (!ASSET_IDS.has(from) || !ASSET_IDS.has(to) || from === to) return { ok: false, code: "invalid_input" };
+  if (!Number.isInteger(maxSlippageBps) || maxSlippageBps < 0 || maxSlippageBps > 10_000) return { ok: false, code: "invalid_input" };
+  return legBetween(from, to, size, prices, decimals, maxSlippageBps);
 }
 
 /**

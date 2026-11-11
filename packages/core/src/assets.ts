@@ -34,12 +34,14 @@ export const VENUE_IDS = {
   intents: "near-intents",
   omftEthereum: "omft-ethereum",
   omftBitcoin: "omft-bitcoin",
+  omftSolana: "omft-solana",
 } as const;
 
 export const VENUES: Readonly<Record<string, Venue>> = {
   [VENUE_IDS.intents]: { id: VENUE_IDS.intents, kind: "account", label: "NEAR Intents" },
   [VENUE_IDS.omftEthereum]: { id: VENUE_IDS.omftEthereum, kind: "bridge", label: "Ethereum bridge (omft)" },
   [VENUE_IDS.omftBitcoin]: { id: VENUE_IDS.omftBitcoin, kind: "bridge", label: "Bitcoin bridge (omft)" },
+  [VENUE_IDS.omftSolana]: { id: VENUE_IDS.omftSolana, kind: "bridge", label: "Solana bridge (omft)" },
 };
 
 /** One public, keyless USD quote: who, the read, and where its history comes from when it has one. */
@@ -107,6 +109,12 @@ export const ASSET_REGISTRY: Readonly<Record<string, AssetEntry>> = {
     symbol: "BTC", id: "nep141:btc.omft.near", class: "volatile", chain: "btc", route: "omft", venues: [VENUE_IDS.intents, VENUE_IDS.omftBitcoin], decimals: 8,
     priceSources: [COINBASE("BTC-USD"), KRAKEN("XBTUSD"), PYTH("Crypto.BTC/USD", "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43")],
     liquidity: { maxOrderUsd: 250_000 },
+  },
+  SOL: {
+    // On NEAR Intents' token list (1Click `GET /v0/tokens`, read 2026-11-10) as `sol.omft.near`, 9 decimals.
+    symbol: "SOL", id: "nep141:sol.omft.near", class: "volatile", chain: "sol", route: "omft", venues: [VENUE_IDS.intents, VENUE_IDS.omftSolana], decimals: 9,
+    priceSources: [COINBASE("SOL-USD"), KRAKEN("SOLUSD"), PYTH("Crypto.SOL/USD", "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d")],
+    liquidity: { maxOrderUsd: 100_000 },
   },
   USDC: {
     symbol: "USDC", id: PROPOSAL_ASSETS.USDC, class: "stable", chain: "near", route: "native", venues: [VENUE_IDS.intents], decimals: 6, pegUsd: 1,

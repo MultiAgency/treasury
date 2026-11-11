@@ -114,6 +114,12 @@ The build (`src/proposals/`, built to `dist-proposals/`), served only by the app
 | Diversified holdings, Venue exposure and caps, Stablecoins and the reserve split | tables (captions); "No stablecoin is held." is a status in place of the last | the Diversification region |
 | Diversification phases; Why phase `<n>` can't run | list; a list for each phase that can't run | the Diversification region |
 | What this read can't say; Limits of this diversification read | heading (level 3); list | the Diversification region, when the read has limits |
+| Hedge into gold and other chains | region and heading (level 2), on Strategy (#221): NEAR Intents' live prices against the registry, and the moves into gold and other chains' assets | the Strategy page, connected |
+| Hedge plan, Assets on NEAR Intents | headings (level 3) | the Hedge region |
+| Check NEAR Intents again | button: reads the list and the quotes anew | the Hedge region, once read |
+| Hedge moves; Why `<from → to>` is blocked; Notes on the hedge plan; Drift for `<symbol>` | lists; a list for each blocked move, for each plan with notes, and for each asset that drifts | the Hedge region |
+| Assets on NEAR Intents | table (caption) | the Hedge region |
+| Propose this move | button: proposes one executable move, planned again by the server; its status then names "Review the proposal" (a link to the proposal) | a move that is executable now |
 
 How it departs from the brief, or decides what the brief leaves open:
 - **Owner actions follow the platform's phase.** `open`, `submitted`, `settled` and `expired` decide polling and holds; older answers without a phase use their legacy stage. Settled actions show success only with provider status `SUCCESS`; failed or refunded actions show failure, and an unfamiliar or missing terminal outcome says it is unconfirmed. Grant and creation retries are offered only after a confirmed failure or signing expiry. A policy edit closes as saved only after confirmed success.

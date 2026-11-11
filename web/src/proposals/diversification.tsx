@@ -5,6 +5,7 @@ import { usd } from "../shared/format";
 import { Badge, Card, Loading, QueryError } from "../shared/ui";
 import { assetColors } from "./book";
 import type { DiversificationRead } from "./proposals-api";
+import { Hedge } from "./hedge";
 import { CAP_CAVEAT, holdingViews, phaseViews, sourceText, stableViews, venueViews } from "./diversification-view";
 import type { agentReads } from "./queries";
 
@@ -18,7 +19,7 @@ type Reads = ReturnType<typeof agentReads>;
  */
 export function Diversification({ reads }: { reads: Reads }) {
   const read = useQuery(reads.diversification);
-  return <section id="diversification" aria-labelledby="diversification-title" className="flex flex-col gap-4">
+  return <><section id="diversification" aria-labelledby="diversification-title" className="flex flex-col gap-4">
     <SectionHeader id="diversification-title" title="Diversification"
       description="Which assets the book may hold, through which venues, under which caps, and what the platform must list for the next phase."
       info="Each venue is where a holding settles: the agent's NEAR Intents account, and the bridge each asset from another chain arrived through. A holding counts at every venue on its path. The caps come from the agent's configured mandate terms when it has them; otherwise they are marked as the profile's defaults or absent."
@@ -26,7 +27,8 @@ export function Diversification({ reads }: { reads: Reads }) {
     {read.isPending ? <Card><Loading label="Reading the diversified book…" /></Card>
       : read.isError ? <Card><QueryError error={read.error} retry={() => read.refetch()} /></Card>
       : <Contents read={read.data} />}
-  </section>;
+  </section>
+  <Hedge reads={reads} /></>;
 }
 
 function Contents({ read }: { read: DiversificationRead }) {

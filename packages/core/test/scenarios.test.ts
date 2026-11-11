@@ -103,3 +103,36 @@ test("a book, spend terms or parameters that can't be read give one conservative
   assert.deepEqual([broken.floorBreached, broken.reasons], [true, ["a price shock needs an asset and a factor above zero"]]);
   assert.equal(stressRun(book(), terms, { id: "y", label: "y", shocks: [{ kind: "meteor" } as never] }).reasons[0], "unknown shock");
 });
+
+test("an asset that came over a bridge is down while the bridge is: a bridge outage cuts off its stables and stops trading in it (#221)", () => {
+  const bridged: Book = [
+    { asset: WNEAR, symbol: "wNEAR", class: "volatile", usd: 20_000, venue: "NEAR Intents" },
+    { asset: "ETH", symbol: "ETH", class: "volatile", usd: 10_000, venue: "NEAR Intents", via: ["Ethereum bridge"] },
+    { asset: USDC, symbol: "USDC", class: "stable", usd: 40_000, venue: "NEAR Intents" },
+    { asset: "USDC.e", symbol: "USDC.e", class: "stable", usd: 30_000, venue: "NEAR Intents", via: ["Ethereum bridge"] },
+  ];
+  assert.deepEqual(scenariosFor(bridged).filter(s => s.id.startsWith("venue:")).map(s => s.id),
+    ["venue:NEAR Intents:1d", "venue:NEAR Intents:7d", "venue:Ethereum bridge:1d", "venue:Ethereum bridge:7d"]);
+  const outage = run("venue:Ethereum bridge:7d", bridged);
+  // Only the 40,000 USDC is still reachable; 7 days of 2,000 a month falls due, and a bridged ETH can't be traded.
+  assert.equal(outage.unfundedUsd, 0);
+  assert.equal(outage.tradable, false);
+  const heavy = run("venue:Ethereum bridge:7d", bridged, { monthlySpendUsd: 200_000, operatingCashMonths: 6 });
+  assert.equal(heavy.unfundedUsd, Math.round(Math.max(0, 200_000 * 7 / 30 - 40_000) * 100) / 100, "what the reachable stables can't pay");
+  // The account's own outage cuts off everything, as before: a holding without `via` depends on its venue alone.
+  assert.equal(run("venue:NEAR Intents:1d", bridged).tradable, false);
+  assert.equal(run("venue:NEAR Intents:1d", book()).tradable, false);
+});
+
+test("a book's `via` must be a list of venue names, or the book is unreadable", () => {
+  const bad = [{ asset: WNEAR, class: "volatile", usd: 1, venue: "A", via: "bridge" }, { asset: USDC, class: "stable", usd: 1, venue: "A" }];
+  assert.match(bookProblems(bad).join(" "), /holding 0 needs/);
+  assert.deepEqual(bookProblems([{ asset: WNEAR, class: "volatile", usd: 1, venue: "A", via: ["B"] }, { asset: USDC, class: "stable", usd: 1, venue: "A" }]), []);
+});
+
+test("a gold crash is a scenario like any volatile fall once gold is in the risk book as a price exposure", () => {
+  const withGold: Book = [...book(), { asset: "XAUT", symbol: "XAUT", class: "volatile", usd: 10_000, venue: "NEAR Intents", via: ["Ethereum bridge"] }];
+  const crash = run("drop:XAUT:30", withGold);
+  assert.equal(crash.lossUsd, 3_000);
+  assert.equal(crash.floorBreached, false);
+});

@@ -19,6 +19,7 @@ import { chainDaos } from "./dao.ts";
 import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
+import { createIntents, createIntentsStub } from "./intents.ts";
 import { createHolds, createRequests } from "./requests.ts";
 import { createRiskReader, type RiskEntry } from "./risk.ts";
 import { createSessions } from "./sessions.ts";
@@ -95,8 +96,13 @@ const assistant = assistantModel && createAssistant({
 });
 const auditLog = async () => parseAuditLog(await readAuditLog(settings.TREASURY_AUDIT_FILE));
 
+// NEAR Intents' token list and dry quotes for the hedge read (#221): public and keyless, every call recorded in the audit log.
+const intents = settings.INTENTS_PROVIDER === "live" ? createIntents({ audit, callsPerHour: settings.INTENTS_CALLS_PER_HOUR })
+  : settings.INTENTS_PROVIDER === "stub" ? createIntentsStub() : undefined;
+
 const handler = createServer({
   platform,
+  ...(intents && { intents }),
   signIn: createSignIn({
     recipient: new URL(settings.TREASURY_PUBLIC_ORIGIN).host,
     keyLookup,

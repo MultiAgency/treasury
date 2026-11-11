@@ -87,10 +87,11 @@ test("class caps may name only some classes: the watch file doesn't need a cap f
   assert.deepEqual(loaded[0]!.ballast?.diversification?.classCapsPct, { volatile: 50, stable: 100 });
 });
 
-test("the risk agent and a diversified book together are refused at load: the risk agent assesses the two-asset book only", async () => {
+test("the risk agent and a diversified book load together (ADR 6): the risk agent assesses the book Ballast runs, and still needs Ballast", async () => {
   const both = { organization: "o", agent: "a", risk: {}, ballast: { ...BALLAST, diversification: { sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS } } };
-  await assert.rejects(loadWatchConfig(await file({ agents: [both] })), /sets risk with a diversified ballast: the risk agent assesses the two-asset book only/);
+  assert.equal((await loadWatchConfig(await file({ agents: [both] }))).length, 1);
   assert.equal((await loadWatchConfig(await file({ agents: [{ organization: "o", agent: "a", risk: {}, ballast: BALLAST }] }))).length, 1, "risk on the two-asset book loads");
+  await assert.rejects(loadWatchConfig(await file({ agents: [{ organization: "o", agent: "a", risk: {} }] })), /sets risk without ballast/);
 });
 
 test("a sleeve or stablecoin the platform doesn't list is refused at load, naming the platform's proposal assets", async () => {
@@ -128,4 +129,31 @@ test("real-world assets need eligibility and KYC, and the block's shape is check
   })), /eligible to hold them/);
   await assert.rejects(loadWatchConfig(await diversified({ sleeves: [] })), /sleeves/);
   await assert.rejects(loadWatchConfig(await diversified({ sleeves: [WNEAR_SLEEVE, ETH_SLEEVE], venueCapsPct: VENUE_CAPS, surprise: true })), /surprise/);
+});
+
+test("a hedge block loads with the planner's defaults, and is part of Ballast's settings only: no sleeve, no agent, no run changes", async () => {
+  const hedge = { sleeves: [{ asset: "XAUT", targetPct: 5, maxPct: 10 }], classCapsPct: { rwa: 10 }, venueCapsPct: { "omft-ethereum": 20 } };
+  const loaded = await loadWatchConfig(await file({ agents: [{ organization: "o", agent: "a", ballast: { ...BALLAST, hedge } }] }));
+  assert.deepEqual(loaded[0]!.ballast?.hedge, hedge);
+  assert.equal(loaded[0]!.ballast?.diversification, undefined, "the hedge is no diversification: the two-asset step still runs");
+});
+
+test("a hedge block that can't be planned is refused at load: an unknown or cash asset, a target over its ceiling, a bad cap or limit, an unknown key", async () => {
+  const bad = (hedge: Record<string, unknown>) => file({ agents: [{ organization: "o", agent: "a", ballast: { ...BALLAST, hedge } }] });
+  const sleeve = { asset: "XAUT", targetPct: 5, maxPct: 10 };
+  for (const [hedge, pattern] of [
+    [{ sleeves: [] }, /sleeves/],
+    [{ sleeves: [{ ...sleeve, asset: "NOPE" }] }, /NOPE isn't in the asset registry/],
+    [{ sleeves: [{ ...sleeve, asset: "USDC" }] }, /USDC isn't a risk asset NEAR Intents carries/],
+    [{ sleeves: [{ ...sleeve, asset: "TBILL" }] }, /TBILL isn't a risk asset NEAR Intents carries/],
+    [{ sleeves: [{ ...sleeve, targetPct: 11 }] }, /target at most the ceiling/],
+    [{ sleeves: [sleeve, sleeve] }, /twice/],
+    [{ sleeves: [sleeve], maxCostBps: 0 }, /maxCostBps/],
+    [{ sleeves: [sleeve], maxMoveUsd: -1 }, /maxMoveUsd/],
+    [{ sleeves: [sleeve], hedgeAtLevel: 4 }, /hedgeAtLevel|Invalid/],
+    [{ sleeves: [sleeve], classCapsPct: { rwa: 101 } }, /rwa class cap/],
+    [{ sleeves: [sleeve], venueCapsPct: { "no-such-bridge": 10 } }, /unknown venue/],
+    [{ sleeves: [sleeve], venueCapsPct: { "omft-ethereum": 0 } }, /cap must be above 0/],
+    [{ sleeves: [sleeve], extra: true }, /extra|Unrecognized/],
+  ] as const) await assert.rejects(loadWatchConfig(await bad(hedge as never)), pattern, JSON.stringify(hedge));
 });

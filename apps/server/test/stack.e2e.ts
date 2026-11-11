@@ -16,6 +16,8 @@ import { chainedFileAudit, verifyChain } from "../src/chain.ts";
 import * as contract from "../src/contract.ts";
 import { createCredential } from "../src/credential.ts";
 import { createServer } from "../src/http.ts";
+import type { BallastSettings } from "../src/ballast.ts";
+import { createIntentsStub } from "../src/intents.ts";
 import { createDaoRequests } from "../src/dao-requests.ts";
 import { standInDaos } from "../src/dao.ts";
 import { standInKeyLookup } from "../src/keys.ts";
@@ -28,6 +30,9 @@ import { HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const intruder = wallet("intruder.near");
+/** A spend small enough that the stack's portfolio holds its floor, and ETH, which the platform lists, as the hedge sleeve. */
+const HEDGE_SETTINGS: BallastSettings = { profile: "balanced", monthlySpendUsd: 0.1, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"],
+  hedge: { sleeves: [{ asset: "ETH", targetPct: 5, maxPct: 20 }, { asset: "XAUT", targetPct: 2, maxPct: 10 }], classCapsPct: { rwa: 10 } } };
 const clock = { now: Date.now() };
 // The store the server records through (`main.ts`): a hash chain, checked before the first append.
 const audit = chainedFileAudit(join(tempDir("treasury-stack-"), "audit.jsonl"));
@@ -55,6 +60,8 @@ before(async () => {
     consentsPerDay: 1_000, daoFilingsPerDay: 1_000,
     keyLookup,
     daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+    // The hedge read (#221): NEAR Intents simulated by the server, and a hedge block for the stack's portfolio.
+    intents: createIntentsStub(), ballastSettings: () => HEDGE_SETTINGS,
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -335,6 +342,33 @@ test("the owner asks for a rebalance to a drifted strategy: proposed under their
   assert.ok(proposal.legs.length > 0, "the strategy's legs, quoted now");
   const found = await (await get(`${agent}/requests/${requestId}`, cookie)).json() as { value: { proposal: { id: string } } };
   assert.equal(found.value.proposal.id, proposal.id);
+});
+
+test("the hedge plan reads the stack's portfolio with simulated NEAR Intents quotes, and one executable move is proposed through the platform as explicit legs (#221)", async () => {
+  const issued = await challenge();
+  const signedIn = cookieOf(await post("/api/session", { ...(await signOwner(target, issued)), nonce: issued.nonce }));
+  const live = ((await (await get(`/api/agents/${target.agent}/consent`, signedIn)).json()) as { value: { consent: unknown } }).value.consent;
+  const { cookie, agent } = live ? { cookie: signedIn, agent: `/api/agents/${target.agent}` } : await connect();
+  const response = await get(`${agent}/hedge`, cookie);
+  const body = await response.json() as { value: unknown };
+  assert.equal(response.status, 200, JSON.stringify(body));
+  const hedge = contract.hedgeRead.parse(body.value);
+  assert.deepEqual([hedge.intents.source, hedge.intents.status, hedge.configured], ["stub", "ok", true]);
+  assert.equal(hedge.registry.find(r => r.symbol === "XAUT")!.proposable, false, "gold isn't a platform asset");
+  const gold = hedge.plan?.moves.find(m => m.to === "XAUT");
+  if (gold) assert.ok(gold.blocked.some(b => b.code === "not_listed") && !gold.canPropose, "a move into gold is blocked by the platform's list");
+  const eth = hedge.plan?.moves.find(m => m.to === "ETH");
+  assert.ok(eth, `a top-up of ETH is planned: ${JSON.stringify(hedge.plan)}`);
+  assert.equal(eth.status, "executable", JSON.stringify(eth.blocked));
+  const requestId = `page-hedge-${Date.now()}`;
+  const proposed = await post(`${agent}/hedge/propose`, { requestId, move: eth.id }, cookie);
+  const made = await proposed.json() as { value: unknown };
+  assert.equal(proposed.status, 200, JSON.stringify(made));
+  const { proposal } = contract.rebalanceMade.parse(made.value);
+  assert.deepEqual([proposal.requestId, proposal.state, proposal.legs.length], [requestId, "proposed", 1]);
+  assert.deepEqual([proposal.legs[0]!.from, proposal.legs[0]!.to], [USDC, ETH], "the swap the server built, not one the browser sent");
+  const refused = await post(`${agent}/hedge/propose`, { requestId: `${requestId}-gold`, move: "rebalance:USDC>XAUT" }, cookie);
+  assert.deepEqual(await refused.json(), { ok: false, kind: "refused", code: "move_not_available" });
 });
 
 test("autopilot is turned on for the bound strategy, run now and left on; disconnecting turns it off before revoking", async () => {

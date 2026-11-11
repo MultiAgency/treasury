@@ -28,7 +28,7 @@ const entryOf = (row: Read["book"][number]): AssetEntry | undefined => assetById
  * defaults when it sets only a profile, else none. Compiling against the book's value can refuse (a floor the cash
  * share can no longer hold); the configured terms are still shown, with a note that the mandate doesn't compile now.
  */
-function termsOf(settings: BallastSettings | undefined, total: number): { terms: DiversifiedTerms | null; source: View["source"]; notes: string[] } {
+export function termsOf(settings: BallastSettings | undefined, total: number): { terms: DiversifiedTerms | null; source: View["source"]; notes: string[] } {
   if (!settings) return { terms: null, source: "absent", notes: ["no Ballast settings are configured for this agent: the caps shown are absent"] };
   const notes: string[] = [];
   if (!settings.diversification) {

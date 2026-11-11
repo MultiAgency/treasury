@@ -20,6 +20,8 @@ export * from "./decisions.ts";
 export * from "./assets.ts";
 export * from "./sleeves.ts";
 export * from "./stables.ts";
+export * from "./intents.ts";
+export * from "./hedge.ts";
 export * from "./runway.ts";
 export * from "./diversified.ts";
 export * from "./book-replay.ts";
