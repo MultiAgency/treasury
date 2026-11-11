@@ -130,16 +130,21 @@ export const daoSetup = z.strictObject({
 });
 /** A setup the platform stored: the Organization's Treasury agent, reserved and waiting for its creation. */
 export const setupDone = z.strictObject({ agent: agentName });
+/** The exact readable owner intent; opaque provider text is shown whole, never reconstructed by the app. */
+const nep413Intent = z.looseObject({ standard: z.literal("nep413"), payload: z.looseObject({ message: z.string(), recipient: z.string(), nonce: z.string() }) });
 /**
  * An agent's creation, prepared under its setup consent and followed by `correlationId` until `expiresAt`: a wallet
- * owner signs it on the platform's confirm page (`confirm.url`); for a DAO, a member files `dao.transaction`, the
+ * owner reviews a readable intent here or signs on the platform's confirm page (`confirm.url`); for a DAO, a member files `dao.transaction`, the
  * proposal (with a vote on it, for a member whose role votes), and the DAO's vote must pass before it expires.
  */
 export const creation = z.strictObject({
   correlationId: z.string(), expiresAt: z.string(),
+  intent: nep413Intent.extend({ payload: nep413Intent.shape.payload.extend({ message: z.string().min(1), recipient: z.string().min(1), nonce: signIn.shape.nonce }) }).optional(),
+  /** Binding reviewed with the immutable intent, checked again against fresh identity and setup consent before signing. */
+  review: z.strictObject({ agent: agentName, owner: accountId, host: z.string().min(1), publicKey: signIn.shape.publicKey }).optional(),
   confirm: z.strictObject({ url: z.string(), expiresAt: z.string() }).optional(),
   dao: z.strictObject({ transaction: memberTransaction }).optional(),
-});
+}).refine(value => [value.intent, value.confirm, value.dao].filter(Boolean).length === 1 && Boolean(value.intent) === Boolean(value.review), "One supported signing form is required");
 /** Where a creation stands, retaining the platform's optional phase and provider outcome alongside legacy stage. */
 const ownerStatusShape = ownerOutputs["owner/status"].shape;
 export const creationStatus = z.strictObject({
@@ -340,7 +345,6 @@ export const strategyProposed = z.strictObject({ id: strategyProposal.shape.id }
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
 /** The NEP-413 intent a wallet owner signs in their wallet, exactly as the platform prepared it. */
-const nep413Intent = z.looseObject({ standard: z.literal("nep413"), payload: z.looseObject({ message: z.string(), recipient: z.string(), nonce: z.string() }) });
 /**
  * A grant prepared for the owner: for a wallet owner, the intent their wallet signs here (or, for one the platform
  * holds, its confirm page); for a DAO, the transaction a member files for the DAO's vote. It expires at `expiresAt`.

@@ -106,10 +106,12 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
          */
         fileVote: (id: string, verdict: Verdict) => call(contract.daoFiled, `${proposal(id)}/${verdict}`, { method: "POST" }),
         /**
-         * Prepares the agent's creation under its setup consent: a link to the platform's confirm page for a wallet
-         * owner, the proposal a DAO's member files for a DAO. Each call prepares a new one.
+         * Prepares the agent's creation under its setup consent: a readable intent or a confirm link for a wallet
+         * owner, the proposal a DAO's member files for a DAO. An existing unsigned wallet review is resumed when available.
          */
         create: () => call(contract.creation, `${base}/creation`, { method: "POST" }),
+        /** Immutable unsigned bytes, with authority and open phase checked again; this never prepares another action. */
+        creationReview: (id: string) => call(contract.creation, `${base}/creation/${correlation.parse(id)}/review`),
         /** Where a creation stands, by its correlation ID. */
         creation: (id: string) => call(contract.creationStatus, `${base}/creation/${correlation.parse(id)}`),
         /** The owner reads (#61): holdings and policy, activity, payouts held, operations without a proven outcome, the autopilot's runs. */
