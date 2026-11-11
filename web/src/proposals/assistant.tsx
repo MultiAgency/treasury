@@ -7,13 +7,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Badge, Button, ErrorBox, Spinner, input } from "../shared/ui";
 import { cn } from "@/lib/utils";
 import { openDraft } from "./assistant-drafts";
-import { busyKeys, changed, conversationKey, conversations, NONE, subscribe, version, type Entry } from "./conversations";
+import { askConversation } from "./conversation-request";
+import { busyKeys, conversationKey, conversations, NONE, subscribe, toolProgress, version } from "./conversations";
 import { SwapPreview } from "./assistant-note";
 import { AGENT_PAGES, agentAddress, type AgentPage } from "./pages";
 import type { AssistantAnswer, AssistantDraft, AssistantPersona } from "./proposals-api";
 import { agentReads, assistantStatus } from "./queries";
+import { WhatIfResult } from "./what-if-result";
 import { when } from "./ui";
-import { failureText } from "./words";
 
 /**
  * The treasury assistant (#219): a panel opened from the top bar of every page of an agent, shown where the server
@@ -22,7 +23,6 @@ import { failureText } from "./words";
  * Nothing is sent from here: the flow it opens is where the owner submits and signs. A conversation is kept while the owner
  * moves between the agent's pages, per agent and per persona (the treasury assistant, or the stabilization agent).
  */
-type Turn = { role: "user" | "assistant"; text: string };
 type Source = AssistantAnswer["sources"][number];
 type Reads = ReturnType<typeof agentReads>;
 
@@ -62,27 +62,25 @@ export function useConversation(reads: Reads, persona: AssistantPersona) {
   useSyncExternalStore(subscribe, version);
   const entries = conversations.get(key) ?? NONE;
   const busy = busyKeys.has(key);
-  const ask = async (text: string) => {
-    const asked = text.trim();
-    if (!asked || busyKeys.has(key)) return;
-    const current = conversations.get(key) ?? NONE;
-    const history = current.flatMap((entry): Turn[] => entry.role === "user" ? [{ role: "user", text: entry.text.slice(0, 1_200) }]
-      : entry.role === "assistant" ? [{ role: "assistant", text: entry.answer.answer.slice(0, 1_200) }] : []).slice(-8);
-    conversations.set(key, [...current, { role: "user", text: asked }]);
-    busyKeys.add(key);
-    changed();
-    const answer = await reads.agent.ask(asked, history, persona);
-    busyKeys.delete(key);
-    conversations.set(key, [...(conversations.get(key) ?? NONE), answer.ok ? { role: "assistant", answer: answer.value } : { role: "error",
-      text: answer.kind === "refused" && answer.code === "rate_limited" ? "You've asked the most questions an hour allows. Try again later."
-        : answer.kind === "refused" && answer.code === "platform_budget" ? "The assistant has used its share of the platform's reads for this hour. Try again later, or read the page directly."
-        : answer.kind === "refused" && answer.code === "assistant_not_configured" ? "The assistant isn't set up on this server."
-        : answer.kind === "lost" ? "The answer was lost. Asking again is safe: a question sends nothing."
-        : failureText(answer, "read") }]);
-    changed();
-  };
-  return { entries, busy, ask };
+  const activeTool = [...(toolProgress.get(key)?.values() ?? [])].at(-1);
+  const progress = activeTool ? progressLabel(activeTool) : "Preparing the answer…";
+  const ask = (text: string) => askConversation(reads.name, persona, reads.agent.askStream, text);
+  return { entries, busy, progress, ask };
 }
+
+const TOOL_PROGRESS: Record<string, string> = {
+  get_overview: "Reading holdings and policy…", get_strategy: "Reading the strategy…", get_autopilot: "Checking autopilot…",
+  get_runs: "Reading recent runs…", get_activity: "Reading activity…", get_unresolved: "Checking unresolved operations…",
+  get_held: "Reading held payouts…", list_proposals: "Reading proposals…", get_proposal: "Reading the proposal…",
+  get_owner_actions: "Reading owner actions…", get_policy_history: "Reading policy history…", get_account: "Reading the treasury account…",
+  get_ballast_decisions: "Reading strategy decisions…", get_audit_trail: "Reading the audit trail…", get_dao_requests: "Reading DAO requests…",
+  list_strategy_proposals: "Reading proposed strategies…", get_risk_report: "Reading the latest risk assessment…",
+  get_risk_history: "Reading recent risk assessments…", run_what_if: "Calculating the scenario…",
+  draft_rebalance: "Drafting a rebalance for review…", draft_strategy: "Drafting strategy changes…", draft_policy_edit: "Drafting policy changes…",
+  draft_grant: "Preparing the grant review…", draft_freeze: "Preparing the freeze review…", draft_autopilot: "Preparing the autopilot review…",
+  open_page: "Finding the page…",
+};
+const progressLabel = (tool: string) => TOOL_PROGRESS[tool] ?? "Reading the records…";
 
 /** One source mark, `S1`: the read or record it names and when it was read, on hover or focus. */
 function Mark({ source }: { source: Source }) {
@@ -125,9 +123,10 @@ function DraftCard({ draft, onOpen }: { draft: AssistantDraft; onOpen: () => voi
   </div>;
 }
 
-function Reply({ answer, onOpen }: { answer: AssistantAnswer; onOpen: (draft: AssistantDraft) => void }) {
+function Reply({ answer, onOpen, showScenario }: { answer: AssistantAnswer; onOpen: (draft: AssistantDraft) => void; showScenario: boolean }) {
   return <div className="flex flex-col gap-3">
     <Cited answer={answer} />
+    {showScenario && answer.whatIf?.answer.result && <WhatIfResult result={answer.whatIf.answer.result} />}
     {answer.drafts.map((draft, index) => <DraftCard key={index} draft={draft} onOpen={() => onOpen(draft)} />)}
     {answer.sources.length > 0 && <div className="flex flex-col gap-1 border-t border-border pt-2 text-xs text-muted-foreground">
       <p className="font-medium">Sources</p>
@@ -144,15 +143,15 @@ function Reply({ answer, onOpen }: { answer: AssistantAnswer; onOpen: (draft: As
  * A conversation with one of the two agents: the log, its example questions, and the form. Used in the sheet and inline on
  * the Agents page; `onOpen` takes a draft the owner chose to open. `inline` fills its container's height instead of a sheet's.
  */
-export function Chat({ reads, persona, examples, label = "Your question", logLabel = "Conversation", placeholder, footer, onOpen, inline = false }: {
+export function Chat({ reads, persona, examples, label = "Your question", logLabel = "Conversation", placeholder, footer, onOpen, inline = false, scenarioInWorkspace = false }: {
   reads: Reads; persona: AssistantPersona; examples: readonly string[]; label?: string; logLabel?: string; placeholder: string; footer?: ReactNode;
-  onOpen: (draft: AssistantDraft) => void; inline?: boolean;
+  onOpen: (draft: AssistantDraft) => void; inline?: boolean; scenarioInWorkspace?: boolean;
 }) {
-  const { entries, busy, ask } = useConversation(reads, persona);
+  const { entries, busy, progress, ask } = useConversation(reads, persona);
   const [question, setQuestion] = useState("");
   const log = useRef<HTMLDivElement>(null);
   const field = `assistant-question-${persona}${inline ? "-inline" : ""}`;
-  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [entries, busy]);
+  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [entries, busy, progress]);
   const submit = (text: string) => { setQuestion(""); void ask(text); };
   const bubble = (children: ReactNode, mine: boolean) => <div className={cn("max-w-[92%] min-w-0 rounded-lg px-3 py-2", mine ? "self-end bg-secondary text-sm" : "self-start border border-border bg-card")}>{children}</div>;
   return <>
@@ -163,9 +162,9 @@ export function Chat({ reads, persona, examples, label = "Your question", logLab
           className="rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5">{example}</button>)}
       </div>}
       {entries.map((entry, index) => entry.role === "user" ? <Fragment key={index}>{bubble(<p className="break-words whitespace-pre-wrap">{entry.text}</p>, true)}</Fragment>
-        : entry.role === "assistant" ? <Fragment key={index}>{bubble(<Reply answer={entry.answer} onOpen={onOpen} />, false)}</Fragment>
+        : entry.role === "assistant" ? <Fragment key={index}>{bubble(<Reply answer={entry.answer} onOpen={onOpen} showScenario={!scenarioInWorkspace} />, false)}</Fragment>
         : <ErrorBox key={index} error={entry.text} />)}
-      {busy && <p role="status" className="flex items-center gap-2 self-start text-sm text-muted-foreground"><Spinner /> Reading the records…</p>}
+      {busy && <p role="status" className="flex items-center gap-2 self-start text-sm text-muted-foreground"><Spinner /> {progress}</p>}
     </div>
     <form className={cn("flex flex-col gap-2", inline ? "pt-3" : "border-t border-border p-3")} onSubmit={event => { event.preventDefault(); submit(question); }}>
       <div className="flex items-end gap-2">

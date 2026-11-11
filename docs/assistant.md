@@ -8,10 +8,52 @@ holds no key, signs nothing, and has no tool that writes.
 - **Server:** `apps/server/src/assistant/` (`assistant.ts`'s loop and instructions, `tools.ts`'s typed reads and drafts,
   `model.ts`'s provider interface and NEAR AI Cloud adapter, `rules-model.ts`'s deterministic stand-in).
 - **Routes:** `GET /api/assistant` answers whether this server answers questions and with which model;
-  `POST /api/agents/:agent/assistant` takes `{ question, history }` and answers `{ answer, sources, drafts, model,
-  stopped? }`.
+  `POST /api/agents/:agent/assistant` takes `{ question, history, persona?, context? }` and answers `{ answer, sources,
+  drafts, model, stopped?, whatIf? }`. Existing callers still receive JSON. The app requests a live SSE response with
+  `Accept: text/event-stream`.
 - **Page:** `web/src/proposals/assistant.tsx` (the sheet, citations and draft cards), `assistant-drafts.ts` (a draft
   handed to its review flow), `assistant-note.tsx` (what the flow says about the draft).
+
+## Live progress and the what-if workspace
+
+The assistant streams AG-UI events while it works: `RUN_STARTED`, tool-call start/arguments/end, a status-only
+`TOOL_CALL_RESULT` after each tool finishes, and `RUN_FINISHED` with the validated answer in `result`. In AG-UI,
+`TOOL_CALL_END` completes the arguments, not execution; the page keeps the tool's progress visible until its result.
+General tool outputs stay on the server. A failed run ends with `RUN_ERROR`; a stream lost before its terminal event
+is incomplete, and the client never retries it automatically. Authentication, owner access, origin and input checks
+run before streaming begins. Access to the assistant reads the agent's owner afresh because risk records are stored
+on this server.
+
+`run_what_if` also emits a `STATE_SNAPSHOT` with `{ whatIf: { event, answer } }` after its audit write. This artifact is
+the actual deterministic tool result, including the assessment's time and log sequence, rather than figures parsed
+from model prose. It populates the existing what-if controls and comparison on the Agents page; the assistant sheet
+uses the same comparison component. A refused scenario carries its problems and no successful result.
+
+Editing the controls selects inputs for follow-up questions. **Explain this scenario** asks the stabilization agent
+to calculate those inputs again from the latest recorded book, then explain the result. The request's optional
+`context.whatIf` contains only the selected event parameters: client-calculated results, agent identities and unknown
+fields are rejected. Context is input data, never evidence of a balance, permission or approval. Explicitly asking
+for another scenario takes precedence over the current selection. Combined or asset/venue-specific scenarios retain
+their full parameters until the owner edits a control.
+
+The workspace and conversations live in tab memory per treasury agent. Newer selections and questions prevent an
+older response from replacing the workspace; signing in or out clears the workspace, progress and conversations,
+and invalidates late responses from the previous session. Drafts still open the existing review and signing flows.
+This pilot uses the existing React UI and `@ag-ui/core`; it adds no CopilotKit runtime or hosted persistence.
+The endpoint emits AG-UI events but accepts this app's `assistantRequest`, rather than the protocol's standard
+`RunAgentInput`. Connecting a generic `HttpAgent` or CopilotKit runtime therefore needs an input adapter.
+
+## Checking the model with synthetic records
+
+`pnpm smoke:assistant --rules` runs four scenario checks through the deterministic provider: an explicit request
+overriding the selection, a selected fractional drop, a combined event, and invalid input. It checks exact calculated
+artifacts and streamed snapshots, source citations, and that no scenario produces a draft or platform mutation.
+
+`pnpm smoke:assistant` runs those checks against NEAR AI Cloud using the locally configured `NEARAI_API_KEY` and
+`TREASURY_ASSISTANT_MODEL` (or its existing default). It uses synthetic records only, starts no app server and reads
+no hosted treasury. It exits with code 2 before making requests when the key is unset. Each question is bounded to
+four model turns and four tool calls, with a 30-second request timeout and a three-minute overall deadline.
+The live check is opt-in and separate from `pnpm check`; a passing rules run does not establish live-model behavior.
 
 ## What it can read
 
@@ -79,8 +121,8 @@ The model is behind one interface (`AssistantModel`): `respond({ system, tools, 
   question kinds and drafts through the same tools and the same loop. Nothing leaves the server. The stack tests use it,
   and a deployment can run the panel with it if its treasury data must not reach a model provider.
 
-**What leaves the server with `nearai`:** the frozen instructions and tool definitions, the owner's question, up to eight
-earlier turns of text, and the result of each tool the model asks for during this question (bounded to 60,000 characters
+**What leaves the server with `nearai`:** the instructions and tool definitions, the owner's question, any selected
+scenario input parameters, up to eight earlier turns of text, and the result of each tool the model asks for during this question (bounded to 60,000 characters
 a result). Nothing else: no credential, session cookie, wallet key or signature, and no platform call the model didn't
 ask for. A tool result can include USD balances (confidential ones included), prices, budget figures, policy terms,
 proposal legs and statuses, an agent's reasons, and account IDs. Which records a question needs is the model's choice.
@@ -110,7 +152,8 @@ lets its holder ask models on that account; it reads nothing of the treasury's. 
 - **Audit:** every question (`assistant-ask`, attempt and result), tool call (`assistant-tool`) and draft
   (`assistant-draft`) is recorded in the hash-chained audit log with the SHA-256 of its input and output. The question's
   text, the answer's text and the tool results are never recorded, so the log can prove what was asked and what was
-  read without holding treasury data.
+  read without holding treasury data. When selected scenario context is present, the question's input hash covers
+  `{ question, context }` together.
 - **Failures:** not configured answers `assistant_not_configured` (503) and the page hides the panel; a spent question
   limit or platform budget answers `rate_limited` / `platform_budget` (429); a provider failure answers `unavailable`.
   A refusal by the provider is answered as a refusal, never as an action.

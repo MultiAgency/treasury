@@ -9,7 +9,7 @@ import type { DaoRequests } from "../dao-requests.ts";
 import type { Platform } from "../platform.ts";
 import type { StrategyProposals } from "../strategy-proposals.ts";
 import { riskHistoryEntryOf, riskReportOf, riskWhatIfOf, type LatestRisk, type RiskHistory } from "../risk.ts";
-import { riskWhatIfRequest } from "../contract.ts";
+import { riskWhatIfRequest, type AssistantWhatIf } from "../contract.ts";
 
 /**
  * The assistant's tools (#219): typed reads of the signed-in owner's own agent, and drafts. Each tool is scoped to the
@@ -43,7 +43,7 @@ export type Leg = { sell: string; buy: string; usd: number };
 export type PolicyDraftFields = { budget?: { daily_usd: string | null; weekly_usd: string | null; monthly_usd: string | null }; owner_approval?: boolean; max_actions_per_hour?: number | null; swap?: boolean };
 
 /** What a tool answers: its content for the model, the source it read, a draft it made, or why it failed. */
-export type ToolOutcome = { content: unknown; source?: Omit<Source, "id">; draft?: Draft } | { error: string };
+export type ToolOutcome = ({ content: unknown; source?: Omit<Source, "id">; draft?: Draft } | { error: string }) & { whatIf?: AssistantWhatIf };
 
 /** What the tools read, all scoped to one agent: its Organization's platform reads, and this server's own records of it. */
 export type ToolScope = {
@@ -300,7 +300,7 @@ export const TOOLS = [
       const records = await scope.riskHistory(scope.organization, scope.agent, count);
       return { content: { entries: records.map(riskHistoryEntryOf) }, source: { label: "Stabilization agent's recent assessments (audit log)", read: "audit/risk-history", at: new Date(scope.now()).toISOString() } };
     }),
-  tool("run_what_if", "Runs a tail event over the book of the stabilization agent's latest assessment, with the agent's own stress arithmetic, and answers the book's value, the stables and runway left, whether the cash floor breaks and whether the agent could still trade, next to today. Reads and computes only: nothing is proposed. Name at least one event: volatileDropPct (a one-day fall, 1-100), stablePrice (a stablecoin's price, e.g. 0.9), venueOutageDays, spendFactor (a multiple of plan) or staleDays; optionally `asset` (an asset ID) or `venue` to limit it.",
+  tool("run_what_if", "Runs a tail event over the book of the stabilization agent's latest assessment, with the agent's own stress arithmetic, and answers the book's value, the stables and runway left, whether the cash floor breaks and whether the agent could still trade, next to today. Reads and computes only: nothing is proposed. Name at least one event: volatileDropPct (a one-day fall, above 0 and at most 100 percent), stablePrice (a stablecoin's price, e.g. 0.9), venueOutageDays, spendFactor (a multiple of plan) or staleDays; optionally `asset` (an asset ID) or `venue` to limit it. Fractional values are allowed for every event.",
     riskWhatIfRequest, {
       type: "object", additionalProperties: false,
       properties: {
@@ -313,10 +313,11 @@ export const TOOLS = [
       },
     },
     async (event, scope) => {
-      if (!scope.latestRisk) return { error: "This server keeps no risk records." };
+      if (!scope.latestRisk) return { error: "This server keeps no risk records.", whatIf: { event, answer: { result: null, problems: ["This server keeps no risk records."] } } };
       const answer = riskWhatIfOf(await scope.latestRisk(scope.organization, scope.agent), event);
-      if (!answer.result) return { error: `The what-if could not be run: ${answer.problems.join("; ")}.` };
-      return { content: answer.result, source: { label: `What-if: ${answer.result.label} (on the assessment of ${answer.result.basedOn.at})`, read: "risk/what-if", at: new Date(scope.now()).toISOString() } };
+      const whatIf = { event, answer };
+      if (!answer.result) return { error: `The what-if could not be run: ${answer.problems.join("; ")}.`, whatIf };
+      return { content: answer.result, whatIf, source: { label: `What-if: ${answer.result.label} (on the assessment of ${answer.result.basedOn.at})`, read: "risk/what-if", at: new Date(scope.now()).toISOString() } };
     }),
   tool("draft_autopilot", "Opens the Strategy page's autopilot controls for the owner: turn it on, turn it off, or run it once now. Sends nothing: the owner presses the control there and confirms. Only when the owner asks for it (or asks you to pause autopilot because of the risk level).",
     z.strictObject({ action: z.enum(["on", "off", "run-now"]) }), { type: "object", properties: { action: { type: "string", enum: ["on", "off", "run-now"] } }, required: ["action"], additionalProperties: false },

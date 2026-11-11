@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { whatIfProblems } from "../../packages/core/src/whatif.ts";
 import { actionWords, statusLine, WHAT_IF_EVENTS, whatIfRequest, whatIfRows } from "../src/proposals/agents-view.ts";
 import type { RiskHistory, RiskWhatIf } from "../src/proposals/proposals-api.ts";
 
@@ -19,6 +20,17 @@ test("a what-if is asked only for a number in the range the core accepts, never 
 test("every event the page offers names a field the server's request takes", () => {
   assert.deepEqual(WHAT_IF_EVENTS.map(event => event.field), ["volatileDropPct", "stablePrice", "venueOutageDays", "spendFactor", "staleDays"]);
   for (const event of WHAT_IF_EVENTS) assert.equal(whatIfRequest(event.id, event.start).ok, true, `${event.id}'s starting value is valid`);
+});
+
+test("fractional scenarios and boundaries accepted by the core remain valid in the form", () => {
+  for (const event of WHAT_IF_EVENTS) {
+    for (const value of [0.001, 0.5, event.max, 0, -0.5, event.max + 0.001, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const request = { [event.field]: value };
+      assert.equal(whatIfRequest(event.id, String(value)).ok, whatIfProblems(request).length === 0, `${event.id}: ${value}`);
+    }
+    for (const text of ["", "  ", "not a number"]) assert.equal(whatIfRequest(event.id, text).ok, false, `${event.id}: ${JSON.stringify(text)}`);
+  }
+  assert.deepEqual(whatIfRequest("drop", "0"), { ok: false, why: "Enter a number above 0 and at most 100 (% in a day)." });
 });
 
 test("the result is today beside after, with the floor and trading said plainly and a loss shown", () => {
