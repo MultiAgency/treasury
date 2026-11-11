@@ -4,6 +4,7 @@ import { main, pingAnchorCheck } from "../src/anchor-check-ping.ts";
 
 const url = "https://hc-ping.com/11111111-2222-4333-8444-555555555555";
 const noWait = async () => {};
+const failureLine = "::error::Audit monitor heartbeat failed. Check the ping URL and service availability; no heartbeat was confirmed.";
 
 test("an absent heartbeat secret is an explicit notice, without a request", async () => {
   for (const value of [undefined, "", "  \n"]) {
@@ -65,10 +66,7 @@ test("redirects, errors and ignored 200 replies never confirm a heartbeat", asyn
       fetch: async () => { sent++; return new Response(body, { status }); }, sleep: noWait,
     }), 1);
     assert.equal(sent, 3);
-    assert.equal(lines.length, 1);
-    assert.match(lines[0]!, /^::error::/);
-    assert.equal(lines[0]!.includes(url), false);
-    if (body) assert.equal(lines[0]!.includes(body), false);
+    assert.deepEqual(lines, [failureLine]);
   }
 });
 
@@ -82,10 +80,7 @@ test("exceptions containing the bearer credential are sanitized at the CLI bound
   }), 1);
   assert.equal(sent, 3);
   assert.deepEqual(waits, [1_000, 1_000]);
-  assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /^::error::/);
-  assert.equal(lines[0]!.includes(url), false);
-  assert.equal(lines[0]!.includes("11111111"), false);
+  assert.deepEqual(lines, [failureLine]);
 });
 
 test("a failed response body is retried without exposing its error", async () => {
@@ -100,10 +95,7 @@ test("a failed response body is retried without exposing its error", async () =>
     }, sleep: noWait,
   }), 1);
   assert.equal(sent, 3);
-  assert.equal(lines.length, 1);
-  assert.match(lines[0]!, /^::error::/);
-  assert.equal(lines[0]!.includes(url), false);
-  assert.equal(lines[0]!.includes("secret response"), false);
+  assert.deepEqual(lines, [failureLine]);
 });
 
 test("the CLI confirms API acceptance without logging the credential", async () => {
