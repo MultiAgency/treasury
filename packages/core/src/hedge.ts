@@ -189,10 +189,12 @@ export function planHedge(input: HedgeInput, registry: Readonly<Record<string, A
     const blocked: HedgeBlock[] = [];
     for (const e of [from, to]) if (!proposable(e)) blocked.push({ code: "not_listed", reason: `${e.symbol} isn't among the platform's proposal assets: it can't be traded until the platform lists it` });
     // The book after the sale that funds the buy, so the buy is judged on what it would leave, not on what is there now.
+    // The caps bound risk exposure, so they judge a buy of a risk asset only: a move into a stablecoin (a trim, a depeg
+    // exit) only lowers it, and is never refused for a cap.
     const after = holdingsNow().map(h => h.asset === from.symbol ? { ...h, usd: Math.max(0, h.usd - size) } : h);
-    const ctx = bookContext(to.symbol, after, total, registry);
+    const ctx = to.class === "stable" ? undefined : bookContext(to.symbol, after, total, registry);
     if (ctx === null) blocked.push({ code: "invalid", reason: "the book's venue exposure can't be read" });
-    else {
+    else if (ctx !== undefined) {
       // The platform's list is judged above; here only the caps, so a move shows both its listing and its cap failures.
       const intent: Intent = { id: "hedge", zone: "hold", action: "buy-volatile", sizeUsd: size, dcaUnits: 0, reason, at };
       const verdict = checkBookExposure(intent, { ...ctx, asset: { ...ctx.asset, proposable: true } }, caps);

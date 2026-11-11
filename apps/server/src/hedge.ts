@@ -77,8 +77,16 @@ export async function buildHedge(deps: HedgeDeps, { who, organization, agent, ov
   const notes: string[] = [];
   const mandate = termsOf(settings, total);
   notes.push(...mandate.notes);
-  const venueCapsPct: Record<string, number> = { ...(mandate.terms?.venueCapsPct ?? {}), ...(hedge.venueCapsPct ?? {}) };
-  const classCapsPct = { ...(mandate.terms?.classCapsPct ?? {}), ...(hedge.classCapsPct ?? {}) };
+  // The hedge block only tightens: where both set a cap, the stricter one binds, so a block outside the signed mandate
+  // never loosens the owner's caps; a cap only the block sets (a bridge or class the mandate doesn't name) applies as set.
+  const tighter = <K extends string>(mandateCaps: Partial<Record<K, number>>, hedgeCaps: Partial<Record<K, number>>) => {
+    const merged: Partial<Record<K, number>> = { ...mandateCaps };
+    for (const [key, cap] of Object.entries(hedgeCaps) as [K, number | undefined][])
+      if (cap !== undefined) merged[key] = merged[key] === undefined ? cap : Math.min(merged[key]!, cap);
+    return merged;
+  };
+  const venueCapsPct = tighter<string>(mandate.terms?.venueCapsPct ?? {}, hedge.venueCapsPct ?? {}) as Record<string, number>;
+  const classCapsPct = tighter(mandate.terms?.classCapsPct ?? {}, hedge.classCapsPct ?? {});
   if (classCapsPct.stable === undefined) classCapsPct.stable = 100;
   for (const sleeve of hedge.sleeves) for (const venue of ASSET_REGISTRY[sleeve.asset]?.venues ?? []) {
     if (venueCapsPct[venue] !== undefined || venue === VENUE_IDS.intents) continue;
@@ -86,10 +94,14 @@ export async function buildHedge(deps: HedgeDeps, { who, organization, agent, ov
     notes.push(`${venue}: no cap is set, so the ${settings.profile} profile's bridge default of ${venueCapsPct[venue]}% applies`);
   }
 
-  const risk = deps.latestRisk ? await deps.latestRisk(organization, agent).catch(() => null) : null;
-  const level = (risk?.entry.assessment.level ?? 0) as Level;
+  // No record (no risk block, or none written yet) is planned as calm, and says so. A record that can't be read is planned
+  // at L1, which holds buys of new risk, as a raised level would: the plan fails closed, never open.
+  let unreadable = false;
+  const risk = deps.latestRisk ? await deps.latestRisk(organization, agent).catch(() => { unreadable = true; return null; }) : null;
+  const level = (risk ? risk.entry.assessment.level : unreadable ? 1 : 0) as Level;
   const read = { ...base, level: risk ? level : null };
-  if (!risk) notes.push("no stabilization assessment is recorded for this agent: the plan assumes forward risk is calm");
+  if (unreadable) notes.push("the stabilization record couldn't be read: buys of new risk hold until it can, as at L1");
+  else if (!risk) notes.push("no stabilization assessment is recorded for this agent: the plan assumes forward risk is calm");
 
   const stablePrices: Record<string, number | null> = {};
   for (const entry of Object.values(ASSET_REGISTRY)) if (entry.class === "stable") {

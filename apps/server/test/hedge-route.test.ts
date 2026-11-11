@@ -29,12 +29,12 @@ const ETH_HEDGE: BallastSettings = { ...BASE, hedge: { sleeves: [{ asset: "ETH",
 const GOLD_HEDGE: BallastSettings = { ...BASE, hedge: { sleeves: [{ asset: "XAUT", targetPct: 5, maxPct: 10 }], classCapsPct: { rwa: 10 } } };
 
 let server: Server, base: string, cookie: string, intruderCookie: string;
-let configured: BallastSettings | undefined = ETH_HEDGE, risk: StoredRisk | null = null;
+let configured: BallastSettings | undefined = ETH_HEDGE, risk: StoredRisk | null = null, riskUnreadable = false;
 const stub = createIntentsStub();
 const off = { source: "stub" as const, tokens: async () => ({ ok: false as const, kind: "unavailable" as const, detail: "NEAR Intents couldn't be reached" }), quote: async () => ({ ok: false as const, kind: "unavailable" as const, detail: "x" }) };
 
 before(async () => {
-  const started = await testServer({ platform: fake.platform, wallets: [owner, intruder], audited, ballastSettings: () => configured, latestRisk: async () => risk, intents: stub } as never);
+  const started = await testServer({ platform: fake.platform, wallets: [owner, intruder], audited, ballastSettings: () => configured, latestRisk: async () => { if (riskUnreadable) throw new Error("audit segment unreadable"); return risk; }, intents: stub } as never);
   ({ server, base } = started);
   cookie = await started.signIn(owner);
   intruderCookie = await started.signIn(intruder);
@@ -119,6 +119,34 @@ test("a move whose swap can't be built isn't executable: a mandate that doesn't 
 });
 
 /** The read with another provider, on a server of its own. */
+test("a stabilization record that can't be read holds buys of new risk, as a raised level would: never planned as calm", async () => {
+  reset();
+  riskUnreadable = true;
+  try {
+    const hedge = await read();
+    const move = hedge.plan!.moves.find(m => m.to === "ETH")!;
+    assert.deepEqual([move.status, move.canPropose], ["blocked", false]);
+    assert.ok(move.blocked.some(b => b.code === "risk_level"), JSON.stringify(move.blocked));
+    assert.ok(hedge.plan!.notes.some(n => /couldn't be read/.test(n)), JSON.stringify(hedge.plan!.notes));
+    assert.equal((await propose({ move: move.id, requestId: "r".repeat(32) })).body.code, "move_not_available");
+    assert.equal(creates().length, 0);
+  } finally { riskUnreadable = false; }
+});
+
+test("the hedge block's caps only tighten the mandate's: a looser one is ignored, so a mandate's 15% bridge cap still binds", async () => {
+  reset();
+  const before = configured;
+  configured = { ...BASE, diversification: { sleeves: [{ asset: "wNEAR", targetPct: 20, minPct: 5, maxPct: 25 }, { asset: "ETH", targetPct: 20, minPct: 5, maxPct: 25 }],
+      venueCapsPct: { "near-intents": 50, "omft-ethereum": 15 } },
+    hedge: { sleeves: [{ asset: "ETH", targetPct: 20, maxPct: 25 }], venueCapsPct: { "omft-ethereum": 100 } } };
+  try {
+    const hedge = await read();
+    const move = hedge.plan!.moves.find(m => m.to === "ETH")!;
+    assert.ok(move.blocked.some(b => b.code === "venue_cap"), JSON.stringify({ move, notes: hedge.plan!.notes }));
+    assert.equal(move.canPropose, false);
+  } finally { configured = before; }
+});
+
 async function createServerWith(intents: unknown) {
   const other = await testServer({ platform: fake.platform, wallets: [owner], ballastSettings: () => ETH_HEDGE, intents } as never);
   try {

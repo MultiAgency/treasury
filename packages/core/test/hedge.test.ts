@@ -111,6 +111,16 @@ test("a sleeve over its ceiling is trimmed to its target into the reserve; a sel
   assert.equal(plan({ holdings: [{ asset: "USDC", usd: 60_000 }, { asset: "wNEAR", usd: 15_000 }, { asset: "XAUT", usd: 10_000 }, { asset: "ETH", usd: 15_000 }] }).moves.length, 0, "exactly at the ceiling isn't over it");
 });
 
+test("a trim into a stablecoin lowers risk, so no venue or class cap refuses it, however close the account is to its cap", () => {
+  // 100k: wNEAR 50k, ETH 15k, USDC 35k; the account capped at 60%. ETH is over its 10% ceiling, so it's trimmed 10k into
+  // USDC: the account then holds less risk than before, never more.
+  const book = [{ asset: "USDC", usd: 35_000 }, { asset: "wNEAR", usd: 50_000 }, { asset: "ETH", usd: 15_000 }];
+  const tight: BookExposureLimits = { ...caps, venueCapsPct: { ...caps.venueCapsPct, [VENUE_IDS.intents]: 60 }, classCapsPct: { volatile: 70, stable: 100, rwa: 10 } };
+  const move = only(plan({ holdings: book, caps: tight, terms: terms({ sleeves: [{ asset: "ETH", targetPct: 5, maxPct: 10 }] }), quotes: [quote("ETH", "USDC", 10_000)] }).moves);
+  assert.deepEqual([move.kind, move.shape, move.from, move.to, move.sizeUsd], ["trim", "risk-to-stable", "ETH", "USDC", 10_000]);
+  assert.deepEqual(codes(move), [], "nothing blocks a trim that lowers the account's risk");
+});
+
 test("a move never exceeds the move limit or either asset's liquidity limit", () => {
   assert.equal(only(plan({ terms: terms({ sleeves: [{ asset: "XAUT", targetPct: 50, maxPct: 50 }] }) }).moves).sizeUsd, 25_000, "XAUT's order limit and the move limit are both 25,000");
   assert.equal(only(plan({ terms: terms({ maxMoveUsd: 2_000 }) }).moves).sizeUsd, 2_000);

@@ -9,7 +9,7 @@ The owner's Strategy page shows **Hedge into gold and other chains**: NEAR Inten
 
 ## What NEAR Intents is asked, and what is sent
 
-Two calls to `https://1click.chaindefuser.com`: `GET /v0/tokens` (the list, cached a minute) and `POST /v0/quote` with `dry: true` (a price; it reserves no deposit address and moves nothing). Both are public and keyless. A dry quote needs a sender, refund and recipient: the server sends a fixed placeholder account (`treasury-dry-run.near`) for all three, so the API learns neither which treasury is asking nor any account of its. Each call is limited (`INTENTS_CALLS_PER_HOUR`, 120 by default, for the whole deployment), times out after 10 seconds, refuses an answer over 2 MB and a redirect, and is recorded in the audit log as `intents-read`, its attempt before it goes out and its result after, by the SHA-256 of the request and of the answer. A call that can't be recorded isn't made. The answers are untrusted: parsed by the core's checks, dropped entry by entry when malformed, and never repeated as an instruction.
+Two calls to `https://1click.chaindefuser.com`: `GET /v0/tokens` (the list, cached a minute) and `POST /v0/quote` with `dry: true` (a price; it reserves no deposit address and moves nothing). Both are public and keyless. A dry quote needs a sender, refund and recipient: the server sends a fixed placeholder account (`treasury-dry-run.near`) for all three, so the API learns neither which treasury is asking nor any account of its. A quote does carry the move itself: its two assets, its exact amount and a deadline, from this server. For a treasury kept confidential, that is the part to weigh before turning the hedge on. Each call is limited (`INTENTS_CALLS_PER_HOUR`, 120 by default, for the whole deployment), times out after 10 seconds, refuses an answer over 2 MB and a redirect, and is recorded in the audit log as `intents-read`, its attempt before it goes out and its result after, by the SHA-256 of the request and of the answer. A call that can't be recorded isn't made. The answers are untrusted: parsed by the core's checks, dropped entry by entry when malformed, and never repeated as an instruction.
 
 A quote's cost is NEAR Intents' own USD valuation of what goes in less what comes out, in basis points: spread, price impact and the service's fee together. The planner blocks a move whose quote costs more than `maxCostBps` (100 by default; a USDC-to-gold quote on 2026-11-10 cost about 31).
 
@@ -21,15 +21,15 @@ All at once (`planHedge`):
 
 1. Both assets are among the platform's proposal assets.
 2. A quote taken at least as large as the move, younger than `maxQuoteAgeMs` (2 minutes), costs at most `maxCostBps`.
-3. The buy leaves every venue on the asset's path (the account, and each bridge it crossed) and its class inside their caps, **counted after the sale that funds it**; a class with no cap isn't allowed (gold needs the owner's `classCapsPct.rwa`), and a venue with no cap refuses (a bridge with none set gets the profile's `BRIDGE_CAP_PCT`, said in the plan's notes).
-4. A buy of new risk is funded from the reserve above the cash floor, and holds while forward risk is at L1 or above, as Ballast's buys do. A hedge from a volatile asset into the sleeve is risk-neutral, so it runs at the hedge level (`hedgeAtLevel`, L2 by default).
-5. Its swap can be built (`swapLegsFor`, at the mandate's slippage and the platform's prices; the list's price for an asset the book doesn't hold).
+3. The buy leaves every venue on the asset's path (the account, and each bridge it crossed) and its class inside their caps, **counted after the sale that funds it**; a class with no cap isn't allowed (gold needs the owner's `classCapsPct.rwa`), and a venue with no cap refuses (a bridge with none set gets the profile's `BRIDGE_CAP_PCT`, said in the plan's notes). A move into a stablecoin (a trim, a depeg exit) only lowers risk, so it asks no cap.
+4. A buy of new risk is funded from the reserve above the cash floor, and holds while forward risk is at L1 or above, as Ballast's buys do, and while the stabilization record can't be read (planned as L1, never as calm). A hedge from a volatile asset into the sleeve is risk-neutral, so it runs at the hedge level (`hedgeAtLevel`, L2 by default).
+5. Its swap can be built (`swapLegsFor`, at the mandate's slippage and the platform's prices; the list's price for an asset the book doesn't hold, so for such an asset the swap's floor, `minAmountOut`, rests on NEAR Intents' own price).
 
 A move that fails any is listed `blocked` with each failure by code: `not_listed`, `no_quote`, `stale_quote`, `quote_size`, `quote_cost`, `risk_level`, `venue_cap`, `class_cap`, `order_size`, `no_cap`, `cash_floor`, `invalid`. A move the book refuses on a cap isn't quoted (no call is spent on it). These checks are app-side and only hold back: the platform's signed policy has the last word.
 
 ## Configuration
 
-An agent's `ballast.hedge` block in the watch file (checked at load by the planner's own checks; no part of the mandate, so its digest is unchanged):
+An agent's `ballast.hedge` block in the watch file (checked at load by the planner's own checks; no part of the mandate, so its digest is unchanged): Its caps only tighten the mandate's: where both set one, the stricter binds, and a cap only the block sets (a bridge or class the mandate doesn't name) applies as set.
 
 ```json
 {
