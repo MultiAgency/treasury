@@ -135,6 +135,11 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         ownerActions: () => call(contract.ownerActionsRead, `${base}/owner/actions`),
         /** The stabilization agent's latest recorded assessment (#220): level, projection, scenarios and recommendations. */
         risk: () => call(contract.riskRead, `${base}/risk`),
+        /** What the stabilization agent has been doing: its recent assessments, and whether this server runs it (#220). */
+        riskHistory: () => call(contract.riskHistoryRead, `${base}/risk/history`),
+        /** The owner's own tail event over the latest recorded book, with the agent's stress arithmetic: read and computed, nothing proposed. */
+        riskWhatIf: (event: z.input<typeof contract.riskWhatIfRequest>) =>
+          call(contract.riskWhatIfRead, `${base}/risk/what-if`, { method: "POST", body: contract.riskWhatIfRequest.parse(event) }),
         recording: (tick: string) => call(contract.recordingRead, `${base}/runs/${readId.parse(tick)}`),
         /** The agent's account: its wallet, which holds its balances, and the grants its executor holds. */
         account: () => call(contract.accountRead, `${base}/account`),
@@ -167,8 +172,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** The strategies agents proposed and the owner hasn't answered (#206), from the server's own records. */
         strategyProposals: () => call(contract.strategyProposalsRead, `${base}/strategy-proposals`),
         /** A question to the treasury assistant, with the conversation's earlier turns as text: it reads, cites and drafts, never sends. */
-        ask: (question: string, history: z.input<typeof contract.assistantTurn>[]) =>
-          call(contract.assistantAnswer, `${base}/assistant`, { method: "POST", body: { question, history } }),
+        ask: (question: string, history: z.input<typeof contract.assistantTurn>[], persona: z.input<typeof contract.assistantPersona> = "treasury") =>
+          call(contract.assistantAnswer, `${base}/assistant`, { method: "POST", body: { question, history, persona } }),
         /** Adopts one: saved over the strategy it was compared against, once. The grant that binds it is asked for after. */
         adoptStrategyProposal: (id: string) => call(contract.strategySaved, `${base}/strategy-proposals/${proposalRecordId.parse(id)}/adopt`, { method: "POST" }),
         /** Declines one: closed, and not proposed again by its source. */
@@ -229,6 +234,9 @@ export type BooksRead = z.output<typeof contract.booksRead>;
 export type StrategyRead = z.output<typeof contract.strategyRead>;
 export type StrategyProposal = z.output<typeof contract.strategyProposal>;
 export type RiskReport = z.output<typeof contract.riskReport>;
+export type RiskHistory = z.output<typeof contract.riskHistoryRead>;
+export type RiskWhatIf = z.output<typeof contract.riskWhatIfRead>;
+export type AssistantPersona = z.output<typeof contract.assistantPersona>;
 export type AssistantAnswer = z.output<typeof contract.assistantAnswer>;
 export type AssistantDraft = z.output<typeof contract.assistantDraft>;
 export type GrantPrepared = z.output<typeof contract.grantPrepared>;

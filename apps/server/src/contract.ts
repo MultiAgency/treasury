@@ -358,7 +358,9 @@ export const strategyProposalsRead = z.array(strategyProposal);
  * opens in its existing review flows, never anything sent.
  */
 export const assistantTurn = z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().max(1_200) });
-export const assistantRequest = z.strictObject({ question: z.string().trim().min(1).max(2_000), history: z.array(assistantTurn).max(8).default([]) });
+/** Which of the two agents is asked: the treasury assistant (everything, drafts only) or the stabilization agent (forward risk). */
+export const assistantPersona = z.enum(["treasury", "stabilization"]);
+export const assistantRequest = z.strictObject({ question: z.string().trim().min(1).max(2_000), history: z.array(assistantTurn).max(8).default([]), persona: assistantPersona.default("treasury") });
 const draftChange = z.strictObject({ field: z.string(), from: z.string(), to: z.string() });
 export const assistantDraft = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("strategy"), targets: z.record(z.string(), z.number()), schedule: z.strictObject({ everyMin: z.number().optional(), maxUsd: z.number().optional() }).optional(),
@@ -369,6 +371,8 @@ export const assistantDraft = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("rebalance"), legs: z.array(z.strictObject({ sell: z.string(), buy: z.string(), usd: z.number() })).optional(), note: z.string() }),
   z.strictObject({ kind: z.literal("grant"), note: z.string() }),
   z.strictObject({ kind: z.literal("freeze"), reason: z.string(), note: z.string() }),
+  z.strictObject({ kind: z.literal("autopilot"), action: z.enum(["on", "off", "run-now"]), note: z.string() }),
+  z.strictObject({ kind: z.literal("page"), page: z.enum(["home", "proposals", "strategy", "funding", "policy", "activity", "agents"]), why: z.string(), note: z.string() }),
 ]);
 export const assistantAnswer = z.strictObject({
   answer: z.string(),
@@ -454,6 +458,40 @@ export const riskReport = z.strictObject({
 export type RiskReport = z.infer<typeof riskReport>;
 /** The agent's latest recorded risk assessment, or null when none has been recorded yet. */
 export const riskRead = z.strictObject({ risk: riskReport.nullable() });
+
+/**
+ * What the stabilization agent has been doing (#220), for the Agents page: each recorded assessment, newest first, with
+ * whether the watch file runs the agent for this account and how often. `configured` is this server's configuration, not
+ * a guess from the records: an agent that is off has no new records, and the page says why.
+ */
+export const riskHistoryEntry = z.strictObject({
+  at: z.string(), seq: z.number().int(), level: z.number().int().min(0).max(4), reason: z.string(),
+  /** The recommendations' actions, in the order the agent made them. */
+  actions: z.array(z.enum(["hold-buys", "de-risk", "pause-autopilot", "recommend-freeze"])),
+  proposed: z.boolean(),
+  /** The projection's drawdown when it was usable. */
+  drawdownPct: z.number().nullable(),
+});
+export type RiskHistoryEntry = z.infer<typeof riskHistoryEntry>;
+export const riskHistoryRead = z.strictObject({ configured: z.boolean(), intervalS: z.number().int().nullable(), entries: z.array(riskHistoryEntry) });
+/**
+ * An event the owner names, run over the latest record's book. Every part is optional but one is needed, and the numbers
+ * are range-checked by the core: a refusal comes back as `problems`, never as a result that looks like a pass.
+ */
+export const riskWhatIfRequest = z.strictObject({
+  volatileDropPct: z.number().optional(), stablePrice: z.number().optional(), venueOutageDays: z.number().optional(),
+  spendFactor: z.number().optional(), staleDays: z.number().optional(),
+  asset: z.string().min(1).max(200).optional(), venue: z.string().min(1).max(100).optional(),
+});
+const whatIfStress = z.strictObject({
+  id: z.string(), label: z.string(), valueUsd: z.number(), lossUsd: z.number(), drawdownPct: z.number(), stableUsd: z.number(),
+  runwayMonths: z.number(), floorUsd: z.number(), floorBreached: z.boolean(), unfundedUsd: z.number(), tradable: z.boolean(), reasons: z.array(z.string()),
+});
+export const riskWhatIfRead = z.strictObject({
+  problems: z.array(z.string()),
+  result: z.strictObject({ basedOn: z.strictObject({ at: z.string(), seq: z.number().int() }), label: z.string(), now: whatIfStress, after: whatIfStress }).nullable(),
+});
+export type RiskWhatIfRead = z.infer<typeof riskWhatIfRead>;
 
 /**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.

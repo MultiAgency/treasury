@@ -17,6 +17,7 @@ import { proposalId } from "@multiagency/sdk";
  * | `/agents/<agent>/policy` | Policy (#142: grants) |
  * | `/agents/<agent>/activity` | Activity (#136) |
  * | `/agents/<agent>/activity/runs/<id>` | Run |
+ * | `/agents/<agent>/ai` | Agents (the stabilization agent and the treasury assistant) |
  */
 export const AGENT_PAGES = {
   home: { path: "", title: "Home" },
@@ -25,10 +26,11 @@ export const AGENT_PAGES = {
   funding: { path: "/funding", title: "Funding" },
   policy: { path: "/policy", title: "Policy" },
   activity: { path: "/activity", title: "Activity" },
+  agents: { path: "/ai", title: "Agents" },
 } as const;
 export type AgentPage = keyof typeof AGENT_PAGES;
 /** The pages the navigation lists, in order. A page not built yet isn't here. */
-export const NAVIGATION: readonly AgentPage[] = ["home", "proposals", "strategy", "funding", "policy", "activity"];
+export const NAVIGATION: readonly AgentPage[] = ["home", "proposals", "strategy", "funding", "policy", "activity", "agents"];
 
 export const ROOT_TITLE = "Your treasuries";
 export const DAO_TITLE = "A DAO's Treasury";

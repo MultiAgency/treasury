@@ -29,7 +29,7 @@ import { failure, log } from "./log.ts";
 import { createRateLimit, type RateLimit } from "./ratelimit.ts";
 import { agentsOf, checkSetup, DAO_SETUP_MS, setupConsents, setupFor, setupText } from "./setup.ts";
 import { recordResult, revokeAll } from "./revoke.ts";
-import { riskReportOf, type LatestRisk } from "./risk.ts";
+import { riskHistoryEntryOf, riskReportOf, riskWhatIfOf, type LatestRisk, type RiskHistory } from "./risk.ts";
 import type { Sessions } from "./sessions.ts";
 import { createStrategyProposals, memoryProposalRecords, type StrategyProposals } from "./strategy-proposals.ts";
 import type { SignIn } from "./signin.ts";
@@ -95,6 +95,10 @@ export type Deps = {
    * the route answers that no assessment has been recorded.
    */
   latestRisk?: LatestRisk;
+  /** The newest stabilization records, for the Agents page's activity list (#220). Without it the list is empty. */
+  riskHistory?: RiskHistory;
+  /** Whether `watch` runs the stabilization agent for an agent, and how often it ticks: from the watch file, never the platform. */
+  riskStatus?: (organization: string, agent: string) => { configured: boolean; intervalS: number | null };
   /**
    * NEAR Intents' token list and dry-run quotes (#221): the hedge read's live prices and quotes. Without it, the read says
    * NEAR Intents isn't connected and every move is blocked for want of a quote.
@@ -1189,6 +1193,31 @@ export const routes: Route[] = [
     },
   },
   {
+    // What the stabilization agent has been doing (#220): its recent assessments from the audit log, newest first, and
+    // whether this server's watch file runs it for the agent. Nothing is computed and the platform isn't read.
+    method: "GET", path: "/api/agents/:agent/risk/history", access: "owner-fresh", needs: "read",
+    async handle({ identity }, { riskHistory, riskStatus }) {
+      const { agent, owner } = identity!;
+      const organization = organizationOf(owner);
+      const status = riskStatus?.(organization, agent) ?? { configured: false, intervalS: null };
+      if (!riskHistory) return ok({ ...status, entries: [] });
+      const found = await relay(async () => ({ ok: true as const, value: await riskHistory(organization, agent, 20) }), agent);
+      return found.ok ? ok({ ...status, entries: found.value.map(riskHistoryEntryOf) }) : readFailure(found, agent, "risk/history");
+    },
+  },
+  {
+    // The owner's own tail event run over the latest recorded book with the agent's stress arithmetic (#220): a read of
+    // this server's record, a computation, no platform call and no write. An event the core refuses answers its reasons.
+    method: "POST", path: "/api/agents/:agent/risk/what-if", access: "owner-fresh", needs: "read",
+    async handle({ body, identity }, { latestRisk }) {
+      const { agent, owner } = identity!;
+      const event = parse(contract.riskWhatIfRequest, body);
+      if (event === undefined) return refused(400, "bad_request");
+      const found = latestRisk ? await relay(async () => ({ ok: true as const, value: await latestRisk(organizationOf(owner), agent) }), agent) : { ok: true as const, value: null };
+      return found.ok ? ok(riskWhatIfOf(found.value, event)) : readFailure(found, agent, "risk");
+    },
+  },
+  {
     // The account linked to fund the agent, with its balances and, for a DAO, its members: null when none is linked.
     method: "GET", path: "/api/agents/:agent/treasury", access: "owner", needs: "read",
     async handle({ identity }, { platform }) {
@@ -1282,13 +1311,13 @@ export const routes: Route[] = [
      * every question, tool call and draft is recorded in the audit log by its hashes. An agent's token can't ask.
      */
     method: "POST", path: "/api/agents/:agent/assistant", access: "owner", needs: "read",
-    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals }) {
+    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals, latestRisk, riskHistory }) {
       if (!assistant) return refused(503, "assistant_not_configured");
       const input = parse(contract.assistantRequest, body);
       if (input === undefined) return refused(400, "bad_request");
       const { agent, owner, signer } = identity!;
-      const asked = await assistant.ask({ who: account!, question: input.question, history: input.history,
-        scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, strategyProposals, ...(auditLog && { auditLog }) } });
+      const asked = await assistant.ask({ who: account!, question: input.question, history: input.history, persona: input.persona,
+        scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, strategyProposals, ...(auditLog && { auditLog }), ...(latestRisk && { latestRisk }), ...(riskHistory && { riskHistory }) } });
       if (asked.ok) return ok(asked.value);
       return asked.kind === "unavailable" ? unavailable() : refused(429, asked.kind);
     },

@@ -113,6 +113,25 @@ function AgentAutopilot({ reads, identity }: { reads: Reads; identity: Identity 
     else if (editing) setNotice("Save or cancel the strategy edit first; then authorize it.");
     else { setNotice(undefined); setGrantReview(count => count + 1); }
   });
+  // An autopilot control the assistant drafted opens its own confirmation here (#219): turning on and running once open the
+  // review the buttons open; turning off is the Turn off button, which is said. Nothing is sent, and a control that can't be
+  // used now says why instead of being tried.
+  // Taken once autopilot's own state is read too: until then `on` reads false, and a pause would be answered "off already".
+  useTakeDraft(reads.name, "autopilot", Boolean(s) && schedule.data !== undefined, draft => {
+    setError(undefined);
+    if (!canControl) { setNotice("The assistant drafted an autopilot control, but autopilot needs a member who may both file and vote on proposals."); return; }
+    if (draft.action === "off") { setNotice(on ? "The assistant suggested turning autopilot off: use Turn off below, which stops it at once." : "Autopilot is off already."); return; }
+    if (editing) { setNotice("Save or cancel the strategy edit first; then use the autopilot controls."); return; }
+    if (draft.action === "on") {
+      if (on) setNotice("Autopilot is on already.");
+      else if (!s!.readiness.canEnable) setNotice("Autopilot can't be turned on yet: authorize the saved strategy first.");
+      else { setNotice(undefined); setConfirm("enable"); }
+      return;
+    }
+    if (!s!.grantMatches || !s!.executor) setNotice("Run now needs the saved strategy authorized on this agent's executor.");
+    else if (runHold !== undefined) setNotice("Run now is held until the last run's outcome is known.");
+    else { setNotice(undefined); setConfirm("tick"); }
+  });
   const doneEditing = (didSave: boolean) => {
     setSeed(undefined);
     setEditing(false);

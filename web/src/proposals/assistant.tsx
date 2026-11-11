@@ -1,30 +1,34 @@
 import { ArrowRight, ChatCircleText, PaperPlaneRight, Sparkle } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge, Button, ErrorBox, Spinner, input } from "../shared/ui";
 import { cn } from "@/lib/utils";
 import { openDraft } from "./assistant-drafts";
+import { busyKeys, changed, conversationKey, conversations, NONE, subscribe, version, type Entry } from "./conversations";
 import { SwapPreview } from "./assistant-note";
-import { agentAddress, type AgentPage } from "./pages";
-import type { AssistantAnswer, AssistantDraft } from "./proposals-api";
+import { AGENT_PAGES, agentAddress, type AgentPage } from "./pages";
+import type { AssistantAnswer, AssistantDraft, AssistantPersona } from "./proposals-api";
 import { agentReads, assistantStatus } from "./queries";
 import { when } from "./ui";
 import { failureText } from "./words";
 
 /**
  * The treasury assistant (#219): a panel opened from the top bar of every page of an agent, shown where the server
- * answers questions. The owner asks in plain language; the answer cites the reads it came from, each with its time, and
- * a draft opens the existing review flow with its fields filled in. Nothing is sent from here: the flow it opens is where
- * the owner submits and signs. The conversation is the page's own, kept while the owner moves between the agent's pages.
+ * answers questions, and the same conversation inline on the Agents page. The owner asks in plain language; the answer
+ * cites the reads it came from, each with its time, and a draft opens the existing review flow with its fields filled in.
+ * Nothing is sent from here: the flow it opens is where the owner submits and signs. A conversation is kept while the owner
+ * moves between the agent's pages, per agent and per persona (the treasury assistant, or the stabilization agent).
  */
-type Entry = { role: "user"; text: string } | { role: "assistant"; answer: AssistantAnswer } | { role: "error"; text: string };
 type Turn = { role: "user" | "assistant"; text: string };
 type Source = AssistantAnswer["sources"][number];
+type Reads = ReturnType<typeof agentReads>;
 
-const EXAMPLES = ["How much of this month's budget is left, and what used it?", "Which proposals are still waiting on me?", "Why didn't autopilot rebalance yesterday?", "Propose a rebalance to 40% wNEAR"];
+export const TREASURY_EXAMPLES = ["How much of this month's budget is left, and what used it?", "Which proposals are still waiting on me?", "Why didn't autopilot rebalance yesterday?", "Propose a rebalance to 40% wNEAR"];
+export const STABILIZATION_EXAMPLES = ["Why is the risk level what it is?", "What have you been doing?", "What if NEAR falls 50% tomorrow?", "Pause autopilot"];
+
 const DRAFTS: Record<AssistantDraft["kind"], { title: string; opens: string; page?: AgentPage }> = {
   rebalance: { title: "Rebalance proposal", opens: "Open the rebalance proposal", page: "proposals" },
   strategy: { title: "Strategy change", opens: "Open in the strategy editor", page: "strategy" },
@@ -32,7 +36,53 @@ const DRAFTS: Record<AssistantDraft["kind"], { title: string; opens: string; pag
   grant: { title: "Grant", opens: "Open the grant", page: "strategy" },
   // The freeze is in the frame of every page: its own review opens where the owner is.
   freeze: { title: "Freeze", opens: "Open the freeze review" },
+  autopilot: { title: "Autopilot control", opens: "Open the autopilot controls", page: "strategy" },
+  // A page draft names its own page.
+  page: { title: "Open a page", opens: "Open the page" },
 };
+
+/**
+ * Hands a draft to the flow it opens, and goes to that flow's page. A draft is held in memory until the flow takes it,
+ * and nothing is sent: the owner still reviews and signs there. A page draft only goes to the page.
+ */
+export function useHandOff(agent: string) {
+  const navigate = useNavigate();
+  return (draft: AssistantDraft) => {
+    if (draft.kind === "page") { void navigate({ to: agentAddress(agent, draft.page) }); return; }
+    openDraft(agent, draft);
+    const page = DRAFTS[draft.kind].page;
+    if (page) void navigate({ to: agentAddress(agent, page) });
+  };
+}
+
+
+/** One conversation's entries, whether an answer is being read, and asking. Earlier turns go back as text only; an answer's drafts and sources stay on the page. */
+export function useConversation(reads: Reads, persona: AssistantPersona) {
+  const key = conversationKey(reads.name, persona);
+  useSyncExternalStore(subscribe, version);
+  const entries = conversations.get(key) ?? NONE;
+  const busy = busyKeys.has(key);
+  const ask = async (text: string) => {
+    const asked = text.trim();
+    if (!asked || busyKeys.has(key)) return;
+    const current = conversations.get(key) ?? NONE;
+    const history = current.flatMap((entry): Turn[] => entry.role === "user" ? [{ role: "user", text: entry.text.slice(0, 1_200) }]
+      : entry.role === "assistant" ? [{ role: "assistant", text: entry.answer.answer.slice(0, 1_200) }] : []).slice(-8);
+    conversations.set(key, [...current, { role: "user", text: asked }]);
+    busyKeys.add(key);
+    changed();
+    const answer = await reads.agent.ask(asked, history, persona);
+    busyKeys.delete(key);
+    conversations.set(key, [...(conversations.get(key) ?? NONE), answer.ok ? { role: "assistant", answer: answer.value } : { role: "error",
+      text: answer.kind === "refused" && answer.code === "rate_limited" ? "You've asked the most questions an hour allows. Try again later."
+        : answer.kind === "refused" && answer.code === "platform_budget" ? "The assistant has used its share of the platform's reads for this hour. Try again later, or read the page directly."
+        : answer.kind === "refused" && answer.code === "assistant_not_configured" ? "The assistant isn't set up on this server."
+        : answer.kind === "lost" ? "The answer was lost. Asking again is safe: a question sends nothing."
+        : failureText(answer, "read") }]);
+    changed();
+  };
+  return { entries, busy, ask };
+}
 
 /** One source mark, `S1`: the read or record it names and when it was read, on hover or focus. */
 function Mark({ source }: { source: Source }) {
@@ -55,8 +105,11 @@ function Cited({ answer }: { answer: AssistantAnswer }) {
   })}</p>;
 }
 
+const AUTOPILOT_WORDS = { on: "Turn autopilot on", off: "Turn autopilot off", "run-now": "Run autopilot once now" } as const;
+
 function DraftCard({ draft, onOpen }: { draft: AssistantDraft; onOpen: () => void }) {
   const { title, opens } = DRAFTS[draft.kind];
+  const target = draft.kind === "page" ? AGENT_PAGES[draft.page].title : undefined;
   return <div className="flex flex-col gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
     <div className="flex items-center gap-2"><Badge tone="brand">Draft</Badge><span className="text-sm font-medium">{title}</span></div>
     {"changes" in draft && draft.changes.length > 0 && <dl aria-label="What it changes" className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-xs">
@@ -65,8 +118,10 @@ function DraftCard({ draft, onOpen }: { draft: AssistantDraft; onOpen: () => voi
     </dl>}
     {(draft.kind === "strategy" || draft.kind === "rebalance") && draft.legs && <SwapPreview legs={draft.legs} />}
     {draft.kind === "freeze" && <p className="text-xs text-muted-foreground">Asked: {draft.reason}</p>}
+    {draft.kind === "autopilot" && <p className="text-xs text-muted-foreground">Asked: {AUTOPILOT_WORDS[draft.action]}.</p>}
+    {draft.kind === "page" && <p className="text-xs text-muted-foreground">{target}: {draft.why}</p>}
     <p className="text-xs text-muted-foreground">{draft.note}</p>
-    <Button size="sm" className="self-start" onClick={onOpen}>{opens} <ArrowRight aria-hidden="true" /></Button>
+    <Button size="sm" className="self-start" onClick={onOpen}>{draft.kind === "page" ? `Open ${target}` : opens} <ArrowRight aria-hidden="true" /></Button>
   </div>;
 }
 
@@ -85,87 +140,90 @@ function Reply({ answer, onOpen }: { answer: AssistantAnswer; onOpen: (draft: As
   </div>;
 }
 
+/**
+ * A conversation with one of the two agents: the log, its example questions, and the form. Used in the sheet and inline on
+ * the Agents page; `onOpen` takes a draft the owner chose to open. `inline` fills its container's height instead of a sheet's.
+ */
+export function Chat({ reads, persona, examples, label = "Your question", logLabel = "Conversation", placeholder, footer, onOpen, inline = false }: {
+  reads: Reads; persona: AssistantPersona; examples: readonly string[]; label?: string; logLabel?: string; placeholder: string; footer?: ReactNode;
+  onOpen: (draft: AssistantDraft) => void; inline?: boolean;
+}) {
+  const { entries, busy, ask } = useConversation(reads, persona);
+  const [question, setQuestion] = useState("");
+  const log = useRef<HTMLDivElement>(null);
+  const field = `assistant-question-${persona}${inline ? "-inline" : ""}`;
+  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [entries, busy]);
+  const submit = (text: string) => { setQuestion(""); void ask(text); };
+  const bubble = (children: ReactNode, mine: boolean) => <div className={cn("max-w-[92%] min-w-0 rounded-lg px-3 py-2", mine ? "self-end bg-secondary text-sm" : "self-start border border-border bg-card")}>{children}</div>;
+  return <>
+    <div ref={log} role="log" aria-label={logLabel} className={cn("flex flex-col gap-3 overflow-y-auto p-4", inline ? "h-96 rounded-lg border border-border bg-background/40" : "flex-1")}>
+      {entries.length === 0 && <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">Try asking:</p>
+        {examples.map(example => <button key={example} type="button" disabled={busy} onClick={() => submit(example)}
+          className="rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5">{example}</button>)}
+      </div>}
+      {entries.map((entry, index) => entry.role === "user" ? <Fragment key={index}>{bubble(<p className="break-words whitespace-pre-wrap">{entry.text}</p>, true)}</Fragment>
+        : entry.role === "assistant" ? <Fragment key={index}>{bubble(<Reply answer={entry.answer} onOpen={onOpen} />, false)}</Fragment>
+        : <ErrorBox key={index} error={entry.text} />)}
+      {busy && <p role="status" className="flex items-center gap-2 self-start text-sm text-muted-foreground"><Spinner /> Reading the records…</p>}
+    </div>
+    <form className={cn("flex flex-col gap-2", inline ? "pt-3" : "border-t border-border p-3")} onSubmit={event => { event.preventDefault(); submit(question); }}>
+      <div className="flex items-end gap-2">
+        <label className="sr-only" htmlFor={field}>{label}</label>
+        <textarea id={field} rows={2} maxLength={2_000} value={question} disabled={busy} placeholder={placeholder}
+          className={cn(input, "min-h-11 flex-1 resize-none py-2")} onChange={event => setQuestion(event.target.value)}
+          onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(question); } }} />
+        <Button type="submit" size="icon" aria-label={inline ? `Ask: ${label}` : "Ask"} disabled={busy || !question.trim()}><PaperPlaneRight aria-hidden="true" /></Button>
+      </div>
+      {footer}
+    </form>
+  </>;
+}
+
+/** What the assistant's footer says about the model and the audit log. */
+export const modelFooter = (model: string | null) =>
+  <p className="text-[11px] text-muted-foreground">{model ? <>Answered by <span className="font-mono">{model}</span> from records read on the server. </> : null}Questions and reads are recorded in the audit log by their hashes.</p>;
+
+/** Whether the server answers questions, and the model that does: read once a session, and only for an agent that exists. */
+export function useAssistantStatus(reads: Reads) {
+  const identity = useQuery(reads.identity);
+  const status = useQuery({ ...assistantStatus, enabled: Boolean(identity.data) });
+  const ready = Boolean(status.data?.available && identity.data && identity.data.agentId !== null);
+  return { ready, model: status.data?.model ?? null, loading: identity.isPending || status.isPending };
+}
+
 /** The panel for `agent`, once the signed-in account may read it and the server answers questions. */
 export function Assistant({ agent }: { agent: string }) {
   const reads = useMemo(() => agentReads(agent), [agent]);
-  const identity = useQuery(reads.identity);
-  const status = useQuery({ ...assistantStatus, enabled: Boolean(identity.data) });
-  if (!status.data?.available || !identity.data || identity.data.agentId === null) return null;
-  return <Panel key={agent} reads={reads} model={status.data.model} />;
+  const { ready, model } = useAssistantStatus(reads);
+  if (!ready) return null;
+  return <Panel key={agent} reads={reads} model={model} />;
 }
 
-function Panel({ reads, model }: { reads: ReturnType<typeof agentReads>; model: string | null }) {
-  const navigate = useNavigate();
+function Panel({ reads, model }: { reads: Reads; model: string | null }) {
   const [open, setOpen] = useState(false);
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
+  const handOff = useHandOff(reads.name);
   /** A draft being opened: handed to its flow once the panel has closed, so the flow's own review takes the focus. */
   const handoff = useRef<AssistantDraft>(undefined);
-  const log = useRef<HTMLDivElement>(null);
-  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [entries, busy, open]);
-
-  const ask = async (text: string) => {
-    const asked = text.trim();
-    if (!asked || busy) return;
-    // Earlier turns go back as text only; an answer's drafts and sources stay on this page.
-    const history = entries.flatMap((entry): Turn[] => entry.role === "user" ? [{ role: "user", text: entry.text.slice(0, 1_200) }]
-      : entry.role === "assistant" ? [{ role: "assistant", text: entry.answer.answer.slice(0, 1_200) }] : []).slice(-8);
-    setEntries(current => [...current, { role: "user", text: asked }]);
-    setQuestion("");
-    setBusy(true);
-    const answer = await reads.agent.ask(asked, history);
-    setBusy(false);
-    setEntries(current => [...current, answer.ok ? { role: "assistant", answer: answer.value } : { role: "error",
-      text: answer.kind === "refused" && answer.code === "rate_limited" ? "You've asked the most questions an hour allows. Try again later."
-        : answer.kind === "refused" && answer.code === "platform_budget" ? "The assistant has used its share of the platform's reads for this hour. Try again later, or read the page directly."
-        : answer.kind === "refused" && answer.code === "assistant_not_configured" ? "The assistant isn't set up on this server."
-        : answer.kind === "lost" ? "The answer was lost. Asking again is safe: a question sends nothing."
-        : failureText(answer, "read") }]);
-  };
   const openIn = (draft: AssistantDraft) => { handoff.current = draft; setOpen(false); };
-  const handOff = () => {
+  const hand = () => {
     const draft = handoff.current;
     handoff.current = undefined;
     if (!draft) return false;
-    openDraft(reads.name, draft);
-    const page = DRAFTS[draft.kind].page;
-    if (page) void navigate({ to: agentAddress(reads.name, page) });
+    handOff(draft);
     return true;
   };
-
-  const bubble = (children: ReactNode, mine: boolean) => <div className={cn("max-w-[92%] min-w-0 rounded-lg px-3 py-2", mine ? "self-end bg-secondary text-sm" : "self-start border border-border bg-card")}>{children}</div>;
   return <Sheet open={open} onOpenChange={setOpen}>
     <SheetTrigger asChild>
       <Button variant="outline" size="sm" className="ml-auto shrink-0"><Sparkle aria-hidden="true" className="text-primary" /><span className="max-sm:sr-only">Ask the treasury</span></Button>
     </SheetTrigger>
     <SheetContent side="right" className="w-full gap-0 sm:max-w-md" aria-describedby="assistant-description"
-      onCloseAutoFocus={event => { if (handOff()) event.preventDefault(); }}>
+      onCloseAutoFocus={event => { if (hand()) event.preventDefault(); }}>
       <SheetHeader className="border-b border-border pr-12">
         <SheetTitle className="flex items-center gap-2"><ChatCircleText aria-hidden="true" className="text-primary" /> Treasury assistant</SheetTitle>
         <SheetDescription id="assistant-description" className="text-xs">Answers from this treasury's records, each figure with its source. It can draft a change for you to review; it never sends anything.</SheetDescription>
       </SheetHeader>
-      <div ref={log} role="log" aria-label="Conversation" className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-        {entries.length === 0 && <div className="flex flex-col gap-2">
-          <p className="text-sm text-muted-foreground">Try asking:</p>
-          {EXAMPLES.map(example => <button key={example} type="button" onClick={() => void ask(example)}
-            className="rounded-lg border border-border px-3 py-2 text-left text-sm transition-colors hover:border-primary/40 hover:bg-primary/5">{example}</button>)}
-        </div>}
-        {entries.map((entry, index) => entry.role === "user" ? <Fragment key={index}>{bubble(<p className="break-words whitespace-pre-wrap">{entry.text}</p>, true)}</Fragment>
-          : entry.role === "assistant" ? <Fragment key={index}>{bubble(<Reply answer={entry.answer} onOpen={openIn} />, false)}</Fragment>
-          : <ErrorBox key={index} error={entry.text} />)}
-        {busy && <p role="status" className="flex items-center gap-2 self-start text-sm text-muted-foreground"><Spinner /> Reading the records…</p>}
-      </div>
-      <form className="flex flex-col gap-2 border-t border-border p-3" onSubmit={event => { event.preventDefault(); void ask(question); }}>
-        <div className="flex items-end gap-2">
-          <label className="sr-only" htmlFor="assistant-question">Your question</label>
-          <textarea id="assistant-question" rows={2} maxLength={2_000} value={question} disabled={busy} placeholder="Ask about balances, budgets, proposals, runs…"
-            className={cn(input, "min-h-11 flex-1 resize-none py-2")} onChange={event => setQuestion(event.target.value)}
-            onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void ask(question); } }} />
-          <Button type="submit" size="icon" aria-label="Ask" disabled={busy || !question.trim()}><PaperPlaneRight aria-hidden="true" /></Button>
-        </div>
-        <p className="text-[11px] text-muted-foreground">{model ? <>Answered by <span className="font-mono">{model}</span> from records read on the server. </> : null}Questions and reads are recorded in the audit log by their hashes.</p>
-      </form>
+      <Chat reads={reads} persona="treasury" examples={TREASURY_EXAMPLES} placeholder="Ask about balances, budgets, proposals, runs…" footer={modelFooter(model)} onOpen={openIn} />
     </SheetContent>
   </Sheet>;
 }

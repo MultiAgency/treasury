@@ -78,3 +78,7 @@ export const ForwardRisk = ({ reads }: { reads: Reads }) =>
 /** The Strategy page's risk panel: the same record beside the strategy whose trades the level governs. */
 export const RiskPanel = ({ reads }: { reads: Reads }) =>
   <RiskCard reads={reads} id="risk-panel" title="Forward risk" description="The level that holds or slows the strategy's trades, beside the strategy itself." />;
+
+/** The Agents page's card: the same record, in full, beside the agent's history, what-if and conversation. */
+export const AgentRisk = ({ reads }: { reads: Reads }) =>
+  <RiskCard reads={reads} id="agent-risk" title="Latest assessment" description="The stabilization agent's last forward-risk assessment, as it recorded it." />;

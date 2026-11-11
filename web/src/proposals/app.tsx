@@ -5,6 +5,7 @@ import { Loading, QueryError } from "../shared/ui";
 import { AgentContext, useAgent } from "./agent-context";
 import { Policy } from "./policy";
 import { Activity, Run } from "./activity";
+import { Agents } from "./agents";
 import { Autopilot } from "./autopilot";
 import { Connection } from "./connection";
 import { Diversification } from "./diversification";
@@ -211,6 +212,12 @@ export function PolicyPage() {
 export function ActivityPage() {
   const { reads, identity } = useAgent();
   return <WhenConnected><Activity reads={reads} identity={identity} /></WhenConnected>;
+}
+
+/** Agents (`…/ai`): the stabilization agent's report, history and what-if, and the treasury assistant, each with a conversation. */
+export function AgentsPage() {
+  const { reads, identity } = useAgent();
+  return <WhenConnected><Agents reads={reads} identity={identity} /></WhenConnected>;
 }
 
 /** One recorded run (`…/activity/runs/<id>`): a bad ID is shown as such, with the way back. */

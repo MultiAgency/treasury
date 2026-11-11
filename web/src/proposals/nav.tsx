@@ -1,4 +1,4 @@
-import { ClockCounterClockwise, Coins, House, ShieldCheck, Stack, Strategy, Vault, type Icon } from "@phosphor-icons/react";
+import { ClockCounterClockwise, Coins, House, Robot, ShieldCheck, Stack, Strategy, Vault, type Icon } from "@phosphor-icons/react";
 import { Link } from "@tanstack/react-router";
 import type { ComponentProps, ReactNode } from "react";
 import { SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/components/ui/sidebar";
@@ -15,7 +15,7 @@ export function PageLink({ to, hash, exact, children, ...props }: PageLinkProps)
   return <Link {...props} to={to} hash={hash} activeOptions={exact ? { exact: true } : undefined}>{children}</Link>;
 }
 
-const ICONS: Record<AgentPage, Icon> = { home: House, proposals: Stack, strategy: Strategy, funding: Coins, policy: ShieldCheck, activity: ClockCounterClockwise };
+const ICONS: Record<AgentPage, Icon> = { home: House, proposals: Stack, strategy: Strategy, funding: Coins, policy: ShieldCheck, activity: ClockCounterClockwise, agents: Robot };
 
 /**
  * A page's item in the sidebar: its icon and its name, the current page marked by the router (`aria-current="page"`)

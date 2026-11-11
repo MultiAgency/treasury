@@ -105,6 +105,16 @@ The build (`src/proposals/`, built to `dist-proposals/`), served only by the app
 | Ask the treasury | button in the top bar of each agent page (#219), shown only where the server answers (`GET /api/assistant`); its text is hidden visually, not from assistive technology, on narrow screens | an agent's pages |
 | Treasury assistant | dialog (a sheet), with its description | an agent's pages, from Ask the treasury |
 | Conversation; Your question; Ask | log; textbox; button. While an answer is read, a status "Reading the records…" | the assistant |
+| Agents | link in the agent navigation, and heading (level 1) on `/agents/<agent>/ai` (#219, #220) | an agent's pages |
+| Stabilization agent; Running or Not running; the level badge (L0 normal … L4 red hand) | region with heading (level 2) and badges; Running only when this server's watch file runs the agent | Agents |
+| Latest assessment | region and heading (level 2): the Forward risk card's figures, scenarios and recommendations, with the empty status "No forward risk assessment has been recorded for this agent yet." | Agents |
+| What it has been doing; Recent assessments | region with heading (level 2); list, each item a level badge, a time, the reason and what it recommended; empty: a status | Agents |
+| Try a what-if; Event; Value (`<unit>`); Run what-if | region with heading (level 2); select; textbox; button. A value out of range is an alert "Enter a number from … to …"; no recorded book is a status ("no risk assessment has been recorded …") | Agents |
+| What-if result | description list of Book value, Stablecoins left, Runway, Cash floor, Agent can trade, each "today → after", in a status | Agents, after Run what-if |
+| Talk to the stabilization agent; Ask the stabilization agent; Ask the stabilization agent: conversation; Ask: Ask the stabilization agent | heading (level 2); textbox; log; button | Agents, where the server answers questions |
+| NEAR agent; Ask the NEAR agent; Ask the NEAR agent: conversation; Ask: Ask the NEAR agent | region with heading (level 2); textbox; log; button | Agents, where the server answers questions |
+| Open the autopilot controls; Open Home, Open Proposals, Open Strategy, Open Funding, Open Policy, Open Activity, Open Agents | one button for each autopilot or page draft card | an answer that drafts one |
+| The assistant suggested turning autopilot off…; Autopilot is on already.; Autopilot can't be turned on yet…; Run now needs the saved strategy authorized…; Run now is held until… | status, when an autopilot draft is opened and its control can't be used now (or says Turn off is the way) | Strategy |
 | Source S`n`: `<read>`, read `<time>`; Sources | a button for each citation mark; a list of the reads an answer cites, each with when it was read | an answer |
 | What it changes; Estimated swaps; Open the rebalance proposal, Open in the strategy editor, Open in the policy editor, Open the grant, Open the freeze review | description list; list; one button for each draft card | an answer that drafts a change |
 | Filled in by the assistant; Estimated swaps | note; list | the rebalance form, strategy editor, policy editor, grant review or freeze review a draft opened |

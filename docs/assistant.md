@@ -29,6 +29,8 @@ file path.
 | `get_owner_actions`, `get_policy_history`, `get_account` | platform reads | owner actions and where each stands, policy revisions with digests, the agent's account and grants |
 | `get_ballast_decisions` | this server's audit log | Ballast's decision records: the reading, action or hold, reason, level and policy verdict |
 | `get_audit_trail` | this server's audit log | the owner actions this server relayed, with the platform's answer |
+| `get_risk_report`, `get_risk_history` | this server's audit log | the stabilization agent's latest assessment (level and why, projection, scenarios, what it would do) and its recent ones |
+| `run_what_if` | the latest risk record's book | a tail event run with the agent's own stress arithmetic: today beside after, the cash floor, whether it could trade. Computed, nothing proposed |
 | `get_dao_requests` | this server's DAO store | a DAO-owned agent's requests waiting for its vote |
 | `list_strategy_proposals` | this server's strategy-proposal store | strategies an agent's software proposed, with the text of their reasons |
 
@@ -51,9 +53,20 @@ the flow's send-once rules and request IDs are unchanged.
 | `draft_policy_edit` | the Policy page's editor | USD budget windows, owner approval, actions an hour, whether swaps are allowed |
 | `draft_grant` | the Strategy page's grant review | nothing but the strategy it is for: authorizing still needs the wallet's signature or the DAO's vote |
 | `draft_freeze` | the emergency stop's freeze review | the owner's reason; the freezer still signs |
+| `draft_autopilot` | the Strategy page's autopilot controls | turn on, turn off or run once: the page opens the control's own confirmation (or says why it can't be used now); the owner confirms, and the platform checks the policy and the grant as ever |
+| `open_page` | any page of the agent | nothing: it only goes there |
 
 There is no tool that creates a proposal, saves a strategy or policy, prepares a grant or freeze, approves, executes,
 revokes or moves funds. A test asserts that a drafted question makes no platform write.
+
+## Two agents on the Agents page
+
+The page `/agents/<agent>/ai` talks to the assistant as two agents, `persona` on the one route:
+
+- **The NEAR agent** (`treasury`): every tool above. It can answer about anything in the app and open the review for any change; the top bar's "Ask the treasury" sheet is the same conversation.
+- **The stabilization agent** (`stabilization`, #220): forward risk only. Its tools are the book, runs, decisions, proposals and risk records, what-ifs, and the drafts a risk agent has a reason to make (an autopilot pause, a freeze review). Its de-risk is the sell the risk agent itself proposes on `watch`'s tick, sized from its assessment; the rebalance draft isn't one (after a fall, going back to the saved targets buys more of the volatile asset). The strategy, policy, grant and rebalance drafts are **not offered to it and don't run if it asks**: that boundary is the code's (`toolNames`), and a test holds it, so it doesn't depend on what the prompt says.
+
+Each persona keeps its own conversation per agent in the page, while the owner moves between pages. Neither signs or sends: a draft opens a form, and the owner signs (or the DAO votes). An autopilot or page draft is the same: it only opens the page's own control, which asks the owner to confirm.
 
 ## Model and data
 
