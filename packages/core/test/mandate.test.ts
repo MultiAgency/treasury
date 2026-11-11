@@ -20,7 +20,7 @@ test("each profile compiles to its weights, bounds, limits and governance from t
     assert.ok(r.ok, name + (r.ok ? "" : r.problems.join("; ")));
     const m = r.mandate;
     assert.deepEqual([m.weights, m.bounds, m.limits.policy], [profile.weights, profile.bounds, profile.limits]);
-    assert.deepEqual([m.governance.approvalsRequired, m.governance.startLevel], [profile.approvalsRequired, profile.startLevel]);
+    assert.equal(m.governance.startLevel, profile.startLevel);
     assert.equal(m.limits.exposure.monthlySpendUsd, 10_000);
     assert.equal(m.limits.exposure.operatingCashMonths, 9);
     assert.equal(m.limits.exposure.maxVenueExposurePct, profile.bounds.volatileMaxPct, "H6: one venue, so its cap is the volatile ceiling");
@@ -86,9 +86,13 @@ test("a floor the profile's cash share can't hold is rejected; exactly at the sh
   assert.match(problems({ ...answers, monthlySpendUsd: 60_000 }, "growth").join(" "), /can't meet it/);
 });
 
-test("too few approvers for the profile is rejected", () => {
-  assert.match(problems({ ...answers, approvers: ["alice.near"] }, "conservative").join(" "), /needs 2 approver/);
-  assert.equal(compile({ ...answers, approvers: ["alice.near"] }, "balanced").ok, true);
+test("one approver is enough for every profile: profiles set no number of approvals (H8, ADR 3)", () => {
+  for (const name of Object.keys(PROFILE_DEFAULTS) as ProfileName[]) {
+    const r = compile({ ...answers, approvers: ["alice.near"] }, name);
+    assert.ok(r.ok, name + (r.ok ? "" : r.problems.join("; ")));
+    assert.equal("approvalsRequired" in r.mandate.governance, false, name);
+    assert.equal("approvalsRequired" in PROFILE_DEFAULTS[name], false, name);
+  }
 });
 
 test("every problem is reported together, none repaired", () => {
@@ -96,13 +100,12 @@ test("every problem is reported together, none repaired", () => {
   assert.ok(p.length >= 3);
 });
 
-test("a mandate read back is re-validated: bad weights, bounds, approvals and an approved-weights flag all fail", () => {
+test("a mandate read back is re-validated: bad weights, bounds, limits and an approved-weights flag all fail", () => {
   const ok = compile(answers);
   assert.ok(ok.ok);
   const m = ok.mandate;
   assert.ok(mandateProblems({ ...m, weights: { volatilePct: 50, reservePct: 50, cashPct: 50 } }).length > 0);
   assert.ok(mandateProblems({ ...m, bounds: { volatileMinPct: 60, volatileMaxPct: 70 } }).length > 0);
-  assert.ok(mandateProblems({ ...m, governance: { ...m.governance, approvalsRequired: 5 } }).length > 0);
   assert.ok(mandateProblems({ ...m, limits: { ...m.limits, policy: { ...m.limits.policy, maxSlippageBps: Number.NaN } } }).length > 0);
   assert.ok(mandateProblems({ ...m, limits: { ...m.limits, exposure: { ...m.limits.exposure, monthlySpendUsd: null } } }).length > 0);
   assert.ok(mandateProblems({ ...m, weightsApproved: true as unknown as false }).length > 0);
@@ -141,7 +144,7 @@ test("a mandate read back follows the compiler's rules for spend and months: a z
 test("a mandate read back carries its profile's values exactly: nothing loosened, nothing changed", () => {
   const m = compiled("conservative");
   const changed = [
-    { governance: { ...m.governance, approvalsRequired: 1 } }, { governance: { ...m.governance, startLevel: 0 as const } },
+    { governance: { ...m.governance, startLevel: 0 as const } },
     { limits: { ...m.limits, policy: { maxOrderPctOfTreasury: 100, maxDailyTurnoverPct: 100, maxOrdersPerHour: 1e9, maxSlippageBps: 1e9 } } },
     { limits: { ...m.limits, policy: { ...m.limits.policy, maxSlippageBps: 10 } } }, { limits: { ...m.limits, l1OrderCapFactor: 1 } },
     { bounds: { volatileMinPct: 0, volatileMaxPct: 100 } }, { weights: { ...PROFILE_DEFAULTS.balanced.weights } }, { profile: "growth" as const },
@@ -157,7 +160,7 @@ test("a mandate read back is checked like the answers: profile, approvers, numbe
     { assets: { ...m.assets, stablecoins: [] } }, { assets: { ...m.assets, stablecoins: "USDC" } }, { destinations: ["Ops.near"] }, { destinations: ["ops.near", "ops.near"] },
   ];
   for (const change of bad) assert.ok(mandateProblems({ ...m, ...change }).length > 0, JSON.stringify(change));
-  assert.match(mandateProblems({ ...m, governance: { ...m.governance, approvers: ["alice.near", "alice.near"] } }).join(" "), /needs 2 approver/);
+  assert.match(mandateProblems({ ...m, governance: { ...m.governance, approvers: ["alice.near", "alice.near"] } }).join(" "), /listed twice/);
 });
 
 test("a mandate read back of any shape returns its problems and never throws", () => {
@@ -167,9 +170,9 @@ test("a mandate read back of any shape returns its problems and never throws", (
   for (const shape of shapes) assert.ok(mandateProblems(shape).length > 0);
 });
 
-test("every reason is reported: a bad number doesn't hide the approver count or the minimum months", () => {
-  const p = problems({ ...answers, monthlySpendUsd: -1, operatingCashMonths: 8, approvers: ["alice.near"] }, "conservative").join(" ");
-  assert.match(p, /needs 2 approver/);
+test("every reason is reported: a bad number doesn't hide the minimum months", () => {
+  const p = problems({ ...answers, monthlySpendUsd: -1, operatingCashMonths: 8 }, "conservative").join(" ");
+  assert.match(p, /monthlySpendUsd must be a number above zero/);
   assert.match(p, /at least 9 months/);
 });
 

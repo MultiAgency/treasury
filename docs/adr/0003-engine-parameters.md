@@ -1,6 +1,6 @@
 # 3. The engine's parameters: price sources, rules map, profiles, calibration and escalation
 
-**Status:** accepted, 2026-11-06 (#156); proposed by Harjaap, owner of H5, H6, H8, H9 and H11. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95. **H11 amended** 2026-11-09 (#231): the level is worked out on every tick, and the owner's approval and the freeze are the human controls ([H11](#h11-escalation-and-alerting)). Harjaap may reopen it.
+**Status:** accepted, 2026-11-06 (#156); proposed by Harjaap, owner of H5, H6, H8, H9 and H11. It answers the placeholders those tasks left in `packages/core`, and A14's question on #95. **H11 amended** 2026-11-09 (#231): the level is worked out on every tick, and the owner's approval and the freeze are the human controls ([H11](#h11-escalation-and-alerting)). **H8 amended** 2026-11-11: profiles set no number of approvals, since more than one comes from DAO ownership ([H8](#h8-questionnaire-profiles-and-sleeves)). Harjaap may reopen either.
 
 Every value below is either changed in this PR (marked **changed**) or kept as it already is in code (marked **kept**), so the code and this page agree. Anything not decided here is listed under [Open](#open).
 
@@ -67,11 +67,13 @@ Each rule is enforced in one or more places. The platform's signed policy always
 - **Sleeves:** volatile = wNEAR, reserve = USDC the DCA buys draw on, operating cash = USDC protected by the floor. The DCA never draws on operating cash. These labels are confirmed. The weights become an approved allocation only when an owner signs a mandate on them, so `weightsApproved` stays false in code.
 - **Profiles (kept, plus the venue cap above):**
 
-| Profile | Volatile / reserve / cash | Volatile bounds | Order / turnover / orders an hour / slippage | Min months | Approvals | Starts at |
-| --- | --- | --- | --- | --- | --- | --- |
-| Conservative | 20 / 30 / 50 | 5–30% | 1% / 5% / 5 / 30 bps | 9 | 2 | L2 |
-| Balanced | 40 / 35 / 25 | 10–50% | 2% / 10% / 10 / 50 bps | 6 | 1 | L0 |
-| Growth | 60 / 25 / 15 | 20–70% | 2% / 15% / 10 / 50 bps | 6 | 1 | L0 |
+| Profile | Volatile / reserve / cash | Volatile bounds | Order / turnover / orders an hour / slippage | Min months | Starts at |
+| --- | --- | --- | --- | --- | --- |
+| Conservative | 20 / 30 / 50 | 5–30% | 1% / 5% / 5 / 30 bps | 9 | L2 |
+| Balanced | 40 / 35 / 25 | 10–50% | 2% / 10% / 10 / 50 bps | 6 | L0 |
+| Growth | 60 / 25 / 15 | 20–70% | 2% / 15% / 10 / 50 bps | 6 | L0 |
+
+- **Approvals (removed):** profiles no longer set a number of approvals. The conservative profile's 2 was checked against the number of `governance.approvers` and enforced nowhere: a proposal executes on the owner's signature, or the DAO's vote. More than one approval comes from DAO ownership, under the DAO's own voting policy. `approvers` (question 7) stays, used only in the text of strategy proposals (`apps/server/src/strategy-proposals.ts`).
 
 ## H9: calibration
 
@@ -118,7 +120,6 @@ The plan also had a raised level held until a human lowers it one step at a time
 - **A notice when the level rises,** through `watch`'s `notify`, asking the owner to freeze at L4: the part of H11's alerting worth keeping, as its own small change.
 - **The three price fetchers (H5)** aren't built, and no issue tracks them. Until they are, `watch` runs the oracle on the platform's `overview` alone.
 - **Agent malfunction (H9):** Ballast leaves this detector out (`NOT_JUDGED_HERE`), since its step has no reconciliation. `reconcileBooks` is an app read the server already wraps (`platform.books`), and unknown outcomes are effectively zero whenever Ballast runs, since `watch` holds while any are unresolved. Whether to feed the detector from it, at one more read a tick, is open.
-- **Approvals (H8):** `approvalsRequired` (2 for the conservative profile) is checked against the number of `governance.approvers` and enforced nowhere: a proposal executes on the owner's signature, or the DAO's vote. Enforce it or remove it. Without H11's lowering, `approvers` is used only in the text of the mandate compiler's strategy proposals (`apps/server/src/strategy-proposals.ts`).
 - **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
 - **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
 - **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.
