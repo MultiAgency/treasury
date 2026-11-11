@@ -40,10 +40,12 @@ export async function file(transaction: MemberTransaction, member: string): Prom
  * Signs a grant's NEP-413 intent exactly as the platform prepared it, in the owner's wallet, connecting it first: only as
  * `owner` (else it throws, having signed nothing). Answers the intent with the key that signed it and its signature.
  */
-export async function signIntent(intent: NonNullable<GrantPrepared["intent"]>, owner: string) {
+export async function signIntent(intent: NonNullable<GrantPrepared["intent"]>, owner: string, beforeSign?: () => Promise<void>) {
   if ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
   const { wallet: connected, accounts } = await wallet.connector.getConnectedWallet();
   if (accounts[0]?.accountId !== owner) throw new WrongAccount(`Your wallet is connected as ${accounts[0]?.accountId ?? "no account"}, not the owner ${owner}. Nothing was signed. Switch the wallet to ${owner}.`);
+  // A review may become stale while the wallet connects. Recheck after connecting, immediately before signing.
+  await beforeSign?.();
   const signed = await connected.signMessage({ ...intent.payload, nonce: fromBase64(intent.payload.nonce) });
   return { ...intent, public_key: signed.publicKey, signature: signed.signature };
 }

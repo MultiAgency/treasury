@@ -6,6 +6,7 @@ import { accessOf, mayCall, proposalId, proposalList, type OwnerInputs, type Pro
 import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
+import { creationReviews, type CreationReviews } from "./creation-reviews.ts";
 import type { BallastSettings } from "./ballast.ts";
 import { diversificationView } from "./diversification.ts";
 import { sha256, type Audit } from "./audit.ts";
@@ -13,7 +14,7 @@ import { checkConsent, consentFor, consentText, liveConsents, organizationOf, wi
 import { offerFor } from "./dao-offer.ts";
 import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-requests.ts";
 import { createSettle, type Settle } from "./dao-settle.ts";
-import { awaiting, holdsEach, statusPhase } from "./owner-action.ts";
+import { actionPhase, awaiting, holdsEach, statusPhase } from "./owner-action.ts";
 import { changesNothing } from "./policy-edit.ts";
 import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
@@ -110,7 +111,7 @@ export type Deps = {
  * What a handler reads: the dependencies, the limits the server keeps across requests, and the DAO filings in flight
  * per agent, so two members' clicks file once.
  */
-type Context = Deps & { settle: Settle; tokens: AgentTokens; strategyProposals: StrategyProposals; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
+type Context = Deps & { settle: Settle; tokens: AgentTokens; strategyProposals: StrategyProposals; creationReviews: CreationReviews; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
   /** The account's owner-route requests a minute (`ownerRequestsPerMinute`), shared with the setup routes, which reach the platform too. */
   requests: RateLimit };
 
@@ -415,6 +416,33 @@ async function ownerAllowed(platform: Platform, organization: string, identity: 
   const listed = await platform.consents.list(organization);
   if (!listed.ok) { log("platform_consents_failed", { agent, ...failure(listed) }); return "unavailable"; }
   return liveConsents(listed.value.consents, identity).some(consent => withOwner(consent.scopes));
+}
+
+/** Read the immutable unsigned review again, checking its current authority and lifecycle, without preparing anything. */
+async function creationReview(identity: Admitted, id: string, context: Context): Promise<Reply> {
+  const { platform, creationReviews: reviews } = context;
+  const { owner, agent, host } = identity;
+  if (identity.signer !== "wallet" || identity.agentId !== null) return refused(409, "already_created");
+  const saved = reviews.get(owner, agent, id);
+  if (!saved || (!saved.intent && !saved.confirm)) return refused(409, "creation_review_unavailable");
+  const listed = await relay(() => platform.consents.list(organizationOf(owner)), agent);
+  if (!listed.ok) return unavailable();
+  const publicKey = setupConsents(listed.value.consents, owner, agent)[0]?.publicKey;
+  if (!publicKey) return refused(409, "not_set_up");
+  if (saved.intent && (!saved.review || saved.review.owner !== owner || saved.review.agent !== agent || saved.review.host !== host || saved.review.publicKey !== publicKey))
+    return refused(409, "creation_changed");
+  const status = await relay(() => platform.creation.status(organizationOf(owner), agent, id), agent);
+  if (!status.ok) return unavailable();
+  const actions = await relay(() => platform.reads.ownerActions(organizationOf(owner), agent), agent);
+  if (!actions.ok) return unavailable();
+  const action = actions.value.find(action => action.correlationId === id);
+  if (!action || action.type !== "agent_create" || action.signer !== "wallet" || action.expiresAt !== saved.expiresAt) return unavailable();
+  // Older status reads call an unsigned wallet intent "unknown". The durable action still identifies it as open.
+  const phase = statusPhase(status.value);
+  if (phase === "submitted" || phase === "settled" || actionPhase(action) === "submitted" || actionPhase(action) === "settled") return refused(409, "action_pending");
+  if (phase === "expired" || actionPhase(action) === "expired" || Date.parse(saved.expiresAt) <= Date.now()) return refused(409, "creation_expired");
+  if (actionPhase(action) !== "open" || (phase !== "open" && !(phase === undefined && status.value.stage === "unknown"))) return unavailable();
+  return ok(saved);
 }
 
 /**
@@ -764,14 +792,16 @@ export const routes: Route[] = [
   },
   {
     /**
-     * Prepares the agent's creation under its setup consent, which reaches nothing else: a wallet owner signs it on the
-     * platform's confirm page, with the key that signed the setup (the platform refuses any other); a DAO's member files
+     * Prepares the agent's creation under its setup consent, which reaches nothing else: a wallet owner reviews a readable
+     * intent here or signs on the platform's confirm page, with the setup's key; a DAO's member files
      * the proposal for the DAO's vote, with a vote on it if their role votes. The owner may leave one unsigned: it
      * expires in minutes. The platform's refusal is `creation_refused`, its text logged; one cause is a creation still
      * waiting for its signature or vote. Recorded before the platform is asked and after.
      */
     method: "POST", path: "/api/agents/:agent/creation", access: "owner-fresh", needs: "file",
-    async handle({ account, identity }, { platform, audit }) {
+    async handle({ account, identity, body }, context) {
+      const { platform, audit } = context;
+      if (parse(z.strictObject({}), body ?? {}) === undefined) return refused(400, "bad_request");
       const { agent, owner, signer, access } = identity!;
       if (identity!.agentId !== null) return refused(409, "already_created");
       const organization = organizationOf(owner);
@@ -783,14 +813,31 @@ export const routes: Route[] = [
         if (typeof publicKey !== "string") return refused(409, "not_set_up");
         input = { action: { type: "agent_create", role: "treasury", owner: { type: "near", account_id: owner, public_key: publicKey } }, signer: "wallet" };
       } else input = { action: { type: "agent_create", role: "treasury" }, signer: "dao" };
+      const actions = await relay(() => platform.reads.ownerActions(organization, agent), agent);
+      // Forbidden: no live setup consent reaches the unborn agent, as for its preparation. Anything else proves nothing.
+      if (!actions.ok) {
+        log("platform_owner_actions_failed", { agent, ...failure(actions) });
+        return actions.kind === "forbidden" ? refused(409, "not_set_up") : actions.kind === "rate_limited" ? platformLimited() : unavailable();
+      }
+      const earlier = actions.value.find(action => action.type === "agent_create" && (awaiting(action, Date.now()) || (actionPhase(action) === "open" && Date.parse(action.expiresAt) > Date.now())));
+      if (earlier) return signer === "wallet" && actionPhase(earlier) === "open"
+        ? creationReview(identity!, earlier.correlationId, context) : refused(409, "action_pending");
       await audit.append({ who: account!, action: "create", agent, stage: "attempt" });
       const prepared = await relay(() => platform.creation.prepare(organization, agent, input), agent);
       let reply: Reply;
       if (prepared.ok) {
-        const { correlationId, expiresAt, confirm, dao } = prepared.value;
+        const { correlationId, expiresAt, intent, confirm, dao } = prepared.value;
         const transaction = dao && parse(contract.memberTransaction, access.canVote && dao.proposalAndVote ? dao.proposalAndVote : dao.proposal);
-        reply = signer === "wallet" && confirm ? ok({ correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } })
-          : signer === "dao" && transaction ? ok({ correlationId, expiresAt, dao: { transaction } }) : unavailable();
+        const walletSigner = prepared.value.signer;
+        const publicKey = input.signer === "wallet" ? input.action.owner.public_key : undefined;
+        const readable = signer === "wallet" && intent?.standard === "nep413" && !confirm && walletSigner?.type === "near"
+          && walletSigner.account_id === owner && walletSigner.public_key === publicKey;
+        const candidate = readable ? { correlationId, expiresAt, intent, review: { owner, agent, host: identity!.host, publicKey } }
+          : signer === "wallet" && confirm && !intent ? { correlationId, expiresAt, confirm: { url: confirm.url, expiresAt: confirm.expiresAt } }
+          : signer === "dao" && transaction ? { correlationId, expiresAt, dao: { transaction } } : undefined;
+        const checked = candidate && parse(contract.creation, candidate);
+        reply = checked && Date.parse(expiresAt) > Date.now() ? ok(checked) : unavailable();
+        if (signer === "wallet" && checked && reply.status === 200) context.creationReviews.keep(owner, agent, checked);
         if (reply.status !== 200) log("platform_creation_unreadable", { agent, correlationId });
       } else {
         log("platform_creation_failed", { agent, ...failure(prepared) });
@@ -802,6 +849,13 @@ export const routes: Route[] = [
       await recordResult(audit, { who: account!, action: "create", agent, stage: "result",
         ...(prepared.ok && { subject: prepared.value.correlationId }), answer: audited(prepared, reply) });
       return reply;
+    },
+  },
+  {
+    method: "GET", path: "/api/agents/:agent/creation/:id/review", access: "owner-fresh", needs: "file",
+    async handle({ identity, params }, context) {
+      if (!/^[A-Za-z0-9_-]{1,128}$/.test(params.id ?? "")) return refused(400, "bad_request");
+      return creationReview(identity!, params.id!, context);
     },
   },
   {
@@ -1059,6 +1113,12 @@ export const routes: Route[] = [
     async handle({ identity }, { platform }) {
       const { agent, owner } = identity!;
       const answer = await relay(() => platform.reads.ownerActions(organizationOf(owner), agent), agent);
+      if (!answer.ok && answer.kind === "forbidden" && identity!.signer === "wallet" && identity!.agentId === null) {
+        // A proved ended setup has a renewal path; an outage must never be mistaken for an expired consent.
+        const listed = await relay(() => platform.consents.list(organizationOf(owner)), agent);
+        if (!listed.ok) return unavailable();
+        if (!setupConsents(listed.value.consents, owner, agent).length) return refused(409, "not_set_up");
+      }
       return answer.ok ? ok(answer.value) : readFailure(answer, agent, "owner/actions");
     },
   },
@@ -1592,7 +1652,7 @@ export function createServer(deps: Deps) {
   const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? 60, windowMs: 3_600_000 });
   const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), strategyProposals: deps.strategyProposals ?? createStrategyProposals(memoryProposalRecords(), { audit: deps.audit }), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
-    daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), filing: new Map(), requests: admissions };
+    daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), creationReviews: creationReviews(), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = ({ status, body, cookie, csv }: Reply) => {
       if (csv) {
