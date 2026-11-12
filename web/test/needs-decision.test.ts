@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { approvedProposals, needsDecision, openProposals } from "../src/proposals/needs-decision.ts";
+import { approvedProposals, needsDecision, openProposals } from "../src/needs-decision.ts";
 
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
 const MIN = 60_000, HOUR = 60 * MIN;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { actionBadge, actionName, actionStanding, history, pageCount, pageOf, PAGE_SIZE, runSummary, unresolvedAnchor } from "../src/proposals/activity-view.ts";
+import { actionBadge, actionName, actionStanding, history, pageCount, pageOf, PAGE_SIZE, runSummary, unresolvedAnchor } from "../src/activity-view.ts";
 
 const row = (at: string, correlationId?: string) => ({ at, kind: "swap", request: {}, ...(correlationId !== undefined && { correlationId }) });
 

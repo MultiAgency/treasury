@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { filedText, fileLabel, filesAndVotes, filingHeld, signerProblem } from "../src/proposals/dao-filing.ts";
+import { filedText, fileLabel, filesAndVotes, filingHeld, signerProblem } from "../src/dao-filing.ts";
 
 test("after a member files, the transaction isn't offered again until the offer changes, unless the wallet says it failed", () => {
   assert.equal(filingHeld(undefined), false, "nothing filed from this page yet");

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { revokeControls, splitGrants, waitingRevocation } from "../src/proposals/grants-view.ts";
+import { revokeControls, splitGrants, waitingRevocation } from "../src/grants-view.ts";
 
 const NOW = Date.parse("2026-11-06T12:00:00Z");
 const grant = (id: string, over: Partial<Parameters<typeof splitGrants>[0][number]> = {}) =>

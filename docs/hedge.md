@@ -5,7 +5,7 @@ The owner's Strategy page shows **Hedge into gold and other chains**: NEAR Inten
 - **Core:** `packages/core/src/hedge.ts` (the planner), `intents.ts` (the token list and quotes as untrusted data, `registryDrift`), `legs.ts` (`swapLegsFor`).
 - **Server:** `apps/server/src/intents.ts` (the NEAR Intents client and its stub), `hedge.ts` (the read and the legs), `hedge-tool.ts` (the same read as one assistant tool).
 - **Routes:** `GET /api/agents/:agent/hedge`, `POST /api/agents/:agent/hedge/propose`. See [app-server.md](app-server.md).
-- **Page:** `web/src/proposals/hedge.tsx` and `hedge-view.ts`.
+- **Page:** `web/src/hedge.tsx` and `hedge-view.ts`.
 
 ## What NEAR Intents is asked, and what is sent
 

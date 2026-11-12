@@ -34,7 +34,7 @@ test("the browser never sees the credential: no tap_ value in any answer, header
   t.mock.method(console, "error", () => {});
   const dir = tempDir("credential-browser-");
   writeFileSync(join(dir, "app-credential"), tap, { mode: 0o600 });
-  writeFileSync(join(dir, "index.html"), "<!doctype html><title>Treasury proposals</title>");
+  writeFileSync(join(dir, "index.html"), "<!doctype html><title>Agentic Treasury</title>");
   const seen: { url: string; headers: Headers }[] = [];
   const { server, base } = await testServer({ wallets: [owner], page: await loadPage(dir),
     platform: createPlatform({ origin: "https://platform.test", credential: createCredential(join(dir, "app-credential")), timeoutMs: 1_000, fetch: platformFetch(seen) }) });

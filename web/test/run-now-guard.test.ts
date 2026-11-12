@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createRunNowGuard } from "../src/proposals/run-now-guard.ts";
-import { proposalsApi, type Result } from "../src/proposals/proposals-api.ts";
+import { createRunNowGuard } from "../src/run-now-guard.ts";
+import { proposalsApi, type Result } from "../src/proposals-api.ts";
 import { fail, lost, ok, scripted } from "./proposals-fixtures.ts";
 
 type Reply = Result<{ summary: string }>;

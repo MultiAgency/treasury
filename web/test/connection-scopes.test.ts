@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scopeList } from "../src/proposals/words.ts";
+import { scopeList } from "../src/words.ts";
 
 test("a connection's scopes read in a fixed order, whatever order the platform lists them in", () => {
   assert.equal(scopeList(["owner", "read", "treasury"]), "read, treasury and owner");

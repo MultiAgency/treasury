@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readAssistantStream } from "../src/proposals/assistant-stream.ts";
-import { proposalsApi, type AssistantStreamEvent } from "../src/proposals/proposals-api.ts";
+import { readAssistantStream } from "../src/assistant-stream.ts";
+import { proposalsApi, type AssistantStreamEvent } from "../src/proposals-api.ts";
 
 const answer = { answer: "Runway holds — $60,000 remains.", sources: [], drafts: [], model: "rules" };
 const start = { type: "RUN_STARTED", threadId: "treasury", runId: "run-1" };

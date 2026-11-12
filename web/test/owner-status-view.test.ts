@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isFinal, outcomeOf, statusText } from "../../apps/server/src/owner-action.ts";
-import { creationWords, grantWords, revokeWords } from "../src/proposals/words.ts";
+import { creationWords, grantWords, revokeWords } from "../src/words.ts";
 
 test("grant, creation and revocation progress follows phase and distinguishes failed settlement from success", () => {
   for (const words of [grantWords, creationWords, revokeWords]) {

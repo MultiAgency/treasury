@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { proposalsApi } from "../src/proposals/proposals-api.ts";
+import { proposalsApi } from "../src/proposals-api.ts";
 import { fail, ID, lost, ok, proposal, refused, scripted } from "./proposals-fixtures.ts";
 
 const NONCE = `${"A".repeat(43)}=`, KEY = `ed25519:${"1".repeat(44)}`;

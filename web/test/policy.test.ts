@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changesOf, differences, draftOf, type AgentPolicy } from "../src/proposals/policy-draft.ts";
+import { changesOf, differences, draftOf, type AgentPolicy } from "../src/policy-draft.ts";
 import type { Holding } from "../src/shared/format.ts";
 
 const USDC = "nep141:usdc", WNEAR = "nep141:wrap.near", OTHER = "nep141:other";
