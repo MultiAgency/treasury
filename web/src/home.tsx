@@ -175,7 +175,7 @@ export function SinceLastLooked({ reads, identity }: { reads: Reads; identity: I
   });
   const runs = useQuery(reads.runs);
   const proposals = useQuery({ ...reads.proposals, refetchInterval: false });
-  const risk = useQuery(reads.riskHistory);
+  const risk = useQuery(reads.riskHistorySince(since));
   // Cached or failed reads must not mark unseen events as read. Never move the cutoff to departure time:
   // the agent may have acted since these snapshots were fetched. No extra requests are needed.
   const observed = useRef<number | null>(null);

@@ -53,6 +53,8 @@ export function agentReads(name: string) {
     risk: queryOptions({ queryKey: [...key, "risk"], queryFn: async () => answered(await agent.risk()).risk, retry: false, staleTime: 30_000 }),
     /** What the stabilization agent has been doing (#220): its recent records and whether watch runs it, from the server's own log. */
     riskHistory: queryOptions({ queryKey: [...key, "risk-history"], queryFn: async () => answered(await agent.riskHistory()), retry: false, staleTime: 30_000 }),
+    /** Complete assessment history for a visit interval; separate from the Agents page's recent 20. */
+    riskHistorySince: (since: number) => queryOptions({ queryKey: [...key, "risk-history", since], queryFn: async () => answered(await agent.riskHistory(since)), retry: false, staleTime: 30_000 }),
     /** One recorded run of the autopilot, by its tick ID (#136). */
     recording: (tick: string) => queryOptions({ queryKey: [...key, "runs", tick], queryFn: async () => answered(await agent.recording(tick)), retry: false }),
     /** One operation's status by its `correlationId`, asked for by a click on its row. */

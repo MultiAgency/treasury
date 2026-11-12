@@ -65,3 +65,13 @@ test("departure remembers only a freshly observed visit, so events arriving whil
   assert.equal(observedVisit(openedAt, [{ isSuccess: true, dataUpdatedAt: openedAt + 1 }, { isSuccess: false, dataUpdatedAt: 0 }]), null,
     "partial reads cannot advance the cutoff");
 });
+
+
+test("the complete visit interval preserves a peak older than the latest 20 assessments", () => {
+  const assessments = Array.from({ length: 25 }, (_, i) => ({ at: ago((i + 1) * 1000), level: i === 24 ? 4 : 0 }));
+  const summary = summarize({ since: NOW - HOUR, runs: [], proposals: [], assessments });
+  assert.equal(summary.assessments, 25);
+  assert.equal(summary.latestLevel, 0);
+  assert.equal(summary.highestLevel, 4);
+  assert.deepEqual(sinceLines(summary, name), ["The risk was assessed 25 times; the latest is L0, and it reached L4."]);
+});

@@ -384,7 +384,7 @@ test("Home retains events arriving after its snapshot and does not advance a cac
     build: { deployment: null, source: "test", lockfile: null, packageJson: null }, agentId: "test", policy: { revision: null, digest: null, status: "test" },
     strategy: "test", grant: null, end: null,
   }] : [] } } });
-  const riskPath = `${origin}/api/agents/${target.agent}/risk/history`;
+  const riskPath = `${origin}/api/agents/${target.agent}/risk/history?*`;
   const failed = (route: Route) => route.fulfill({ status: 503, json: { ok: false, kind: "unavailable" } });
   const stored = () => page.evaluate(key => localStorage.getItem(key), key);
   await page.route(runsPath, runs);
@@ -417,6 +417,32 @@ test("Home retains events arriving after its snapshot and does not advance a cac
   } finally {
     await page.unroute(runsPath, runs);
     await page.unroute(riskPath, failed);
+  }
+});
+
+test("Home requests the visit interval and includes a risk peak older than the latest 20 assessments", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const key = `treasury:last-visit:${owner}:${target.agent}`;
+  const since = Date.now() - 3_600_000;
+  const riskPath = `${origin}/api/agents/${target.agent}/risk/history?*`;
+  let requestedSince: string | null = null;
+  const history = (route: Route) => {
+    requestedSince = new URL(route.request().url()).searchParams.get("since");
+    return route.fulfill({ json: { ok: true, value: { configured: true, intervalS: 300,
+      entries: Array.from({ length: 25 }, (_, i) => ({ seq: 25 - i, at: new Date(since + (25 - i) * 60_000).toISOString(),
+        level: i === 24 ? 4 : 0, reason: "Visit regression", actions: [], proposed: false, drawdownPct: null })),
+    } } });
+  };
+  await page.route(riskPath, history);
+  try {
+    await page.evaluate(({ key, since }) => localStorage.setItem(key, String(since)), { key, since });
+    await page.goto(here());
+    const summary = page.getByRole("region", { name: "Since you last looked" });
+    await visible(summary.getByText(/The risk was assessed 25 times;.*reached/));
+    assert.equal(requestedSince, String(since), "Home asks for the full interval rather than the recent-history endpoint");
+    assert.deepEqual(await axe(), [], "complete risk summary");
+  } finally {
+    await page.unroute(riskPath, history);
   }
 });
 

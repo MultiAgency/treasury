@@ -137,7 +137,7 @@ export function serverApi(fetcher: typeof fetch = (input, init) => fetch(input, 
         /** The stabilization agent's latest recorded assessment (#220): level, projection, scenarios and recommendations. */
         risk: () => call(contract.riskRead, `${base}/risk`),
         /** What the stabilization agent has been doing: its recent assessments, and whether this server runs it (#220). */
-        riskHistory: () => call(contract.riskHistoryRead, `${base}/risk/history`),
+        riskHistory: (since?: number) => call(contract.riskHistoryRead, `${base}/risk/history${since === undefined ? "" : `?since=${since}`}`),
         /** The owner's own tail event over the latest recorded book, with the agent's stress arithmetic: read and computed, nothing proposed. */
         riskWhatIf: (event: z.input<typeof contract.riskWhatIfRequest>) =>
           call(contract.riskWhatIfRead, `${base}/risk/what-if`, { method: "POST", body: contract.riskWhatIfRequest.parse(event) }),
