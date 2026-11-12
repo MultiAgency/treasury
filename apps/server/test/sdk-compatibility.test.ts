@@ -10,6 +10,7 @@ import { tempDir } from "../../../scripts/temp-dirs.ts";
 test("stack pin refuses an older or overlaid snapshot before starting any process", () => {
   const directory = tempDir("sdk-pin-refusal-");
   for (const snapshot of [
+    { sourceHead: "6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e", runDigest: "e7f171abb42baa5dc6b05d3bb72eb6f3bb43d5d17a80a66c135914bce885be01", overlayDiffSha256: null },
     { sourceHead: "2e7b1e6f231da5be62d077d67f7bc2686c57bdc9", runDigest: CANDIDATE, overlayDiffSha256: null },
     { sourceHead: PLATFORM_COMMIT, runDigest: "different-candidate", overlayDiffSha256: null },
     { sourceHead: PLATFORM_COMMIT, runDigest: CANDIDATE, overlayDiffSha256: "unreviewed-overlay" },

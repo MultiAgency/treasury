@@ -7,7 +7,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/
 COPY packages/core/package.json packages/core/
 COPY web/package.json web/
-COPY vendor/sdk vendor/sdk
+COPY vendor/sdk/final-252cba1 vendor/sdk/final-252cba1
 # pnpm links the SDK's approved agent skills (pnpm-workspace.yaml) into .claude/skills, and refuses to install without it.
 RUN mkdir -p .claude/skills && pnpm install --frozen-lockfile
 COPY . .
@@ -20,7 +20,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/server/package.json apps/server/
 COPY packages/core/package.json packages/core/
 COPY web/package.json web/
-COPY vendor/sdk vendor/sdk
+COPY vendor/sdk/final-252cba1 vendor/sdk/final-252cba1
 RUN mkdir -p .claude/skills && pnpm install --frozen-lockfile --prod --filter @treasury/server && npm uninstall --global pnpm && rm -rf .claude
 COPY apps/server/src apps/server/src
 COPY packages/core/src packages/core/src

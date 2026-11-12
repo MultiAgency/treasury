@@ -13,7 +13,7 @@ verifyPlatform(platform);
 const tests = ["app-client-route.test.ts", "app-dao.test.ts", "market-binding-journal.test.ts",
   "market-binding-rollback.test.ts", "market-rollback.test.ts", "market-funding-proof.test.ts",
   "market-hire.test.ts", "market-deadline.test.ts", "market-signing-race.test.ts", "journal-history.test.ts"];
-console.log(JSON.stringify({ developmentOnly: true, releaseHold: true, platform: PLATFORM_COMMIT, sdkSha256: SDK_SHA256,
+console.log(JSON.stringify({ offlineConsumerValidationOnly: true, releaseHold: true, platform: PLATFORM_COMMIT, sdkSha256: SDK_SHA256,
   testSources: Object.fromEntries(tests.map(file => [file,
     createHash("sha256").update(readFileSync(join(platform, "test", file))).digest("hex")])) }));
 const result = spawnSync(process.execPath, ["scripts/test.mjs", "offline", ...tests], {

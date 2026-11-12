@@ -1,5 +1,7 @@
 # Frozen SDK 0.5.9 development compatibility
 
+This is the preserved development-candidate record. The current isolated branch uses the [final combined handoff](sdk-final-compatibility.md); the older input pins and results below remain evidence for commit `86c337e` only.
+
 This is the Treasury owner’s local compatibility adoption of the supplied PR86 handoff, dated 12 November 2026. It is not a final release candidate. SDK 0.5.9 remains held, and this work authorizes no publication, deployment, live owner signing or financial action. The candidate omits the separate Paperwork DAO payout additions. A consolidated release requires new exact artifact pins and fresh consumer validation.
 
 The canonical Treasury repository is `/Users/jlwaugh/agencies/agentic-treasury`; the historical `/Users/jlwaugh/agencies/dao/treasury` path is absent. Session `01a1cff2-87f1-7892-92fa-850a79e8a049` owns branch `compat/pr86-sdk-0.5.9` in `/private/tmp/treasury-compat-6f9ef3a`, based on Treasury commit `bc93c4db857a723d947781b1a0cf6bd2023d43ee`. The shared Treasury checkout and the platform/SDK owners’ source and dependency directories are unchanged. The original validation receipt identifies the pre-commit working tree by its manifest and patch hashes instead of attributing the adoption to the base commit. The user subsequently authorized review and commit on this isolated branch; the sibling `commit-receipt.json` associates the resulting commit with that validation and records the documentation-only status update.

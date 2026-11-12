@@ -1,6 +1,6 @@
 # treasury
 
-The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.9 development candidate from the frozen PR86 handoff, against the platform's app route (`/apps/v1`).
+The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.9, pinned to the bytes verified against the final frozen handoff, against the platform's app route (`/apps/v1`).
 
 The owner can also ask the [treasury assistant](docs/assistant.md) about the treasury in plain language: it answers from the agent's own records, each figure citing the read it came from, and drafts a change for the owner to review and sign. It holds no key and sends nothing (#219).
 
@@ -19,13 +19,13 @@ For an agent whose `watch` entry enables `ballast` and `risk`, a stabilization a
 
 ## Running it locally
 
-This development branch uses the exact vendored SDK and matching platform commit described in [the compatibility handoff](docs/sdk-compatibility.md). SDK 0.5.9 is unreleased and held; this is not the final release candidate. The platform's provider, chain, signatures and settlement are simulated. Use Node 24 for compatibility receipts and pnpm 12.16.1. Create an isolated platform checkout; keep shared checkouts unchanged:
+This isolated consumer branch uses the exact vendored SDK and matching platform commit described in [the final compatibility handoff](docs/sdk-final-compatibility.md). SDK 0.5.9 is published, and the coordinator verified that the public tarball is byte-identical to this tested pin. Treasury app publication, deployment and staging restart remain held. The platform's provider, chain, signatures and settlement are simulated. Use Node 24 for compatibility receipts and pnpm 12.16.1. Use the supplied verified source archive or an isolated exact-commit checkout. GitHub resolves the exact pinned platform commit. For a new isolated checkout (keep shared checkouts unchanged):
 
 ```sh
-git clone https://github.com/MultiAgency/platform.git /tmp/treasury-platform-pr86
-git -C /tmp/treasury-platform-pr86 checkout --detach 6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e
-(cd /tmp/treasury-platform-pr86 && pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web)
-export TREASURY_PLATFORM=/tmp/treasury-platform-pr86
+git clone https://github.com/MultiAgency/platform.git /tmp/treasury-platform-final
+git -C /tmp/treasury-platform-final checkout --detach 252cba1d1e6642a5ea9f42ea4927f982423ed8e1
+(cd /tmp/treasury-platform-final && pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web)
+export TREASURY_PLATFORM=/tmp/treasury-platform-final
 pnpm install --frozen-lockfile
 pnpm verify:sdk
 ```
@@ -44,6 +44,6 @@ pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-ki
 pnpm backtest:diversified                    # rewrites docs/diversified-backtest.md from the seeded synthetic history
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e` with its own dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` is configured to check the audit log's anchors on chain hourly, with best-effort GitHub scheduling. Failed-run alerts don't detect missing runs; an optional external heartbeat covers that gap once activated. See [the operator checks](docs/deploy.md#audit-anchor-monitor).
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `252cba1d1e6642a5ea9f42ea4927f982423ed8e1` with its own dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` is configured to check the audit log's anchors on chain hourly, with best-effort GitHub scheduling. Failed-run alerts don't detect missing runs; an optional external heartbeat covers that gap once activated. See [the operator checks](docs/deploy.md#audit-anchor-monitor).
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).

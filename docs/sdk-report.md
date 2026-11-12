@@ -1,6 +1,6 @@
 # Treasury and the MultiAgency SDK
 
-**Development compatibility update, 12 November 2026:** this branch adopts the exact held PR86 SDK 0.5.9 artifact. See [artifact pins, fresh validation and limitations](sdk-compatibility.md). The report below is the historical 0.5.5 review; its dependency and stack pins do not describe this compatibility branch.
+**Final combined compatibility update, 12 November 2026:** this isolated branch repins to the exact combined SDK 0.5.9 artifact at platform source `252cba1`. See [current pins, fresh validation and limitations](sdk-final-compatibility.md). The [earlier development receipt](sdk-compatibility.md) remains historical; neither its pins nor the 0.5.5 review below describe this branch’s current dependencies.
 
 What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what remains to improve.
 

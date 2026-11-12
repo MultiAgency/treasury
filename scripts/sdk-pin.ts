@@ -3,19 +3,25 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Development compatibility input only. Version 0.5.9 alone never identifies this candidate. */
-export const HANDOFF_SHA256 = "b1501a3c75d00d4e5ae5fcb3257f500e3c857c5d5a84fb32cc78777c03882306";
-export const PLATFORM_COMMIT = "6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e";
-export const CANDIDATE = "e7f171abb42baa5dc6b05d3bb72eb6f3bb43d5d17a80a66c135914bce885be01";
-export const SDK_SHA256 = "58d27ef7398770b1c44265b41a165abfda186239711d9979749d7e276c744505";
-export const PROVENANCE_SHA256 = "09dad5e5043431155875b0a588ad215e5f6e1f2950ed5e1d3daaff7806fe9b70";
-export const GATEWAY_MANIFEST_SHA256 = "61b81847cafdd65145ea1e556d2d611211b434baacebe42ccdc1b0bbe8818f89";
-export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "pr86-6f9ef3a");
+/** Final combined candidate, isolated offline consumer validation only. Version 0.5.9 alone never identifies this candidate. */
+export const HANDOFF_SHA256 = "67d6a3fdd5b2858803485e29c4c6c29693b14bb47760f39c144992a5fb87c634";
+export const PLATFORM_COMMIT = "252cba1d1e6642a5ea9f42ea4927f982423ed8e1";
+export const CANDIDATE = "822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40";
+export const SDK_SHA256 = "4ae53dce669664bcf90e0c5939e0ac617db0ab24c101e3792fc659ac4494475a";
+export const PROVENANCE_SHA256 = "9feb6034ccddf90c6cc16c81247c10d265094eef6d457e17cbe3f3ce5de8dd3c";
+export const GATEWAY_MANIFEST_SHA256 = "8043058f5e55bf176597d70d3b83ebfebbef33eff436bb5739a602176d19b17a";
+export const RELEASE_MANIFEST_SHA256 = "e61553bdaa541f2a6201d71f499062bafd342012efadb9c77692008352000066";
+export const GATEWAY_IMAGE_ID = "sha256:9daf951d59ba40eb944d53a595ed214180254534b2e5c8cff93b448ad95dd195";
+export const GATEWAY_IMAGE_ARCHIVE_SHA256 = "6e891b6502f574d34482a3e508b9acd95b146955ecdf387ff6beb4c3cd745f4e";
+export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "final-252cba1");
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const check = (condition: boolean, message: string) => { if (!condition) throw new Error(message); };
 
 export function verifySdk() {
   check(digest(readFileSync(join(VENDOR, "handoff.json"))) === HANDOFF_SHA256, "Frozen handoff checksum mismatch");
+  check(digest(readFileSync(join(VENDOR, "release.json"))) === RELEASE_MANIFEST_SHA256, "Release manifest checksum mismatch");
+  const handoff = JSON.parse(readFileSync(join(VENDOR, "handoff.json"), "utf8"));
+  check(handoff.gateway.image.imageId === GATEWAY_IMAGE_ID && handoff.gateway.image.archiveSha256 === GATEWAY_IMAGE_ARCHIVE_SHA256, "Gateway image pin mismatch");
   const tarball = join(VENDOR, "multiagency-sdk-0.5.9.tgz");
   check(digest(readFileSync(tarball)) === SDK_SHA256, "SDK tarball checksum mismatch");
   const sidecar = readFileSync(join(VENDOR, "multiagency-sdk-0.5.9.provenance.json"));

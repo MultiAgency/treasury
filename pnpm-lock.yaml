@@ -179,8 +179,8 @@ importers:
         specifier: 1.0.3
         version: 1.0.3(zod@4.6.7)
       '@multiagency/sdk':
-        specifier: file:../../vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz
-        version: file:vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
+        specifier: file:../../vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz
+        version: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
       near-kit:
         specifier: 0.20.2
         version: 0.20.2
@@ -222,8 +222,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@multiagency/sdk':
-        specifier: file:../vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz
-        version: file:vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
+        specifier: file:../vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz
+        version: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -550,8 +550,8 @@ packages:
     peerDependencies:
       three: '>= 0.159.0'
 
-  '@multiagency/sdk@file:vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz':
-    resolution: {integrity: sha512-M572HruxxCibp8egeD840ROUIBJTjamAIDr05Txp0D1Z+Ikg9tSeXKCp9/w091df9DbsTnXqLu/oMZMu98mHbA==, tarball: file:vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz}
+  '@multiagency/sdk@file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz':
+    resolution: {integrity: sha512-vxV7/oY7yVF/eYlcw9YaoHlwiaJM0DHjTSGQzc/na94MccSHc1xvIfupHyxzleyddl2yzj21VNXFlkDdA1qlSg==, tarball: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz}
     version: 0.5.9
     hasBin: true
     peerDependencies:
@@ -3432,7 +3432,7 @@ snapshots:
       promise-worker-transferable: 1.0.4
       three: 0.187.0
 
-  '@multiagency/sdk@file:vendor/sdk/pr86-6f9ef3a/multiagency-sdk-0.5.9.tgz(zod@4.6.7)':
+  '@multiagency/sdk@file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47
