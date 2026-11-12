@@ -13,7 +13,9 @@
     "check": "pnpm typecheck && pnpm test",
     "smoke:assistant": "node --env-file-if-exists=.env scripts/assistant-smoke.ts",
     "backtest:diversified": "node scripts/diversify.ts",
-    "backtest:stabilization": "node scripts/stabilization-backtest.ts run"
+    "backtest:stabilization": "node scripts/stabilization-backtest.ts run",
+    "verify:sdk": "node scripts/verify-sdk.ts",
+    "test:compatibility": "node scripts/test-compatibility.ts"
   },
   "packageManager": "pnpm@12.16.1",
   "devDependencies": {

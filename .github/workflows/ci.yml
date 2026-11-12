@@ -29,6 +29,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:sdk
       - name: Every workspace package
         run: pnpm check && pnpm build
 
@@ -47,8 +48,8 @@ jobs:
         with:
           persist-credentials: false
           repository: MultiAgency/platform
-          # @multiagency/sdk 0.5.5 (tag sdk-v0.5.5), which includes #41 (the stack's daoConfidentialSetup control), #43 and #44; startStack checks it.
-          ref: 2e7b1e6f231da5be62d077d67f7bc2686c57bdc9
+          # Final combined SDK 0.5.9 offline-consumer handoff; sdk-pin.ts verifies source bytes and provenance.
+          ref: 252cba1d1e6642a5ea9f42ea4927f982423ed8e1
           path: platform
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -65,3 +66,5 @@ jobs:
         run: pnpm --filter @treasury/server test:stack
       - name: The app's pages on the stack
         run: pnpm --filter @treasury/web test:stack
+      - name: Frozen SDK compatibility and rollback gates
+        run: pnpm test:compatibility

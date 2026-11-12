@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@ag-ui/core": "1.0.3",
-    "@multiagency/sdk": "0.5.5",
+    "@multiagency/sdk": "file:../../vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz",
     "near-kit": "0.20.2",
     "zod": "^4.6.6"
   },

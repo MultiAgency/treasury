@@ -1,5 +1,7 @@
 # Treasury and the MultiAgency SDK
 
+**Final combined compatibility update, 12 November 2026:** this isolated branch repins to the exact combined SDK 0.5.9 artifact at platform source `252cba1`. See [current pins, fresh validation and limitations](sdk-final-compatibility.md). The [earlier development receipt](sdk-compatibility.md) remains historical; neither its pins nor the 0.5.5 review below describe this branch’s current dependencies.
+
 What the Treasury app needs from `@multiagency/sdk` and the platform, how each need is handled today, and what remains to improve.
 
 Rechecked on 10 November 2026 against SDK **0.5.5**, pinned platform [`2e7b1e6`](https://github.com/MultiAgency/platform/tree/2e7b1e6f231da5be62d077d67f7bc2686c57bdc9), and Treasury's current SDK integration. Run now recovery below also reflects the page-lifetime guard in `web/src/run-now-guard.ts`. This replaces the report's 0.5.0/0.5.1 snapshot and its partial 0.5.4 updates. Paths beginning `platform/` refer to that platform commit. Host availability and live settlement are operator checks, not guarantees from the SDK pin or simulated tests.

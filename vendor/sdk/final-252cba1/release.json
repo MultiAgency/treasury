@@ -1,0 +1,217 @@
+{
+  "version": 1,
+  "startedAt": "2026-11-12T17:20:13.802Z",
+  "ref": "252cba1d1e6642a5ea9f42ea4927f982423ed8e1",
+  "commit": "252cba1d1e6642a5ea9f42ea4927f982423ed8e1",
+  "node": "v24.22.3",
+  "gates": {
+    "typecheck": {
+      "command": "pnpm -s typecheck",
+      "status": 0
+    },
+    "offline": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/test.mjs offline",
+      "status": 0,
+      "tests": 1498,
+      "pass": 1498,
+      "fail": 0
+    },
+    "evidence": {
+      "command": "pnpm -s evidence:check",
+      "status": 0
+    },
+    "build-web": {
+      "command": "/private/tmp/pr86-final-release-20261112/.test-artifacts/stack-snapshots/staging-44528/node_modules/.bin/rsbuild build --root web",
+      "status": 0
+    },
+    "browser": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/browser/run.cjs",
+      "status": 0,
+      "scenarios": [
+        {
+          "suite": "agent-access",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "app-redirects",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "approval-confirm",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "demo-hosts",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "first-owner",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "harness",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "hosted-payee",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "invoices",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "live-demo",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "payables-player",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "public-overview",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "setup",
+          "ran": 2,
+          "of": 2
+        },
+        {
+          "suite": "showcase",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "signing-walkthrough",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "walkthrough-entry",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "wallet-stop",
+          "ran": 8,
+          "of": 8
+        },
+        {
+          "suite": "work-orders",
+          "ran": 2,
+          "of": 2
+        }
+      ],
+      "failedSuites": 0
+    },
+    "e2e": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-Wvx1Un",
+      "stats": {
+        "startTime": "2026-11-12T17:24:24.593Z",
+        "duration": 226164.938,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "253cdcb89fbf79a76b2a6eaa8b05a38f7847b1d427064bf91e86553460a7a5b7",
+      "challenges": []
+    },
+    "challenges": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --challenge --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-BYy75p",
+      "stats": {
+        "startTime": "2026-11-12T17:28:12.574Z",
+        "duration": 227812.47,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "253cdcb89fbf79a76b2a6eaa8b05a38f7847b1d427064bf91e86553460a7a5b7",
+      "challenges": [
+        {
+          "id": "duplicate-transfer",
+          "outcome": "detected"
+        },
+        {
+          "id": "premature-paid",
+          "outcome": "detected"
+        },
+        {
+          "id": "approve-only-bypass",
+          "outcome": "detected"
+        },
+        {
+          "id": "agent-route-unrestricted",
+          "outcome": "detected"
+        }
+      ]
+    },
+    "sdk": {
+      "command": "pnpm -s contract:pack",
+      "status": 0
+    },
+    "sdk-skills": {
+      "command": "pnpm -s contract:skills",
+      "status": 0
+    },
+    "platform-image": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/check-platform-image.mjs /private/tmp/pr86-final-release-20261112/.test-artifacts/releases/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/platform /private/tmp/pr86-final-release-20261112/.test-artifacts/releases/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/platform-image.tar",
+      "status": 0,
+      "packagedFiles": 253,
+      "stateFiles": 16,
+      "stateDirectories": 15
+    }
+  },
+  "frontend": {
+    "source": "cac41749fdc276387da1ea0b521dd3b3d3f596dcb002508a77d3ee7630556ed5",
+    "build": "253cdcb89fbf79a76b2a6eaa8b05a38f7847b1d427064bf91e86553460a7a5b7"
+  },
+  "dependencyTree": "400d16463092b8b5b68c14b3225cb0fe7c3dec3e438dd391c2cb121b814ab0b3",
+  "runDigest": "822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40",
+  "snapshot": "/private/tmp/pr86-final-release-20261112/.test-artifacts/stack-snapshots/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40",
+  "inputs": {
+    "treasury-skill": {
+      "path": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "digest": "7eb06c9c5d5f46f32ee1063a13f1e80aeb2d2ec5f787b06644c19e5ba3f2f7f7"
+    }
+  },
+  "packages": {
+    "platform": {
+      "path": "/private/tmp/pr86-final-release-20261112/.test-artifacts/releases/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/platform",
+      "manifestSha256": "8043058f5e55bf176597d70d3b83ebfebbef33eff436bb5739a602176d19b17a",
+      "image": {
+        "imageId": "sha256:9daf951d59ba40eb944d53a595ed214180254534b2e5c8cff93b448ad95dd195",
+        "platform": "linux/arm64",
+        "tag": "multiagency-platform-check:90634",
+        "archive": "/private/tmp/pr86-final-release-20261112/.test-artifacts/releases/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/platform-image.tar",
+        "archiveSha256": "6e891b6502f574d34482a3e508b9acd95b146955ecdf387ff6beb4c3cd745f4e",
+        "scope": "Local image checked offline; no registry publication or deployed-host claim"
+      }
+    }
+  },
+  "sdk": {
+    "tarball": "/private/tmp/pr86-final-release-20261112/.test-artifacts/stack-snapshots/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/.test-artifacts/contract/multiagency-sdk-0.5.9.tgz",
+    "sha256": "4ae53dce669664bcf90e0c5939e0ac617db0ab24c101e3792fc659ac4494475a",
+    "provenance": "/private/tmp/pr86-final-release-20261112/.test-artifacts/stack-snapshots/822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40/.test-artifacts/contract/multiagency-sdk-0.5.9.provenance.json",
+    "provenanceSha256": "9feb6034ccddf90c6cc16c81247c10d265094eef6d457e17cbe3f3ce5de8dd3c"
+  },
+  "result": "passed",
+  "finishedAt": "2026-11-12T17:33:03.042Z"
+}
