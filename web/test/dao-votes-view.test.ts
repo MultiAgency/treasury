@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import { votesText } from "../src/dao-votes-view.ts";
 
 test("nothing is said until the DAO's proposal is filed", () => {
-  assert.equal(votesText(undefined, [{ role: "council", threshold: "2" }]), null);
+  assert.equal(votesText(undefined, [{ role: "council", threshold: "1/2 of the role" }]), null);
 });
 
-test("the approvals are listed beside the platform's threshold, quoted as given", () => {
-  assert.equal(votesText(["alice.near", "bob.near"], [{ role: "council", threshold: "2" }]), "2 approved: alice.near, bob.near. Needed: 2 (council)");
-  assert.equal(votesText([], [{ role: "council", threshold: "1/2" }, { role: "admins", threshold: "3" }]), "No member has approved yet. Needed: 1/2 (council); 3 (admins)");
+test("who approved is listed beside each role's threshold, quoted as the platform gives it", () => {
+  assert.equal(votesText(["a.near", "b.near"], [{ role: "council", threshold: "1/2 of the role" }]), "Approved by a.near, b.near · council: 1/2 of the role");
+  assert.equal(votesText([], [{ role: "council", threshold: "1/2 of the role" }, { role: "admins", threshold: "3" }]), "No approvals yet · council: 1/2 of the role · admins: 3");
 });
 
-test("without a threshold read, only the approvals are shown", () => {
-  assert.equal(votesText(["alice.near"], undefined), "1 approved: alice.near");
-  assert.equal(votesText(["alice.near"], []), "1 approved: alice.near");
+test("without a threshold read, only who approved is shown", () => {
+  assert.equal(votesText(["a.near"], undefined), "Approved by a.near");
+  assert.equal(votesText(["a.near"], []), "Approved by a.near");
 });
