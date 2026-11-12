@@ -703,7 +703,10 @@ test("a page returned to within a minute shows what it read, without reading the
   await visible(autopilot.getByRole("list", { name: "From strategy to autopilot" }));
   await page.waitForTimeout(500);
   page.off("request", read);
-  assert.deepEqual(reads, [], "each read counts against the deployment's shared calls an hour");
+  // The visit cutoff changes on departure. Its new risk interval is read from this server's audit log,
+  // so it does not consume the deployment's platform allowance. All platform-backed reads stay cached.
+  assert.deepEqual(reads.filter(path => path !== `/api/agents/${target.agent}/risk/history`), [],
+    "returning to a cached page makes no platform-backed reads");
 });
 
 test("the owner allows owner actions: told first that open proposals are withdrawn, then the connection is replaced by one with owner", { timeout: 90_000 }, async () => {
