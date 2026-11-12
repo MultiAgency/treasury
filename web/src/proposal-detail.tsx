@@ -36,6 +36,8 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const client = useQueryClient();
   const options = reads.proposal(id);
   const proposal = useQuery(options);
+  // The DAO's threshold, as the platform works it out, beside the approvals so far; only a DAO-owned agent has one to read.
+  const treasury = useQuery({ ...reads.treasury, enabled: identity.signer === "dao" });
   const [verdict, setVerdict] = useState<VerdictReview>();
   const [confirming, setConfirming] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -202,7 +204,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
         {view.planId && <p className="break-all font-mono text-xs text-muted-foreground">Plan {view.planId}</p>}
         {vote && <div className="flex flex-col gap-2">
           <p role="status" className="font-medium">{owner} votes to {vote.verdict} this proposal.</p>
-          <DaoRequestView request={vote} account={identity.account} onChanged={recheck} />
+          <DaoRequestView request={vote} account={identity.account} onChanged={recheck} approvers={treasury.data?.dao?.approvers} />
         </div>}
         {dao && verdictOffered(view) && !vote && !identity.access.canPropose && <p className="text-sm">A member who may file proposals asks the DAO to approve or reject it.</p>}
         {notice && <div role={notice.tone} aria-atomic="true" className="text-sm">{notice.body}</div>}
