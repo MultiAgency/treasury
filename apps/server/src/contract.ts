@@ -500,6 +500,8 @@ export const riskReport = z.strictObject({
 export type RiskReport = z.infer<typeof riskReport>;
 /** The agent's latest recorded risk assessment, or null when none has been recorded yet. */
 export const riskRead = z.strictObject({ risk: riskReport.nullable() });
+/** An explicit assessment was durably recorded; no proposal or automation was started. */
+export const riskAssessmentRead = z.strictObject({ risk: riskReport, proposed: z.literal(false) });
 
 /**
  * What the stabilization agent has been doing (#220), for the Agents page: each recorded assessment, newest first, with

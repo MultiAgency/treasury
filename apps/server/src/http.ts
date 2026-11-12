@@ -7,7 +7,7 @@ import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
 import { creationReviews, type CreationReviews } from "./creation-reviews.ts";
-import type { BallastSettings } from "./ballast.ts";
+import { ballastSettings, type BallastSettings } from "./ballast.ts";
 import { buildHedge } from "./hedge.ts";
 import type { Intents } from "./intents.ts";
 import { diversificationView } from "./diversification.ts";
@@ -95,6 +95,7 @@ export type Deps = {
    * the route answers that no assessment has been recorded.
    */
   latestRisk?: LatestRisk;
+  recordRisk?: (organization: string, agent: string, settings: BallastSettings) => Promise<import("./risk.ts").StoredRisk | null>;
   /** The newest stabilization records, for the Agents page's activity list (#220). Without it the list is empty. */
   riskHistory?: RiskHistory;
   /** Whether `watch` runs the stabilization agent for an agent, and how often it ticks: from the watch file, never the platform. */
@@ -1195,6 +1196,19 @@ export const routes: Route[] = [
       if (!latestRisk) return ok({ risk: null });
       const found = await relay(async () => ({ ok: true as const, value: await latestRisk(organizationOf(owner), agent) }), agent);
       return found.ok ? ok({ risk: found.value ? riskReportOf(found.value) : null }) : readFailure(found, agent, "risk");
+    },
+  },
+  {
+    method: "POST", path: "/api/agents/:agent/risk/assess", access: "owner-fresh", needs: "read",
+    async handle({ identity, body, viaToken }, { recordRisk }) {
+      if (viaToken) return refused(403, "owner_required");
+      const input = parse(ballastSettings, body);
+      if (input === undefined) return refused(400, "bad_request");
+      if (!recordRisk) return unavailable();
+      const { owner, agent } = identity!;
+      const found = await relay(async () => ({ ok: true as const, value: await recordRisk(organizationOf(owner), agent, input) }), agent);
+      if (!found.ok) return readFailure(found, agent, "risk/assess");
+      return found.value ? ok({ risk: riskReportOf(found.value), proposed: false }) : refused(409, "assessment_unavailable");
     },
   },
   {

@@ -53,3 +53,13 @@ Each tick with a `risk` block records a `kind: "risk"` audit record **before any
 - **A second venue or volatile asset** needs no change here: scenarios come from the book, so each new asset and venue gets its own falls, depegs and outages. The server's book is still wNEAR and USDC only (#221 is the wider one).
 - **A diversified book (ADR 6):** answered. The agent assesses the multi-sleeve book, and its de-risk sells the largest asset the swap can price (ADR 6's amendment); a watch entry may carry both `risk` and `diversification`.
 - **The projection's parameters** (7-day horizon, 500 paths, 14-day lookback, a day's volatility half-life) are placeholders too: one asset and one year of synthetic history can't fit them, and live quotes are what will.
+
+## Explicit assessment without watch (#250)
+
+A signed-in owner or authorized DAO member can call `POST /api/agents/:agent/risk/assess` with the Ballast terms object (`profile`, `monthlySpendUsd`, `operatingCashMonths`, `destinations`, `approvers`, and optional diversification/risk terms). The request uses the existing fresh ownership, read-consent, agent-scope, JSON and same-origin checks. Agent tokens cannot invoke it.
+
+The server reads current overview and autopilot status, validates the terms through the mandate compiler, and runs the same deterministic assessment with an explicit exit before proposal decisions. Missing, expired or future-dated prices refuse the request; an unsupported book or invalid mandate returns `assessment_unavailable`. Missing history is recorded honestly as an unusable projection with reasons. A successful response contains `risk` with its audit timestamp and sequence, and `proposed: false`.
+
+The canonical audit writer returns the exact durable record it appended, so a concurrent watcher record cannot replace the response. Audit failure fails the request. The assessment has no proposal request ID; no platform mutation, proposal, grant, freeze, autopilot, watcher or schedule change occurs. Existing report, history, what-if and assistant reads use the same risk records.
+
+When configured, history and engine state share the existing requests-file stores. Without a requests file, their paths are `<TREASURY_AUDIT_FILE>.assessment-history` and `.assessment-engine`. Only genuine observations populate history; a new installation cannot immediately produce a calibrated projection. Hosted numerical acceptance remains pending a real book and reviewed terms; do not fund an agent, enable watch or seed synthetic production records for this check.

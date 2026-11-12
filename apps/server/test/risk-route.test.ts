@@ -80,3 +80,28 @@ test("someone else's agent is not_owner and the record isn't read; the report is
   const read = contract.riskRead.parse((await w.get()).body.value);
   assert.deepEqual(read.risk, report);
 });
+
+test("explicit assessment is owner scoped, origin protected and reports no proposal", async t => {
+  const fake = fakePlatform({ portfolio: "owner.near" });
+  const calls: string[] = [];
+  const w = await testServer({ platform: fake.platform, wallets: [owner, intruder], recordRisk: async (organization, agent) => {
+    calls.push(`${organization}/${agent}`); return storedRisk();
+  } });
+  t.after(() => w.server.close());
+  const cookie = await w.signIn(owner), other = await w.signIn(intruder);
+  const terms = { profile: "balanced", monthlySpendUsd: 2000, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"] };
+  const post = (as: string, origin = "https://treasury.test") => fetch(`${w.base}/api/agents/portfolio/risk/assess`, {
+    method: "POST", headers: { cookie: as, origin, "content-type": "application/json" }, body: JSON.stringify(terms),
+  });
+  const { ORIGIN } = await import("./fakes.ts");
+  assert.equal((await post(cookie, "https://wrong.test")).status, 403);
+  assert.equal((await post(other, ORIGIN)).status, 403);
+  assert.deepEqual(calls, []);
+  const response = await post(cookie, ORIGIN);
+  assert.equal(response.status, 200);
+  const body = await response.json() as { value: { proposed: boolean; risk: unknown } };
+  assert.equal(body.value.proposed, false);
+  assert.deepEqual(body.value.risk, riskReportOf(storedRisk()));
+  assert.deepEqual(calls, ["owner--near/portfolio"]);
+  assert.ok(fake.calls.every(call => call.startsWith("identity ")), fake.calls.join());
+});

@@ -190,6 +190,8 @@ export type ChainedAudit<E extends object> = {
    */
   check(): Promise<void>;
   append(entry: E): Promise<void>;
+  /** The exact durable record, even when other writers append concurrently. */
+  appendRecord<T extends E>(entry: T): Promise<ChainRecord<T>>;
   /** The last record's hash and sequence number, after `check` and every `append`. After a failed append it may lag the file until the next append reads it back. */
   head(): { hash: string; seq: number };
 };
@@ -244,6 +246,7 @@ export function chainedFileAudit<E extends object = AuditEntry>(file: string, no
     const line = `{"seq":${body.seq},"at":${JSON.stringify(body.at)},"prev":"${body.prev}","hash":"${hash}","entry":${canonicalJson(entry)}}`;
     try { await append(file, line); } catch (error) { unsure = true; throw error; }
     head = { hash, seq: body.seq };
+    return JSON.parse(line) as ChainRecord<E>;
   };
 
   return {
@@ -255,8 +258,13 @@ export function chainedFileAudit<E extends object = AuditEntry>(file: string, no
     },
     append(entry: E) {
       const run = queue.then(() => write(entry));
-      queue = run.catch(() => {}); // a failed append must not stop the ones behind it
-      return run;
+      queue = run.then(() => {}, () => {}); // a failed append must not stop the ones behind it
+      return run.then(() => {});
+    },
+    appendRecord<T extends E>(entry: T) {
+      const run = queue.then(() => write(entry));
+      queue = run.then(() => {}, () => {});
+      return run as Promise<ChainRecord<T>>;
     },
     head() {
       if (head === undefined) throw new Error("the audit log wasn't checked: call check() first");
