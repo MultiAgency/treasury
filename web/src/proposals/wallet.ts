@@ -13,9 +13,9 @@ import type { DaoRequest, GrantPrepared, SignRequest, Signed } from "./proposals
 const wallet = walletSession(() => new NearConnector({ network: "mainnet", manifest: HOT_WALLETS,
   features: { signMessage: true }, storage: namespaced("proposals") }));
 
-/** Signs `message` for `recipient` with `nonce` in the owner's wallet, connecting it first. */
-export async function sign({ message, recipient, nonce }: SignRequest): Promise<Signed> {
-  if ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
+/** Signs the message in a wallet; new server sign-ins set `chooseWallet` to offer another wallet or account. */
+export async function sign({ message, recipient, nonce }: SignRequest, { chooseWallet = false }: { chooseWallet?: boolean } = {}): Promise<Signed> {
+  if (chooseWallet || (await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
   const { wallet: connected } = await wallet.connector.getConnectedWallet();
   const signed = await connected.signMessage({ message, recipient, nonce: fromBase64(nonce) });
   return { accountId: signed.accountId, publicKey: signed.publicKey, signature: signed.signature };

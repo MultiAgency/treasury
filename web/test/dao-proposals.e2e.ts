@@ -132,6 +132,7 @@ const fileButton = (scope: ReturnType<Page["getByRole"]>) => scope.getByRole("bu
 test("a council member asks the DAO to connect the agent, files its proposal from their wallet, and the page shows it connected once the vote passes", { timeout: 120_000 }, async () => {
   await page.goto(`${origin}/agents/${target.agent}`);
   await page.getByRole("button", { name: "Sign in with wallet" }).click();
+  await page.getByText("Local test wallet", { exact: true }).click();
   await visible(page.getByText(`Signed in as ${council.accountId}`));
   const connection = page.getByRole("region", { name: "Connection" });
   await visible(connection.getByRole("status").filter({ hasText: `Not connected. ${dao} consents by its own vote` }));

@@ -24,7 +24,7 @@ export function useSignIn() {
       const issued = await api.challenge();
       if (!issued.ok) return setError(failureText(issued, "sign-in"));
       let signed;
-      try { signed = await sign(issued.value); } catch (problem) { return setError(`The wallet didn't sign: ${errorMessage(problem)}`); }
+      try { signed = await sign(issued.value, { chooseWallet: true }); } catch (problem) { return setError(`The wallet didn't sign: ${errorMessage(problem)}`); }
       const session = await api.signIn({ accountId: signed.accountId, publicKey: signed.publicKey, signature: signed.signature, nonce: issued.value.nonce });
       if (!session.ok) return setError(failureText(session, "sign-in"));
       clearConversations();
