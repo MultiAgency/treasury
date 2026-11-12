@@ -375,6 +375,51 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(page.getByRole("region", { name: "Proposals" }).getByText(/No proposals yet/));
 });
 
+test("Home retains events arriving after its snapshot and does not advance a cached or failed visit (#263)", { timeout: 90_000 }, async () => {
+  const key = `treasury:last-visit:${owner}:${target.agent}`;
+  let at: string | undefined;
+  const runsPath = `${origin}/api/agents/${target.agent}/runs`;
+  const runs = (route: Route) => route.fulfill({ json: { ok: true, value: { corrupt: [], ticks: at ? [{
+    id: "since-regression", at, trigger: "schedule", schedule: { on: true, everyMin: 60, maxUsd: 1, lastRun: null },
+    build: { deployment: null, source: "test", lockfile: null, packageJson: null }, agentId: "test", policy: { revision: null, digest: null, status: "test" },
+    strategy: "test", grant: null, end: null,
+  }] : [] } } });
+  const riskPath = `${origin}/api/agents/${target.agent}/risk/history`;
+  const failed = (route: Route) => route.fulfill({ status: 503, json: { ok: false, kind: "unavailable" } });
+  const stored = () => page.evaluate(key => localStorage.getItem(key), key);
+  await page.route(runsPath, runs);
+  try {
+    await page.goto(here());
+    await signInIfAsked(page.getByRole("region", { name: "Connection" }));
+    await page.evaluate(key => localStorage.removeItem(key), key);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    // This event was absent from Home's snapshot. It arrives while the owner stays on that page.
+    at = new Date(await page.evaluate(() => Date.now())).toISOString();
+    await nav("Strategy").click();
+    const cutoff = Number(await stored());
+    assert.ok(cutoff > 0 && cutoff < Date.parse(at), "departure records the observed visit start, before the unseen event");
+    await nav("Home").click();
+    await page.waitForLoadState("networkidle");
+    await nav("Strategy").click();
+    assert.equal(Number(await stored()), cutoff, "a return using cached snapshots preserves the cutoff");
+    await page.goto(here());
+    const summary = page.getByRole("region", { name: "Since you last looked" });
+    await visible(summary.getByText("Autopilot ran 1 time."));
+    assert.deepEqual(await axe(), [], "the visit summary");
+    await nav("Strategy").click();
+    const observed = await stored();
+    await page.route(riskPath, failed);
+    await page.goto(here());
+    await page.waitForLoadState("networkidle");
+    await nav("Strategy").click();
+    assert.equal(await stored(), observed, "a failed risk read cannot mark the visit observed");
+  } finally {
+    await page.unroute(runsPath, runs);
+    await page.unroute(riskPath, failed);
+  }
+});
+
 test("the owner approves a proposal by its exact text, executes it once to executed, and rejects another", { timeout: 180_000 }, async () => {
   const first = await propose(`page-${Date.now()}-1`), second = await propose(`page-${Date.now()}-2`);
   // The portfolio is read first, so coming back to it after the execute below shows whether it's read again.
