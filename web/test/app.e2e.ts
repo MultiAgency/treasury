@@ -5,6 +5,7 @@
 // `signOwner` control; the stack doesn't publish its chain RPC, so the server's key check is a stand-in for the owner's key.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { checkStrategyReview } from "./strategy-review.ts";
 import { readFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -800,6 +801,7 @@ test("the owner edits the strategy, authorizes it in their wallet, turns autopil
   await autopilot.getByRole("button", { name: "Authorize this strategy" }).click();
   const authorize = dialog("Authorize this saved strategy?");
   await visible(authorize);
+  await checkStrategyReview(page, target.agent);
   assert.deepEqual(await axe(), [], "the authorization review");
   await authorize.getByRole("button", { name: "Sign in wallet" }).click();
   // Once submitted and taken up, the strategy reads bound: the grant step gives way to Turn on.

@@ -7,7 +7,8 @@ type Strategy = StrategyRead["strategy"];
 /** Who proposed it, for a person: Ballast's mandate compiler, or software holding one of the agent's tokens. */
 export const sourceName = (source: string) => source === "mandate" ? "Ballast's mandate" : `An agent's token (${source.slice("token:".length)})`;
 
-const floorText = (strategy: Pick<Strategy, "cashFloor">) =>
+/** A strategy's cash floor in words, or "None": the cash its swaps may not take it under. */
+export const floorText = (strategy: Pick<Strategy, "cashFloor">) =>
   strategy.cashFloor ? `$${strategy.cashFloor.usd} in ${strategy.cashFloor.assets.map(asset => symbolOf(asset, [])).join(", ")}` : "None";
 
 /** Each term of a strategy, as the saved one's and a proposal's are compared: its targets, then its limits, then autopilot's. */

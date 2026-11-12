@@ -10,6 +10,7 @@ import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 import type { GrantPrepared, Identity, StrategyRead } from "./server-api";
 import type { agentReads } from "./queries";
+import { StrategyTerms } from "./strategy-terms";
 import { ReviewDialog, when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
 import { filedText } from "./dao-filing";
@@ -121,6 +122,11 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
         : "Your wallet signs it; nothing takes effect without your signature."}`}
       actions={<Button disabled={busy} onClick={() => void authorize()}>{dao ? "File in your wallet" : "Sign in wallet"}</Button>}>
       {fromAssistant && <FromAssistant />}
+      {/* The dialog keeps its contents in the page while closed, so the terms are drawn only while it is open: closed, they would repeat the Autopilot section's own. */}
+      {reviewing && <>
+        <p className="text-sm font-medium">You are authorizing this strategy</p>
+        <StrategyTerms strategy={strategy.strategy} label="Strategy being authorized" />
+      </>}
       <p className="text-sm">Strategy digest <code className="break-all text-xs">{strategy.digest}</code></p>
     </ReviewDialog>
   </div>;
