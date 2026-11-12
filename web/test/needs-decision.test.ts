@@ -55,7 +55,7 @@ test("each item says what it is and where it leads", () => {
   assert.match(vote!.text, /to reject a proposal/);
   assert.deepEqual(unresolved!.target, { page: "activity", key: "u" }, "the operation's entry on the Activity page");
   assert.equal(unresolved!.at, "2026-11-06T11:00:00.000Z");
-  assert.match(unresolved!.text, /nothing new runs until it's resolved/);
+  assert.match(unresolved!.text, /The platform is checking it; nothing new runs until then/);
 });
 
 test("nothing waiting gives an empty list; several legs read together", () => {

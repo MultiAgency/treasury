@@ -150,6 +150,9 @@ test("a council member asks the DAO to connect the agent, files its proposal fro
   await visible(connection.getByRole("status").filter({ hasText: /^Connected by the vote of / }));
   assert.equal(sent.length, 1, "filed once");
   assert.deepEqual([sent[0]!.signerId, sent[0]!.receiverId], [council.accountId, dao], "from the member's wallet, to the DAO");
+  const standing = page.getByRole("region", { name: "Where the agent stands" });
+  await visible(standing.getByRole("listitem").filter({ hasText: /^Funds/ }));
+  assert.equal(await standing.getByRole("listitem").filter({ hasText: /^Account/ }).count(), 0, "a DAO has no funding-account setup step");
   assert.deepEqual(await axe(), [], "connected");
 });
 

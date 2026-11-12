@@ -777,11 +777,40 @@ test("the home says where the agent stands, one line each, linking to its page",
   const standing = page.getByRole("region", { name: "Where the agent stands" });
   await signInIfAsked(standing);
   const lines = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem");
-  await visible(lines.filter({ hasText: /^Policy(In force|Not in force)/ }));
+  await visible(lines.filter({ hasText: /^Policy(In force|Blocked)/ }));
   await visible(lines.filter({ hasText: /^Strategy(Authorized|Not authorized)/ }));
   await visible(lines.filter({ hasText: /^Autopilot(On|Off)/ }));
   assert.equal(await lines.filter({ hasText: /^Strategy/ }).getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/strategy`);
   assert.deepEqual(await axe(), []);
+});
+
+test("an unfunded wallet owner's Home links both missing funding steps to Funding (#258)", { timeout: 60_000 }, async () => {
+  const overviewPath = `${origin}/api/agents/${target.agent}/overview`;
+  const treasuryPath = `${origin}/api/agents/${target.agent}/treasury`;
+  const empty = async (route: Route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    await route.fulfill({ response, json: { ...body, value: { ...body.value, book: body.value.book.map((holding: object) => ({ ...holding, public: "0", confidential: "0", usd: 0 })) } } });
+  };
+  const unlinked = (route: Route) => route.fulfill({ json: { ok: true, value: { treasury: null } } });
+  await page.route(overviewPath, empty);
+  await page.route(treasuryPath, unlinked);
+  try {
+    await page.goto(here());
+    const standing = page.getByRole("region", { name: "Where the agent stands" });
+    await signInIfAsked(standing);
+    const lines = standing.getByRole("listitem");
+    const funds = lines.filter({ hasText: /^Funds/ });
+    const account = lines.filter({ hasText: /^Account/ });
+    await visible(funds.getByText("Not funded", { exact: true }));
+    await visible(account.getByText("Not linked", { exact: true }));
+    for (const line of [funds, account]) assert.equal(await line.getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/funding`);
+    assert.deepEqual(await axe(), [], "first-run funding guidance");
+  } finally {
+    await page.unroute(overviewPath, empty);
+    await page.unroute(treasuryPath, unlinked);
+  }
 });
 
 test("on an approve-only host the home's Strategy line says so, never that it is not authorized", { timeout: 60_000 }, async () => {
@@ -798,6 +827,7 @@ test("on an approve-only host the home's Strategy line says so, never that it is
     await signInIfAsked(standing);
     const line = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem").filter({ hasText: /^Strategy/ });
     await visible(line.getByText("This host only approves: the strategy is authorized on the agent's executor"));
+    await visible(line.getByText("Approve-only", { exact: true }));
     assert.equal(await line.getByText(/Not authorized/).count(), 0);
   } finally {
     await page.unroute("**/api/agents/*/strategy", approveOnly);

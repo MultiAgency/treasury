@@ -104,7 +104,7 @@ function Glance({ data }: { data: OverviewRead }) {
   const daily = window("daily", "daily_usd"), monthly = window("monthly", "monthly_usd");
   const caps = Object.entries(policy?.limits?.per_transaction ?? {});
   return <KvGrid label="Policy at a glance" className="grid-cols-2 lg:grid-cols-5 [&>*:last-child]:col-span-2 lg:[&>*:last-child]:col-span-1">
-    <Kv label="Policy" value={<span className={data.notInForce ? "text-warning-muted-foreground" : "text-success-muted-foreground"}>{data.notInForce ? "Not in force" : "In force"}</span>}
+    <Kv label="Policy" value={<span className={data.notInForce ? "text-warning-muted-foreground" : "text-success-muted-foreground"}>{data.notInForce ? "Blocked" : "In force"}</span>}
       hint={`Rev. ${data.policy.revision ?? "—"}${data.notInForce ? ` · ${data.notInForce}` : ""}`} />
     <Kv label="Grant" value={grant ? <span className="font-mono text-base">{grant.label}</span> : null}
       hint={grant ? <Ago iso={grant.expires_at} prefix="Expires " /> : "No live grant"} />
