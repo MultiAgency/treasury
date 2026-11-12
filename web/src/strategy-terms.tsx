@@ -2,12 +2,13 @@ import { Chip } from "@/components/ui/limits-table";
 import { assetTone, symbolOf, type AssetInfo } from "./shared/format";
 import { totalUsd } from "./shared/prices";
 import type { StrategyRead } from "./server-api";
+import { floorText } from "./strategy-proposals-view";
 
 type Strategy = StrategyRead["strategy"];
 type Book = readonly (AssetInfo & { usd: number | null })[];
 const KNOWN = new Set(["wNEAR", "NEAR", "USDC", "ETH"]);
 
-/** A saved strategy's terms, compactly: its nonzero targets as chips, then its swap limits and autopilot's interval and ceiling. */
+/** A saved strategy's terms, compactly: its nonzero targets as chips, then its swap limits, autopilot's interval and ceiling, and its cash floor. */
 export function StrategyTerms({ strategy, label }: { strategy: Strategy; label: string }) {
   return <>
     <ul aria-label={label} className="flex flex-wrap gap-1.5">
@@ -17,7 +18,7 @@ export function StrategyTerms({ strategy, label }: { strategy: Strategy; label: 
       })}
     </ul>
     <p className="text-xs text-muted-foreground">Swaps of at least ${strategy.minLegUsd}, costing at most {strategy.maxCostBps / 100}%. On autopilot: every {strategy.autopilot.everyMin} minutes,
-      up to ${strategy.autopilot.maxUsd} a run.</p>
+      up to ${strategy.autopilot.maxUsd} a run. Cash floor: {floorText(strategy)}.</p>
   </>;
 }
 
