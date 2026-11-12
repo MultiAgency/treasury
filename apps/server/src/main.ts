@@ -1,3 +1,4 @@
+import { createAssessment } from "./assessment.ts";
 import { createServer as createHttpServer } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AddressInfo } from "node:net";
@@ -63,9 +64,11 @@ const watched = settings.TREASURY_WATCH_FILE ? {
   holds: await createHolds(`${settings.TREASURY_REQUESTS_FILE!}.holds`),
 } : undefined;
 // Ballast's price history and engine state, beside the requests (`.history`, `.engine`), when any agent runs it (#47).
+const sharedHistory = await createPriceHistory(settings.TREASURY_REQUESTS_FILE ? `${settings.TREASURY_REQUESTS_FILE}.history` : `${settings.TREASURY_AUDIT_FILE}.assessment-history`);
+const sharedStates = await createEngineState(settings.TREASURY_REQUESTS_FILE ? `${settings.TREASURY_REQUESTS_FILE}.engine` : `${settings.TREASURY_AUDIT_FILE}.assessment-engine`);
 const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
-  history: await createPriceHistory(`${settings.TREASURY_REQUESTS_FILE!}.history`),
-  states: await createEngineState(`${settings.TREASURY_REQUESTS_FILE!}.engine`),
+  history: sharedHistory,
+  states: sharedStates,
   // Every decision goes to the audit log with its inputs, so a replay of the log makes the same one (A7.2, #54).
   audit,
 }) : undefined;
@@ -129,6 +132,7 @@ const handler = createServer({
   settle,
   // The stabilization agent's latest record for the owner's report (#220): read from the audit log, never computed here.
   latestRisk: createRiskReader(settings.TREASURY_AUDIT_FILE),
+  recordRisk: createAssessment({ platform: platform.watch, history: sharedHistory, states: sharedStates, audit }),
   riskHistory: createRiskHistoryReader(settings.TREASURY_AUDIT_FILE),
   // Whether the stabilization agent runs for an agent, from the watch file: the Agents page says so rather than guess.
   riskStatus: (organization, agent) => {

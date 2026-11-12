@@ -521,3 +521,35 @@ test("a stablecoin the mandate didn't split into holds the tick, so the floor is
   assert.deepEqual(event.assets, ["USDT"]);
   assert.equal(w.sent.length, 0);
 });
+
+test("assessment-only records replayable risk without decisions or proposal request IDs", async () => {
+  const w = await world();
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  const result = await engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true);
+  assert.equal("skipped" in result && result.skipped, "assessment only");
+  const records = (await w.log()).trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(records.length, 1);
+  assert.ok(!("requestId" in records[0].entry));
+  assert.equal(records[0].entry.kind, "risk");
+  assert.equal(replayAuditLog(await w.log()).ok, true);
+  assert.deepEqual(w.states.find(ORG, AGENT).proposed, []);
+  assert.deepEqual(w.sent, []);
+});
+
+test("assessment-only fails closed when the canonical audit append fails", async () => {
+  const w = await world({ failAudit: true });
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  await assert.rejects(engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true), /disk full/);
+  assert.deepEqual(w.sent, []);
+});
+
+
+test("assessment-only with missing history records an explicit unusable projection", async () => {
+  const w = await world({ seeded: false });
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  await engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true);
+  const record = JSON.parse((await w.log()).trim());
+  assert.equal(record.entry.assessment.projection.usable, false);
+  assert.ok(record.entry.assessment.projection.reasons.length > 0);
+  assert.deepEqual(w.sent, []);
+});

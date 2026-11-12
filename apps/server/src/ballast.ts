@@ -312,7 +312,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
 }) {
   return {
     async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false): Promise<Decision> {
       const at = now();
       const row = (asset: string) => overview.book.find(h => h.asset === asset) as Holding | undefined;
       const volatile = row(VOLATILE), stable = row(STABLE);
@@ -381,10 +381,11 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         };
         riskAssessment = assessRisk(riskInput);
         // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
-        if (riskAssessment.derisk?.proposal && autopilotOn !== true) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
         await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
           ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
       }
+      if (assessmentOnly) return { skipped: "assessment only", ...(riskAssessment && { risk: riskEventOf(riskAssessment) }) };
       // While autopilot runs, Ballast decides nothing: the risk agent has assessed it and recommended pausing it if needed.
       if (autopilotOn === true) return { skipped: "autopilot", ...(riskAssessment && { risk: riskEventOf(riskAssessment) }) };
       // The forward detections join the regime and the level once: buys hold at L1+, and every policy check sees the
@@ -465,7 +466,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
      * and a cash-like real-world asset only when the RWA phase is on and it can be redeemed inside its horizon.
      */
     async decideDiversified(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false): Promise<Decision> {
       const at = now();
       if (!settings.diversification) return { skipped: "no diversification terms" };
 
@@ -586,11 +587,12 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         };
         riskAssessment = assessRisk(riskInput);
         // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
-        if (riskAssessment.derisk?.proposal && autopilotOn !== true) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
         await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
           ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
       }
       const riskEvent = riskAssessment ? riskEventOf(riskAssessment) : undefined;
+      if (assessmentOnly) return { skipped: "assessment only", ...(riskAssessment && { risk: riskEventOf(riskAssessment) }) };
       // While autopilot runs, Ballast decides nothing: the risk agent has assessed it and recommended pausing it if needed.
       if (autopilotOn === true) return { skipped: "autopilot", ...(riskEvent && { risk: riskEvent }) };
       // The forward detections join each sleeve's regime and the level once: buys hold at L1+, and every policy check sees
