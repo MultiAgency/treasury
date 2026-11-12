@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { Button, errorMessage } from "./shared/ui";
+import { votesText, type Approver } from "./dao-votes-view";
 import type { DaoRequest } from "./server-api";
 import { when } from "./ui";
 import { file, WrongAccount } from "./wallet";
@@ -15,12 +16,13 @@ const lines = (description: string) => description.split(/\s*<br>\s*/).filter(Bo
  * Filing sends the platform's transaction from the member's own wallet; afterwards, `onChanged` reads the request
  * again, and the DAO's proposal shows up there once it's on chain.
  */
-export function DaoRequestView({ request, account, onChanged }: { request: DaoRequest; account: string; onChanged: () => void }) {
+export function DaoRequestView({ request, account, onChanged, approvers }: { request: DaoRequest; account: string; onChanged: () => void; approvers?: readonly Approver[] | undefined }) {
   const [filing, setFiling] = useState(false);
   const [notice, setNotice] = useState<{ tone: "status" | "alert"; text: string }>();
   /** The wallet's last answer to filing, while the offer it answered is still the one shown. */
   const [last, setLast] = useState<{ outcome: TransactionOutcome["kind"]; offer: string }>();
   const offer = request.offer;
+  const votes = votesText(request.approvedBy, approvers);
   const held = last?.offer === JSON.stringify(offer) && filingHeld(last.outcome);
 
   const send = async () => {
@@ -59,6 +61,7 @@ export function DaoRequestView({ request, account, onChanged }: { request: DaoRe
       : offer.state === "filed" ? <p role="status">Filed as the DAO's proposal #{offer.proposal}. <a className="underline" href={offer.vote}>Vote on it in Trezu</a>.</p>
       : offer.state === "approved" ? <p role="status">The DAO approved proposal #{offer.proposal}. This server completes it on its next read.</p>
       : <p role="alert">The DAO's proposal #{offer.proposal} failed when it ran. A member who may finalize proposals can run it again: <a className="underline" href={offer.vote}>open it in Trezu</a>.</p>}
+    {votes && <p role="status" aria-label="Votes so far">{votes}</p>}
     {notice && <p role={notice.tone} className="text-sm">{notice.text}</p>}
   </div>;
 }

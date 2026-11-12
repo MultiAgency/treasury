@@ -109,3 +109,13 @@ test("a member's access is the platform's reading of the DAO's roles; an account
   assert.equal(memberAccess("b.near", DAO, read), null);
   assert.equal(memberAccess(DAO, DAO, read), null, "the DAO's own account isn't a member");
 });
+
+test("Sputnik votes survive parsing; a malformed votes record makes the read unavailable", async () => {
+  const votes = { "b.near": "Reject", "a.near": "Approve", "c.near": "Remove" };
+  const parsed = await daos(chain({ get_last_proposal_id: [1], get_proposals: [[{ ...proposal(0), votes }]] }).view).proposals(DAO, 0);
+  assert.notEqual(parsed, "unavailable");
+  if (parsed !== "unavailable") assert.deepEqual(parsed.proposals[0]!.votes, votes);
+  for (const votes of [null, [], { "a.near": 1 }]) {
+    assert.equal(await daos(chain({ get_last_proposal_id: [1], get_proposals: [[{ ...proposal(0), votes }]] }).view).proposals(DAO, 0), "unavailable");
+  }
+});

@@ -1487,3 +1487,25 @@ test("another account gets not_owner from the CSV and the owner-actions routes, 
     assert.deepEqual(await json(await call("GET", path)), { status: 401, body: { ok: false, kind: "not_signed_in" } }, path);
   }
 });
+
+test("DAO request approvals come only from its matching chain proposal and survive the browser contract", async t => {
+  await freshDao(t);
+  daoProposal("1".repeat(32));
+  const cookie = await signIn(council);
+  const path = `/api/agents/dao-treasury/proposals/${"1".repeat(32)}`;
+  const filed = await json(await call("POST", `${path}/approve`, { cookie, body: {} }));
+  assert.equal(contract.daoFiled.parse(filed.body.value).request.approvedBy, undefined, "no votes before filing");
+  fileOnChain("0".repeat(64));
+  chainProposals[DAO]![0]!.votes = { "unrelated.near": "Approve" };
+  fileOnChain(fake.daoVotes[0]!.id);
+  const matched = chainProposals[DAO]![1]!;
+  matched.votes = { "z.near": "Approve", "reject.near": "Reject", "a.near": "Approve", "remove.near": "Remove" };
+  const read = await json(await call("GET", path, { cookie }));
+  assert.deepEqual(contract.proposalRead.parse(read.body.value).vote!.approvedBy, ["a.near", "z.near"]);
+  const listed = await json(await call("GET", "/api/agents/dao-treasury/dao-requests", { cookie }));
+  assert.deepEqual(contract.daoAgentRequests.parse(listed.body.value).requests[0]!.approvedBy, ["a.near", "z.near"]);
+  matched.votes = {};
+  assert.deepEqual(contract.proposalRead.parse((await json(await call("GET", path, { cookie }))).body.value).vote!.approvedBy, []);
+  const writes = fake.calls.filter(call => /prepare|submit|execute/.test(call));
+  assert.deepEqual(writes, [], "displaying approvals prepares, signs and executes nothing");
+});

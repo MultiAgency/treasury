@@ -565,8 +565,11 @@ async function daoView(stored: StoredDaoRequest, target: DaoTarget, { daos, daoR
     await daoRequests.close(stored.id, offer.outcome === "Expired" ? "expired" : "rejected");
     return null;
   }
+  // Who has approved the DAO's proposal, as Sputnik records it; whether that meets the threshold is the platform's to say.
+  const filed = offer && offer.state !== "file" && read !== "unavailable" ? read.proposals.find(proposal => proposal.id === offer.proposal) : undefined;
+  const approvedBy = filed && Object.entries(filed.votes ?? {}).filter(([, vote]) => vote === "Approve").map(([account]) => account).sort();
   return { id: stored.id, description: stored.description, votingUntil: stored.votingUntil, check: `https://${target.host}/confirm/dao/${stored.id}`,
-    ...(stored.kind === "vote" && { verdict: stored.verdict }), offer };
+    ...(stored.kind === "vote" && { verdict: stored.verdict }), offer, ...(approvedBy && { approvedBy }) };
 }
 
 /** What a DAO is asked to vote on: its Organization's Treasury setup, its consent to this app, or a verdict on one of the agent's proposals. */
