@@ -36,15 +36,17 @@ function RiskCard({ reads, id, title, description }: { reads: Reads; id: string;
           stabilization agent is configured for it, so there is nothing to report until then.
         </p>
         : <>
-          <p className="text-sm"><span className="font-medium">{level!.label}.</span> {level!.explanation}</p>
+          <p className="text-sm"><span className="font-medium">{level!.label}.</span> {report.projection.usable ? level!.explanation : "The projection is unavailable. This assessment recommends holding buys until its inputs are sufficient."}</p>
           <p className="text-sm text-muted-foreground">{report.reason}</p>
-          <dl aria-label="Forward risk figures" className="grid gap-2 text-sm sm:grid-cols-2">
+          {report.projection.usable ? <dl aria-label="Forward risk figures" className="grid gap-2 text-sm sm:grid-cols-2">
             {metricRows(report).map(({ term, value, detail }) => <div key={term} className="rounded-lg border border-border bg-background/40 p-3">
               <dt className="text-xs text-muted-foreground">{term}</dt>
               <dd className="font-medium tabular-nums">{value}</dd>
               <dd className="text-xs text-muted-foreground">{detail}</dd>
             </div>)}
-          </dl>
+          </dl> : <p role="status" className="text-sm text-muted-foreground">
+            Projection unavailable. No forecast figures are shown. The stress scenarios below use the recorded book and spend terms.
+          </p>}
           <div className="flex flex-col gap-1.5">
             <h3 className="text-sm font-medium">Top stress scenarios</h3>
             <ul aria-label="Top stress scenarios" className="flex flex-col gap-1.5 text-sm">
