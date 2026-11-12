@@ -161,7 +161,7 @@ export function HomePage() {
   // that says it just connected. Not connected, it is the only thing on the page, and what needs doing.
   return <div className="flex flex-col gap-4">
     <NeedsDecision reads={reads} identity={identity} connected={connected} />
-    {connected ? <SinceLastLooked reads={reads} identity={identity} /> : null}
+    {connected ? <SinceLastLooked key={JSON.stringify([identity.account, identity.agent])} reads={reads} identity={identity} /> : null}
     {connected ? <Standing reads={reads} identity={identity} /> : null}
     {connected ? <ForwardRisk reads={reads} /> : null}
     {connected ? <Portfolio reads={reads} agent={identity.agent} /> : null}

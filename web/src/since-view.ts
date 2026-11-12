@@ -31,6 +31,11 @@ export function rememberVisit(keep: Keep | undefined, key: string, now: number):
 export const sinceFrom = (visit: number | null, now: number): { since: number; fallback: boolean } =>
   visit === null ? { since: now - FALLBACK_MS, fallback: true } : { since: visit, fallback: false };
 
+/** A visit is observed only after every input succeeded after it opened; cached/failed reads retain the old cutoff. */
+export function observedVisit(openedAt: number, reads: readonly { isSuccess: boolean; dataUpdatedAt: number }[]): number | null {
+  return reads.length > 0 && reads.every(read => read.isSuccess && read.dataUpdatedAt >= openedAt) ? openedAt : null;
+}
+
 type Dated = { at?: string; createdAt?: string };
 const after = (since: number) => (item: Dated) => Date.parse(item.at ?? item.createdAt ?? "") > since;
 

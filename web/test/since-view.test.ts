@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FALLBACK_MS, lastVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "../src/since-view.ts";
+import { FALLBACK_MS, lastVisit, observedVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "../src/since-view.ts";
 
 const NOW = Date.parse("2026-11-12T12:00:00.000Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -50,4 +50,18 @@ test("the lines say what happened in words, and nothing when nothing did", () =>
     ["Autopilot ran 1 time.", "1 proposal was made.", "The risk was assessed 1 time; the latest is L0."]);
   assert.deepEqual(sinceLines({ runs: 4, proposals: 2, assessments: 3, latestLevel: 1, highestLevel: 3 }, name),
     ["Autopilot ran 4 times.", "2 proposals were made.", "The risk was assessed 3 times; the latest is L1, and it reached L3."]);
+});
+
+test("departure remembers only a freshly observed visit, so events arriving while Home is open remain new", () => {
+  const keep = memory(), key = visitKey("alice.near", "ballast");
+  const openedAt = NOW - HOUR;
+  const observed = observedVisit(openedAt, [1, 2, 3].map(() => ({ isSuccess: true, dataUpdatedAt: openedAt + 1 })));
+  assert.equal(observed, openedAt);
+  rememberVisit(keep, key, observed!);
+  assert.equal(summarize({ since: lastVisit(keep, key, NOW)!, runs: [{ at: ago(HOUR / 2) }], proposals: [], assessments: [] }).runs, 1,
+    "an event after the snapshot and before departure is included next visit");
+  assert.equal(observedVisit(openedAt, [{ isSuccess: false, dataUpdatedAt: openedAt + 1 }]), null);
+  assert.equal(observedVisit(openedAt, [{ isSuccess: true, dataUpdatedAt: openedAt - 1 }]), null, "cached data cannot advance the cutoff");
+  assert.equal(observedVisit(openedAt, [{ isSuccess: true, dataUpdatedAt: openedAt + 1 }, { isSuccess: false, dataUpdatedAt: 0 }]), null,
+    "partial reads cannot advance the cutoff");
 });

@@ -8,7 +8,7 @@ import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
 import { levelView } from "./risk-view";
-import { lastVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "./since-view";
+import { lastVisit, observedVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "./since-view";
 import { agentAddress, proposalAddress } from "./pages";
 import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
@@ -143,23 +143,29 @@ const storage = (): Storage | undefined => { try { return window.localStorage; }
 /**
  * What happened since the owner last looked (#263): the autopilot's runs, the proposals and the risk assessments after
  * the last visit, from reads the page already makes. The last visit is kept in this browser only, per account and
- * agent, and written when the owner leaves Home (or the page), so a reload before then shows the same summary. With no
+ * agent, and written on departure only through the start of a visit whose reads all succeeded freshly. With no
  * earlier visit it covers the last seven days and says so. Nothing happened: the card is not shown.
  */
 export function SinceLastLooked({ reads, identity }: { reads: Reads; identity: Identity }) {
   const key = visitKey(identity.account, identity.agent);
-  // Read once, when Home opens: leaving writes the new time, and the next visit then summarizes from this one.
-  const [{ since, fallback }] = useState(() => sinceFrom(lastVisit(storage(), key, Date.now()), Date.now()));
-  const keyRef = useRef(key);
-  keyRef.current = key;
-  useEffect(() => {
-    const leave = () => rememberVisit(storage(), keyRef.current, Date.now());
-    window.addEventListener("pagehide", leave);
-    return () => { window.removeEventListener("pagehide", leave); leave(); };
-  }, []);
+  const [{ since, fallback, openedAt }] = useState(() => {
+    const openedAt = Date.now();
+    return { ...sinceFrom(lastVisit(storage(), key, openedAt), openedAt), openedAt };
+  });
   const runs = useQuery(reads.runs);
   const proposals = useQuery({ ...reads.proposals, refetchInterval: false });
   const risk = useQuery(reads.riskHistory);
+  // Cached or failed reads must not mark unseen events as read. Never move the cutoff to departure time:
+  // the agent may have acted since these snapshots were fetched. No extra requests are needed.
+  const observed = useRef<number | null>(null);
+  useEffect(() => {
+    observed.current = observedVisit(openedAt, [runs, proposals, risk]);
+  }, [openedAt, runs.isSuccess, runs.dataUpdatedAt, proposals.isSuccess, proposals.dataUpdatedAt, risk.isSuccess, risk.dataUpdatedAt]);
+  useEffect(() => {
+    const leave = () => { if (observed.current !== null) rememberVisit(storage(), key, observed.current); };
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); leave(); };
+  }, [key]);
   if (!runs.data && !proposals.data && !risk.data) return null;
   const lines = sinceLines(summarize({
     since, runs: runs.data?.ticks ?? [], proposals: proposals.data ?? [], assessments: risk.data?.entries ?? [],
