@@ -85,12 +85,12 @@ export function Activity({ reads, identity }: { reads: Reads; identity: Identity
   return <div className="flex flex-col gap-3">
     {unresolved.data && unresolved.data.length > 0 && <section id="unresolved" aria-labelledby="unresolved-title">
       <Card className="gap-3 border-warning/30">
-        <PanelTitle id="unresolved-title" title="Without a proven outcome" icon={<WarningCircle weight="duotone" />} tone="warning"
-          description="Nothing new runs until these are resolved; nothing is sent again from here."
-          infoLabel="About operations without a proven outcome" info="The platform reconciles them on its own.">
+        <PanelTitle id="unresolved-title" title="Pending" icon={<WarningCircle weight="duotone" />} tone="warning"
+          description="No action needed. The platform is checking these; nothing new runs until they settle, and nothing is sent again from here."
+          infoLabel="About pending operations" info="These were sent but their result isn't confirmed yet. The platform reconciles them on its own.">
           <Badge tone="warning">{unresolved.data.length} open</Badge>
         </PanelTitle>
-        <ul aria-label="Without a proven outcome" className="flex flex-col divide-y divide-border text-sm">
+        <ul aria-label="Pending" className="flex flex-col divide-y divide-border text-sm">
           {unresolved.data.map(item => <li key={item.key} id={unresolvedAnchor(item.key)} className="grid scroll-mt-24 grid-cols-[minmax(0,1fr)] gap-x-3 gap-y-1 py-2 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
             <At iso={item.at} className="text-xs text-muted-foreground" />
             <span className="min-w-0 break-words"><span className="font-medium">{item.kind}</span><span className="text-muted-foreground"> · </span>{describeRequest(item.request, book)}

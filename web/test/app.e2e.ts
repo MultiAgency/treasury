@@ -731,7 +731,7 @@ test("the home says where the agent stands, one line each, linking to its page",
   const standing = page.getByRole("region", { name: "Where the agent stands" });
   await signInIfAsked(standing);
   const lines = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem");
-  await visible(lines.filter({ hasText: /^Policy(In force|Not in force)/ }));
+  await visible(lines.filter({ hasText: /^Policy(In force|Blocked)/ }));
   await visible(lines.filter({ hasText: /^Strategy(Authorized|Not authorized)/ }));
   await visible(lines.filter({ hasText: /^Autopilot(On|Off)/ }));
   assert.equal(await lines.filter({ hasText: /^Strategy/ }).getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/strategy`);

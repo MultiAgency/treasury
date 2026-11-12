@@ -7,6 +7,7 @@ import { Badge, Card, Loading, QueryError, short, type Tone } from "./shared/ui"
 import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
+import { fundedStatus, showsFundingAccount } from "./standing-view";
 import { agentAddress, proposalAddress } from "./pages";
 import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
@@ -33,11 +34,11 @@ function NeedLink({ need, agent }: { need: Need; agent: string }) {
   return <PageLink to={agentAddress(agent, "activity")} hash={unresolvedAnchor(target.key)} className={LINK}>Check the activity{arrow}</PageLink>;
 }
 
-/** What kind of thing waits, as a status: amber for a decision or an unproven outcome, blue for a vote or an approved proposal. */
+/** What kind of thing waits, as a status: amber for a decision, blue for a vote or an approved proposal, grey for a pending operation the platform is checking. */
 const KIND: Record<Need["kind"], { label: string; tone: Tone; bar: string }> = {
   "open-proposal": { label: "Decision", tone: "warning", bar: "bg-warning" },
   "approved-proposal": { label: "Approved", tone: "info", bar: "bg-info" },
-  unresolved: { label: "Unresolved", tone: "warning", bar: "bg-warning" },
+  unresolved: { label: "Pending", tone: "neutral", bar: "bg-muted-foreground/40" },
   "dao-consent": { label: "DAO vote", tone: "info", bar: "bg-info" },
   "dao-vote": { label: "DAO vote", tone: "info", bar: "bg-info" },
   "owner-action": { label: "DAO vote", tone: "info", bar: "bg-info" },
@@ -45,6 +46,26 @@ const KIND: Record<Need["kind"], { label: string; tone: Tone; bar: string }> = {
 
 /** A time relative to now, with the exact time on hover. */
 const At = ({ iso }: { iso: string }) => <time dateTime={iso} title={when(iso)}>{ago(iso)}</time>;
+
+/** The items of a list of needs: what waits, its kind, when it lapses or was recorded, and where it leads. */
+function NeedList({ label, items, agent }: { label: string; items: Need[]; agent: string }) {
+  return <ul aria-label={label} className="flex flex-col gap-2 text-sm">
+    {items.map(need => {
+      const kind = KIND[need.kind];
+      return <li key={need.key} className="relative flex flex-col gap-3 overflow-hidden rounded-lg border border-border bg-background/40 py-3 pr-3 pl-4 sm:flex-row sm:items-center sm:justify-between">
+        <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] ${kind.bar}`} />
+        <div className="flex min-w-0 flex-col gap-1">
+          <span className="break-words">{need.text}</span>
+          <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <Badge tone={kind.tone}>{kind.label}</Badge>
+            {need.deadline !== null ? <span>Expires <At iso={new Date(need.deadline).toISOString()} /></span> : need.at && <span>Recorded <At iso={need.at} /></span>}
+          </span>
+        </div>
+        <NeedLink need={need} agent={agent} />
+      </li>;
+    })}
+  </ul>;
+}
 
 /**
  * What needs the owner, at the top of the agent's home (#130): proposals awaiting a decision or approved and not
@@ -63,31 +84,23 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
   const items = needsDecision({ proposals: proposals.data ?? [], unresolved: unresolved.data ?? [], daoRequests: dao.data ?? [], ownerActions: actions.data ?? [], now: Date.now() });
   if (!connected && items.length === 0) return null;
   const failed = failing.some(([read]) => read.isError);
+  // An operation without a proven outcome needs no decision: the platform settles it on its own, so it is listed apart.
+  const decisions = items.filter(need => need.kind !== "unresolved");
+  const checking = items.filter(need => need.kind === "unresolved");
 
   return <section id="needs-decision" aria-labelledby="needs-decision-title">
     <Card className="gap-3">
-      <PanelTitle id="needs-decision-title" title="Needs your decision" icon={<Bell weight="duotone" />} tone={items.length ? "warning" : "success"}>
-        {!pending && !failed && <Badge tone={items.length ? "warning" : "success"}>{items.length ? `${items.length} waiting` : "Clear"}</Badge>}
+      <PanelTitle id="needs-decision-title" title="Needs your decision" icon={<Bell weight="duotone" />} tone={decisions.length ? "warning" : "success"}>
+        {!pending && !failed && <Badge tone={decisions.length ? "warning" : "success"}>{decisions.length ? `${decisions.length} waiting` : "Clear"}</Badge>}
       </PanelTitle>
       {failing.map(([read, what]) => read.isError && <QueryError key={what} error={read.error} retry={() => read.refetch()} />)}
       {pending ? <Loading label="Reading what needs your decision…" />
-        : items.length === 0 ? (failed ? null : <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><CheckCircle aria-hidden="true" className="size-4 text-success" />Nothing needs a decision.</p>)
-        : <ul aria-label="Needs your decision" className="flex flex-col gap-2 text-sm">
-          {items.map(need => {
-            const kind = KIND[need.kind];
-            return <li key={need.key} className="relative flex flex-col gap-3 overflow-hidden rounded-lg border border-border bg-background/40 py-3 pr-3 pl-4 sm:flex-row sm:items-center sm:justify-between">
-              <span aria-hidden="true" className={`absolute inset-y-0 left-0 w-[3px] ${kind.bar}`} />
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className="break-words">{need.text}</span>
-                <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <Badge tone={kind.tone}>{kind.label}</Badge>
-                  {need.deadline !== null ? <span>Expires <At iso={new Date(need.deadline).toISOString()} /></span> : need.at && <span>Recorded <At iso={need.at} /></span>}
-                </span>
-              </div>
-              <NeedLink need={need} agent={identity.agent} />
-            </li>;
-          })}
-        </ul>}
+        : decisions.length === 0 ? (failed ? null : <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status"><CheckCircle aria-hidden="true" className="size-4 text-success" />Nothing needs a decision.</p>)
+        : <NeedList label="Needs your decision" items={decisions} agent={identity.agent} />}
+      {!pending && checking.length > 0 && <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Pending <span className="font-normal text-muted-foreground">· no action needed</span></h3>
+        <NeedList label="Pending, no action needed" items={checking} agent={identity.agent} />
+      </div>}
     </Card>
   </section>;
 }
@@ -109,16 +122,22 @@ function StandingCell({ label, read, status, to }: { label: string; read: { isPe
   </li>;
 }
 
-/** Where the agent stands, one cell each (#130): the policy, whether the grant binds the saved strategy, and autopilot. */
+/** Where the agent stands, one cell each (#130): the policy, whether it is funded and (for a wallet owner) the account that funds it, whether the grant binds the saved strategy, and autopilot. */
 export function Standing({ reads, identity }: { reads: Reads; identity: Identity }) {
   const overview = useQuery(reads.overview);
   const strategy = useQuery(reads.strategy);
   const autopilot = useQuery(reads.autopilot);
-  const policy: Status | undefined = overview.data && (overview.data.notInForce ? { tone: "warning", text: "Not in force", detail: overview.data.notInForce }
+  const policy: Status | undefined = overview.data && (overview.data.notInForce ? { tone: "warning", text: "Blocked", detail: overview.data.notInForce }
     : { tone: "success", text: "In force", detail: `Revision ${overview.data.policy.revision ?? "—"}` });
-  const bound: Status | undefined = strategy.data && (strategy.data.grantMatches === null ? { tone: "info", text: "Executor", detail: "This host only approves: the strategy is authorized on the agent's executor" }
+  const bound: Status | undefined = strategy.data && (strategy.data.grantMatches === null ? { tone: "info", text: "Approve-only", detail: "This host only approves: the strategy is authorized on the agent's executor" }
     : strategy.data.grantMatches ? { tone: "success", text: "Authorized", detail: "The agent's grant binds the saved strategy" }
     : { tone: "warning", text: "Not authorized", detail: "No grant binds the saved strategy" });
+  const treasury = useQuery({ ...reads.treasury, enabled: showsFundingAccount(identity.signer) });
+  const funded = overview.data && fundedStatus(overview.data.book);
+  const holds: Status | undefined = funded && (funded.funded ? { tone: "success", text: "Funded", detail: funded.detail } : { tone: "warning", text: "Not funded", detail: funded.detail });
+  const account: Status | undefined = treasury.data === undefined ? undefined : treasury.data === null
+    ? { tone: "warning", text: "Not linked", detail: "Link the account the agent is funded from" }
+    : { tone: "success", text: "Linked", detail: <span className="font-mono">{treasury.data.accountId}</span> };
   const schedule = autopilot.data;
   const running: Status | undefined = schedule && (schedule.on
     ? { tone: "success", text: "On", detail: schedule.nextRun ? <>Next run <At iso={schedule.nextRun} /></> : `Every ${schedule.everyMin} minutes` }
@@ -126,8 +145,10 @@ export function Standing({ reads, identity }: { reads: Reads; identity: Identity
   return <section id="standing" aria-labelledby="standing-title">
     <Card className="gap-3">
       <PanelTitle id="standing-title" title="Where the agent stands" icon={<Compass weight="duotone" />} tone="brand" />
-      <ul aria-label="Where the agent stands" className="grid gap-2 text-sm sm:grid-cols-3">
+      <ul aria-label="Where the agent stands" className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <StandingCell label="Policy" read={overview} status={policy} to={agentAddress(identity.agent, "policy")} />
+        <StandingCell label="Funds" read={overview} status={holds} to={agentAddress(identity.agent, "funding")} />
+        {showsFundingAccount(identity.signer) && <StandingCell label="Account" read={treasury} status={account} to={agentAddress(identity.agent, "funding")} />}
         <StandingCell label="Strategy" read={strategy} status={bound} to={agentAddress(identity.agent, "strategy")} />
         <StandingCell label="Autopilot" read={autopilot} status={running} to={agentAddress(identity.agent, "strategy")} />
       </ul>

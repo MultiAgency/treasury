@@ -59,7 +59,7 @@ export function needsDecision({ proposals, unresolved, daoRequests, ownerActions
     ...ownerActions.filter(item => awaiting(item, now) === "vote").map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
       text: `${actionName(item.type)} is waiting for the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
-      text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
+      text: `A ${item.kind} was sent, but its result isn't confirmed yet. The platform is checking it; nothing new runs until then, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
   ];
   // Deadlines first, soonest first; then the rest, in the order the platform listed them.
   return items.map((item, index) => ({ item, index })).sort((a, b) => {
