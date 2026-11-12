@@ -163,7 +163,7 @@ const storage = (): Storage | undefined => { try { return window.localStorage; }
 
 /**
  * What happened since the owner last looked (#263): the autopilot's runs, the proposals and the risk assessments after
- * the last visit, from reads the page already makes. The last visit is kept in this browser only, per account and
+ * the last visit, using existing read endpoints. The last visit is kept in this browser only, per account and
  * agent, and written on departure only through the start of a visit whose reads all succeeded freshly. With no
  * earlier visit it covers the last seven days and says so. Nothing happened: the card is not shown.
  */
