@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { PanelTitle } from "@/components/ui/stat";
 import { ago } from "./shared/format";
 import { Badge, Card, Loading, QueryError } from "./shared/ui";
+import { AskWhy } from "./assistant";
+import { RISK_QUESTION } from "./ask-why";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 import type { agentReads } from "./queries";
@@ -25,6 +27,7 @@ function RiskCard({ reads, id, title, description }: { reads: Reads; id: string;
     <Card className="gap-3">
       <PanelTitle id={`${id}-title`} title={title} description={description} icon={<ShieldCheck weight="duotone" />} tone="brand">
         {level && <Badge tone={level.tone}>{level.label}</Badge>}
+        {report && <AskWhy reads={reads} question={RISK_QUESTION} about="the risk level" />}
       </PanelTitle>
       {risk.isPending ? <Loading label="Reading the last risk assessment…" />
         : risk.isError ? <QueryError error={risk.error} retry={() => risk.refetch()} />

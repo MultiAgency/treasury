@@ -10,6 +10,8 @@ import { refreshPortfolio, type agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";
 import { failureText, NOT_EXECUTABLE, outcomeText, PENDING, STATE_WORDS } from "./words";
+import { AskWhy } from "./assistant";
+import { proposalQuestion } from "./ask-why";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 
@@ -165,7 +167,10 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const open = verdictOffered(view) && !vote && (!dao || identity.access.canPropose);
   const executable = executeOffered(view, held) && identity.access.canExecute;
   return <div className="flex flex-col gap-8">
-    <PageLink to={agentAddress(reads.name, "proposals")} className="self-start text-sm underline">Back to proposals</PageLink>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <PageLink to={agentAddress(reads.name, "proposals")} className="text-sm underline">Back to proposals</PageLink>
+      <AskWhy reads={reads} question={proposalQuestion(view.id)} about="this proposal" />
+    </div>
     {proposal.isError && <QueryError error={proposal.error} retry={recheck} />}
 
     <section aria-labelledby="terms-title" className="flex flex-col gap-4">
