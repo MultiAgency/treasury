@@ -435,6 +435,10 @@ test("Home requests the visit interval and includes a risk peak older than the l
   };
   await page.route(riskPath, history);
   try {
+    // Leave Home before seeding the next visit: its departure handler writes the observed cutoff.
+    // Setting storage while Home is mounted races that handler during the following navigation.
+    await page.goto(here("/strategy"));
+    await visible(page.getByRole("region", { name: "Autopilot" }));
     await page.evaluate(({ key, since }) => localStorage.setItem(key, String(since)), { key, since });
     await page.goto(here());
     const summary = page.getByRole("region", { name: "Since you last looked" });
