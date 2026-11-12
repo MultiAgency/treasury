@@ -104,13 +104,14 @@ The build (`src/proposals/`, built to `dist-proposals/`), served only by the app
 | File the DAO proposal or File and vote; Vote on it in Trezu; Check the exact text and hash the DAO signs | button; links | a waiting DAO request |
 | Ask the treasury | button in the top bar of each agent page (#219), shown only where the server answers (`GET /api/assistant`); its text is hidden visually, not from assistive technology, on narrow screens | an agent's pages |
 | Treasury assistant | dialog (a sheet), with its description | an agent's pages, from Ask the treasury |
-| Conversation; Your question; Ask | log; textbox; button. While an answer is read, a status "Reading the records…" | the assistant |
+| Conversation; Your question; Ask | log; textbox; button. While an answer is read, live status names the active read or draft (for example "Reading holdings and policy…", "Calculating the scenario…"), otherwise "Preparing the answer…" | the assistant |
 | Agents | link in the agent navigation, and heading (level 1) on `/agents/<agent>/ai` (#219, #220) | an agent's pages |
 | Stabilization agent; Running or Not running; the level badge (L0 normal … L4 red hand) | region with heading (level 2) and badges; Running only when this server's watch file runs the agent | Agents |
 | Latest assessment | region and heading (level 2): the Forward risk card's figures, scenarios and recommendations, with the empty status "No forward risk assessment has been recorded for this agent yet." | Agents |
 | What it has been doing; Recent assessments | region with heading (level 2); list, each item a level badge, a time, the reason and what it recommended; empty: a status | Agents |
-| Try a what-if; Event; Value (`<unit>`); Run what-if | region with heading (level 2); select; textbox; button. A value out of range is an alert "Enter a number from … to …"; no recorded book is a status ("no risk assessment has been recorded …") | Agents |
-| What-if result | description list of Book value, Stablecoins left, Runway, Cash floor, Agent can trade, each "today → after", in a status | Agents, after Run what-if |
+| Try a what-if; Event; Value (`<unit>`); Run what-if | region with heading (level 2); select; textbox; button. A value out of range is an alert "Enter a number above 0 and at most …"; positive fractions are accepted. No recorded book is a status ("no risk assessment has been recorded …") | Agents |
+| Explain this scenario | button, where the assistant is configured: asks the stabilization conversation about the selected inputs, recalculated from the recorded book | Try a what-if |
+| What-if result | description list of Book value, Stablecoins left, Runway, Cash floor, Agent can trade, each "today → after", in a status | Agents, after Run what-if or a calculated conversational scenario; also in the assistant sheet's scenario replies |
 | Talk to the stabilization agent; Ask the stabilization agent; Ask the stabilization agent: conversation; Ask: Ask the stabilization agent | heading (level 2); textbox; log; button | Agents, where the server answers questions |
 | NEAR agent; Ask the NEAR agent; Ask the NEAR agent: conversation; Ask: Ask the NEAR agent | region with heading (level 2); textbox; log; button | Agents, where the server answers questions |
 | Open the autopilot controls; Open Home, Open Proposals, Open Strategy, Open Funding, Open Policy, Open Activity, Open Agents | one button for each autopilot or page draft card | an answer that drafts one |

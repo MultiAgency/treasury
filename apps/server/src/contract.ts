@@ -3,7 +3,8 @@
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
 import { appConsentSubmission, ASSETS, ownerAction, ownerOutputs, proposalId, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";
-import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema } from "@ag-ui/core/schemas";
+import { ActivitySnapshotEventSchema, RunErrorEventSchema, RunFinishedEventSchema, RunStartedEventSchema, StateSnapshotEventSchema,
+  ToolCallArgsEventSchema, ToolCallEndEventSchema, ToolCallResultEventSchema, ToolCallStartEventSchema } from "@ag-ui/core/schemas";
 import { z } from "zod";
 
 export const agentName = z.string().regex(/^[a-z0-9-]{1,32}$/);
@@ -353,6 +354,32 @@ export const strategyProposal = z.strictObject({
 export const strategyProposalsRead = z.array(strategyProposal);
 
 /**
+ * An event the owner names, run over the latest record's book. Every part is optional but one is needed, and the numbers
+ * are range-checked by the core: a refusal comes back as `problems`, never as a result that looks like a pass.
+ */
+export const riskWhatIfRequest = z.strictObject({
+  volatileDropPct: z.number().optional(), stablePrice: z.number().optional(), venueOutageDays: z.number().optional(),
+  spendFactor: z.number().optional(), staleDays: z.number().optional(),
+  asset: z.string().min(1).max(200).optional(), venue: z.string().min(1).max(100).optional(),
+});
+const whatIfStress = z.strictObject({
+  id: z.string(), label: z.string(), valueUsd: z.number(), lossUsd: z.number(), drawdownPct: z.number(), stableUsd: z.number(),
+  runwayMonths: z.number(), floorUsd: z.number(), floorBreached: z.boolean(), unfundedUsd: z.number(), tradable: z.boolean(), reasons: z.array(z.string()),
+});
+export const riskWhatIfRead = z.strictObject({
+  problems: z.array(z.string()),
+  result: z.strictObject({ basedOn: z.strictObject({ at: z.string(), seq: z.number().int() }), label: z.string(), now: whatIfStress, after: whatIfStress }).nullable(),
+});
+export type RiskWhatIfRead = z.infer<typeof riskWhatIfRead>;
+
+/** The browser may share selected scenario inputs, never a calculated result or a different agent's identity. */
+export const assistantContext = z.strictObject({ whatIf: riskWhatIfRequest.optional() });
+export type AssistantContext = z.infer<typeof assistantContext>;
+/** A scenario calculated by the server's own deterministic tool, also rendered outside the conversation. */
+export const assistantWhatIf = z.strictObject({ event: riskWhatIfRequest, answer: riskWhatIfRead });
+export type AssistantWhatIf = z.infer<typeof assistantWhatIf>;
+
+/**
  * The treasury assistant (#219). A question with the conversation's earlier turns, text only: the page never sends a tool
  * result back, so it can't forge one. The answer cites its sources by ID, and carries the drafts it made: forms the page
  * opens in its existing review flows, never anything sent.
@@ -360,7 +387,7 @@ export const strategyProposalsRead = z.array(strategyProposal);
 export const assistantTurn = z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string().max(1_200) });
 /** Which of the two agents is asked: the treasury assistant (everything, drafts only) or the stabilization agent (forward risk). */
 export const assistantPersona = z.enum(["treasury", "stabilization"]);
-export const assistantRequest = z.strictObject({ question: z.string().trim().min(1).max(2_000), history: z.array(assistantTurn).max(8).default([]), persona: assistantPersona.default("treasury") });
+export const assistantRequest = z.strictObject({ question: z.string().trim().min(1).max(2_000), history: z.array(assistantTurn).max(8).default([]), persona: assistantPersona.default("treasury"), context: assistantContext.optional() });
 const draftChange = z.strictObject({ field: z.string(), from: z.string(), to: z.string() });
 export const assistantDraft = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("strategy"), targets: z.record(z.string(), z.number()), schedule: z.strictObject({ everyMin: z.number().optional(), maxUsd: z.number().optional() }).optional(),
@@ -380,7 +407,20 @@ export const assistantAnswer = z.strictObject({
   drafts: z.array(assistantDraft),
   model: z.string(),
   stopped: z.enum(["refused", "truncated", "tool_budget"]).optional(),
+  whatIf: assistantWhatIf.optional(),
 });
+/** The assistant's live AG-UI events. General tool outputs stay on the server; their result is a status only. */
+export const assistantStreamEvent = z.discriminatedUnion("type", [
+  RunStartedEventSchema,
+  ToolCallStartEventSchema,
+  ToolCallArgsEventSchema,
+  ToolCallEndEventSchema,
+  ToolCallResultEventSchema,
+  StateSnapshotEventSchema.extend({ snapshot: z.strictObject({ whatIf: assistantWhatIf.optional() }) }),
+  RunFinishedEventSchema.extend({ result: assistantAnswer }),
+  RunErrorEventSchema,
+]);
+export type AssistantStreamEvent = z.infer<typeof assistantStreamEvent>;
 /** Whether this server answers questions, and with which model. */
 export const assistantStatus = z.strictObject({ available: z.boolean(), model: z.string().nullable() });
 /**
@@ -474,25 +514,6 @@ export const riskHistoryEntry = z.strictObject({
 });
 export type RiskHistoryEntry = z.infer<typeof riskHistoryEntry>;
 export const riskHistoryRead = z.strictObject({ configured: z.boolean(), intervalS: z.number().int().nullable(), entries: z.array(riskHistoryEntry) });
-/**
- * An event the owner names, run over the latest record's book. Every part is optional but one is needed, and the numbers
- * are range-checked by the core: a refusal comes back as `problems`, never as a result that looks like a pass.
- */
-export const riskWhatIfRequest = z.strictObject({
-  volatileDropPct: z.number().optional(), stablePrice: z.number().optional(), venueOutageDays: z.number().optional(),
-  spendFactor: z.number().optional(), staleDays: z.number().optional(),
-  asset: z.string().min(1).max(200).optional(), venue: z.string().min(1).max(100).optional(),
-});
-const whatIfStress = z.strictObject({
-  id: z.string(), label: z.string(), valueUsd: z.number(), lossUsd: z.number(), drawdownPct: z.number(), stableUsd: z.number(),
-  runwayMonths: z.number(), floorUsd: z.number(), floorBreached: z.boolean(), unfundedUsd: z.number(), tradable: z.boolean(), reasons: z.array(z.string()),
-});
-export const riskWhatIfRead = z.strictObject({
-  problems: z.array(z.string()),
-  result: z.strictObject({ basedOn: z.strictObject({ at: z.string(), seq: z.number().int() }), label: z.string(), now: whatIfStress, after: whatIfStress }).nullable(),
-});
-export type RiskWhatIfRead = z.infer<typeof riskWhatIfRead>;
-
 /**
  * Every failure the server answers. None carries the platform's error text, which is logged on the server instead.
  * - `not_signed_in` (401): no live session;

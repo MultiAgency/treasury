@@ -917,7 +917,7 @@ test("the Agents page shows the stabilization agent and the NEAR agent, each wit
   // A value the core would refuse isn't sent.
   await page.getByLabel(/^Value/).fill("500");
   await page.getByRole("button", { name: "Run what-if" }).click();
-  await visible(page.getByRole("alert").filter({ hasText: /Enter a number from 1 to 100/ }));
+  await visible(page.getByRole("alert").filter({ hasText: /Enter a number above 0 and at most 100/ }));
 
   // The stabilization agent answers from its records, citing them, and declines what isn't forward risk.
   const risk = page.getByRole("textbox", { name: "Ask the stabilization agent" });

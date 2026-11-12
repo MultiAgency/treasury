@@ -36,6 +36,9 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 | `TREASURY_STRATEGY_PROPOSALS_FILE` | `/data/strategy-proposals.json`: the strategies agents proposed, until the owner answers. Without it they last as long as the process, and a declined one may be proposed again after a restart |
 | `TREASURY_TRUSTED_PROXY_HOPS` | `1`: Railway's edge appends the client's address last (checked 2026-11-05, below). With `0` the server sees whichever edge node forwarded the request, which varies, so the per-address challenge limit doesn't hold |
 | `FASTNEAR_API_KEY` | FastNEAR's key (secret): sign-in's key lookups and DAO policy reads, at its keyed rate |
+| `NEARAI_API_KEY` | NEAR AI Cloud key (secret), required when enabling the hosted assistant with `nearai`; see [the assistant's data and credential boundaries](assistant.md#model-and-data) |
+| `TREASURY_ASSISTANT_PROVIDER` | `nearai` when enabling the hosted assistant with NEAR AI Cloud |
+| `TREASURY_ASSISTANT_MODEL` | `Qwen/Qwen3.8-27B`, the model verified by the synthetic live smoke check |
 
 `PORT` is Railway's. `TREASURY_PAGE_DIR` is set by the image. `watch` runs only with `TREASURY_WATCH_FILE` and
 `TREASURY_REQUESTS_FILE` (on `/data`); `.env.example` lists the rest, each with a default.

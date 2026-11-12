@@ -18,11 +18,14 @@ export default defineRailway(() => {
     // Values are set in Railway (docs/deploy.md), never here.
     env: {
       FASTNEAR_API_KEY: preserve(),
+      NEARAI_API_KEY: preserve(),
       TREASURY_AGENT_TOKENS_FILE: preserve(),
       TREASURY_ANCHOR_ACCOUNT: preserve(),
       TREASURY_ANCHOR_KEY: preserve(),
       TREASURY_ANCHOR_KEY_FILE: preserve(),
       TREASURY_ANCHOR_NETWORK: preserve(),
+      TREASURY_ASSISTANT_MODEL: preserve(),
+      TREASURY_ASSISTANT_PROVIDER: preserve(),
       TREASURY_AUDIT_FILE: preserve(),
       TREASURY_CREDENTIAL: preserve(),
       TREASURY_CREDENTIAL_FILE: preserve(),

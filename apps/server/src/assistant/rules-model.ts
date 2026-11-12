@@ -205,15 +205,19 @@ function lastResults(messages: ModelRequest["messages"]): Result[] | undefined {
 export function rulesModel(): AssistantModel {
   return {
     name: "rules",
-    async respond({ system, tools, messages }) {
+    async respond({ system, tools, messages, context }) {
       const question = [...messages].reverse().find(message => message.role === "user" && typeof message.content === "string")?.content as string ?? "";
       const intent = intentOf(question);
       const results = lastResults(messages);
       // The stabilization agent has fewer tools: a request for one it wasn't given is said to be the other agent's, never tried.
       const offered = new Set(tools.map(tool => tool.name));
       const stabilization = system.startsWith("You are the stabilization agent");
+      // The selected inputs come from the page; only a new tool read can establish the resulting figures.
+      const selection = context?.whatIf && ["balances", "risk", "decisions"].includes(intent.kind)
+        && /\b(?:this|selected|current)\s+(?:scenario|what.?if)\b|\bexplain\s+(?:it|that)\b/i.test(question) ? context.whatIf : undefined;
       const needs: Partial<Record<Intent["kind"], string>> = { retarget: "draft_strategy", policy: "draft_policy_edit", grant: "draft_grant" };
       const wanted = needs[intent.kind];
+      if (!results && selection) return reply([use("run_what_if", selection)]);
       if (!results && wanted && !offered.has(wanted)) return reply([say("I watch forward risk; I can't edit the strategy, the policy or a grant. The treasury assistant does that: ask it on this page, or open the Strategy or Policy page.")]);
       if (!results && stabilization && ["balances", "limits", "budget"].includes(intent.kind)) return reply([use("get_risk_report"), use("get_risk_history", { limit: 10 })]);
       if (!results) switch (intent.kind) {
