@@ -1,4 +1,4 @@
-// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at 2e7b1e6), through its state file and
+// The platform's simulated stack (`pnpm test:e2e:stack --no-browser --treasury` at the frozen PR86 commit), through its state file and
 // control files only: never through its internals.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
@@ -6,14 +6,8 @@ import { request } from "node:https";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-/**
- * The platform commit the stack runs from: `@multiagency/sdk` 0.5.5 (tag `sdk-v0.5.5`), which includes #41
- * (`treasury/get` reads a linked DAO's confidential setup from chain; the stack's `daoConfidentialSetup` control), #43 (a
- * DAO vote on a proposal that ended answers `proposal_not_open`) and #44 (a read closes a proposal whose agent or
- * strategy changed); with the stack's simulated DAO (`--dao-treasury`), proposals stored at a market price, the `signOwnerDelegate`
- * control, and `treasury/get`'s raw balances, which the SDK's schema requires.
- */
-export const PLATFORM_COMMIT = "2e7b1e6";
+import { verifyPlatform, PLATFORM_COMMIT } from "./sdk-pin.ts";
+export { PLATFORM_COMMIT } from "./sdk-pin.ts";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 export const WNEAR = "nep141:wrap.near";
@@ -51,8 +45,7 @@ function readSettledJson(file: string, attempts = 40): unknown {
  * gateway, as the stack itself does to issue its first: `issue`, `list` or `revoke`.
  */
 export async function startStack({ args = ["--no-browser"], owner = "wallet", platform = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "platform") }: { args?: string[]; owner?: "wallet" | "dao"; platform?: string } = {}) {
-  const head = execFileSync("git", ["-C", platform, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  if (!head.startsWith(PLATFORM_COMMIT)) throw new Error(`Check out ${PLATFORM_COMMIT} in ${platform} (it's at ${head.slice(0, 7)})`);
+  verifyPlatform(platform);
   // Inside the platform checkout, as its own runs are: the stack's agents resolve their dependencies from there.
   mkdirSync(join(platform, ".test-artifacts"), { recursive: true });
   const artifacts = mkdtempSync(join(platform, ".test-artifacts", "treasury-stack-")), directory = join(artifacts, "stack");

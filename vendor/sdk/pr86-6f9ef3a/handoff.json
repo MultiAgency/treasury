@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "preparedAt": "2026-11-12T15:48:55.170016+00:00",
+  "purpose": "Treasury development compatibility only; unreleased, not final consolidated source",
+  "releaseHold": true,
+  "source": {
+    "commit": "6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e",
+    "candidate": "e7f171abb42baa5dc6b05d3bb72eb6f3bb43d5d17a80a66c135914bce885be01",
+    "pr": "https://github.com/MultiAgency/platform/pull/86",
+    "sharedCheckout": "main at 0018f55320c4c31054f882b5edb407d912443ba0; clean; do not switch it"
+  },
+  "sdk": {
+    "path": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/release-handoffs/pr86-0.5.9-20261112/treasury-compat-6f9ef3a/multiagency-sdk-0.5.9.tgz",
+    "sha256": "58d27ef7398770b1c44265b41a165abfda186239711d9979749d7e276c744505",
+    "provenance": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/release-handoffs/pr86-0.5.9-20261112/treasury-compat-6f9ef3a/multiagency-sdk-0.5.9.provenance.json",
+    "provenanceSha256": "09dad5e5043431155875b0a588ad215e5f6e1f2950ed5e1d3daaff7806fe9b70",
+    "provenanceEntry": "package/provenance.json",
+    "sourceInputs": 57,
+    "committedSourceVerificationReceipt": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/release-handoffs/pr86-0.5.9-20261112/coordinator-pr86-committed-source-check.json",
+    "published": false,
+    "peerDependencies": {
+      "zod": "^4.6.5"
+    },
+    "versionIsNotIdentity": "Other 0.5.9 artifacts exist from different source; require commit/candidate/tar hash together"
+  },
+  "gateway": {
+    "package": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/release-handoffs/pr86-0.5.9-20261112/platform",
+    "manifestSha256": "61b81847cafdd65145ea1e556d2d611211b434baacebe42ccdc1b0bbe8818f89",
+    "sourceCommit": "6f9ef3ae9decb9b073843a9f9c8cfc869ffff49e",
+    "frozenSourceSnapshot": "/private/tmp/pr86-integration-copy-20261112/.test-artifacts/stack-snapshots/e7f171abb42baa5dc6b05d3bb72eb6f3bb43d5d17a80a66c135914bce885be01",
+    "snapshotDependencyLimit": "Historical snapshot node_modules symlink depends on another worktree. Do not reinstall or mutate it. Use an isolated dependency environment and retain dependency identity for reruns."
+  },
+  "freshChecks": {
+    "sdkTarballSha256": true,
+    "embeddedProvenanceSourceAndCandidate": true,
+    "embeddedProvenanceMatchesExtractedSidecar": true,
+    "shippedDeclarations": {
+      "package/dist/contract/owner-outputs.d.ts": {
+        "funding_review": true,
+        "funding": true
+      },
+      "package/dist/contract/app-client.d.ts": {
+        "recoverProposal": true,
+        "dao-checked": true,
+        "agent_answer_unverified": true
+      },
+      "package/dist/contract/app-access.d.ts": {
+        "agent_answer_unverified": true,
+        "funding_review": true
+      }
+    },
+    "sdkCommittedSources": "57/57 previously verified against exact GitHub commit; receipt retained",
+    "gatewayFiles": "256/256 packaged hashes freshly verified in coordinator source-selection review"
+  },
+  "historicalGates": {
+    "record": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/release-handoffs/pr86-0.5.9-20261112/release.json",
+    "note": "Recorded local candidate passes, not fresh Treasury consumer results; image publication/deployment not established"
+  },
+  "compatibility": {
+    "marketStates": "funding and funding_review mean no x402 payment was attempted; prior top-up withdrawals may already have moved funds. Preserve original requestId/reservation and read status; do not replace the hire or infer refund/no movement. unknown remains unresolved; paid is distinct from task/deliverable completion.",
+    "daoHirePending": "daoHires.state can return state=pending with optional hireState=funding or funding_review; keep following same identity.",
+    "agentAnswerUnverified": "502 / unavailable can carry agent_answer_unverified. This is an unverified agent reply, not proof of failure or no send. Follow the same approval/hire; no new request or automatic replacement vote.",
+    "proposalRecovery": "Repeated daoHires.file returns null transactions by default, repeated may be present. After checking the DAO for prior submission, recoverProposal=dao-checked may recover only the original proposal transaction under unchanged live identities/consent. Never replay proposalAndVote blindly. Other DAO filing routes do not inherit this recovery guarantee.",
+    "expiry": "Approval expiry stops new top-ups and payments. Prior funding remains retained. Fresh approval can use same bound requestId/terms; observation must not become a replacement send.",
+    "journalBoundary": "First journalVersion 3 market-binding or market-landing makes that agent journal unreadable to 0.5.6/0.5.7/0.5.8 executors; never point the old 2e7b1e6 executor at new Market state or delete/convert records for rollback. Earlier shared Market registry boundary can also block gateway rollback.",
+    "legacyFunding": "Pre-binding submitted Market top-ups keep affected keys refused with legacy_funding_review_required even for terminal provider status; no rotation, replay or inferred balance release.",
+    "scopeBoundary": "This PR86 snapshot lacks the separate Paperwork DAO payout additions from 0018f553. It is approved here only as a development compatibility input, not selected final release."
+  },
+  "requestedTreasuryWork": {
+    "ownership": "Treasury owning session; report handle, canonical repo path, HEAD/dirty files and claimed paths first. No platform source files claimed by Treasury.",
+    "sourceIsolation": "Use a new Treasury branch/worktree. No checkout or dependency reinstall in shared platform SDK. Source, if needed, must be an isolated exact-commit copy.",
+    "adoption": "Pin both server and web to these exact tarball bytes; update lockfiles/vendor and stack/CI pins together. Pair simulator/gateway with source 6f9ef3a and manifest 61b81847cafdd65145ea1e556d2d611211b434baacebe42ccdc1b0bbe8818f89.",
+    "tests": [
+      "Own repo typechecks and unit tests",
+      "Wallet and DAO browser suites against isolated simulated provider/chain/wallet",
+      "Explicit funding/funding_review and unknown outcome handling",
+      "502 agent_answer_unverified retained identity",
+      "Repeated filing and explicit DAO proposal recovery",
+      "Journal/registry rollback refusal with fresh synthetic directories; no retained live state"
+    ],
+    "returnReceipt": "Exact Treasury commit/worktree, SDK/provenance hashes, gateway/source/stack pin, dependency identities, commands/results, changed contracts and unresolved limitations. Keep final repin/revalidation pending after combined release source changes."
+  },
+  "communications": {
+    "delivery": "Pending user relay; no independent-session channel available",
+    "repoPathLimit": "/Users/jlwaugh/agencies/dao/treasury is absent in this workspace; do not infer canonical Treasury repo path from historical guide"
+  },
+  "operations": "No deployment, staging change, live wallet/quorum signing, provider mutation or funds movement authorized by this handoff"
+}

@@ -1,6 +1,6 @@
 # The web builds
 
-`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.5.5 only. Nothing is imported from the platform's or the prototype's source. rsbuild builds the app's pages.
+`web/` is its own package in the pnpm workspace: React 19, TanStack Router and Query, rsbuild, Tailwind 4 and shadcn, on `@multiagency/sdk` 0.5.9 development candidate ([exact artifact pins](sdk-compatibility.md)) only. Nothing is imported from the platform's or the prototype's source. rsbuild builds the app's pages.
 
 ## The app's pages (`src/`)
 
