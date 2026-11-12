@@ -1026,12 +1026,64 @@ test("Run now retry guard: a lost run reply cannot release a stop that is still 
   assert.deepEqual(unexpected, []);
 });
 
+test("Ask why fills proposal and risk questions without sending, and is hidden without an assistant (#264)", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const made = await propose(`ask-why-${Date.now()}`);
+  const posts: string[] = [];
+  const track = (request: import("playwright").Request) => { if (request.method() === "POST" && request.url().startsWith(origin)) posts.push(request.url()); };
+  page.on("request", track);
+  const panel = page.getByRole("dialog", { name: "Treasury assistant" });
+  const field = panel.getByRole("textbox", { name: "Your question" });
+  const riskPath = `${origin}/api/agents/${target.agent}/risk`;
+  const report = (route: Route) => route.fulfill({ json: { ok: true, value: { risk: {
+    at: new Date().toISOString(), seq: 7, level: 2, reason: "Test assessment",
+    projection: { usable: true, reasons: [], projectedDrawdownPct: 22, expectedShortfallPct: 23, breachProbabilityPct: 4, runwayMonths: 30, monthsToFloor: 24, volatileSharePct: 40 },
+    scenarios: [], recommendations: [], derisk: null, proposed: false,
+  } } } });
+  const unavailable = (route: Route) => route.fulfill({ json: { ok: true, value: { available: false, model: null } } });
+  try {
+    await page.goto(here(`/proposals/${made.id}`));
+    await page.getByRole("button", { name: "Ask why: this proposal" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), `Why was proposal ${made.id} made, and what happens if I approve it?`);
+    assert.deepEqual(posts, [], "opening prepares, signs and sends nothing");
+    assert.deepEqual(await axe(), [], "proposal question");
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Ask the treasury" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), "", "the normal trigger does not reuse the question");
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "hidden" });
+    await page.route(riskPath, report);
+    await page.goto(here());
+    await page.getByRole("button", { name: "Ask why: the risk level" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), "Why is the risk level what it is, and what would change it?");
+    assert.deepEqual(posts, [], "the risk question is also only filled in");
+    assert.deepEqual(await axe(), [], "risk question");
+    await page.keyboard.press("Escape");
+    await page.route(`${origin}/api/assistant`, unavailable);
+    await page.goto(here(`/proposals/${made.id}`));
+    await visible(page.getByRole("heading", { name: "Proposal", exact: true, level: 1 }));
+    assert.equal(await page.getByRole("button", { name: /^Ask why:/ }).count(), 0);
+    await page.goto(here());
+    await visible(page.getByText("Test assessment", { exact: true }));
+    assert.equal(await page.getByRole("button", { name: /^Ask why:/ }).count(), 0);
+  } finally {
+    page.off("request", track);
+    await page.unroute(riskPath, report);
+    await page.unroute(`${origin}/api/assistant`, unavailable);
+  }
+});
+
 test("the assistant answers from the treasury's own records with sources, and a draft opens the strategy editor filled in without sending anything (#219)", { timeout: 150_000 }, async () => {
   await ensureConnected();
-  await page.goto(here());
+  const proposal = await propose(`ask-why-handoff-${Date.now()}`);
+  await page.goto(here(`/proposals/${proposal.id}`));
   const ask = page.getByRole("button", { name: "Ask the treasury" });
   await visible(ask);
-  await ask.click();
+  await page.getByRole("button", { name: "Ask why: this proposal" }).click();
   const panel = page.getByRole("dialog", { name: "Treasury assistant" });
   await visible(panel);
   assert.deepEqual(await axe(), [], "the assistant panel");
@@ -1060,6 +1112,7 @@ test("the assistant answers from the treasury's own records with sources, and a 
   await editor.getByLabel("wNEAR (%)").fill("45");
   await ask.click();
   await visible(panel);
+  assert.equal(await question.inputValue(), "", "opening a draft clears the Ask why prefill too");
   await question.fill("Propose a rebalance to 30% wNEAR");
   await question.press("Enter");
   const again = panel.getByRole("button", { name: "Open in the strategy editor" }).last();
