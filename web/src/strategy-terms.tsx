@@ -18,7 +18,7 @@ export function StrategyTerms({ strategy, label }: { strategy: Strategy; label: 
       })}
     </ul>
     <p className="text-xs text-muted-foreground">Swaps of at least ${strategy.minLegUsd}, costing at most {strategy.maxCostBps / 100}%. On autopilot: every {strategy.autopilot.everyMin} minutes,
-      up to ${strategy.autopilot.maxUsd} a run. Cash floor: {floorText(strategy)}.</p>
+      up to ${strategy.autopilot.maxUsd} a run.{strategy.cashFloor && <> Cash floor: {floorText(strategy)}.</>}</p>
   </>;
 }
 
