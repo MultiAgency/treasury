@@ -1,5 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import type { AssistantDraft } from "./proposals-api";
+import type { AssistantDraft } from "./server-api";
 
 /**
  * A draft the assistant made (#219), handed to the review flow it opens: the rebalance proposal, the strategy editor, the

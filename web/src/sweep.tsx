@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { assetColor, fromUnits } from "./shared/format";
 import { Badge, Button, ErrorBox, Loading, QueryError, Spinner, type Tone } from "./shared/ui";
 import { blockShield, useShieldBlock } from "./kept-outcomes";
-import type { Identity } from "./proposals-api";
+import type { Identity } from "./server-api";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { sweepOutcome } from "./sweep-run";
 import { ReviewDialog } from "./ui";

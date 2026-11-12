@@ -111,7 +111,7 @@ export type Deps = {
   tokenRequestsPerHour?: number;
   /** Calls every token together may make an hour: the part of the platform's budget that software may spend. */
   tokenBudgetPerHour?: number;
-  /** The proposals page, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
+  /** The app's pages, served at every GET and HEAD outside `/api/`; without it, the server answers only its API. */
   page?: Page;
   /** The treasury assistant (#219); without it, questions are refused as `assistant_not_configured`. */
   assistant?: Assistant;

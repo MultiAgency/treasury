@@ -1,10 +1,10 @@
 import { acceptWhatIf, beginQuestion, busyKeys, changed, conversationKey, conversations, finishQuestion, NONE, questionActive,
   reserveWhatIf, toolProgress, whatIfContext } from "./conversations.ts";
-import type { AssistantAnswer, AssistantPersona, ProposalsApi, Result } from "./proposals-api.ts";
+import type { AssistantAnswer, AssistantPersona, ServerApi, Result } from "./server-api.ts";
 import { failureText } from "./words.ts";
 
 type Turn = { role: "user" | "assistant"; text: string };
-type AskStream = ReturnType<ProposalsApi["agent"]>["askStream"];
+type AskStream = ReturnType<ServerApi["agent"]>["askStream"];
 
 /** One live question, shared by the sheet and Agents page. Every callback belongs to this request and signed-in session. */
 export async function askConversation(agent: string, persona: AssistantPersona, askStream: AskStream, text: string) {

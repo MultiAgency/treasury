@@ -2,9 +2,9 @@
 
 The accessible names of the app's pages (`web/src`), which only the app server serves, and how they use the platform. The owner-session build these notes once compared against was removed in #138; the platform's release-candidate specs that queried its names run against frozen builds of the prototype (MultiAgency/platform#22).
 
-## The proposals page (#20)
+## The app's pages (#20)
 
-The build (`src/`, built to `dist/`), served only by the app server (`apps/server`, `TREASURY_PAGE_DIR`) from its own origin. It calls only the server's `/api/` routes (`src/proposals-api.ts`), and the platform's specs don't query it.
+The build (`src/`, built to `dist/`), served only by the app server (`apps/server`, `TREASURY_PAGE_DIR`) from its own origin. It calls only the server's `/api/` routes (`src/server-api.ts`), and the platform's specs don't query it.
 
 | Name | Role | Where |
 | --- | --- | --- |

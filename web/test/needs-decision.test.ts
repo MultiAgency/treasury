@@ -4,7 +4,7 @@ import { approvedProposals, needsDecision, openProposals } from "../src/needs-de
 
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
 const MIN = 60_000, HOUR = 60 * MIN;
-import { USDC } from "./proposals-fixtures.ts";
+import { USDC } from "./server-fixtures.ts";
 const leg = { from: USDC, to: "nep141:wrap.near", amount: "1000000", minAmountOut: "499500000000000000000000" };
 const view = (id: string, state: string, expiresInMs: number) => ({ id, state, legs: [leg], expiresAt: new Date(NOW + expiresInMs).toISOString() }) as never;
 const ids = (list: readonly { id: string }[]) => list.map(item => item.id);

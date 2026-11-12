@@ -1,6 +1,6 @@
 import { ago } from "./shared/format";
 import { whatIfRows } from "./agents-view";
-import type { RiskWhatIf } from "./proposals-api";
+import type { RiskWhatIf } from "./server-api";
 import { when } from "./ui";
 
 /** The same source-dated deterministic comparison, whether it came from the form or a conversation. */

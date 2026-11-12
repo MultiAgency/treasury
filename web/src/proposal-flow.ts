@@ -1,11 +1,11 @@
 /**
- * The proposals page's money path, apart from React so its rules are tested where they live:
+ * The app's money path for proposals, apart from React so its rules are tested where they live:
  * - a verdict signs exactly `proposalText` of the proposal as read right before the wallet signs, and is shown first;
  * - an execute is asked for once, and whether Execute is offered again is decided only from a fresh read.
  */
 import { proposalText, type ProposalView } from "@multiagency/sdk";
 import { settle, type Outcome } from "./shared/execution-outcome.ts";
-import { freshNonce, type AgentApi, type ExecuteResult, type Failure, type Result, type SignRequest, type Signed, type Verdict } from "./proposals-api.ts";
+import { freshNonce, type AgentApi, type ExecuteResult, type Failure, type Result, type SignRequest, type Signed, type Verdict } from "./server-api.ts";
 
 /** Whether the owner may still approve or reject: it's open and its time hasn't passed. */
 export const verdictOffered = (view: ProposalView, now = Date.now()) => view.state === "proposed" && Date.parse(view.expiresAt) > now;

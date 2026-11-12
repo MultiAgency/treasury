@@ -16,7 +16,7 @@ import { useTakeDraft } from "./assistant-drafts";
 import { PolicyEditor } from "./policy-editor";
 import { WINDOWS } from "./policy-draft";
 import { budgetRows, capRows, daoVoteWords, dateText, destinationsText } from "./policy-view";
-import type { AssistantDraft, Identity, OverviewRead } from "./proposals-api";
+import type { AssistantDraft, Identity, OverviewRead } from "./server-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog } from "./ui";
 import { failureText, revokeWords } from "./words";

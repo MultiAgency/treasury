@@ -1,8 +1,8 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
-import { proposalsApi, type Failure, type Result } from "./proposals-api";
+import { serverApi, type Failure, type Result } from "./server-api";
 import { failureText } from "./words";
 
-export const api = proposalsApi();
+export const api = serverApi();
 
 /** A failed read, decided by `failure.kind`; the message is only for people. */
 export class ServerError extends Error {

@@ -1,4 +1,4 @@
-// The proposals page for a DAO-owned agent, served by the app server, on its own fresh stack (platform at
+// The app for a DAO-owned agent, served by the app server, on its own fresh stack (platform at
 // PLATFORM_COMMIT, `--dao-treasury --app`). The signed-in member is the DAO's council; their wallet is near-connect's
 // injected-wallet interface, signing with the member's own key, and it sends nothing: the transaction it's given is
 // checked and recorded, and the DAO's vote on it is the stack's `daoVote` control. The server reads the DAO's policy

@@ -5,7 +5,7 @@ import { ago } from "./shared/format";
 import { Button, Card, Details, errorMessage, Loading, QueryError, StatusBadge } from "./shared/ui";
 import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, type Execution } from "./proposal-flow";
 import { DaoRequestView } from "./dao-request";
-import type { Failure, Identity, Verdict } from "./proposals-api";
+import type { Failure, Identity, Verdict } from "./server-api";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";

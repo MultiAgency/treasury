@@ -5,7 +5,7 @@ import { IconTile, InfoTip } from "@/components/ui/stat";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "./shared/ui";
 import { AgentAccess } from "./agent-access";
 import { DaoRequestView } from "./dao-request";
-import type { ConsentText, Identity } from "./proposals-api";
+import type { ConsentText, Identity } from "./server-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, SignedText, when } from "./ui";
 import { sign } from "./wallet";

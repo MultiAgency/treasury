@@ -265,7 +265,7 @@ test("forbidden without a live consent: the agent stops, reads why, and resumes 
   w.answers.overview = failure("forbidden") as never;
   w.answers.consents = [consent({ revoked: true } as never)];
   const event = await w.tick();
-  assert.deepEqual(event, { organization: ORG, agent: AGENT, stopped: "not connected", note: "the owner's consent for this app has ended: they connect again on the proposals page" });
+  assert.deepEqual(event, { organization: ORG, agent: AGENT, stopped: "not connected", note: "the owner's consent for this app has ended: they connect again in the app" });
   assert.ok(w.calls.includes("identity") && w.calls.includes("consents"));
   w.clock.now += 300_000;
   assert.deepEqual(await w.tick(), { organization: ORG, agent: AGENT, skipped: "not connected" });
@@ -331,7 +331,7 @@ test("when the stored requests are full, nothing is sent", async () => {
   assert.ok(!w.calls.includes("proposals/create"));
 });
 
-test("each proposal is notified once, with a link to it on the proposals page; a failed notifier is reported, not retried", async () => {
+test("each proposal is notified once, with a link to its page in the app; a failed notifier is reported, not retried", async () => {
   const w = await world();
   const agent = { ...WATCHED, notify: w.notify };
   w.notifyAnswers.push({ ok: false, error: "exited with 3: channel down" });

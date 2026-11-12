@@ -8,7 +8,7 @@ import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
 import { agentAddress, proposalAddress } from "./pages";
-import type { Identity } from "./proposals-api";
+import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
 import { when } from "./ui";
 

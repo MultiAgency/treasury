@@ -6,7 +6,7 @@ import { ago, assetColor, usd } from "./shared/format";
 import { Badge, Card } from "./shared/ui";
 import { allocationRows, bookFigures, DRIFT_MARK } from "./book-view";
 import type { HoldingRow } from "./portfolio-view";
-import type { OverviewRead } from "./proposals-api";
+import type { OverviewRead } from "./server-api";
 import { when } from "./ui";
 
 const KNOWN = new Set(["wNEAR", "NEAR", "USDC", "ETH"]);

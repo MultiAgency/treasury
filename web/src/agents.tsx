@@ -9,7 +9,7 @@ import { Chat, modelFooter, STABILIZATION_EXAMPLES, TREASURY_EXAMPLES, useAssist
 import { acceptWhatIf, changed, reserveWhatIf, selectWhatIf, subscribe, version, whatIfWorkspace, whatIfWorkspaces } from "./conversations";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
-import type { Identity, RiskHistory } from "./proposals-api";
+import type { Identity, RiskHistory } from "./server-api";
 import type { agentReads } from "./queries";
 import { AgentRisk } from "./risk";
 import { levelView } from "./risk-view";

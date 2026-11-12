@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Button, ErrorBox, Spinner } from "./shared/ui";
 import type { agentReads } from "./queries";
-import type { AssistantDraft } from "./proposals-api";
+import type { AssistantDraft } from "./server-api";
 import { FromAssistant, SwapPreview } from "./assistant-note";
 import { failureText } from "./words";
 import { PageLink } from "./nav";

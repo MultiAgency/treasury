@@ -5,9 +5,9 @@ import { whatIfRequest } from "../src/agents-view.ts";
 import { askConversation } from "../src/conversation-request.ts";
 import { busyKeys, clearConversations, conversationKey, conversations, reserveWhatIf, selectWhatIf, toolProgress,
   whatIfContext, whatIfWorkspace } from "../src/conversations.ts";
-import type { AssistantAnswer, AssistantStreamEvent, AssistantWhatIf, ProposalsApi, Result } from "../src/proposals-api.ts";
+import type { AssistantAnswer, AssistantStreamEvent, AssistantWhatIf, ServerApi, Result } from "../src/server-api.ts";
 
-type AskStream = ReturnType<ProposalsApi["agent"]>["askStream"];
+type AskStream = ReturnType<ServerApi["agent"]>["askStream"];
 const agent = "portfolio";
 const key = conversationKey(agent, "stabilization");
 const scenario = (drop: number): AssistantWhatIf => {

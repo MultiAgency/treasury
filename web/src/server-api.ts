@@ -1,12 +1,12 @@
 /**
- * Every call the proposals page makes: the app server's own `/api/` routes, same-origin, under its session cookie. No
+ * Every call the app makes: the app server's own `/api/` routes, same-origin, under its session cookie. No
  * other module of the page calls a server, and the page never calls the platform: `/apps/v1` is server to server. Each
  * answer is parsed with the server's own contract (`apps/server/src/contract.ts`), and decided by `kind` and `code`,
  * never by message text. Nothing here ever sends a call again.
  */
 import { proposalId, proposalList } from "@multiagency/sdk";
 import { z } from "zod";
-// With their extensions: test/proposals-api.test.ts loads these modules under Node, which resolves only explicit `.ts` paths.
+// With their extensions: test/server-api.test.ts loads these modules under Node, which resolves only explicit `.ts` paths.
 import * as contract from "../../apps/server/src/contract.ts";
 import { readAssistantStream } from "./assistant-stream.ts";
 
@@ -32,7 +32,7 @@ const proposalRecordId = contract.strategyProposal.shape.id;
 const nothing = z.strictObject({});
 
 /** The server's API over `fetcher` (the browser's `fetch` by default; tests pass their own). */
-export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(input, init)) {
+export function serverApi(fetcher: typeof fetch = (input, init) => fetch(input, init)) {
   /** One call. A write is a POST with a JSON body (the server requires one) or a bodiless DELETE. */
   async function call<S extends z.ZodType>(schema: S, path: string, write?: { method: "POST"; body?: unknown } | { method: "DELETE" }): Promise<Result<z.output<S>>> {
     const init: RequestInit = write?.method === "POST"
@@ -217,8 +217,8 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
   };
 }
 
-export type ProposalsApi = ReturnType<typeof proposalsApi>;
-export type AgentApi = ReturnType<ProposalsApi["agent"]>;
+export type ServerApi = ReturnType<typeof serverApi>;
+export type AgentApi = ReturnType<ServerApi["agent"]>;
 export type ExecuteResult = z.output<typeof contract.executeResult>;
 export type ConsentText = z.output<typeof contract.consentText>;
 export type Identity = z.output<typeof contract.agent>;

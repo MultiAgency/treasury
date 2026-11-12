@@ -11,7 +11,7 @@ import { assetColors } from "./book";
 import { PageLink } from "./nav";
 import { agentAddress, runAddress } from "./pages";
 import { recentRuns } from "./portfolio-view";
-import { activityCsvPath, type ActivityRead, type Identity } from "./proposals-api";
+import { activityCsvPath, type ActivityRead, type Identity } from "./server-api";
 import { failureOf, type agentReads } from "./queries";
 import { amountText, when } from "./ui";
 

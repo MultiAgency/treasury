@@ -1,7 +1,7 @@
 import { Chip } from "@/components/ui/limits-table";
 import { assetTone, symbolOf, type AssetInfo } from "./shared/format";
 import { totalUsd } from "./shared/prices";
-import type { StrategyRead } from "./proposals-api";
+import type { StrategyRead } from "./server-api";
 
 type Strategy = StrategyRead["strategy"];
 type Book = readonly (AssetInfo & { usd: number | null })[];

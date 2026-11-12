@@ -1,7 +1,7 @@
 // What the portfolio section shows, from the owner reads (#61): pure, so it's tested without a browser.
 // With its extension: test/portfolio-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { fromUnits } from "./shared/format.ts";
-import type { ActivityRead, OverviewRead, RunsRead } from "./proposals-api.ts";
+import type { ActivityRead, OverviewRead, RunsRead } from "./server-api.ts";
 
 export type HoldingRow = { asset: string; symbol: string; amount: string; usd: number | null; managed: boolean };
 

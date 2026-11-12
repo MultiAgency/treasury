@@ -4,7 +4,7 @@ import { accountId } from "../../apps/server/src/contract.ts";
 import { isFinal, outcomeOf, statusPhase, statusText } from "../../apps/server/src/owner-action.ts";
 import { Button, Card, ErrorBox, errorMessage, input, Loading, Note, QueryError } from "./shared/ui";
 import { DaoRequestView } from "./dao-request";
-import type { ConsentText, Creation, CreationStatus, Identity } from "./proposals-api";
+import type { ConsentText, Creation, CreationStatus, Identity } from "./server-api";
 import { api, failureOf, setupReads, type agentReads } from "./queries";
 import { SignedIn, SignIn } from "./session";
 import { ReviewDialog, SignedText, when } from "./ui";

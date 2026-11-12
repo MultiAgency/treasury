@@ -7,7 +7,7 @@ import { WATCH, type WatchedAgent } from "./watch.ts";
 
 /** The platform's calls an hour per app credential (`hourlyLimit(1_200)` in its `app-routes.ts`), shared by every owner. */
 export const APP_HOURLY_LIMIT = 1_200;
-/** What `watch` may spend of it: the rest is left for owners using the proposals page. */
+/** What `watch` may spend of it: the rest is left for owners using the app. */
 export const WATCH_HOURLY_BUDGET = APP_HOURLY_LIMIT / 2;
 /** Reads a tick makes when no proposal of the agent's own is open: overview, unresolved and autopilot. */
 const READS_PER_TICK = 3;

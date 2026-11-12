@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { GrantPrepared } from "./proposals-api";
+import type { GrantPrepared } from "./server-api";
 
 /**
  * What a page remembers about an action whose outcome may be unknown, kept outside any component (#146). The agent's

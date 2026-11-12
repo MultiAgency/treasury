@@ -10,11 +10,11 @@ const TYPES: Record<string, string> = {
 const ASSETS = "/static/";
 
 export type PageFile = { body: Buffer; headers: Record<string, string> };
-/** The proposals page's file for a GET or HEAD of `pathname`; undefined under `/api/` and for a missing asset. */
+/** The app's file for a GET or HEAD of `pathname`; undefined under `/api/` and for a missing asset. */
 export type Page = (pathname: string) => PageFile | undefined;
 
 /**
- * The proposals page's build (`web/dist`), read once from `dir` at startup and then served from memory by
+ * The app's build (`web/dist`), read once from `dir` at startup and then served from memory by
  * exact path, so no request reaches the file system. Only regular files are read: no dotfile, no symbolic link, no
  * type outside `TYPES`, and no listing. Any path outside `/api/` and `static/` that names no file is the page itself
  * (`index.html`), which routes itself. The page is never stored by a cache, may not be framed (it asks the owner's

@@ -1,5 +1,5 @@
 import * as contract from "../../apps/server/src/contract.ts";
-import type { AssistantAnswer, AssistantStreamEvent, Result } from "./proposals-api.ts";
+import type { AssistantAnswer, AssistantStreamEvent, Result } from "./server-api.ts";
 
 // A broken proxy or endpoint must not grow an unfinished event without bound.
 const MAX_EVENT_CHARS = 1_048_576;

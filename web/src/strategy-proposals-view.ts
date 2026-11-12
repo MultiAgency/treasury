@@ -1,6 +1,6 @@
 // With its extension: test/strategy-proposals-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { symbolOf } from "./shared/format.ts";
-import type { StrategyProposal, StrategyRead } from "./proposals-api.ts";
+import type { StrategyProposal, StrategyRead } from "./server-api.ts";
 
 type Strategy = StrategyRead["strategy"];
 

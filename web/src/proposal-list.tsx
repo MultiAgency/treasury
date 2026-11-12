@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useTakeDraft } from "./assistant-drafts";
 import { ago } from "./shared/format";
 import { Card, Loading, Note, QueryError, short } from "./shared/ui";
-import type { AssistantDraft, Identity } from "./proposals-api";
+import type { AssistantDraft, Identity } from "./server-api";
 import type { agentReads } from "./queries";
 import { ProposeRebalance } from "./propose-rebalance";
 import { Legs, StateBadge, when } from "./ui";

@@ -1,6 +1,6 @@
 // What the Diversification section shows (#221), from the server's one read: pure, so it's tested without a browser.
 // With its extension: test/diversification-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
-import type { DiversificationRead } from "./proposals-api.ts";
+import type { DiversificationRead } from "./server-api.ts";
 
 export type HoldingView = DiversificationRead["holdings"][number] & { classText: string; platformText: string; venuesText: string };
 export type VenueView = DiversificationRead["venues"][number] & { exposureText: string; capText: string; capNote: string };

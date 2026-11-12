@@ -3,10 +3,10 @@ import type { fundingTransaction } from "@multiagency/sdk";
 import { fromBase64, HOT_WALLETS, namespaced, walletSession } from "./wallet-session";
 import { transactionOutcome, type TransactionOutcome } from "./wallet-transaction";
 import { signerProblem } from "./dao-filing";
-import type { DaoRequest, GrantPrepared, SignRequest, Signed } from "./proposals-api";
+import type { DaoRequest, GrantPrepared, SignRequest, Signed } from "./server-api";
 
 /**
- * The owner's wallet on the proposals page: NEP-413 messages (sign-in, the consent, verdicts), so any wallet that
+ * The owner's wallet in the app: NEP-413 messages (sign-in, the consent, verdicts), so any wallet that
  * signs messages is listed, and for a DAO's member the proposal they file. Its connection is kept in
  * its own storage (`proposals:`).
  */

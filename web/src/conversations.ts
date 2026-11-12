@@ -2,7 +2,7 @@
 // between pages. Signing in or out clears them all: a conversation is the signed-in account's, and the next account in
 // this tab must never see the last one's questions, answers or drafts, nor send them back as its history.
 import { WHAT_IF_EVENTS, whatIfRequest, whatIfSelection, type WhatIfEventId, type WhatIfRequest } from "./agents-view.ts";
-import type { AssistantAnswer, AssistantContext, AssistantPersona, AssistantWhatIf, RiskWhatIf } from "./proposals-api.ts";
+import type { AssistantAnswer, AssistantContext, AssistantPersona, AssistantWhatIf, RiskWhatIf } from "./server-api.ts";
 
 export type Entry = { role: "user"; text: string } | { role: "assistant"; answer: AssistantAnswer } | { role: "error"; text: string };
 

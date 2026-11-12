@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { policyUpdateRequest } from "../../apps/server/src/contract.ts";
 // With their extensions: test/policy.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { fromUnits, type AssetInfo as Holding, symbolOf, toUnits } from "./shared/format.ts";
-import type { OverviewRead } from "./proposals-api.ts";
+import type { OverviewRead } from "./server-api.ts";
 
 /** The policy form's model, apart from any page: what the owner may edit, and what a draft changes. */
 

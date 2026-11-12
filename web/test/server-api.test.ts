@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { proposalsApi } from "../src/proposals-api.ts";
-import { fail, ID, lost, ok, proposal, refused, scripted } from "./proposals-fixtures.ts";
+import { serverApi } from "../src/server-api.ts";
+import { fail, ID, lost, ok, proposal, refused, scripted } from "./server-fixtures.ts";
 
 const NONCE = `${"A".repeat(43)}=`, KEY = `ed25519:${"1".repeat(44)}`;
 const base = "/api/agents/portfolio";
 
 test("each route is called same-origin, as the server expects: reads as GETs, writes as JSON POSTs, sign-out a bodiless DELETE", async () => {
   const server = scripted();
-  const api = proposalsApi(server.fetcher), agent = api.agent("portfolio");
+  const api = serverApi(server.fetcher), agent = api.agent("portfolio");
   const signed = { message: "m", nonce: NONCE, publicKey: KEY, signature: "s" };
   server.answer("POST /api/session/challenge", ok({ message: "Sign in", recipient: "treasury.test", nonce: NONCE }));
   server.answer("POST /api/session", ok({ account: "owner.near" }));
@@ -53,7 +53,7 @@ test("each route is called same-origin, as the server expects: reads as GETs, wr
 });
 
 test("for a DAO-owned agent, filing its consent and its vote are bodiless JSON POSTs to the same routes, answered with the request", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const transaction = { receiverId: "agentic.sputnik-dao.near", actions: [{ type: "FunctionCall", params: { methodName: "add_proposal", args: { proposal: {} }, gas: "1", deposit: "0" } }] };
   const request = (verdict?: "approve" | "reject") => ({ id: "d".repeat(64), description: "* Signs: hash", votingUntil: 1, check: "https://platform.test/confirm/dao/d",
     ...(verdict && { verdict }), offer: { state: "file", transaction } });
@@ -68,7 +68,7 @@ test("for a DAO-owned agent, filing its consent and its vote are bodiless JSON P
 });
 
 test("every failure the server answers is its kind and code; an answer the contract doesn't describe is lost", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const route = `GET ${base}/proposals/${ID}`;
   server.answer(route,
     fail({ kind: "not_signed_in" }, 401), fail({ kind: "not_owner" }, 403), refused("not_connected"), fail({ kind: "unavailable" }, 503),
@@ -88,7 +88,7 @@ test("every failure the server answers is its kind and code; an answer the contr
 });
 
 test("every execute answer parses: final, pending with or without a proposal, and not_executable", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const route = `POST ${base}/proposals/${ID}/execute`;
   server.answer(route, ok({ result: "pending", proposal: null }), ok({ result: "pending", proposal: proposal({ state: "approved" }) }),
     ok({ result: "not_executable", proposal: proposal({ state: "approved" }) }), ok({ result: "not_executable", proposal: null }), ok({ result: "done", proposal: proposal() }));
@@ -100,7 +100,7 @@ test("every execute answer parses: final, pending with or without a proposal, an
 });
 
 test("inputs are held to the server's own schemas before anything is sent", () => {
-  const server = scripted(), api = proposalsApi(server.fetcher);
+  const server = scripted(), api = serverApi(server.fetcher);
   assert.throws(() => api.agent("Not An Agent"));
   const agent = api.agent("portfolio");
   assert.throws(() => agent.proposal("not-a-proposal-id"), "proposal IDs are 32 lowercase hex characters");
@@ -111,7 +111,7 @@ test("inputs are held to the server's own schemas before anything is sent", () =
 });
 
 test("setup: the account's treasuries, the setup text and the signed setup, a DAO's setup, and an agent's creation and its status", async () => {
-  const server = scripted(), api = proposalsApi(server.fetcher), agent = api.agent("treasury-1");
+  const server = scripted(), api = serverApi(server.fetcher), agent = api.agent("treasury-1");
   const signed = { message: "setup", nonce: NONCE, publicKey: KEY, signature: "s" };
   const transaction = { receiverId: "agentic.sputnik-dao.near", actions: [{ type: "FunctionCall", params: { methodName: "add_proposal", args: { proposal: {} }, gas: "1", deposit: "0" } }] };
   const dao = "/api/setup/dao/agentic.sputnik-dao.near";
@@ -139,7 +139,7 @@ test("setup: the account's treasuries, the setup text and the signed setup, a DA
 });
 
 test("the owner reads: each a GET of the agent's route, parsed by the server's contract, amounts kept as exact decimal strings", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const big = "123456789012345678901234567";
   const policy = { wallet_id: "w", revision: 3, status: "APPLIED", provider_policy_synced: true, cooldowns: { policy_change_available_at: null, unfreeze_available_at: null },
     policy: null, usage: { budget: Object.fromEntries(["daily", "weekly", "monthly"].map(w => [w, { limit_usd: null, spent_usd: "0.000000", remaining_usd: null, resets_at: null }])),
@@ -173,7 +173,7 @@ test("the owner reads: each a GET of the agent's route, parsed by the server's c
 });
 
 test("funding: the account and the funding account as GETs, a deposit address and each change to the funding account as one JSON POST", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const linked = { accountId: "funds.near", dao: null, balances: { near: "306132631859932448916007858", usdc: "305530000" }, confidential: false, payees: [] };
   const deposit = { correlationId: "d1", address: "a".repeat(64), memo: null, minAmount: null, expiresAt: null };
   server.answer(`GET ${base}/account`, ok({ agentId: "id-portfolio", executor: true, wallet: "portfolio.near", grant: null, stagedGrant: null }));
@@ -197,7 +197,7 @@ test("funding: the account and the funding account as GETs, a deposit address an
 });
 
 test("asking for a rebalance is one JSON POST naming the request; its proposal parses", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   server.answer(`POST ${base}/proposals`, ok({ proposal: proposal() }));
   assert.equal((await agent.proposeRebalance("page-1")).ok, true);
   assert.deepEqual(server.sent.map(request => [request.method, request.path, JSON.parse(request.body)]), [["POST", `${base}/proposals`, { requestId: "page-1" }]]);
@@ -205,7 +205,7 @@ test("asking for a rebalance is one JSON POST naming the request; its proposal p
 });
 
 test("the consent text is asked for with an empty body, or { owner: true } to add owner to a connection without it", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const text = { message: "m", nonce: NONCE, recipient: "platform.test" };
   server.answer(`POST ${base}/consent/text`, ok(text));
   await agent.consentText();
@@ -214,7 +214,7 @@ test("the consent text is asked for with an empty body, or { owner: true } to ad
 });
 
 test("autopilot: the strategy and schedule as GETs; on (naming the digest), off and run now as JSON POSTs", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const digest = `sha256:${"a".repeat(64)}`;
   for (const path of ["enable", "stop"]) server.answer(`POST ${base}/autopilot/${path}`, ok({}));
   server.answer(`POST ${base}/autopilot/tick`, ok({ summary: "Ran." }));
@@ -227,7 +227,7 @@ test("autopilot: the strategy and schedule as GETs; on (naming the digest), off 
 });
 
 test("a grant is asked for by digest, its signed intent submitted once to its own route, and its status read by correlation ID", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const digest = `sha256:${"a".repeat(64)}`;
   const intent = { standard: "nep413" as const, payload: { message: "grant", recipient: "provider.test", nonce: NONCE } };
   server.answer(`POST ${base}/grant`, ok({ correlationId: "grant-1", expiresAt: "2026-11-05T00:10:00.000Z", intent }));
@@ -244,7 +244,7 @@ test("a grant is asked for by digest, its signed intent submitted once to its ow
 });
 
 test("a strategy is saved by one JSON POST naming the digest it replaces, held to the platform's rules before it's sent", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const digest = `sha256:${"a".repeat(64)}`;
   const strategy = { targetBps: { "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1": 5_000, "nep141:wrap.near": 2_500, "nep141:eth.omft.near": 2_500 },
     minLegUsd: 2, maxCostBps: 250, autopilot: { everyMin: 60, maxUsd: 0 } };
@@ -255,7 +255,7 @@ test("a strategy is saved by one JSON POST naming the digest it replaces, held t
 });
 
 test("the forward risk report is read from the agent's own route, parsed with the server's contract; none yet is null", async () => {
-  const server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+  const server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
   const report = { at: "2026-11-06T12:00:00.000Z", seq: 7, level: 2, reason: "projected drawdown 22.6% is at or past its L2 step, 16%",
     projection: { usable: true, reasons: [], projectedDrawdownPct: 22.62, expectedShortfallPct: 22.66, breachProbabilityPct: 4.2, runwayMonths: 30, monthsToFloor: 24, volatileSharePct: 40 },
     scenarios: [{ id: "drop:wNEAR:80", label: "wNEAR falls 80% in a day", valueUsd: 68_000, lossUsd: 32_000, drawdownPct: 32, stableUsd: 60_000, runwayMonths: 30, floorUsd: 12_000, floorBreached: false, unfundedUsd: 0, tradable: true }],

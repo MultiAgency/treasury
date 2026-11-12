@@ -1,7 +1,7 @@
 // What the Agents page shows, from the server's contract: pure, so it's tested without a browser. With its extension:
 // test/agents-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { usd } from "./shared/format.ts";
-import type { AssistantContext, RiskHistory, RiskWhatIf } from "./proposals-api.ts";
+import type { AssistantContext, RiskHistory, RiskWhatIf } from "./server-api.ts";
 
 /** The what-if events the page offers: each names its field, unit, starting value, exclusive minimum and inclusive maximum. */
 export const WHAT_IF_EVENTS = [

@@ -1,4 +1,4 @@
-# The Treasury app server, with the proposals page it serves (docs/deploy.md). One replica: its audit trail and stored
+# The Treasury app server, with the app it serves (docs/deploy.md). One replica: its audit trail and stored
 # requests are files on the volume at /data, each with one writer.
 FROM node:24.22.0-slim AS build
 WORKDIR /app

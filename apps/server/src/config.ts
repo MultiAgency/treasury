@@ -55,7 +55,7 @@ const Settings = z.object({
    * challenge rate limit is keyed on. 0, the default, trusts none: the connection's own address is used.
    */
   TREASURY_TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
-  /** The proposals page's build (`web/dist`), which this server serves; unset, it answers only its API. */
+  /** The app's build (`web/dist`), which this server serves; unset, it answers only its API. */
   TREASURY_PAGE_DIR: z.string().min(1).optional(),
   /** The agents `watch` proposes for (`watch-config.ts`), a 0600 JSON file; unset, `watch` doesn't run. */
   TREASURY_WATCH_FILE: z.string().min(1).optional(),

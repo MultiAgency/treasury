@@ -1,6 +1,6 @@
 // What the Hedge section shows (#221), from the server's one read: pure, so it's tested without a browser.
 // With its extension: test/hedge-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
-import type { HedgeRead } from "./proposals-api.ts";
+import type { HedgeRead } from "./server-api.ts";
 
 type Move = NonNullable<HedgeRead["plan"]>["moves"][number];
 type Code = Move["blocked"][number]["code"];

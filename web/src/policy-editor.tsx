@@ -4,7 +4,7 @@ import { daoVoteWords, policyComparison } from "./policy-view";
 import { allowsAsset, BUDGET, changesOf, type AgentPolicy, type Draft, differences, draftOf, WINDOWS } from "./policy-draft";
 import { reviewedPolicyOf, sameReviewedPolicy } from "./policy-review";
 import { useOwnerFlow } from "./owner-flow";
-import type { AssistantDraft, Identity, OverviewRead } from "./proposals-api";
+import type { AssistantDraft, Identity, OverviewRead } from "./server-api";
 import { FromAssistant } from "./assistant-note";
 import type { agentReads } from "./queries";
 import { fileLabel } from "./dao-filing";
