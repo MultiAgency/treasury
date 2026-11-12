@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { failureText } from "../src/proposals/words.ts";
+import { failureText } from "../src/words.ts";
 
 test("a creation the platform refused reads as a refusal, naming the creation already waiting, not as an outage", () => {
   const text = failureText({ ok: false, kind: "refused", code: "creation_refused" }, "setup");

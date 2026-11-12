@@ -2,7 +2,7 @@
 // set it (an error read unmounts it), for as long as the page is loaded.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { blockFunding, fundingBlock, subscribeFunding } from "../src/proposals/funding-block.ts";
+import { blockFunding, fundingBlock, subscribeFunding } from "../src/funding-block.ts";
 
 test("a block is kept per agent, read the same by any later reader, and announced", () => {
   const heard: number[] = [];

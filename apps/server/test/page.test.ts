@@ -8,7 +8,7 @@ import { fakePlatform, ORIGIN } from "./fakes.ts";
 import { testServer } from "./test-server.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-const PAGE = "<!doctype html><title>Treasury proposals</title>";
+const PAGE = "<!doctype html><title>Agentic Treasury</title>";
 /** The proposals page's build as `web/` makes it, with what must never be served beside it. */
 const dist = tempDir("treasury-page-");
 const outside = tempDir("treasury-outside-");

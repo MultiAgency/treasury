@@ -1,14 +1,14 @@
 # Notes for the platform
 
-The accessible names of the app's pages (`web/src/proposals`), which only the app server serves, and how they use the platform. The owner-session build these notes once compared against was removed in #138; the platform's release-candidate specs that queried its names run against frozen builds of the prototype (MultiAgency/platform#22).
+The accessible names of the app's pages (`web/src`), which only the app server serves, and how they use the platform. The owner-session build these notes once compared against was removed in #138; the platform's release-candidate specs that queried its names run against frozen builds of the prototype (MultiAgency/platform#22).
 
 ## The proposals page (#20)
 
-The build (`src/proposals/`, built to `dist-proposals/`), served only by the app server (`apps/server`, `TREASURY_PAGE_DIR`) from its own origin. It calls only the server's `/api/` routes (`src/proposals/proposals-api.ts`), and the platform's specs don't query it.
+The build (`src/`, built to `dist/`), served only by the app server (`apps/server`, `TREASURY_PAGE_DIR`) from its own origin. It calls only the server's `/api/` routes (`src/proposals-api.ts`), and the platform's specs don't query it.
 
 | Name | Role | Where |
 | --- | --- | --- |
-| Treasury proposals · `<page>` | page title (#129): the build's name, then the page's own title (was just "Treasury proposals") | every page |
+| `<page>` · Agentic Treasury | page title (#129): the page's own title, then the product's (was "Treasury proposals · `<page>`") | every page |
 | Home, Proposals, Strategy, Funding | heading (level 1), one per agent page: `/agents/<agent>/`, `…/proposals`, `…/strategy`, `…/funding` (was "Treasury proposals" on `/agents/<agent>` for all of it) | an agent's pages |
 | Agent pages | navigation (landmark): links Home, Proposals, Strategy, Funding, the current one `aria-current="page"` (Proposals also on `…/proposals/<id>`) | an agent's pages, signed in |
 | Page not found | heading (level 1), with an alert saying what the address got wrong (a bad agent name, a bad DAO account, a page that isn't one); link Your treasuries | any address that names nothing |
@@ -151,6 +151,6 @@ How it departs from the brief, or decides what the brief leaves open:
 - **Swaps read exactly as signed** (the user's decision, 2026-11-04): the amount and floor of each leg are never rounded (`exactAmountOf` in `shared/format.ts`), so a floor of 0.499996 wNEAR never reads "at least 0.5". `test/proposal-terms.test.ts` checks each leg against the SDK's `proposalText`. Only the quote, which isn't signed, is rounded (`amountOf`).
 - **A DAO-owned agent** (#100): a member signs in as themselves, and every signature is the DAO's vote. The page shows the request the server filed, what the DAO's proposal says (its description as text, never HTML) and the platform's check page, then what the member can do by what the DAO holds: file the platform's transaction from their own wallet (with their vote when they may vote and its proposal number still fits), vote in Trezu on the proposal already filed, or wait for the server to complete it. The member's wallet sends the platform's transaction as is, through `walletSession.send` and `transactionOutcome` (`wallet-session.ts`, `wallet-transaction.ts`). Execute is offered only to an account whose roles allow it (`access.canExecute`).
 - **The consent dialog** shows the platform's consent text exactly, and beside it everything the `treasury` scope grants, which that text can't narrow, and what this server actually calls.
-- **Its own build output.** `rsbuild` builds the pages to `dist-proposals/`, the only folder the app server serves. `test/proposals-isolation.test.ts` checks that every source file in `web/src` is reached from the page's entry, so nothing only a removed build used is left behind.
+- **Its own build output.** `rsbuild` builds the pages to `dist/`, the only folder the app server serves. `test/reachability.test.ts` checks that every source file in `web/src` is reached from the page's entry, so nothing only a removed build used is left behind.
 
-Driving the page on the stack (`test/proposals.e2e.ts`, its own stack started with `--app`): the app server runs in-process with the stack's `tap_` credential and serves `dist-proposals/`; Playwright's own browser installs near-connect's injected "Local test wallet" as the platform's `test/e2e/wallet.mjs` does, signing through the `signOwner` control. The server's key check is a stand-in for the stack's owner key, as in `apps/server`'s stack test. The proposals are made through the app route directly, as the app's proposer will (#20 PR 4).
+Driving the page on the stack (`test/app.e2e.ts`, its own stack started with `--app`): the app server runs in-process with the stack's `tap_` credential and serves `dist/`; Playwright's own browser installs near-connect's injected "Local test wallet" as the platform's `test/e2e/wallet.mjs` does, signing through the `signOwner` control. The server's key check is a stand-in for the stack's owner key, as in `apps/server`'s stack test. The proposals are made through the app route directly, as the app's proposer will (#20 PR 4).

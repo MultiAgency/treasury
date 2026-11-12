@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { busyKeys, clearConversations, conversationKey, conversations, subscribe, version } from "../src/proposals/conversations.ts";
+import { busyKeys, clearConversations, conversationKey, conversations, subscribe, version } from "../src/conversations.ts";
 
 test("signing in or out clears every conversation, so the next account in this tab never sees the last one's questions or drafts", () => {
   const key = conversationKey("portfolio", "stabilization");

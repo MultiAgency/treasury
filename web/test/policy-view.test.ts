@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { budgetRows, daoVoteWords, destinationsText, policyComparison, termRows } from "../src/proposals/policy-view.ts";
-import type { AgentPolicy } from "../src/proposals/policy-draft.ts";
+import { budgetRows, daoVoteWords, destinationsText, policyComparison, termRows } from "../src/policy-view.ts";
+import type { AgentPolicy } from "../src/policy-draft.ts";
 import type { AssetInfo } from "../src/shared/format.ts";
 
 const USDC = "nep141:usdc";

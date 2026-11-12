@@ -7,8 +7,7 @@ const VAULT = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-3 -6 38 38"><st
 export default defineConfig({
   plugins: [pluginReact()],
   // The app's pages, which only the app server serves (`apps/server/src/page.ts`, `TREASURY_PAGE_DIR`).
-  source: { entry: { index: "./src/proposals/main.tsx" } },
-  html: { template: "./src/proposals/index.html", title: "Treasury proposals",
+  source: { entry: { index: "./src/main.tsx" } },
+  html: { template: "./src/index.html", title: "Agentic Treasury",
     tags: [{ tag: "link", attrs: { rel: "icon", type: "image/svg+xml", href: `data:image/svg+xml,${encodeURIComponent(VAULT)}` } }] },
-  output: { distPath: { root: "dist-proposals" } },
 });

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { levelView, metricRows, recommendationRows, topScenarios, worstScenario } from "../src/proposals/risk-view.ts";
-import type { RiskReport } from "../src/proposals/proposals-api.ts";
+import { levelView, metricRows, recommendationRows, topScenarios, worstScenario } from "../src/risk-view.ts";
+import type { RiskReport } from "../src/proposals-api.ts";
 
 const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";
 const WNEAR = "nep141:wrap.near";

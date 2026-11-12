@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stopControls, waitingStop } from "../src/proposals/freeze-view.ts";
+import { stopControls, waitingStop } from "../src/freeze-view.ts";
 
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
 const soon = new Date(NOW + 10 * 60_000).toISOString(), gone = new Date(NOW - 1000).toISOString();

@@ -14,7 +14,7 @@ export type PageFile = { body: Buffer; headers: Record<string, string> };
 export type Page = (pathname: string) => PageFile | undefined;
 
 /**
- * The proposals page's build (`web/dist-proposals`), read once from `dir` at startup and then served from memory by
+ * The proposals page's build (`web/dist`), read once from `dir` at startup and then served from memory by
  * exact path, so no request reaches the file system. Only regular files are read: no dotfile, no symbolic link, no
  * type outside `TYPES`, and no listing. Any path outside `/api/` and `static/` that names no file is the page itself
  * (`index.html`), which routes itself. The page is never stored by a cache, may not be framed (it asks the owner's

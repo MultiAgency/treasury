@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sweepRun } from "../../apps/server/src/contract.ts";
-import { sweepOutcome } from "../src/proposals/sweep-run.ts";
+import { sweepOutcome } from "../src/sweep-run.ts";
 
 /** A run as the page gets it: plain JSON, parsed by the server's contract. */
 const run = (...events: unknown[]) => sweepRun.parse({ events });

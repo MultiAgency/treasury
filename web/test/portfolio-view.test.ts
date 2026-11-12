@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { holdingsOf, recentActivity, recentRuns } from "../src/proposals/portfolio-view.ts";
+import { holdingsOf, recentActivity, recentRuns } from "../src/portfolio-view.ts";
 
 const book = [
   { asset: "nep141:wrap.near", symbol: "wNEAR", decimals: 24, public: "1", confidential: "123456789012345678901234567", price: 2.5, priceUpdatedAt: null, priceExpiresAt: null, usd: 308.64 },
