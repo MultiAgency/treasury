@@ -243,6 +243,50 @@ async function propose(requestId: string): Promise<ProposalView> {
   return made.value as ProposalView;
 }
 
+test("a failed root session read stays visible without a retry loop and Check again recovers it", { timeout: 60_000 }, async t => {
+  for (const failure of [
+    { status: 503, body: { ok: false, kind: "unavailable" }, text: "The Treasury server or the platform didn't answer. Reading again is safe." },
+    { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" }, text: "Too many requests from this account. Wait a minute, then try again." },
+  ]) await t.test(`HTTP ${failure.status}`, async t => {
+    const rootPage = await page.context().newPage();
+    let reads = 0, recovered = false;
+    const setup = `${origin}/api/setup`;
+    const respond = async (route: Route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      reads++;
+      await route.fulfill(recovered ? { json: { ok: true, value: { account: owner, agents: [] } } }
+        : { status: failure.status, json: failure.body });
+    };
+    t.after(async () => { await rootPage.goto("about:blank"); await rootPage.unrouteAll({ behavior: "wait" }); await rootPage.close(); });
+    await rootPage.route(setup, respond);
+    await rootPage.goto(`${origin}/`);
+    // Observe a quiet interval: the shell and root page share this read, and mounting the error page must not read again.
+    await rootPage.waitForTimeout(750);
+    assert.equal(reads, 1, "the failed session read must settle instead of remounting and requesting it repeatedly");
+    const error = rootPage.getByRole("alert").filter({ hasText: failure.text });
+    await visible(error);
+    await visible(error.getByRole("button", { name: "Check again", exact: true }));
+    assert.equal(await rootPage.getByText("Checking your session…", { exact: true }).count(), 0);
+
+    // Browser-history navigation preserves the query cache; a document reload would conceal observer-mount retries.
+    await rootPage.evaluate(() => { history.pushState({}, "", "/missing-session-test"); dispatchEvent(new PopStateEvent("popstate", { state: history.state })); });
+    await visible(rootPage.getByRole("heading", { name: "Page not found", exact: true }));
+    assert.equal(reads, 1, "leaving the root does not retry its failed read");
+    await rootPage.getByRole("main").getByRole("link", { name: "Your treasuries", exact: true }).click();
+    await visible(error);
+    await rootPage.waitForTimeout(750);
+    assert.equal(reads, 2, "returning checks once and the failed page stays mounted without further retries");
+
+    recovered = true;
+    await error.getByRole("button", { name: "Check again", exact: true }).click();
+    await visible(rootPage.getByRole("heading", { name: "Set up your Treasury", exact: true }));
+    await visible(rootPage.getByText(`Signed in as ${owner}`));
+    await rootPage.waitForLoadState("networkidle");
+    assert.equal(reads, 3, "Check again makes one explicit read and recovers the page");
+    assert.equal(await error.count(), 0, "recovery replaces the error");
+  });
+});
+
 test("the owner signs in with their wallet, connects the agent with a consent they read first, and sees no proposals yet", { timeout: 120_000 }, async () => {
   await page.goto(here());
   assert.equal(await page.title(), "Treasury proposals · Home");

@@ -91,7 +91,8 @@ export function refreshPortfolio(client: QueryClient, reads: ReturnType<typeof a
 
 /** The setup reads: the signed-in account's own treasuries, and a DAO's setup, read again every half minute while it waits for the vote. */
 export const setupReads = {
-  mine: queryOptions({ queryKey: ["setup"], queryFn: async () => answered(await api.setups()), retry: false }),
+  // The shell and Home share this read: mounting Home after a failure must leave its error and "Check again" visible.
+  mine: queryOptions({ queryKey: ["setup"], queryFn: async () => answered(await api.setups()), retry: false, retryOnMount: false }),
   dao: (dao: string) => queryOptions({ queryKey: ["setup", "dao", dao], queryFn: async () => answered(await api.daoSetup(dao)), retry: false,
     refetchInterval: query => query.state.data?.request ? 30_000 : false }),
 };
