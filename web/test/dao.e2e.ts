@@ -5,6 +5,7 @@
 // from the stack's chain.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { checkStrategyReview } from "./strategy-review.ts";
 import { readFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -248,6 +249,7 @@ test("a council member asks the DAO to authorize the saved strategy: filed from 
   await ask.click();
   const authorize = dialog("Authorize this saved strategy?");
   await visible(authorize);
+  await checkStrategyReview(page, target.agent);
   await authorize.getByRole("button", { name: "File in your wallet" }).click();
   await visible(autopilot.getByText(/^Filed with your approval\. If the DAO needs more votes/));
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
@@ -265,7 +267,7 @@ test("a council member adopts a proposed strategy, shown beside the saved one wi
   const saved = await page.evaluate(async agent => (await (await fetch(`/api/agents/${agent}/strategy`)).json()).value, target.agent) as
     { digest: string; strategy: { minLegUsd: number; autopilot: { everyMin: number; maxUsd: number } } };
   const proposed = await strategyProposals.propose({ agent: target.agent, from: "mandate", against: saved.digest, policyAssets: "any",
-    strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, "nep141:eth.omft.near": 0 }, minLegUsd: saved.strategy.minLegUsd, maxCostBps: 50, autopilot: saved.strategy.autopilot },
+    strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, "nep141:eth.omft.near": 0 }, minLegUsd: saved.strategy.minLegUsd, maxCostBps: 50, autopilot: saved.strategy.autopilot, cashFloor: { usd: 1, assets: [USDC] } },
     reasons: "Ballast's balanced profile: 40% volatile in wNEAR, and 35% reserve and 25% operating cash in USDC." });
   assert.ok(proposed.ok);
 
@@ -291,6 +293,7 @@ test("a council member adopts a proposed strategy, shown beside the saved one wi
   await autopilot.getByRole("button", { name: "Ask the DAO to authorize this strategy" }).click();
   const authorize = dialog("Authorize this saved strategy?");
   await visible(authorize);
+  await checkStrategyReview(page, target.agent);
   await authorize.getByRole("button", { name: "File in your wallet" }).click();
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
   assert.equal(sent.length, filedBefore + 1, "the grant filed once, from the member's wallet");
