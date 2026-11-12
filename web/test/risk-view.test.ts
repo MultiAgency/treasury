@@ -66,3 +66,12 @@ test("a de-risk is shown with its size and whether it was proposed, and a freeze
   const notProposed = recommendationRows({ ...report, proposed: false, recommendations: [report.recommendations[1]!] });
   assert.match(notProposed[0]!.text, /Recommended, not proposed\./);
 });
+
+
+test("an unusable projection never exposes conservative fallback figures as forecasts", () => {
+  const unavailable = { ...report, projection: { usable: false, reasons: ["missing ETH history"],
+    projectedDrawdownPct: 100, expectedShortfallPct: 100, breachProbabilityPct: 100,
+    runwayMonths: 0, monthsToFloor: 0, volatileSharePct: 100 } };
+  assert.deepEqual(metricRows(unavailable), []);
+  assert.deepEqual(topScenarios(unavailable), topScenarios(report), "deterministic stress scenarios remain available");
+});

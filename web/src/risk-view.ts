@@ -17,6 +17,7 @@ export function levelView(level: number): LevelView {
 /** The projection's figures as a row each: what the owner reads first. */
 export function metricRows(report: RiskReport) {
   const p = report.projection;
+  if (!p.usable) return [];
   return [
     { term: "Projected drawdown", value: `${p.projectedDrawdownPct.toFixed(1)}%`, detail: `at ${p.volatileSharePct.toFixed(1)}% volatile` },
     { term: "Expected shortfall", value: `${p.expectedShortfallPct.toFixed(1)}%`, detail: "mean loss over the worst paths" },
