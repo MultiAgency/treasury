@@ -12,6 +12,7 @@
     "test": "node --test test/*.test.ts",
     "test:stack": "node --test --test-concurrency=1 test/stack.e2e.ts test/dao-stack.e2e.ts test/hosted-setup.stack.e2e.ts",
     "test:sandbox": "node --test test/sandbox.e2e.ts",
+    "test:settlement:sandbox": "node --test test/settlement-recovery.sandbox.e2e.ts",
     "check:anchors": "node src/anchor-check.ts",
     "check:replay": "node src/replay-check.ts"
   },

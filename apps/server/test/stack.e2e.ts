@@ -68,8 +68,12 @@ before(async () => {
 }, { timeout: 180_000 });
 
 after(async () => {
-  server?.close();
-  await stack?.stop();
+  try {
+    if (server) await new Promise<void>((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve());
+      server.closeAllConnections();
+    });
+  } finally { await stack?.stop(); }
 });
 
 const write = { origin: ORIGIN, "content-type": "application/json" };
@@ -190,6 +194,14 @@ test("the owner reads, approves and executes a proposal through the server, and 
   };
 
   const first = await propose(`stack-${Date.now()}-1`);
+  // A retry must resolve to the same obligation; changing its terms must never create another.
+  const replayBody = { requestId: first.requestId, legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: first.expiresAt };
+  const replay = await calls.call("proposals/create", replayBody);
+  assert.ok(replay.ok, JSON.stringify(replay));
+  assert.equal(replay.value.id, first.id);
+  const changed = await calls.call("proposals/create", { ...replayBody, legs: [{ from: USDC, to: WNEAR, amount: "1000001" }] });
+  assert.ok(!changed.ok && changed.kind === "refused", JSON.stringify(changed));
+  assert.equal(changed.code, "request_conflict", "altered terms cannot reuse a request ID");
   const listed = await (await get(`${agent}/proposals`, cookie)).json() as { value: { proposals: ProposalView[] } };
   assert.ok(listed.value.proposals.some(item => item.id === first.id), "listed under the owner's Organization");
   assert.equal(((await (await get(`${agent}/proposals/${first.id}`, cookie)).json()) as { value: { proposal: ProposalView } }).value.proposal.state, "proposed");
@@ -211,6 +223,23 @@ test("the owner reads, approves and executes a proposal through the server, and 
   assert.match(csvText, /^at,settledAt,type,status,failureCode,confidential,assetIn,amountIn,assetOut,amountOut,recipient,correlationId,/, "the platform's own header");
   const again = await (await post(`${agent}/proposals/${first.id}/execute`, {}, cookie)).json() as { value: { result: string; proposal: ProposalView } };
   assert.deepEqual([again.value.result, again.value.proposal.state], ["final", "executed"], "asked again, it answers the state from a read and sends nothing");
+
+  const duplicate = await propose(`crash-fresh-id-${Date.now()}`);
+  assert.notEqual(duplicate.id, first.id, "fresh IDs are distinct proposals, not semantic invoice deduplication");
+  const unapproved = await calls.call("proposals/execute", { id: duplicate.id });
+  assert.ok(!unapproved.ok && unapproved.kind === "refused", JSON.stringify(unapproved));
+  assert.equal(unapproved.code, "not_approved", "approval of the first proposal cannot authorize a duplicate under a fresh ID");
+  assert.equal((await verdict(duplicate, "reject")).body.value.proposal.state, "rejected");
+
+  const concurrent = await propose(`crash-concurrent-${Date.now()}`);
+  assert.equal((await verdict(concurrent, "approve")).status, 200);
+  // Race two execution requests at the platform boundary, then reconcile from its durable record.
+  await Promise.all([calls.call("proposals/execute", { id: concurrent.id }), calls.call("proposals/execute", { id: concurrent.id })]);
+  const reconciled = await calls.call("proposals/get", { id: concurrent.id });
+  assert.ok(reconciled.ok, JSON.stringify(reconciled));
+  assert.equal(reconciled.value.state, "executed");
+  assert.equal(reconciled.value.operations.length, 1, "one approved leg produces exactly one operation under concurrent execution");
+  assert.equal(reconciled.value.operations[0]!.status, "SUCCESS");
 
   const second = await propose(`stack-${Date.now()}-2`);
   const rejected = await verdict(second, "reject");

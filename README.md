@@ -47,3 +47,20 @@ pnpm backtest:diversified                    # rewrites docs/diversified-backtes
 The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `252cba1d1e6642a5ea9f42ea4927f982423ed8e1` with its own dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` is configured to check the audit log's anchors on chain hourly, with best-effort GitHub scheduling. Failed-run alerts don't detect missing runs; an optional external heartbeat covers that gap once activated. See [the operator checks](docs/deploy.md#audit-anchor-monitor).
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
+
+The payment crash checks in `apps/server/test/watch.test.ts` cover overlapping ticks, recovery after an accepted proposal's acknowledgement is lost, and restart during uncertain execution. The owner execution case in `apps/server/test/stack.e2e.ts` also checks identical-request replay, refusal of changed amounts under the same request ID, and concurrent execution producing one successful operation. Run the focused checks with:
+
+```sh
+node --test apps/server/test/watch.test.ts apps/server/test/proposals.test.ts apps/server/test/watcher-lease.test.ts
+TREASURY_PLATFORM=/path/to/verified-platform node --test --test-name-pattern='the owner reads, approves and executes' apps/server/test/stack.e2e.ts
+```
+
+These stack checks use simulated settlement and operation records, not observed on-chain balances. Fresh request IDs create separate proposals; the gateway test verifies that approving the first does not authorize execution of the second. This is approval isolation, not invoice deduplication: treasury proposals have no invoice identity. Production watch acquires a SQLite exclusive lease beside its request store before reading it; release drains pending writes and prevents further writes from the former owner; a second process sharing that path refuses startup. `apps/server/test/watcher-lease.test.ts` verifies contention from a separate process and recovery after SIGKILL; `main.test.ts` verifies that a second full server refuses startup before listening or ticking, and a subsequent server starts after the owner stops. Processes on independent storage are not fenced. Preserve the request store and its `.lease` file together, and stop watchers before moving that state. The separate NEAR sandbox suite checks account keys, not treasury settlement.
+
+The opt-in settlement recovery test runs the pinned platform's dispatch, journal, money lock and recovery code in child processes against a local NEAR sandbox. A test provider adapter maps fixture USDC amounts to native NEAR transfers (1 fixture raw unit = 10^18 yoctoNEAR); policy and grant responses are fixtures. It kills the submitting process after the transfer finalizes, before the operation ID is recorded and, separately, after the ID is recorded but before status acknowledgement. A frozen policy is refused before submission with no transfer. Two recovery processes running under a frozen policy verify the same transaction identity and an exact single credit to each recipient. A lost ID remains unresolved and blocks sends; a recorded ID settles through status reads without another send.
+
+```sh
+TREASURY_PLATFORM=/path/to/verified-platform pnpm --filter @treasury/server test:settlement:sandbox
+```
+
+The run writes transaction hashes, recipient balances, adapter send counts, and journals to `.test-artifacts/settlement-recovery/latest.json`. This establishes recovery for native sandbox transfers through the test adapter. It does not verify live provider idempotency, confidential USDC custody, swaps, production policy enforcement, or deployed behavior. The platform runtime remains pinned and unchanged.

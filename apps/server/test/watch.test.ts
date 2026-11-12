@@ -735,3 +735,61 @@ test("a proposal that is neither open nor expired raises nothing, whatever its d
     assert.ok(!kinds(w).some(kind => kind === "expiring" || kind === "expired" || kind === "approved_not_executed"), state);
   }
 });
+
+test("overlapping ticks create only one proposal and release the guard afterwards", async () => {
+  const w = await world();
+  const results = await Promise.all([w.tick(), w.tick()]);
+  assert.equal(results.filter(result => result.skipped === "tick in progress").length, 1);
+  assert.equal(w.sent.length, 1);
+  assert.equal(w.requests.of(ORG, AGENT).length, 1);
+  assert.equal((await w.tick()).skipped, "live proposal");
+});
+
+// Simulate the server losing its local acknowledgement after the platform accepted a request.
+test("crash test: accepted proposal survives a lost local acknowledgement and restart", async () => {
+  const w = await world();
+  await w.tick();
+  const accepted = w.requests.of(ORG, AGENT)[0]!;
+  const original = w.requests.input(accepted);
+  await w.requests.drop(accepted);
+  await w.requests.add(ORG, AGENT, JSON.parse(accepted.body), accepted.requestId);
+  await w.restart();
+  await w.tick();
+  assert.deepEqual(w.sent, [original, original]);
+  assert.equal(w.stored.size, 1);
+  assert.equal(w.requests.of(ORG, AGENT)[0]!.proposalId, accepted.proposalId);
+});
+
+test("crash test: restart during uncertain execution holds without creating another proposal", async () => {
+  for (const state of ["executing", "unknown"] as const) {
+    const w = await world();
+    await w.tick();
+    const [key, view] = [...w.stored.entries()][0]!;
+    w.stored.set(key, { ...view, state });
+    await w.restart();
+    const event = await w.tick();
+    assert.equal(event.skipped, "live proposal");
+    assert.equal(event.state, state);
+    assert.equal(w.sent.length, 1);
+    assert.equal(w.requests.of(ORG, AGENT).length, 1);
+  }
+});
+
+test("overlap guard covers asynchronous notification and releases after a thrown notification", async () => {
+  const w = await world();
+  let entered!: () => void, finish!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  const ticking = w.tick({ ...WATCHED, notify: async () => {
+    entered();
+    await gate;
+    throw new Error("notification lost");
+  } });
+  const rejected = assert.rejects(ticking, /notification lost/);
+  await started;
+  assert.equal((await w.tick()).skipped, "tick in progress");
+  finish();
+  await rejected;
+  assert.equal((await w.tick()).skipped, "live proposal");
+  assert.equal(w.sent.length, 1);
+});

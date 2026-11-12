@@ -1,3 +1,6 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { proposalCreateInput, proposalId } from "@multiagency/sdk";
 import { z } from "zod";
@@ -36,10 +39,36 @@ export const newRequestId = (agent: string) => `${agent}_${randomBytes(12).toStr
  * The proposal requests `watch` has made and not yet seen end, kept in one owner-only file (`createRecords`): a request
  * is sent only once it's stored. At most `max` are kept.
  */
-export async function createRequests(path: string, { max = 256 } = {}) {
-  const { all, commit } = await createRecords(path, "requests", storedRequest, "watch's stored requests");
+export async function createRequests(path: string, { max = 256, exclusive = false } = {}) {
+  // Hold a SQLite write lock for this watcher's lifetime. The OS releases it even after SIGKILL.
+  // This fences processes sharing this local file, not hosts with independent storage.
+  let lease: DatabaseSync | undefined;
+  if (exclusive) {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+    lease = new DatabaseSync(`${path}.lease`);
+    try { lease.exec("BEGIN EXCLUSIVE"); }
+    catch (error) { lease.close(); throw new Error("Another watcher owns this request store", { cause: error }); }
+  }
+  let records;
+  try { records = await createRecords(path, "requests", storedRequest, "watch's stored requests"); }
+  catch (error) { lease?.close(); throw error; }
+  const { all } = records;
+  let released = false;
+  let pending = Promise.resolve();
+  let releasing: Promise<void> | undefined;
+  const commit: typeof records.commit = change => {
+    if (released) return Promise.reject(new Error("Request store is released"));
+    const done = records.commit(change);
+    pending = done.then(() => {}, () => {});
+    return done;
+  };
   const same = (a: StoredRequest, b: StoredRequest) => a.organization === b.organization && a.agent === b.agent && a.requestId === b.requestId;
   return {
+    /** Stop accepting writes, drain queued writes, then relinquish ownership. Call after all ticks finish. */
+    release: () => {
+      released = true;
+      return releasing ??= pending.then(() => { lease?.close(); lease = undefined; });
+    },
     /** The agent's stored requests under the Organization. */
     of: (organization: string, agent: string): readonly StoredRequest[] =>
       all().filter(record => record.organization === organization && record.agent === agent),

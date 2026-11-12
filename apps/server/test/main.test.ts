@@ -44,7 +44,7 @@ function start(t: TestContext, env: Record<string, string | undefined>) {
     exited.then(({ code, stderr }) => { throw new Error(`exited ${code} before listening: ${stderr}`); }),
   ]);
   listening.catch(() => {}); // A test that only waits for the exit never reads this; the one that does still sees it fail.
-  return { child, exited, listening };
+  return { child, exited, listening, output: () => stdout };
 }
 
 test("a missing setting stops startup, naming it", async t => {
@@ -145,4 +145,21 @@ test("with an anchor configured it anchors at startup, an empty log needing none
   assert.deepEqual(await event, { event: "anchor", anchored: false }, "nothing recorded, nothing sent");
   child.kill("SIGTERM");
   assert.equal((await exited).code, 0);
+});
+
+test("a second full server sharing watcher state refuses startup before listening or proposing", async t => {
+  const env = withWatch(environment(), [{ organization: "owner--near", agent: "portfolio" }]);
+  const first = start(t, env);
+  await first.listening;
+  const second = start(t, env);
+  const denied = await second.exited;
+  assert.notEqual(denied.code, 0);
+  assert.match(denied.stderr, /Another watcher owns this request store/);
+  assert.doesNotMatch(second.output(), /"listening"|"event":"watch"|"proposed"/);
+  first.child.kill("SIGTERM");
+  assert.equal((await first.exited).code, 0);
+  const recovered = start(t, env);
+  await recovered.listening;
+  recovered.child.kill("SIGTERM");
+  assert.equal((await recovered.exited).code, 0, "a full server can restart after ownership is released");
 });
