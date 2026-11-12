@@ -19,7 +19,7 @@ export type Need = {
   target: { page: "proposal"; id: string } | { page: "connection" } | { page: "activity"; key: string } | { page: "owner-action"; type: string };
 };
 
-type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined };
+type DaoWaiting = { id: string; kind: "consent" | "vote"; proposal?: string | undefined; votingUntil: number; verdict?: "approve" | "reject" | undefined; approvedBy?: readonly string[] | undefined };
 type Unresolved = { key: string; kind: string; at: string };
 type OwnerAction = Pick<OwnerActionRecord, "correlationId" | "type" | "stage" | "phase" | "signer" | "expiresAt">;
 
@@ -33,6 +33,9 @@ export const openProposals = (proposals: readonly ProposalView[], now: number) =
 /** Proposals the owner approved that haven't been executed: `approved` and not expired, soonest deadline first. */
 export const approvedProposals = (proposals: readonly ProposalView[], now: number) =>
   proposals.filter(view => view.state === "approved" && live(view, now)).sort(byDeadline);
+
+/** How many members have approved so far, once the DAO's proposal is filed. Whether that is enough is the DAO's threshold, which the request page shows. */
+const approvals = ({ approvedBy }: Pick<DaoWaiting, "approvedBy">) => approvedBy === undefined ? "" : ` (${approvedBy.length} approved so far)`;
 
 const swaps = (view: ProposalView) => view.legs.map(legText).join("; ");
 
@@ -52,14 +55,14 @@ export function needsDecision({ proposals, unresolved, daoRequests, ownerActions
     ...approvedProposals(proposals, now).map((view): Need => ({ key: `proposal-${view.id}`, kind: "approved-proposal", text: `Approved, not executed yet: ${swaps(view)}`,
       deadline: Date.parse(view.expiresAt), target: { page: "proposal", id: view.id } })),
     ...daoRequests.map((request): Need => request.kind === "consent"
-      ? { key: `dao-${request.id}`, kind: "dao-consent", text: "Waiting for the DAO's vote to connect the agent", deadline: request.votingUntil, target: { page: "connection" } }
-      : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal`, deadline: request.votingUntil,
+      ? { key: `dao-${request.id}`, kind: "dao-consent", text: `Waiting for the DAO's vote to connect the agent${approvals(request)}`, deadline: request.votingUntil, target: { page: "connection" } }
+      : { key: `dao-${request.id}`, kind: "dao-vote", text: `Waiting for the DAO's vote to ${request.verdict ?? "decide"} a proposal${approvals(request)}`, deadline: request.votingUntil,
         target: { page: "proposal", id: request.proposal ?? "" } }),
     // A freeze, unfreeze, revocation or grant waiting for the DAO's vote, until it expires (#133).
     ...ownerActions.filter(item => awaiting(item, now) === "vote").map((item): Need => ({ key: `action-${item.correlationId}`, kind: "owner-action",
       text: `${actionName(item.type)} is waiting for the DAO's vote`, deadline: Date.parse(item.expiresAt), target: { page: "owner-action", type: item.type } })),
     ...unresolved.map((item): Need => ({ key: `unresolved-${item.key}`, kind: "unresolved", at: item.at, deadline: null,
-      text: `An operation's outcome isn't proven yet (${item.kind}): nothing new runs until it's resolved, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
+      text: `A ${item.kind} was sent, but its result isn't confirmed yet. The platform is checking it; nothing new runs until then, and nothing is sent again from here`, target: { page: "activity", key: item.key } })),
   ];
   // Deadlines first, soonest first; then the rest, in the order the platform listed them.
   return items.map((item, index) => ({ item, index })).sort((a, b) => {

@@ -85,10 +85,12 @@ export const daoOffer = z.discriminatedUnion("state", [
 ]);
 /**
  * A DAO request waiting for its vote: what the DAO's proposal says, the platform's check page for the exact text and
- * hash the DAO signs, the time its vote must pass by (ms), and the member's offer; null when the DAO couldn't be read.
+ * hash the DAO signs, the time its vote must pass by (ms), the member's offer (null when the DAO couldn't be read), and who has approved it.
  */
 export const daoRequest = z.strictObject({ id: z.string(), description: z.string(), votingUntil: z.number(), check: z.string(),
-  verdict: z.enum(["approve", "reject"]).optional(), offer: daoOffer.nullable() });
+  verdict: z.enum(["approve", "reject"]).optional(), offer: daoOffer.nullable(),
+  /** The accounts that have voted to approve the DAO's proposal for this request, once it is filed (#262); absent until then. */
+  approvedBy: z.array(z.string()).optional() });
 /**
  * What filing a DAO request answers (its consent, or its vote on a proposal): the request, filed now or already open
  * for the same subject. An open vote may carry the other verdict: a member who disagrees votes against it in Trezu.

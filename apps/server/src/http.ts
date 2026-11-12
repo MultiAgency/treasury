@@ -565,8 +565,11 @@ async function daoView(stored: StoredDaoRequest, target: DaoTarget, { daos, daoR
     await daoRequests.close(stored.id, offer.outcome === "Expired" ? "expired" : "rejected");
     return null;
   }
+  // Who has approved the DAO's proposal, as Sputnik records it; whether that meets the threshold is the platform's to say.
+  const filed = offer && offer.state !== "file" && read !== "unavailable" ? read.proposals.find(proposal => proposal.id === offer.proposal) : undefined;
+  const approvedBy = filed && Object.entries(filed.votes ?? {}).filter(([, vote]) => vote === "Approve").map(([account]) => account).sort();
   return { id: stored.id, description: stored.description, votingUntil: stored.votingUntil, check: `https://${target.host}/confirm/dao/${stored.id}`,
-    ...(stored.kind === "vote" && { verdict: stored.verdict }), offer };
+    ...(stored.kind === "vote" && { verdict: stored.verdict }), offer, ...(approvedBy && { approvedBy }) };
 }
 
 /** What a DAO is asked to vote on: its Organization's Treasury setup, its consent to this app, or a verdict on one of the agent's proposals. */
@@ -1198,12 +1201,15 @@ export const routes: Route[] = [
     // What the stabilization agent has been doing (#220): its recent assessments from the audit log, newest first, and
     // whether this server's watch file runs it for the agent. Nothing is computed and the platform isn't read.
     method: "GET", path: "/api/agents/:agent/risk/history", access: "owner-fresh", needs: "read",
-    async handle({ identity }, { riskHistory, riskStatus }) {
+    async handle({ identity, req }, { riskHistory, riskStatus }) {
+      const rawSince = new URL(req.url!, "http://localhost").searchParams.get("since");
+      const since = rawSince === null ? undefined : Number(rawSince);
+      if (rawSince !== null && (!rawSince.trim() || !Number.isSafeInteger(since) || since! < 0)) return refused(400, "bad_request");
       const { agent, owner } = identity!;
       const organization = organizationOf(owner);
       const status = riskStatus?.(organization, agent) ?? { configured: false, intervalS: null };
       if (!riskHistory) return ok({ ...status, entries: [] });
-      const found = await relay(async () => ({ ok: true as const, value: await riskHistory(organization, agent, 20) }), agent);
+      const found = await relay(async () => ({ ok: true as const, value: await riskHistory(organization, agent, since === undefined ? 20 : Infinity, since) }), agent);
       return found.ok ? ok({ ...status, entries: found.value.map(riskHistoryEntryOf) }) : readFailure(found, agent, "risk/history");
     },
   },

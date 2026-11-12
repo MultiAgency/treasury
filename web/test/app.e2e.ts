@@ -375,6 +375,81 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(page.getByRole("region", { name: "Proposals" }).getByText(/No proposals yet/));
 });
 
+test("Home retains events arriving after its snapshot and does not advance a cached or failed visit (#263)", { timeout: 90_000 }, async () => {
+  const key = `treasury:last-visit:${owner}:${target.agent}`;
+  let at: string | undefined;
+  const runsPath = `${origin}/api/agents/${target.agent}/runs`;
+  const runs = (route: Route) => route.fulfill({ json: { ok: true, value: { corrupt: [], ticks: at ? [{
+    id: "since-regression", at, trigger: "schedule", schedule: { on: true, everyMin: 60, maxUsd: 1, lastRun: null },
+    build: { deployment: null, source: "test", lockfile: null, packageJson: null }, agentId: "test", policy: { revision: null, digest: null, status: "test" },
+    strategy: "test", grant: null, end: null,
+  }] : [] } } });
+  const riskPath = `${origin}/api/agents/${target.agent}/risk/history?*`;
+  const failed = (route: Route) => route.fulfill({ status: 503, json: { ok: false, kind: "unavailable" } });
+  const stored = () => page.evaluate(key => localStorage.getItem(key), key);
+  await page.route(runsPath, runs);
+  try {
+    await page.goto(here());
+    await signInIfAsked(page.getByRole("region", { name: "Connection" }));
+    await page.evaluate(key => localStorage.removeItem(key), key);
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    // This event was absent from Home's snapshot. It arrives while the owner stays on that page.
+    at = new Date(await page.evaluate(() => Date.now())).toISOString();
+    await nav("Strategy").click();
+    const cutoff = Number(await stored());
+    assert.ok(cutoff > 0 && cutoff < Date.parse(at), "departure records the observed visit start, before the unseen event");
+    await nav("Home").click();
+    await page.waitForLoadState("networkidle");
+    await nav("Strategy").click();
+    assert.equal(Number(await stored()), cutoff, "a return using cached snapshots preserves the cutoff");
+    await page.goto(here());
+    const summary = page.getByRole("region", { name: "Since you last looked" });
+    await visible(summary.getByText("Autopilot ran 1 time."));
+    assert.deepEqual(await axe(), [], "the visit summary");
+    await nav("Strategy").click();
+    const observed = await stored();
+    await page.route(riskPath, failed);
+    await page.goto(here());
+    await page.waitForLoadState("networkidle");
+    await nav("Strategy").click();
+    assert.equal(await stored(), observed, "a failed risk read cannot mark the visit observed");
+  } finally {
+    await page.unroute(runsPath, runs);
+    await page.unroute(riskPath, failed);
+  }
+});
+
+test("Home requests the visit interval and includes a risk peak older than the latest 20 assessments", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const key = `treasury:last-visit:${owner}:${target.agent}`;
+  const since = Date.now() - 3_600_000;
+  const riskPath = `${origin}/api/agents/${target.agent}/risk/history?*`;
+  let requestedSince: string | null = null;
+  const history = (route: Route) => {
+    requestedSince = new URL(route.request().url()).searchParams.get("since");
+    return route.fulfill({ json: { ok: true, value: { configured: true, intervalS: 300,
+      entries: Array.from({ length: 25 }, (_, i) => ({ seq: 25 - i, at: new Date(since + (25 - i) * 60_000).toISOString(),
+        level: i === 24 ? 4 : 0, reason: "Visit regression", actions: [], proposed: false, drawdownPct: null })),
+    } } });
+  };
+  await page.route(riskPath, history);
+  try {
+    // Leave Home before seeding the next visit: its departure handler writes the observed cutoff.
+    // Setting storage while Home is mounted races that handler during the following navigation.
+    await page.goto(here("/strategy"));
+    await visible(page.getByRole("region", { name: "Autopilot" }));
+    await page.evaluate(({ key, since }) => localStorage.setItem(key, String(since)), { key, since });
+    await page.goto(here());
+    const summary = page.getByRole("region", { name: "Since you last looked" });
+    await visible(summary.getByText(/The risk was assessed 25 times;.*reached/));
+    assert.equal(requestedSince, String(since), "Home asks for the full interval rather than the recent-history endpoint");
+    assert.deepEqual(await axe(), [], "complete risk summary");
+  } finally {
+    await page.unroute(riskPath, history);
+  }
+});
+
 test("the owner approves a proposal by its exact text, executes it once to executed, and rejects another", { timeout: 180_000 }, async () => {
   const first = await propose(`page-${Date.now()}-1`), second = await propose(`page-${Date.now()}-2`);
   // The portfolio is read first, so coming back to it after the execute below shows whether it's read again.
@@ -558,6 +633,7 @@ test("the owner links their own account to fund the agent, sends exactly the rev
   const ft = transfer!.actions.find(action => action.params.methodName === "ft_transfer")!;
   assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "1500000"], "exactly the address and amount reviewed");
 
+  await funding.getByText("Other ways to fund the agent").click();
   await funding.getByRole("button", { name: "Get a deposit address" }).click();
   await visible(funding.getByText("Deposit address", { exact: true }));
   assert.deepEqual(await axe(), [], "a deposit address");
@@ -633,7 +709,10 @@ test("a page returned to within a minute shows what it read, without reading the
   await visible(autopilot.getByRole("list", { name: "From strategy to autopilot" }));
   await page.waitForTimeout(500);
   page.off("request", read);
-  assert.deepEqual(reads, [], "each read counts against the deployment's shared calls an hour");
+  // The visit cutoff changes on departure. Its new risk interval is read from this server's audit log,
+  // so it does not consume the deployment's platform allowance. All platform-backed reads stay cached.
+  assert.deepEqual(reads.filter(path => path !== `/api/agents/${target.agent}/risk/history`), [],
+    "returning to a cached page makes no platform-backed reads");
 });
 
 test("the owner allows owner actions: told first that open proposals are withdrawn, then the connection is replaced by one with owner", { timeout: 90_000 }, async () => {
@@ -732,11 +811,40 @@ test("the home says where the agent stands, one line each, linking to its page",
   const standing = page.getByRole("region", { name: "Where the agent stands" });
   await signInIfAsked(standing);
   const lines = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem");
-  await visible(lines.filter({ hasText: /^Policy(In force|Not in force)/ }));
+  await visible(lines.filter({ hasText: /^Policy(In force|Blocked)/ }));
   await visible(lines.filter({ hasText: /^Strategy(Authorized|Not authorized)/ }));
   await visible(lines.filter({ hasText: /^Autopilot(On|Off)/ }));
   assert.equal(await lines.filter({ hasText: /^Strategy/ }).getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/strategy`);
   assert.deepEqual(await axe(), []);
+});
+
+test("an unfunded wallet owner's Home links both missing funding steps to Funding (#258)", { timeout: 60_000 }, async () => {
+  const overviewPath = `${origin}/api/agents/${target.agent}/overview`;
+  const treasuryPath = `${origin}/api/agents/${target.agent}/treasury`;
+  const empty = async (route: Route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    assert.equal(body.ok, true);
+    await route.fulfill({ response, json: { ...body, value: { ...body.value, book: body.value.book.map((holding: object) => ({ ...holding, public: "0", confidential: "0", usd: 0 })) } } });
+  };
+  const unlinked = (route: Route) => route.fulfill({ json: { ok: true, value: { treasury: null } } });
+  await page.route(overviewPath, empty);
+  await page.route(treasuryPath, unlinked);
+  try {
+    await page.goto(here());
+    const standing = page.getByRole("region", { name: "Where the agent stands" });
+    await signInIfAsked(standing);
+    const lines = standing.getByRole("listitem");
+    const funds = lines.filter({ hasText: /^Funds/ });
+    const account = lines.filter({ hasText: /^Account/ });
+    await visible(funds.getByText("Not funded", { exact: true }));
+    await visible(account.getByText("Not linked", { exact: true }));
+    for (const line of [funds, account]) assert.equal(await line.getByRole("link", { name: "Open" }).getAttribute("href"), `/agents/${target.agent}/funding`);
+    assert.deepEqual(await axe(), [], "first-run funding guidance");
+  } finally {
+    await page.unroute(overviewPath, empty);
+    await page.unroute(treasuryPath, unlinked);
+  }
 });
 
 test("on an approve-only host the home's Strategy line says so, never that it is not authorized", { timeout: 60_000 }, async () => {
@@ -753,6 +861,7 @@ test("on an approve-only host the home's Strategy line says so, never that it is
     await signInIfAsked(standing);
     const line = standing.getByRole("list", { name: "Where the agent stands" }).getByRole("listitem").filter({ hasText: /^Strategy/ });
     await visible(line.getByText("This host only approves: the strategy is authorized on the agent's executor"));
+    await visible(line.getByText("Approve-only", { exact: true }));
     assert.equal(await line.getByText(/Not authorized/).count(), 0);
   } finally {
     await page.unroute("**/api/agents/*/strategy", approveOnly);
@@ -950,12 +1059,64 @@ test("Run now retry guard: a lost run reply cannot release a stop that is still 
   assert.deepEqual(unexpected, []);
 });
 
+test("Ask why fills proposal and risk questions without sending, and is hidden without an assistant (#264)", { timeout: 90_000 }, async () => {
+  await ensureConnected();
+  const made = await propose(`ask-why-${Date.now()}`);
+  const posts: string[] = [];
+  const track = (request: import("playwright").Request) => { if (request.method() === "POST" && request.url().startsWith(origin)) posts.push(request.url()); };
+  page.on("request", track);
+  const panel = page.getByRole("dialog", { name: "Treasury assistant" });
+  const field = panel.getByRole("textbox", { name: "Your question" });
+  const riskPath = `${origin}/api/agents/${target.agent}/risk`;
+  const report = (route: Route) => route.fulfill({ json: { ok: true, value: { risk: {
+    at: new Date().toISOString(), seq: 7, level: 2, reason: "Test assessment",
+    projection: { usable: true, reasons: [], projectedDrawdownPct: 22, expectedShortfallPct: 23, breachProbabilityPct: 4, runwayMonths: 30, monthsToFloor: 24, volatileSharePct: 40 },
+    scenarios: [], recommendations: [], derisk: null, proposed: false,
+  } } } });
+  const unavailable = (route: Route) => route.fulfill({ json: { ok: true, value: { available: false, model: null } } });
+  try {
+    await page.goto(here(`/proposals/${made.id}`));
+    await page.getByRole("button", { name: "Ask why: this proposal" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), `Why was proposal ${made.id} made, and what happens if I approve it?`);
+    assert.deepEqual(posts, [], "opening prepares, signs and sends nothing");
+    assert.deepEqual(await axe(), [], "proposal question");
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Ask the treasury" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), "", "the normal trigger does not reuse the question");
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "hidden" });
+    await page.route(riskPath, report);
+    await page.goto(here());
+    await page.getByRole("button", { name: "Ask why: the risk level" }).click();
+    await visible(panel);
+    assert.equal(await field.inputValue(), "Why is the risk level what it is, and what would change it?");
+    assert.deepEqual(posts, [], "the risk question is also only filled in");
+    assert.deepEqual(await axe(), [], "risk question");
+    await page.keyboard.press("Escape");
+    await page.route(`${origin}/api/assistant`, unavailable);
+    await page.goto(here(`/proposals/${made.id}`));
+    await visible(page.getByRole("heading", { name: "Proposal", exact: true, level: 1 }));
+    assert.equal(await page.getByRole("button", { name: /^Ask why:/ }).count(), 0);
+    await page.goto(here());
+    await visible(page.getByText("Test assessment", { exact: true }));
+    assert.equal(await page.getByRole("button", { name: /^Ask why:/ }).count(), 0);
+  } finally {
+    page.off("request", track);
+    await page.unroute(riskPath, report);
+    await page.unroute(`${origin}/api/assistant`, unavailable);
+  }
+});
+
 test("the assistant answers from the treasury's own records with sources, and a draft opens the strategy editor filled in without sending anything (#219)", { timeout: 150_000 }, async () => {
   await ensureConnected();
-  await page.goto(here());
+  const proposal = await propose(`ask-why-handoff-${Date.now()}`);
+  await page.goto(here(`/proposals/${proposal.id}`));
   const ask = page.getByRole("button", { name: "Ask the treasury" });
   await visible(ask);
-  await ask.click();
+  await page.getByRole("button", { name: "Ask why: this proposal" }).click();
   const panel = page.getByRole("dialog", { name: "Treasury assistant" });
   await visible(panel);
   assert.deepEqual(await axe(), [], "the assistant panel");
@@ -984,6 +1145,7 @@ test("the assistant answers from the treasury's own records with sources, and a 
   await editor.getByLabel("wNEAR (%)").fill("45");
   await ask.click();
   await visible(panel);
+  assert.equal(await question.inputValue(), "", "opening a draft clears the Ask why prefill too");
   await question.fill("Propose a rebalance to 30% wNEAR");
   await question.press("Enter");
   const again = panel.getByRole("button", { name: "Open in the strategy editor" }).last();

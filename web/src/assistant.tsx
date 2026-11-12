@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Badge, Button, ErrorBox, Spinner, input } from "./shared/ui";
 import { cn } from "@/lib/utils";
+import { askWhy, onAskWhy } from "./ask-why";
 import { openDraft } from "./assistant-drafts";
 import { askConversation } from "./conversation-request";
 import { busyKeys, conversationKey, conversations, NONE, subscribe, toolProgress, version } from "./conversations";
@@ -143,12 +144,14 @@ function Reply({ answer, onOpen, showScenario }: { answer: AssistantAnswer; onOp
  * A conversation with one of the two agents: the log, its example questions, and the form. Used in the sheet and inline on
  * the Agents page; `onOpen` takes a draft the owner chose to open. `inline` fills its container's height instead of a sheet's.
  */
-export function Chat({ reads, persona, examples, label = "Your question", logLabel = "Conversation", placeholder, footer, onOpen, inline = false, scenarioInWorkspace = false }: {
+export function Chat({ reads, persona, examples, label = "Your question", logLabel = "Conversation", placeholder, footer, onOpen, inline = false, scenarioInWorkspace = false, initialQuestion = "" }: {
   reads: Reads; persona: AssistantPersona; examples: readonly string[]; label?: string; logLabel?: string; placeholder: string; footer?: ReactNode;
   onOpen: (draft: AssistantDraft) => void; inline?: boolean; scenarioInWorkspace?: boolean;
+  /** A question put in the box when the conversation opens, for the owner to read and send ('Ask why'). */
+  initialQuestion?: string;
 }) {
   const { entries, busy, progress, ask } = useConversation(reads, persona);
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
   const log = useRef<HTMLDivElement>(null);
   const field = `assistant-question-${persona}${inline ? "-inline" : ""}`;
   useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight }); }, [entries, busy, progress]);
@@ -201,10 +204,13 @@ export function Assistant({ agent }: { agent: string }) {
 
 function Panel({ reads, model }: { reads: Reads; model: string | null }) {
   const [open, setOpen] = useState(false);
+  /** An 'Ask why' question waiting in the box; cleared when the panel closes, so the trigger opens it empty. */
+  const [prefill, setPrefill] = useState<string>();
+  useEffect(() => onAskWhy((agent, question) => { if (agent === reads.name) { setPrefill(question); setOpen(true); } }), [reads.name]);
   const handOff = useHandOff(reads.name);
   /** A draft being opened: handed to its flow once the panel has closed, so the flow's own review takes the focus. */
   const handoff = useRef<AssistantDraft>(undefined);
-  const openIn = (draft: AssistantDraft) => { handoff.current = draft; setOpen(false); };
+  const openIn = (draft: AssistantDraft) => { handoff.current = draft; setPrefill(undefined); setOpen(false); };
   const hand = () => {
     const draft = handoff.current;
     handoff.current = undefined;
@@ -212,7 +218,7 @@ function Panel({ reads, model }: { reads: Reads; model: string | null }) {
     handOff(draft);
     return true;
   };
-  return <Sheet open={open} onOpenChange={setOpen}>
+  return <Sheet open={open} onOpenChange={next => { setOpen(next); if (!next) setPrefill(undefined); }}>
     <SheetTrigger asChild>
       <Button variant="outline" size="sm" className="ml-auto shrink-0"><Sparkle aria-hidden="true" className="text-primary" /><span className="max-sm:sr-only">Ask the treasury</span></Button>
     </SheetTrigger>
@@ -222,7 +228,19 @@ function Panel({ reads, model }: { reads: Reads; model: string | null }) {
         <SheetTitle className="flex items-center gap-2"><ChatCircleText aria-hidden="true" className="text-primary" /> Treasury assistant</SheetTitle>
         <SheetDescription id="assistant-description" className="text-xs">Answers from this treasury's records, each figure with its source. It can draft a change for you to review; it never sends anything.</SheetDescription>
       </SheetHeader>
-      <Chat reads={reads} persona="treasury" examples={TREASURY_EXAMPLES} placeholder="Ask about balances, budgets, proposals, runs…" footer={modelFooter(model)} onOpen={openIn} />
+      <Chat reads={reads} persona="treasury" examples={TREASURY_EXAMPLES} placeholder="Ask about balances, budgets, proposals, runs…" footer={modelFooter(model)} onOpen={openIn} initialQuestion={prefill} />
     </SheetContent>
   </Sheet>;
+}
+
+/**
+ * "Ask why" (#264): opens the treasury assistant with `question` in its box, for the owner to read and send. Shown only
+ * where the assistant answers (`useAssistantStatus`), so it never leads to a panel that isn't there.
+ */
+export function AskWhy({ reads, question, about }: { reads: Reads; question: string; about: string }) {
+  const { ready } = useAssistantStatus(reads);
+  if (!ready) return null;
+  return <Button variant="outline" size="sm" aria-label={`Ask why: ${about}`} onClick={() => askWhy(reads.name, question)}>
+    <Sparkle aria-hidden="true" className="text-primary" /> Ask why
+  </Button>;
 }

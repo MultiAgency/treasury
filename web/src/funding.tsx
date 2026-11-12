@@ -6,6 +6,7 @@ import { DataTable, td, th, tr, TokenChip, ValuePill } from "@/components/ui/dat
 import { Meter, SplitBar } from "@/components/ui/meter";
 import { PanelTitle, StatCard } from "@/components/ui/stat";
 import { blockFunding, useFundingBlock } from "./funding-block";
+import { leadWay, publicIsOther, receiveIsOther } from "./funding-view";
 import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "./funding-transaction";
 import { Field, focusInvalid } from "./shared/form";
 import { accountError } from "./shared/form-validation";
@@ -108,6 +109,7 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
   const refresh = () => [reads.treasury, reads.overview].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const linked = treasury.data ?? null;
   const confidential = Boolean(linked?.dao && linked.confidential);
+  const lead = leadWay({ linked: linked !== null, confidential, canLink: identity.signer !== "dao" && mayCall(identity.access, "treasury/link") });
 
   return <section id="funding" aria-labelledby="funding-title" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -116,26 +118,32 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
     </div>
     <FundingFigures overview={overview.data} />
     <Balances reads={reads} />
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-      <Card className="gap-3">
-        <PanelTitle level={3} title="Funding account" icon={<Bank weight="duotone" />} tone="info" />
-        {treasury.isPending ? <Loading label="Reading the funding account…" />
-          : treasury.isError ? <QueryError error={treasury.error} retry={() => treasury.refetch()} />
-          : <FundingAccount reads={reads} identity={identity} linked={linked} />}
-      </Card>
-      {linked ? <Card className="gap-3">
-        <PanelTitle level={3} title="Money in" icon={<ArrowDown weight="bold" />} tone="brand" description={<>From <span className="font-mono">{linked.accountId}</span> to this agent</>}
-          infoLabel="About money in" info={confidential ? "A confidential DAO pays from its confidential balance in Trezu, to the near.com network, out of public view. What it holds publicly it pays by a proposal to a fresh deposit address. Either way, funds land in the agent's private balance."
-            : linked.dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve. Funds land in the agent's private balance."
-            : "Sends from the funding account to a fresh deposit address. Funds land in the agent's private balance."} />
-        {confidential ? <>
-          <FundingPath id="money-in-confidential" title="From the confidential balance"><ConfidentialFund reads={reads} linked={linked} /></FundingPath>
-          <FundingPath id="money-in-public" title="From the public balance"><Fund reads={reads} identity={identity} linked={linked} /></FundingPath>
-        </> : <Fund reads={reads} identity={identity} linked={linked} />}
-      </Card> : <ReceiveCard reads={reads} identity={identity} />}
-      {/* Beside the other two, it reads across the width: what it is on the left, the address on the right. */}
-      {linked && <ReceiveCard reads={reads} identity={identity} className="lg:col-span-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:items-center lg:gap-x-6" />}
-    </div>
+    <Card className="gap-3">
+      <PanelTitle level={3} title={lead === "link" ? "Link a funding account" : lead === "receive" ? "Receive funds" : "Money in"} icon={lead === "link" ? <Bank weight="duotone" /> : lead === "receive" ? <QrCode weight="duotone" /> : <ArrowDown weight="bold" />}
+        tone={lead === "receive" ? "usdc" : "brand"} description={linked && lead !== "receive" ? <>From <span className="font-mono">{linked.accountId}</span> to this agent</> : undefined}
+        infoLabel="About money in" info={lead === "confidential" ? "A confidential DAO pays from its confidential balance in Trezu, to the near.com network, out of public view. What it holds publicly it pays by a proposal to a fresh deposit address, under Other ways."
+          : lead === "account" && linked?.dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve. Funds land in the agent's private balance."
+          : lead === "account" ? "Sends from the funding account to a fresh deposit address. Funds land in the agent's private balance."
+          : lead === "link" ? "Link the NEAR account that funds this agent. Money in then sends from it to a fresh deposit address."
+          : "Anyone may pay a one-time deposit address, with no signature from here. It lands in the agent's private balance."} />
+      {treasury.isPending ? <Loading label="Reading the funding account…" />
+        : treasury.isError ? <QueryError error={treasury.error} retry={() => treasury.refetch()} />
+        : lead === "link" ? <FundingAccount reads={reads} identity={identity} linked={linked} />
+        : lead === "receive" ? <Deposit reads={reads} identity={identity} />
+        : lead === "confidential" ? <FundingPath id="money-in-confidential" title="From the confidential balance"><ConfidentialFund reads={reads} linked={linked!} /></FundingPath>
+        : <Fund reads={reads} identity={identity} linked={linked!} />}
+    </Card>
+    {linked && !treasury.isPending && <Card className="gap-3">
+      <PanelTitle level={3} title="Funding account" icon={<Bank weight="duotone" />} tone="info" />
+      <FundingAccount reads={reads} identity={identity} linked={linked} />
+    </Card>}
+    {!treasury.isPending && !treasury.isError && (receiveIsOther(lead) || publicIsOther(lead)) && <details className="group rounded-lg border border-border bg-card/40">
+      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium">Other ways to fund the agent</summary>
+      <div className="flex flex-col gap-3 px-4 pb-4">
+        {publicIsOther(lead) && <FundingPath id="money-in-public" title="From the public balance"><Fund reads={reads} identity={identity} linked={linked!} /></FundingPath>}
+        {receiveIsOther(lead) && <ReceiveCard reads={reads} identity={identity} />}
+      </div>
+    </details>}
     <Card className="gap-4">
       <PanelTitle level={3} title="Shield public balances" icon={<ShieldCheck weight="duotone" />} tone="eth" description="Preview what is in public view, then shield it into the private balance."
         infoLabel="About shielding" info="Shields public USDC, wNEAR and ETH balances into the agent's private balance. Other assets aren't included. Shielding needs the agent to hold a treasury grant." />

@@ -10,6 +10,8 @@ import { refreshPortfolio, type agentReads } from "./queries";
 import { Legs, ReviewDialog, SignedText, StateBadge, when } from "./ui";
 import { sign } from "./wallet";
 import { failureText, NOT_EXECUTABLE, outcomeText, PENDING, STATE_WORDS } from "./words";
+import { AskWhy } from "./assistant";
+import { proposalQuestion } from "./ask-why";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 
@@ -36,6 +38,8 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const client = useQueryClient();
   const options = reads.proposal(id);
   const proposal = useQuery(options);
+  // The DAO's threshold, as the platform works it out, beside the approvals so far; only a DAO-owned agent has one to read.
+  const treasury = useQuery({ ...reads.treasury, enabled: identity.signer === "dao" });
   const [verdict, setVerdict] = useState<VerdictReview>();
   const [confirming, setConfirming] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -165,7 +169,10 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
   const open = verdictOffered(view) && !vote && (!dao || identity.access.canPropose);
   const executable = executeOffered(view, held) && identity.access.canExecute;
   return <div className="flex flex-col gap-8">
-    <PageLink to={agentAddress(reads.name, "proposals")} className="self-start text-sm underline">Back to proposals</PageLink>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <PageLink to={agentAddress(reads.name, "proposals")} className="text-sm underline">Back to proposals</PageLink>
+      <AskWhy reads={reads} question={proposalQuestion(view.id)} about="this proposal" />
+    </div>
     {proposal.isError && <QueryError error={proposal.error} retry={recheck} />}
 
     <section aria-labelledby="terms-title" className="flex flex-col gap-4">
@@ -202,7 +209,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
         {view.planId && <p className="break-all font-mono text-xs text-muted-foreground">Plan {view.planId}</p>}
         {vote && <div className="flex flex-col gap-2">
           <p role="status" className="font-medium">{owner} votes to {vote.verdict} this proposal.</p>
-          <DaoRequestView request={vote} account={identity.account} onChanged={recheck} />
+          <DaoRequestView request={vote} account={identity.account} onChanged={recheck} approvers={treasury.data?.dao?.approvers} />
         </div>}
         {dao && verdictOffered(view) && !vote && !identity.access.canPropose && <p className="text-sm">A member who may file proposals asks the DAO to approve or reject it.</p>}
         {notice && <div role={notice.tone} aria-atomic="true" className="text-sm">{notice.body}</div>}

@@ -15,7 +15,7 @@ import { appClient, type ProposalView } from "@multiagency/sdk";
 import { chromium, type Browser, type Page } from "playwright";
 import { chainedFileAudit } from "../../apps/server/src/chain.ts";
 import { createCredential } from "../../apps/server/src/credential.ts";
-import { chainDaos } from "../../apps/server/src/dao.ts";
+import { chainDaos, type DaoProposal } from "../../apps/server/src/dao.ts";
 import { createDaoRequests } from "../../apps/server/src/dao-requests.ts";
 import { createServer } from "../../apps/server/src/http.ts";
 import { standInKeyLookup } from "../../apps/server/src/keys.ts";
@@ -30,6 +30,7 @@ import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, dao: string, council: ReturnType<typeof wallet>;
+let chainProposals: DaoProposal[] | undefined;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** The strategies proposed for the agent, as the server keeps them: a test proposes one here, as Ballast's mandate would. */
 let strategyProposals: ReturnType<typeof createStrategyProposals>;
@@ -63,13 +64,14 @@ before(async () => {
   const audit = chainedFileAudit(join(tempDir("treasury-dao-proposals-"), "audit.jsonl"));
   await audit.check();
   strategyProposals = createStrategyProposals(memoryProposalRecords(), { audit });
+  const daos = chainDaos({ rpcUrl: state.chain.rpc, apiKey: undefined, timeoutMs: 5_000 });
   handle = createServer({
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
-    daos: chainDaos({ rpcUrl: state.chain.rpc, apiKey: undefined, timeoutMs: 5_000 }),
+    daos: { ...daos, proposals: async (dao, from) => chainProposals ? { next: chainProposals.length, proposals: chainProposals.filter(p => p.id >= from) } : daos.proposals(dao, from) },
     daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     strategyProposals,
     page: await loadPage(join(import.meta.dirname, "..", "dist")),
@@ -148,6 +150,9 @@ test("a council member asks the DAO to connect the agent, files its proposal fro
   await visible(connection.getByRole("status").filter({ hasText: /^Connected by the vote of / }));
   assert.equal(sent.length, 1, "filed once");
   assert.deepEqual([sent[0]!.signerId, sent[0]!.receiverId], [council.accountId, dao], "from the member's wallet, to the DAO");
+  const standing = page.getByRole("region", { name: "Where the agent stands" });
+  await visible(standing.getByRole("listitem").filter({ hasText: /^Funds/ }));
+  assert.equal(await standing.getByRole("listitem").filter({ hasText: /^Account/ }).count(), 0, "a DAO has no funding-account setup step");
   assert.deepEqual(await axe(), [], "connected");
 });
 
@@ -165,6 +170,24 @@ test("a council member asks the DAO to approve a proposal, files the vote from t
   await region.getByRole("button", { name: "Ask the DAO to approve" }).click();
   await visible(region.getByRole("status").filter({ hasText: `${dao} votes to approve this proposal.` }));
   assert.deepEqual(await axe(), [], "the DAO's vote waiting");
+
+  // The simulated chain normally has no pending proposals. Supply its read boundary with the exact
+  // proposal the server offered, without executing the vote, to exercise approvals through HTTP and the UI.
+  const pending = await page.evaluate(async agent => (await (await fetch(`/api/agents/${agent}/proposals/${location.pathname.split("/").at(-1)}`)).json()).value, target.agent);
+  const transaction = pending.vote.offer.transaction;
+  chainProposals = [{ id: 0, status: "InProgress", submission_time: String(BigInt(Date.now()) * 1_000_000n),
+    kind: transaction.actions[0].params.args.proposal.kind, votes: { "alice.near": "Approve", "bob.near": "Reject" } }];
+  await region.getByRole("button", { name: "Check again" }).click();
+  await visible(region.getByRole("status", { name: "Votes so far" }));
+  const treasury = await page.evaluate(async agent => (await (await fetch(`/api/agents/${agent}/treasury`)).json()).value.treasury, target.agent);
+  const votes = await region.getByRole("status", { name: "Votes so far" }).innerText();
+  assert.ok(votes.includes("Approved by alice.near"));
+  assert.ok(!votes.includes("bob.near"));
+  for (const approver of treasury.dao.approvers) assert.ok(votes.includes(`${approver.role}: ${approver.threshold}`));
+  assert.deepEqual(await axe(), [], "recorded approvals and platform threshold");
+  chainProposals = undefined;
+  await region.getByRole("button", { name: "Check again" }).click();
+  await visible(fileButton(region));
 
   // The open vote is on the home with its deadline, linking to the proposal where it is filed (#130).
   await page.getByRole("navigation", { name: "Agent pages" }).getByRole("link", { name: "Home" }).click();
@@ -208,11 +231,13 @@ test("the DAO funds its agent from its own account: no link controls, and Trezu 
   assert.deepEqual(unexpected, []);
 });
 
-test("a confidential DAO is offered both ways to fund its agent, the confidential balance first; Trezu files exactly the reviewed transfer from the public one (#214)", { timeout: 90_000 }, async () => {
+test("a confidential DAO leads with its confidential balance, the public one under Other ways; Trezu files exactly the reviewed transfer from the public one (#214)", { timeout: 90_000 }, async () => {
   await daoConfidentialSetup(target);
   await page.goto(`${origin}/agents/${target.agent}/funding`);
   const funding = page.getByRole("region", { name: "Funding" });
   const paths = funding.getByRole("region", { name: /^From the (confidential|public) balance$/ });
+  await visible(paths.nth(0));
+  await funding.getByText("Other ways to fund the agent").click();
   await visible(paths.nth(1));
   assert.deepEqual(await paths.evaluateAll(sections => sections.map(section => section.getAttribute("aria-labelledby"))),
     ["money-in-confidential", "money-in-public"], "the confidential path first");

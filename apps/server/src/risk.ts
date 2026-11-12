@@ -136,14 +136,14 @@ export function riskReportOf({ seq, at, entry }: StoredRisk): RiskReport {
   };
 }
 
-/** The latest records of an agent, newest first: at most `limit` (the log is read newest segment first, so this stops early). */
-export type RiskHistory = (organization: string, agent: string, limit: number) => Promise<StoredRisk[]>;
+/** The latest records of an agent, newest first: at most `limit`, optionally strictly after a visit cutoff in epoch milliseconds. */
+export type RiskHistory = (organization: string, agent: string, limit: number, since?: number) => Promise<StoredRisk[]>;
 
 /**
  * An agent's newest risk records, newest first, read from the log's segments newest first and stopping once `limit` are
- * found. A line that isn't a record is skipped, as in `latestRiskRecord`; none is an empty list, whatever else the log holds.
+ * found. With `since`, only matching timestamps count toward the limit; every segment is checked because clocks may move. A line that isn't a record is skipped, as in `latestRiskRecord`; none is an empty list, whatever else the log holds.
  */
-export async function riskRecords(file: string, organization: string, agent: string, limit: number): Promise<StoredRisk[]> {
+export async function riskRecords(file: string, organization: string, agent: string, limit: number, since?: number): Promise<StoredRisk[]> {
   const found: StoredRisk[] = [];
   if (!(limit >= 1)) return found;
   for (const segment of [...(await auditSegments(file))].reverse()) {
@@ -155,6 +155,7 @@ export async function riskRecords(file: string, organization: string, agent: str
       const entry = parsed?.entry as Partial<RiskEntry> | undefined;
       if (entry?.kind !== "risk" || entry.organization !== organization || entry.agent !== agent) continue;
       if (typeof parsed.seq !== "number" || typeof parsed.at !== "string" || !entry.input || !entry.assessment) continue;
+      if (since !== undefined && !(Date.parse(parsed.at) > since)) continue;
       found.push({ seq: parsed.seq, at: parsed.at, entry: entry as RiskEntry });
     }
     if (found.length >= limit) break;
@@ -162,7 +163,7 @@ export async function riskRecords(file: string, organization: string, agent: str
   return found;
 }
 
-export const createRiskHistoryReader = (file: string): RiskHistory => (organization, agent, limit) => riskRecords(file, organization, agent, limit);
+export const createRiskHistoryReader = (file: string): RiskHistory => (organization, agent, limit, since) => riskRecords(file, organization, agent, limit, since);
 
 /** One record as the agent's activity list reads it: when, the level and why, what it would do, and whether it proposed. */
 export function riskHistoryEntryOf({ seq, at, entry }: StoredRisk): RiskHistoryEntry {

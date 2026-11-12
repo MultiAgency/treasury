@@ -30,6 +30,8 @@ const proposalSchema = z.looseObject({
   status: z.enum(["InProgress", "Approved", "Rejected", "Removed", "Expired", "Moved", "Failed"]),
   /** Nanoseconds since the epoch (`U64`). */
   submission_time: z.string().regex(/^\d+$/),
+  /** Who voted and how (`Approve`, `Reject` or `Remove`), by account. Sputnik's own record; the threshold is the platform's to say. */
+  votes: z.record(z.string(), z.string()).optional(),
 });
 export type DaoProposal = z.infer<typeof proposalSchema>;
 /** The DAO's proposals from a number on, and the number its next proposal will get (`get_last_proposal_id`). */

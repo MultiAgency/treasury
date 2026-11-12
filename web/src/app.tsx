@@ -11,7 +11,7 @@ import { Connection } from "./connection";
 import { Diversification } from "./diversification";
 import { EmergencyStop } from "./freeze";
 import { Funding } from "./funding";
-import { NeedsDecision, Standing } from "./home";
+import { NeedsDecision, SinceLastLooked, Standing } from "./home";
 import { PageLink } from "./nav";
 import { agentAddress, isProposalId, isRunId, MISSING_TITLE, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
@@ -161,6 +161,7 @@ export function HomePage() {
   // that says it just connected. Not connected, it is the only thing on the page, and what needs doing.
   return <div className="flex flex-col gap-4">
     <NeedsDecision reads={reads} identity={identity} connected={connected} />
+    {connected ? <SinceLastLooked key={JSON.stringify([identity.account, identity.agent])} reads={reads} identity={identity} /> : null}
     {connected ? <Standing reads={reads} identity={identity} /> : null}
     {connected ? <ForwardRisk reads={reads} /> : null}
     {connected ? <Portfolio reads={reads} agent={identity.agent} /> : null}
