@@ -2,8 +2,8 @@ name: Audit anchor check
 
 # The outside check A7.3 needs (#55), away from the server: every anchor FastData KV lists under the key, each confirmed
 # on chain by its transaction, the sequence never going back, and the newest anchor no older than a heartbeat and two
-# intervals. A failed run is the alert. Which anchors it checks comes from repository variables, so moving from testnet
-# to mainnet changes no code.
+# intervals. GitHub scheduling is best effort; the optional success heartbeat lets an outside service notice missing
+# checks. Which anchors it checks comes from repository variables, so moving from testnet to mainnet changes no code.
 on:
   schedule:
     - cron: "17 * * * *"
@@ -45,3 +45,8 @@ jobs:
           ANCHOR_SINCE: ${{ vars.ANCHOR_SINCE }}
           # Optional: FastNEAR's archival RPC with the key, rather than its free rate.
           FASTNEAR_API_KEY: ${{ secrets.FASTNEAR_API_KEY }}
+      # The default success condition is deliberate: a failed anchor check must not renew the external heartbeat.
+      - name: Confirm the successful check to the external monitor
+        run: node apps/server/src/anchor-check-ping.ts
+        env:
+          ANCHOR_CHECK_PING_URL: ${{ secrets.ANCHOR_CHECK_PING_URL }}

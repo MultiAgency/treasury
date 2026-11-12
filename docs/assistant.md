@@ -29,6 +29,14 @@ the actual deterministic tool result, including the assessment's time and log se
 from model prose. It populates the existing what-if controls and comparison on the Agents page; the assistant sheet
 uses the same comparison component. A refused scenario carries its problems and no successful result.
 
+A what-if requires an assessment already recorded for that agent on this server. With no record, its answer has
+`result: null` and explains that there is no book to run the event on; it supplies no numerical comparison. A completed
+stream ending in `RUN_FINISHED` can carry that refusal: it establishes that the question finished, not that a scenario
+was calculated. Assessments currently come from `watch` entries with `ballast` and `risk`. Neither the assistant nor
+the what-if controls create the first assessment. There is no assessment-only mode; enabling `watch` can create trade
+proposals and strategy suggestions. An owner-triggered assessment without proposal automation is tracked in
+[#250](https://github.com/MultiAgency/treasury/issues/250).
+
 Editing the controls selects inputs for follow-up questions. **Explain this scenario** asks the stabilization agent
 to calculate those inputs again from the latest recorded book, then explain the result. The request's optional
 `context.whatIf` contains only the selected event parameters: client-calculated results, agent identities and unknown
@@ -73,7 +81,7 @@ file path.
 | `get_ballast_decisions` | this server's audit log | Ballast's decision records: the reading, action or hold, reason, level and policy verdict |
 | `get_audit_trail` | this server's audit log | the owner actions this server relayed, with the platform's answer |
 | `get_risk_report`, `get_risk_history` | this server's audit log | the stabilization agent's latest assessment (level and why, projection, scenarios, what it would do) and its recent ones |
-| `run_what_if` | the latest risk record's book | a tail event run with the agent's own stress arithmetic: today beside after, the cash floor, whether it could trade. Computed, nothing proposed |
+| `run_what_if` | the latest risk record's book | a tail event run with the agent's own stress arithmetic: today beside after, the cash floor, whether it could trade. Computed, nothing proposed; no recorded assessment means problems and no result |
 | `get_dao_requests` | this server's DAO store | a DAO-owned agent's requests waiting for its vote |
 | `list_strategy_proposals` | this server's strategy-proposal store | strategies an agent's software proposed, with the text of their reasons |
 

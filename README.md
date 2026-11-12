@@ -6,7 +6,7 @@ The owner can also ask the [treasury assistant](docs/assistant.md) about the tre
 
 Freeze is the stop that halts every send. A wallet owner can freeze the agent from the app's pages (#133). A DAO-owned agent has no such stop through the app yet: its freeze vote must pass within the provider intent's 600 seconds, which most DAOs can't do (MultiAgency/platform#20). Until then, `autopilot/stop` ends its schedule and the strategy engine proposes nothing at L4, but other apps' access and approved proposals are untouched.
 
-Beside the strategy engine, a stabilization agent projects the book under tail scenarios and from its recent price history, raises the level early, and proposes a de-risk within the same limits, or recommends pausing autopilot or a freeze. It only ever proposes or recommends: a de-risk is the owner's to approve, and a freeze needs their signature (#220, [ADR 5](docs/adr/0005-forward-risk.md)).
+For an agent whose `watch` entry enables `ballast` and `risk`, a stabilization agent projects the book under tail scenarios and from its recent price history, raises the level early, and proposes a de-risk within the same limits, or recommends pausing autopilot or a freeze. It only ever proposes or recommends: a de-risk is the owner's to approve, and a freeze needs their signature (#220, [ADR 5](docs/adr/0005-forward-risk.md)). Risk reports and what-ifs use its recorded assessments; asking the assistant does not create an assessment or start `watch`.
 
 | Path | What |
 | --- | --- |
@@ -40,6 +40,6 @@ pnpm --filter @treasury/server test:sandbox  # the on-chain key check on near-ki
 pnpm backtest:diversified                    # rewrites docs/diversified-backtest.md from the seeded synthetic history
 ```
 
-The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `2e7b1e6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` checks the audit log's anchors on chain every hour.
+The stack tests need `../platform` (or `TREASURY_PLATFORM`) at `2e7b1e6` with its dependencies installed. CI (`.github/workflows/ci.yml`) runs `pnpm check` and `pnpm build` on Node 24 and 26 for every pull request and push to `main`, then both stack tests. `anchor-check.yml` is configured to check the audit log's anchors on chain hourly, with best-effort GitHub scheduling. Failed-run alerts don't detect missing runs; an optional external heartbeat covers that gap once activated. See [the operator checks](docs/deploy.md#audit-anchor-monitor).
 
 SDK and platform feedback goes to [MultiAgency/platform](https://github.com/MultiAgency/platform).
