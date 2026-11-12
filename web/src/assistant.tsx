@@ -210,7 +210,7 @@ function Panel({ reads, model }: { reads: Reads; model: string | null }) {
   const handOff = useHandOff(reads.name);
   /** A draft being opened: handed to its flow once the panel has closed, so the flow's own review takes the focus. */
   const handoff = useRef<AssistantDraft>(undefined);
-  const openIn = (draft: AssistantDraft) => { handoff.current = draft; setOpen(false); };
+  const openIn = (draft: AssistantDraft) => { handoff.current = draft; setPrefill(undefined); setOpen(false); };
   const hand = () => {
     const draft = handoff.current;
     handoff.current = undefined;
