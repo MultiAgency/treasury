@@ -47,7 +47,7 @@ async function start({ records = [NEWER, OLDER], configured = true }: { records?
   const server = await testServer({
     platform: fake.platform, wallets: [owner, intruder], assistant, auditLog: async () => [],
     latestRisk: async (organization, agent) => records.find(r => r.entry.organization === organization && r.entry.agent === agent) ?? null,
-    riskHistory: async (organization, agent, limit) => records.filter(r => r.entry.organization === organization && r.entry.agent === agent).slice(0, limit),
+    riskHistory: async (organization, agent, limit, since) => records.filter(r => r.entry.organization === organization && r.entry.agent === agent && (since === undefined || Date.parse(r.at) > since)).slice(0, limit),
     riskStatus: () => ({ configured, intervalS: configured ? 300 : null }),
   });
   const cookie = await server.signIn(owner), other = await server.signIn(intruder);
@@ -209,4 +209,39 @@ test("the rules model reads the owner's words alone: risk, what-if, autopilot an
   assert.deepEqual(intentOf("show me the activity page"), { kind: "page", page: "activity" });
   assert.equal(intentOf("What's the stress test say?").kind, "risk");
   assert.equal(riskWhatIfOf(null, { volatileDropPct: 10 }).result, null);
+});
+
+
+test("visit history includes more than 20 assessments and the older peak, while recent history stays bounded", async t => {
+  const since = Date.parse("2026-11-06T00:00:00Z");
+  const records = Array.from({ length: 25 }, (_, i) => ({ ...NEWER, seq: i + 1, at: new Date(since + (25 - i) * 60_000).toISOString() }));
+  records[24] = { ...records[24]!, entry: { ...NEWER.entry, assessment: { ...NEWER.entry.assessment, level: 4 } } };
+  records.push({ ...OLDER, at: new Date(since).toISOString() });
+  const w = await start({ records });
+  t.after(() => w.server.close());
+  assert.equal((await w.call("GET", "/risk/history")).body.value.entries.length, 20);
+  const answer = await w.call("GET", `/risk/history?since=${since}`);
+  const read = contract.riskHistoryRead.parse(answer.body.value);
+  assert.equal(read.entries.length, 25);
+  assert.equal(Math.max(...read.entries.map(e => e.level)), 4);
+  for (const invalid of ["", "nope", "-1", "1.5", "Infinity"]) {
+    assert.equal((await w.call("GET", `/risk/history?since=${invalid}`)).status, 400);
+  }
+});
+
+
+test("visit history reads the full interval across rotated logs, including a peak outside the latest 20", async () => {
+  const file = join(tempDir("treasury-visit-history-"), "audit.jsonl");
+  const since = Date.parse("2026-11-06T00:00:00Z");
+  const records = Array.from({ length: 25 }, (_, i) => ({ ...NEWER, seq: i + 1, at: new Date(since + (i + 1) * 60_000).toISOString(),
+    entry: { ...NEWER.entry, assessment: { ...NEWER.entry.assessment, level: i === 0 ? 4 : 0 } } }));
+  const line = (record: unknown) => JSON.stringify(record);
+  await writeFile(`${file}.000000000001`, [line({ ...OLDER, at: new Date(since).toISOString() }), ...records.slice(0, 5).map(line)].join("\n") + "\n");
+  await writeFile(file, records.slice(5).map(line).join("\n") + "\n");
+  const recent = await riskRecords(file, "owner--near", "portfolio", 20);
+  assert.equal(Math.max(...recent.map(r => r.entry.assessment.level)), 0);
+  const complete = await riskRecords(file, "owner--near", "portfolio", Infinity, since);
+  assert.equal(complete.length, 25);
+  assert.equal(Math.max(...complete.map(r => r.entry.assessment.level)), 4);
+  assert.deepEqual(await riskRecords(file, "owner--near", "other", Infinity, since), []);
 });

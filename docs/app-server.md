@@ -93,3 +93,5 @@ Threat model:
 To run it, set `TREASURY_PLATFORM_ORIGIN`, `TREASURY_DEPLOYMENT`, `TREASURY_CREDENTIAL_FILE`, `TREASURY_PUBLIC_ORIGIN`, `TREASURY_AUDIT_FILE` and `TREASURY_DAO_REQUESTS_FILE` (and optionally `TREASURY_PAGE_DIR`, `TREASURY_WATCH_FILE` with `TREASURY_REQUESTS_FILE`, `FASTNEAR_API_KEY`, `NEAR_RPC_URL`, `TREASURY_TRUSTED_PROXY_HOPS`, `OWNER_REQUESTS_PER_MINUTE`, `CONSENTS_PER_DAY`, or `TREASURY_ANCHOR_ACCOUNT` with `TREASURY_ANCHOR_KEY_FILE`, `TREASURY_ANCHOR_INTERVAL_S` and `TREASURY_ANCHOR_NETWORK`), then `pnpm --filter @treasury/server start`.
 
 On Railway it runs from the `Dockerfile`, with secrets as variables written to their 0600 files at startup: see [deploy.md](deploy.md).
+
+`GET /api/agents/:agent/risk/history` returns the latest 20 assessments by default. With a nonnegative integer `since` in epoch milliseconds it returns all retained assessments strictly after that cutoff, including rotated audit segments. Invalid cutoffs return `bad_request`; owner authorization is required in both modes.
