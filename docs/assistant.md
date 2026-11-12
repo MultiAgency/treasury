@@ -11,7 +11,7 @@ holds no key, signs nothing, and has no tool that writes.
   `POST /api/agents/:agent/assistant` takes `{ question, history, persona?, context? }` and answers `{ answer, sources,
   drafts, model, stopped?, whatIf? }`. Existing callers still receive JSON. The app requests a live SSE response with
   `Accept: text/event-stream`.
-- **Page:** `web/src/proposals/assistant.tsx` (the sheet, citations and draft cards), `assistant-drafts.ts` (a draft
+- **Page:** `web/src/assistant.tsx` (the sheet, citations and draft cards), `assistant-drafts.ts` (a draft
   handed to its review flow), `assistant-note.tsx` (what the flow says about the draft).
 
 ## Live progress and the what-if workspace

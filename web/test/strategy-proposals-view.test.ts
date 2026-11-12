@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sourceName, strategyRows } from "../src/proposals/strategy-proposals-view.ts";
+import { sourceName, strategyRows } from "../src/strategy-proposals-view.ts";
 
 const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near";
 const saved = { targetBps: { [USDC]: 5_000, [WNEAR]: 2_500, [ETH]: 2_500 }, minLegUsd: 2, maxCostBps: 250, autopilot: { everyMin: 60, maxUsd: 0 } };

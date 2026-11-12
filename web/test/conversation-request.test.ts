@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 import { EventType } from "@ag-ui/core";
-import { whatIfRequest } from "../src/proposals/agents-view.ts";
-import { askConversation } from "../src/proposals/conversation-request.ts";
+import { whatIfRequest } from "../src/agents-view.ts";
+import { askConversation } from "../src/conversation-request.ts";
 import { busyKeys, clearConversations, conversationKey, conversations, reserveWhatIf, selectWhatIf, toolProgress,
-  whatIfContext, whatIfWorkspace } from "../src/proposals/conversations.ts";
-import type { AssistantAnswer, AssistantStreamEvent, AssistantWhatIf, ProposalsApi, Result } from "../src/proposals/proposals-api.ts";
+  whatIfContext, whatIfWorkspace } from "../src/conversations.ts";
+import type { AssistantAnswer, AssistantStreamEvent, AssistantWhatIf, ProposalsApi, Result } from "../src/proposals-api.ts";
 
 type AskStream = ReturnType<ProposalsApi["agent"]>["askStream"];
 const agent = "portfolio";

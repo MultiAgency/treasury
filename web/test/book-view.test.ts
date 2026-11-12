@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allocationRows, bookFigures, DRIFT_MARK } from "../src/proposals/book-view.ts";
+import { allocationRows, bookFigures, DRIFT_MARK } from "../src/book-view.ts";
 
 const NOW = Date.parse("2026-11-06T12:00:00.000Z");
 const fresh = { priceUpdatedAt: "2026-11-06T11:59:00.000Z", priceExpiresAt: "2026-11-06T12:09:00.000Z" };

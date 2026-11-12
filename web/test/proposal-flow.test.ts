@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { proposalText, type ProposalView } from "@multiagency/sdk";
 import { checkVerdict } from "../../apps/server/src/proposals.ts";
-import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, verdictText } from "../src/proposals/proposal-flow.ts";
-import { proposalsApi, type SignRequest } from "../src/proposals/proposals-api.ts";
+import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, verdictText } from "../src/proposal-flow.ts";
+import { proposalsApi, type SignRequest } from "../src/proposals-api.ts";
 import { fail, ID, lost, ok, proposal, refused, scripted } from "./proposals-fixtures.ts";
 
 const READ = `GET /api/agents/portfolio/proposals/${ID}`, EXECUTE = `POST /api/agents/portfolio/proposals/${ID}/execute`;

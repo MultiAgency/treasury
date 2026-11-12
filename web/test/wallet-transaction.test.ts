@@ -2,7 +2,7 @@
 // `FinalExecutionOutcome` (`build/types/index.d.ts`), whose `status` is `FinalExecutionStatus | "NotStarted" | "Started" | "Failure"`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { asSigner, transactionOutcome } from "../src/proposals/wallet-transaction.ts";
+import { asSigner, transactionOutcome } from "../src/wallet-transaction.ts";
 
 test("only a SuccessValue or SuccessReceiptId status succeeded", () => {
   for (const status of [{ SuccessValue: "" }, { SuccessValue: "MQ==" }, { SuccessReceiptId: "r1" }])

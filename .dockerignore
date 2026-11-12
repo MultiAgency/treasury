@@ -2,7 +2,6 @@
 # review notes or patches kept beside the checkout.
 **/node_modules
 **/dist
-**/dist-proposals
 .env
 .env.*
 !.env.example

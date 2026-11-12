@@ -5,7 +5,7 @@ import type { ProposalView } from "@multiagency/sdk";
 import { createRequests } from "../../apps/server/src/requests.ts";
 import { createWatch } from "../../apps/server/src/watch.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
-import { AGENT_PAGES, agentAddress, isProposalId, isRunId, NAVIGATION, place, proposalAddress, ROOT_TITLE, DAO_TITLE, runAddress } from "../src/proposals/pages.ts";
+import { AGENT_PAGES, agentAddress, isProposalId, isRunId, NAVIGATION, place, proposalAddress, ROOT_TITLE, DAO_TITLE, runAddress } from "../src/pages.ts";
 
 const ID = "0123456789abcdef0123456789abcdef";
 

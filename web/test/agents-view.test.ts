@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { whatIfProblems } from "../../packages/core/src/whatif.ts";
-import { actionWords, statusLine, WHAT_IF_EVENTS, whatIfRequest, whatIfRows } from "../src/proposals/agents-view.ts";
-import type { RiskHistory, RiskWhatIf } from "../src/proposals/proposals-api.ts";
+import { actionWords, statusLine, WHAT_IF_EVENTS, whatIfRequest, whatIfRows } from "../src/agents-view.ts";
+import type { RiskHistory, RiskWhatIf } from "../src/proposals-api.ts";
 
 const stress = (over: Partial<NonNullable<RiskWhatIf["result"]>["after"]> = {}) => ({ id: "x", label: "x", valueUsd: 100_000, lossUsd: 0, drawdownPct: 0, stableUsd: 60_000, runwayMonths: 30, floorUsd: 12_000, floorBreached: false, unfundedUsd: 0, tradable: true, reasons: [], ...over });
 

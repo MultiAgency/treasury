@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { proposalText } from "@multiagency/sdk";
-import { legText } from "../src/proposals/terms.ts";
+import { legText } from "../src/terms.ts";
 import { proposal, USDC } from "./proposals-fixtures.ts";
 
 const WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near";
