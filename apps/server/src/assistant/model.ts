@@ -1,4 +1,5 @@
 import type { Secret } from "../config.ts";
+import type { AssistantContext } from "../contract.ts";
 
 /** A JSON Schema for a tool's input, as the model is given it. */
 export type InputSchema = { type: "object"; properties?: Record<string, unknown>; required?: string[]; additionalProperties?: unknown };
@@ -15,7 +16,7 @@ export type Message =
 export type StopReason = "end_turn" | "tool_use" | "max_tokens" | "refusal";
 
 /** One request to the model: the frozen instructions, the tools and the conversation so far, the newest turn last. */
-export type ModelRequest = { system: string; tools: ToolDefinition[]; messages: Message[] };
+export type ModelRequest = { system: string; tools: ToolDefinition[]; messages: Message[]; context?: AssistantContext };
 /** What the assistant reads of an answer: its content, why it stopped, and the model that wrote it. */
 export type ModelReply = { content: (TextBlock | ToolUseBlock)[]; stop_reason: StopReason; model: string };
 

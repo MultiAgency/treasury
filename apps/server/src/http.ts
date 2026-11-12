@@ -142,7 +142,9 @@ type Call = { req: IncomingMessage; body: unknown; token: string | undefined; ac
  * What a route answers: JSON, or (`csv`) a download: the text as the platform produced it, named for the browser to save.
  * The body of a download is never read as JSON, so it carries no value.
  */
-type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string; csv?: { filename: string; text: string } };
+type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string; csv?: { filename: string; text: string };
+  /** Opened only after the route's admission and request validation, never for an authentication failure. */
+  stream?: (res: ServerResponse) => Promise<void> };
 /**
  * What an agent route needs of the account's access, beyond being admitted, as the platform's own rule for the
  * procedure it stands for (`mayCall`, so it can't drift from what the platform enforces): `read` a read; `sign` relaying
@@ -1310,14 +1312,40 @@ export const routes: Route[] = [
      * questions an hour and the assistant's platform reads an hour are limited (`rate_limited`, `platform_budget`), and
      * every question, tool call and draft is recorded in the audit log by its hashes. An agent's token can't ask.
      */
-    method: "POST", path: "/api/agents/:agent/assistant", access: "owner", needs: "read",
-    async handle({ body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals, latestRisk, riskHistory }) {
+    method: "POST", path: "/api/agents/:agent/assistant", access: "owner-fresh", needs: "read",
+    async handle({ req, body, identity, account }, { assistant, auditLog, platform, daoRequests, strategyProposals, latestRisk, riskHistory }) {
       if (!assistant) return refused(503, "assistant_not_configured");
       const input = parse(contract.assistantRequest, body);
       if (input === undefined) return refused(400, "bad_request");
       const { agent, owner, signer } = identity!;
-      const asked = await assistant.ask({ who: account!, question: input.question, history: input.history, persona: input.persona,
+      const ask = (onEvent?: (event: contract.AssistantStreamEvent) => void) => assistant.ask({ who: account!, question: input.question, history: input.history, persona: input.persona,
+        ...(input.context && { context: input.context }), ...(onEvent && { onEvent }),
         scope: { platform, organization: organizationOf(owner), agent, signer, daoRequests, strategyProposals, ...(auditLog && { auditLog }), ...(latestRisk && { latestRisk }), ...(riskHistory && { riskHistory }) } });
+      if (req.headers.accept?.split(",").some(part => part.trim().split(";")[0] === "text/event-stream")) {
+        return { status: 200, body: { ok: true, value: null }, stream: async res => {
+          res.writeHead(200, { "content-type": "text/event-stream; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-accel-buffering": "no" });
+          res.flushHeaders();
+          const emit = (event: contract.AssistantStreamEvent) => {
+            const checked = contract.assistantStreamEvent.parse(event);
+            if (!res.destroyed) res.write(`data: ${JSON.stringify(checked)}\n\n`);
+          };
+          const threadId = `assistant-${agent}-${input.persona}`, runId = randomUUID();
+          const heartbeat = setInterval(() => { if (!res.destroyed) res.write(": keep-alive\n\n"); }, 15_000);
+          heartbeat.unref();
+          try {
+            emit({ type: EventType.RUN_STARTED, threadId, runId, protocolVersion: PROTOCOL_VERSION });
+            const asked = await ask(emit);
+            if (asked.ok) emit({ type: EventType.RUN_FINISHED, threadId, runId, result: contract.assistantAnswer.parse(asked.value) });
+            else emit({ type: EventType.RUN_ERROR, code: asked.kind, message: asked.kind === "rate_limited" ? "The hourly question limit has been reached. Try again later." : "The assistant could not finish this answer. Try again later." });
+          } catch {
+            emit({ type: EventType.RUN_ERROR, code: "unavailable", message: "The assistant could not finish this answer. Try again later." });
+          } finally {
+            clearInterval(heartbeat);
+            res.end();
+          }
+        } };
+      }
+      const asked = await ask();
       if (asked.ok) return ok(asked.value);
       return asked.kind === "unavailable" ? unavailable() : refused(429, asked.kind);
     },
@@ -1732,7 +1760,8 @@ export function createServer(deps: Deps) {
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), strategyProposals: deps.strategyProposals ?? createStrategyProposals(memoryProposalRecords(), { audit: deps.audit }), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), creationReviews: creationReviews(), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
-    const send = ({ status, body, cookie, csv }: Reply) => {
+    const send = async ({ status, body, cookie, csv, stream }: Reply) => {
+      if (stream) { await stream(res); return; }
       if (csv) {
         // A file for the owner to keep: it is only ever offered as a download, never rendered as a page.
         res.writeHead(status, { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="${csv.filename}"`,
@@ -1781,7 +1810,7 @@ export function createServer(deps: Deps) {
       const admitted = await admit(found.route, call, deps, admissions);
       if (admitted && "status" in admitted) return send(admitted);
       if (call.viaToken) void context.tokens.used(call.viaToken.id);
-      send(await found.route.handle({ ...call, ...(admitted && { identity: admitted }) }, context));
+      await send(await found.route.handle({ ...call, ...(admitted && { identity: admitted }) }, context));
     } catch (error) {
       log("internal_error", { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error), path: req.url?.split("?")[0] });
       if (!res.headersSent) send(unavailable());

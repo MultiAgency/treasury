@@ -8,6 +8,7 @@ import { proposalId, proposalList } from "@multiagency/sdk";
 import { z } from "zod";
 // With their extensions: test/proposals-api.test.ts loads these modules under Node, which resolves only explicit `.ts` paths.
 import * as contract from "../../../apps/server/src/contract.ts";
+import { readAssistantStream } from "./assistant-stream.ts";
 
 /**
  * An answer the page couldn't read: the request or its reply was lost, or the reply didn't match the contract. Reading
@@ -174,6 +175,16 @@ export function proposalsApi(fetcher: typeof fetch = (input, init) => fetch(inpu
         /** A question to the treasury assistant, with the conversation's earlier turns as text: it reads, cites and drafts, never sends. */
         ask: (question: string, history: z.input<typeof contract.assistantTurn>[], persona: z.input<typeof contract.assistantPersona> = "treasury") =>
           call(contract.assistantAnswer, `${base}/assistant`, { method: "POST", body: { question, history, persona } }),
+        /** Live tool progress and computed scenario state, followed by one validated answer. Asking never writes or retries. */
+        askStream: async (question: string, history: z.input<typeof contract.assistantTurn>[], persona: z.input<typeof contract.assistantPersona> = "treasury",
+          options: { context?: AssistantContext; onEvent?: (event: AssistantStreamEvent) => void } = {}): Promise<Result<AssistantAnswer>> => {
+          const body = contract.assistantRequest.parse({ question, history, persona, ...(options.context && { context: options.context }) });
+          try {
+            const response = await fetcher(`${base}/assistant`, { method: "POST", credentials: "same-origin",
+              headers: { "content-type": "application/json", accept: "text/event-stream" }, body: JSON.stringify(body) });
+            return await readAssistantStream(response, options.onEvent);
+          } catch { return LOST; }
+        },
         /** Adopts one: saved over the strategy it was compared against, once. The grant that binds it is asked for after. */
         adoptStrategyProposal: (id: string) => call(contract.strategySaved, `${base}/strategy-proposals/${proposalRecordId.parse(id)}/adopt`, { method: "POST" }),
         /** Declines one: closed, and not proposed again by its source. */
@@ -236,6 +247,10 @@ export type StrategyProposal = z.output<typeof contract.strategyProposal>;
 export type RiskReport = z.output<typeof contract.riskReport>;
 export type RiskHistory = z.output<typeof contract.riskHistoryRead>;
 export type RiskWhatIf = z.output<typeof contract.riskWhatIfRead>;
+export type RiskWhatIfRequest = z.output<typeof contract.riskWhatIfRequest>;
+export type AssistantContext = z.output<typeof contract.assistantContext>;
+export type AssistantWhatIf = z.output<typeof contract.assistantWhatIf>;
+export type AssistantStreamEvent = z.output<typeof contract.assistantStreamEvent>;
 export type AssistantPersona = z.output<typeof contract.assistantPersona>;
 export type AssistantAnswer = z.output<typeof contract.assistantAnswer>;
 export type AssistantDraft = z.output<typeof contract.assistantDraft>;

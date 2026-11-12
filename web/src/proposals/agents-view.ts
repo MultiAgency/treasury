@@ -1,24 +1,32 @@
 // What the Agents page shows, from the server's contract: pure, so it's tested without a browser. With its extension:
 // test/agents-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { usd } from "../shared/format.ts";
-import type { RiskHistory, RiskWhatIf } from "./proposals-api.ts";
+import type { AssistantContext, RiskHistory, RiskWhatIf } from "./proposals-api.ts";
 
-/** The what-if events the page offers: each names the field it sets, its unit, a starting value and the range the core accepts. */
+/** The what-if events the page offers: each names its field, unit, starting value, exclusive minimum and inclusive maximum. */
 export const WHAT_IF_EVENTS = [
-  { id: "drop", label: "The volatile asset falls", field: "volatileDropPct", unit: "% in a day", start: "50", min: 1, max: 100 },
-  { id: "depeg", label: "The stablecoin trades at", field: "stablePrice", unit: "USD", start: "0.9", min: 0.01, max: 1.5 },
-  { id: "outage", label: "The venue is unavailable for", field: "venueOutageDays", unit: "days", start: "7", min: 1, max: 90 },
-  { id: "spend", label: "Spend runs at", field: "spendFactor", unit: "× plan", start: "2", min: 0.1, max: 20 },
-  { id: "stale", label: "Every price source is stale for", field: "staleDays", unit: "days", start: "1", min: 1, max: 30 },
+  { id: "drop", label: "The volatile asset falls", field: "volatileDropPct", unit: "% in a day", start: "50", min: 0, max: 100 },
+  { id: "depeg", label: "The stablecoin trades at", field: "stablePrice", unit: "USD", start: "0.9", min: 0, max: 1.5 },
+  { id: "outage", label: "The venue is unavailable for", field: "venueOutageDays", unit: "days", start: "7", min: 0, max: 90 },
+  { id: "spend", label: "Spend runs at", field: "spendFactor", unit: "× plan", start: "2", min: 0, max: 20 },
+  { id: "stale", label: "Every price source is stale for", field: "staleDays", unit: "days", start: "1", min: 0, max: 30 },
 ] as const;
 export type WhatIfEventId = (typeof WHAT_IF_EVENTS)[number]["id"];
+export type WhatIfRequest = NonNullable<AssistantContext["whatIf"]>;
 
 /** The request for an event and a typed value, or why it can't be asked: nothing is sent for a value that isn't a number in range. */
-export function whatIfRequest(id: WhatIfEventId, value: string): { ok: true; request: Record<string, number> } | { ok: false; why: string } {
+export function whatIfRequest(id: WhatIfEventId, value: string): { ok: true; request: WhatIfRequest } | { ok: false; why: string } {
   const event = WHAT_IF_EVENTS.find(entry => entry.id === id)!;
   const n = value.trim() === "" ? Number.NaN : Number(value);
-  if (!Number.isFinite(n) || n < event.min || n > event.max) return { ok: false, why: `Enter a number from ${event.min} to ${event.max} (${event.unit}).` };
+  if (!Number.isFinite(n) || n <= event.min || n > event.max) return { ok: false, why: `Enter a number above ${event.min} and at most ${event.max} (${event.unit}).` };
   return { ok: true, request: { [event.field]: n } };
+}
+
+/** The first event a scenario's existing controls can edit. A combined or targeted scenario keeps its full request until an edit. */
+export function whatIfSelection(request: WhatIfRequest): { event: WhatIfEventId; value: string; combined: boolean } | undefined {
+  const event = WHAT_IF_EVENTS.find(entry => request[entry.field] !== undefined);
+  if (!event) return undefined;
+  return { event: event.id, value: String(request[event.field]), combined: Object.values(request).filter(value => value !== undefined).length > 1 };
 }
 
 const months = (n: number) => `${n.toFixed(1)} months`;

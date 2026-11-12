@@ -1,19 +1,21 @@
 import { ChatCircleText, Flask, ListChecks, Robot, ShieldCheck } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { PanelTitle } from "@/components/ui/stat";
 import { ago } from "../shared/format";
 import { Badge, Button, Card, ErrorBox, Loading, QueryError, Spinner, input } from "../shared/ui";
-import { actionWords, statusLine, WHAT_IF_EVENTS, whatIfRequest, whatIfRows, type WhatIfEventId } from "./agents-view";
-import { Chat, modelFooter, STABILIZATION_EXAMPLES, TREASURY_EXAMPLES, useAssistantStatus, useHandOff } from "./assistant";
+import { actionWords, statusLine, WHAT_IF_EVENTS, whatIfRequest, type WhatIfEventId } from "./agents-view";
+import { Chat, modelFooter, STABILIZATION_EXAMPLES, TREASURY_EXAMPLES, useAssistantStatus, useConversation, useHandOff } from "./assistant";
+import { acceptWhatIf, changed, reserveWhatIf, selectWhatIf, subscribe, version, whatIfWorkspace, whatIfWorkspaces } from "./conversations";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
-import type { Identity, RiskHistory, RiskWhatIf } from "./proposals-api";
+import type { Identity, RiskHistory } from "./proposals-api";
 import type { agentReads } from "./queries";
 import { AgentRisk } from "./risk";
 import { levelView } from "./risk-view";
 import { when } from "./ui";
 import { failureText } from "./words";
+import { WhatIfResult } from "./what-if-result";
 
 type Reads = ReturnType<typeof agentReads>;
 
@@ -39,7 +41,7 @@ function Conversation({ reads, persona, examples, label, placeholder }: {
   const handOff = useHandOff(reads.name);
   if (loading) return <Loading label="Checking whether this server answers questions…" />;
   if (!ready) return <p role="status" className="text-sm text-muted-foreground">This server doesn't answer questions: no model is configured for the assistant, so there is no conversation here. The records on this page are read directly.</p>;
-  return <Chat reads={reads} persona={persona} examples={examples} inline label={label} logLabel={`${label}: conversation`} placeholder={placeholder} footer={modelFooter(model)} onOpen={handOff} />;
+  return <Chat reads={reads} persona={persona} examples={examples} inline scenarioInWorkspace label={label} logLabel={`${label}: conversation`} placeholder={placeholder} footer={modelFooter(model)} onOpen={handOff} />;
 }
 
 function StabilizationAgent({ reads }: { reads: Reads }) {
@@ -108,23 +110,37 @@ function Doing({ entries, configured }: { entries: RiskHistory["entries"]; confi
  * It reads and computes: nothing is proposed, and the platform isn't called.
  */
 function WhatIf({ reads }: { reads: Reads }) {
-  const [event, setEvent] = useState<WhatIfEventId>("drop");
-  const [value, setValue] = useState<string>(WHAT_IF_EVENTS[0].start);
+  useSyncExternalStore(subscribe, version);
+  const workspace = whatIfWorkspace(reads.name);
+  const { event, value, answer } = workspace;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [answer, setAnswer] = useState<RiskWhatIf>();
+  const { ready } = useAssistantStatus(reads);
+  const conversation = useConversation(reads, "stabilization");
   const chosen = WHAT_IF_EVENTS.find(entry => entry.id === event)!;
+  const checked = whatIfRequest(event, value);
 
   const run = async () => {
     const request = whatIfRequest(event, value);
-    setAnswer(undefined);
     if (!request.ok) { setError(request.why); return; }
+    const selected = reserveWhatIf(reads.name, true);
+    changed();
     setError(undefined);
     setBusy(true);
-    const result = await reads.agent.riskWhatIf(request.request);
+    const sent = selected.fullRequest ?? request.request;
+    const result = await reads.agent.riskWhatIf(sent);
     setBusy(false);
-    if (result.ok) setAnswer(result.value);
+    if (whatIfWorkspaces.get(reads.name)?.revision !== selected.revision) return;
+    if (result.ok) acceptWhatIf(reads.name, { event: sent, answer: result.value }, selected.revision);
     else setError(failureText(result, "read"));
+  };
+
+  const explain = () => {
+    if (!checked.ok || !ready || conversation.busy) return;
+    reserveWhatIf(reads.name, true);
+    changed();
+    void conversation.ask("Explain this scenario: what changes, and does the cash floor hold?");
+    document.getElementById("assistant-question-stabilization-inline")?.focus();
   };
 
   return <section id="what-if" aria-labelledby="what-if-title">
@@ -134,38 +150,30 @@ function WhatIf({ reads }: { reads: Reads }) {
       <form className="flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); void run(); }}>
         <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           Event
-          <select className={`${input} h-10`} value={event} disabled={busy} onChange={e => {
+          <select className={`${input} h-10 max-w-full`} value={event} disabled={busy} onChange={e => {
             const next = e.target.value as WhatIfEventId;
-            setEvent(next); setValue(WHAT_IF_EVENTS.find(entry => entry.id === next)!.start); setAnswer(undefined); setError(undefined);
+            selectWhatIf(reads.name, next, WHAT_IF_EVENTS.find(entry => entry.id === next)!.start); setError(undefined);
           }}>
             {WHAT_IF_EVENTS.map(entry => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-xs text-muted-foreground">
           Value ({chosen.unit})
-          <input className={`${input} h-10 w-28`} inputMode="decimal" value={value} disabled={busy} onChange={e => setValue(e.target.value)} />
+          <input className={`${input} h-10 w-28`} inputMode="decimal" value={value} disabled={busy} onChange={e => {
+            selectWhatIf(reads.name, event, e.target.value); setError(undefined);
+          }} />
         </label>
         <Button type="submit" variant="outline" disabled={busy}>{busy ? <Spinner /> : <Flask aria-hidden="true" />} Run what-if</Button>
       </form>
+      {workspace.fullRequest && <p className="text-xs text-muted-foreground">This scenario combines events or targets an asset or venue. Editing a control starts a single-event scenario.</p>}
+      {ready && <Button type="button" variant="outline" className="self-start" disabled={busy || conversation.busy || !checked.ok} onClick={explain}>
+        <ChatCircleText aria-hidden="true" /> Explain this scenario
+      </Button>}
       <ErrorBox error={error} />
       {answer && (answer.result ? <WhatIfResult result={answer.result} />
         : <p role="status" className="text-sm text-muted-foreground">{answer.problems.join(" ")}</p>)}
     </Card>
   </section>;
-}
-
-function WhatIfResult({ result }: { result: NonNullable<RiskWhatIf["result"]> }) {
-  return <div className="flex flex-col gap-2" role="status">
-    <p className="text-sm"><span className="font-medium">If {result.label}:</span></p>
-    <dl aria-label="What-if result" className="grid gap-2 text-sm sm:grid-cols-2">
-      {whatIfRows(result).map(row => <div key={row.term} className="rounded-lg border border-border bg-background/40 p-3">
-        <dt className="text-xs text-muted-foreground">{row.term}</dt>
-        <dd className="font-medium tabular-nums">{row.now} → {row.after}</dd>
-        <dd className="text-xs text-muted-foreground">{row.detail}</dd>
-      </div>)}
-    </dl>
-    <p className="text-xs text-muted-foreground">On the assessment recorded <time dateTime={result.basedOn.at} title={when(result.basedOn.at)}>{ago(result.basedOn.at)}</time> (log record {result.basedOn.seq}).</p>
-  </div>;
 }
 
 /**

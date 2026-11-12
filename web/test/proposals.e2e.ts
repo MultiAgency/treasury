@@ -107,6 +107,11 @@ after(async () => {
 });
 
 const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ state: "visible", timeout: 20_000 });
+/** Finish the provider's exit transition before checking the app beneath its popup. */
+async function selectTestWallet(selectedPage = page) {
+  await selectedPage.getByText("Local test wallet", { exact: true }).click();
+  await selectedPage.getByText("Select wallet", { exact: true }).waitFor({ state: "detached" });
+}
 const axe = async () => (await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze()).violations
   .map(v => `${v.id} (${v.impact}): ${v.nodes.map(n => n.target.join(" ")).join(", ")}`);
 const dialog = (name: string) => page.getByRole("dialog", { name });
@@ -118,7 +123,10 @@ const here = (path = "") => `${origin}/agents/${target.agent}${path}`;
 async function signInIfAsked(shown: ReturnType<Page["getByRole"]>) {
   const signIn = page.getByRole("button", { name: "Sign in with wallet" }).or(page.getByRole("main").getByRole("button", { name: "Connect wallet" })).first();
   await signIn.or(shown).first().waitFor({ timeout: 20_000 });
-  if (await signIn.isVisible()) await signIn.click();
+  if (await signIn.isVisible()) {
+    await signIn.click();
+    await selectTestWallet();
+  }
   await visible(shown);
 }
 
@@ -243,6 +251,89 @@ async function propose(requestId: string): Promise<ProposalView> {
   return made.value as ProposalView;
 }
 
+test("a failed root session read stays visible without a retry loop and Check again recovers it", { timeout: 60_000 }, async t => {
+  for (const failure of [
+    { status: 503, body: { ok: false, kind: "unavailable" }, text: "The Treasury server or the platform didn't answer. Reading again is safe." },
+    { status: 429, body: { ok: false, kind: "refused", code: "rate_limited" }, text: "Too many requests from this account. Wait a minute, then try again." },
+  ]) await t.test(`HTTP ${failure.status}`, async t => {
+    const rootPage = await page.context().newPage();
+    let reads = 0, recovered = false;
+    const setup = `${origin}/api/setup`;
+    const respond = async (route: Route) => {
+      if (route.request().method() !== "GET") return route.continue();
+      reads++;
+      await route.fulfill(recovered ? { json: { ok: true, value: { account: owner, agents: [] } } }
+        : { status: failure.status, json: failure.body });
+    };
+    t.after(async () => { await rootPage.goto("about:blank"); await rootPage.unrouteAll({ behavior: "wait" }); await rootPage.close(); });
+    await rootPage.route(setup, respond);
+    await rootPage.goto(`${origin}/`);
+    // Observe a quiet interval: the shell and root page share this read, and mounting the error page must not read again.
+    await rootPage.waitForTimeout(750);
+    assert.equal(reads, 1, "the failed session read must settle instead of remounting and requesting it repeatedly");
+    const error = rootPage.getByRole("alert").filter({ hasText: failure.text });
+    await visible(error);
+    await visible(error.getByRole("button", { name: "Check again", exact: true }));
+    assert.equal(await rootPage.getByText("Checking your session…", { exact: true }).count(), 0);
+
+    // Browser-history navigation preserves the query cache; a document reload would conceal observer-mount retries.
+    await rootPage.evaluate(() => { history.pushState({}, "", "/missing-session-test"); dispatchEvent(new PopStateEvent("popstate", { state: history.state })); });
+    await visible(rootPage.getByRole("heading", { name: "Page not found", exact: true }));
+    assert.equal(reads, 1, "leaving the root does not retry its failed read");
+    await rootPage.getByRole("main").getByRole("link", { name: "Your treasuries", exact: true }).click();
+    await visible(error);
+    await rootPage.waitForTimeout(750);
+    assert.equal(reads, 2, "returning checks once and the failed page stays mounted without further retries");
+
+    recovered = true;
+    await error.getByRole("button", { name: "Check again", exact: true }).click();
+    await visible(rootPage.getByRole("heading", { name: "Set up your Treasury", exact: true }));
+    await visible(rootPage.getByText(`Signed in as ${owner}`));
+    await rootPage.waitForLoadState("networkidle");
+    assert.equal(reads, 3, "Check again makes one explicit read and recovers the page");
+    assert.equal(await error.count(), 0, "recovery replaces the error");
+  });
+});
+
+test("signing in offers wallet selection even when one account is already connected", { timeout: 60_000 }, async t => {
+  const switchPage = await page.context().newPage();
+  t.after(async () => {
+    await switchPage.request.delete(`${origin}/api/session`, { headers: { Origin: origin } });
+    await switchPage.close();
+  });
+  await switchPage.goto(here());
+  await visible(switchPage.getByRole("heading", { level: 2, name: "Sign in", exact: true }));
+  // The saved provider still has one account after the app's server session ends. It must not silently sign again.
+  await switchPage.evaluate(() => {
+    const state = window as unknown as { __cachedWalletSignatures?: number };
+    state.__cachedWalletSignatures = 0;
+    const accounts = [{ accountId: "previous-owner.near" }];
+    const wallet = {
+      manifest: { id: "cached-test-wallet", name: "Previously connected wallet", type: "injected", icon: "data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\"/>", features: { signMessage: true } },
+      signIn: async () => accounts, getAccounts: async () => accounts, signOut: async () => { throw new Error("The provider did not disconnect"); },
+      signMessage: async () => { state.__cachedWalletSignatures!++; throw new Error("The previously connected account was asked to sign"); },
+    };
+    window.addEventListener("near-selector-ready", () => window.dispatchEvent(new CustomEvent("near-wallet-injected", { detail: wallet })));
+    localStorage.setItem("proposals:selected-wallet:mainnet", "cached-test-wallet");
+  });
+  await switchPage.getByRole("button", { name: "Sign in with wallet", exact: true }).click();
+  const chooser = switchPage.getByText("Select wallet", { exact: true });
+  await chooser.or(switchPage.getByRole("alert").filter({ hasText: /\S/ })).first().waitFor();
+  assert.equal(await chooser.isVisible(), true, `a cached single-account provider must not bypass wallet selection: ${await switchPage.getByRole("alert").allTextContents()}`);
+  assert.equal(await switchPage.evaluate(() => (window as unknown as { __cachedWalletSignatures?: number }).__cachedWalletSignatures), 0);
+  await selectTestWallet(switchPage);
+  await visible(switchPage.getByText(`Signed in as ${owner}`));
+
+  await switchPage.getByRole("button", { name: "Sign out", exact: true }).click();
+  await visible(switchPage.getByRole("heading", { level: 2, name: "Sign in", exact: true }));
+  await switchPage.goto(`${origin}/`);
+  await switchPage.getByRole("main").getByRole("button", { name: "Connect wallet", exact: true }).first().click();
+  await visible(chooser);
+  await switchPage.keyboard.press("Escape");
+  await visible(switchPage.getByRole("alert").filter({ hasText: "User rejected" }));
+  assert.equal((await switchPage.request.get(`${origin}/api/setup`)).status(), 401, "cancelling wallet selection leaves the app signed out");
+});
+
 test("the owner signs in with their wallet, connects the agent with a consent they read first, and sees no proposals yet", { timeout: 120_000 }, async () => {
   await page.goto(here());
   assert.equal(await page.title(), "Treasury proposals · Home");
@@ -250,6 +341,7 @@ test("the owner signs in with their wallet, connects the agent with a consent th
   await visible(page.getByRole("heading", { level: 2, name: "Sign in" }));
   assert.deepEqual(await axe(), [], "signed out");
   await page.getByRole("button", { name: "Sign in with wallet" }).click();
+  await selectTestWallet();
   await visible(page.getByText(`Signed in as ${owner}`));
 
   const connection = page.getByRole("region", { name: "Connection" });
@@ -394,9 +486,11 @@ test("signed out, the root is the landing outside the app's shell, passes an axe
   // A wallet that refuses: the sign-in's own words, and the button offered again.
   await page.evaluate(() => { (window as unknown as { __refuseNext?: boolean }).__refuseNext = true; });
   await connect.click();
+  await selectTestWallet();
   await visible(page.getByRole("alert").filter({ hasText: "The wallet didn't sign: The wallet refused the signature" }));
   assert.deepEqual(await axe(), [], "the landing, with the refusal");
   await connect.click();
+  await selectTestWallet();
   await visible(page.getByRole("list", { name: "Your treasuries" }));
   await visible(page.getByRole("heading", { level: 1, name: "Your treasuries", exact: true }));
   assert.equal(await page.getByRole("heading", { name: "Your treasury. Your limits." }).count(), 0, "signed in, the landing is gone");
@@ -917,7 +1011,7 @@ test("the Agents page shows the stabilization agent and the NEAR agent, each wit
   // A value the core would refuse isn't sent.
   await page.getByLabel(/^Value/).fill("500");
   await page.getByRole("button", { name: "Run what-if" }).click();
-  await visible(page.getByRole("alert").filter({ hasText: /Enter a number from 1 to 100/ }));
+  await visible(page.getByRole("alert").filter({ hasText: /Enter a number above 0 and at most 100/ }));
 
   // The stabilization agent answers from its records, citing them, and declines what isn't forward risk.
   const risk = page.getByRole("textbox", { name: "Ask the stabilization agent" });
