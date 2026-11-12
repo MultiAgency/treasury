@@ -4,6 +4,9 @@ import type { ChainRecord } from "./chain.ts";
 import type { WatchPlatform } from "./platform.ts";
 import type { RiskEntry, StoredRisk } from "./risk.ts";
 
+export class AssessmentBusy extends Error {}
+export const MAX_ACTIVE_ASSESSMENTS = 8;
+
 /** Explicit local recording: only platform reads, no watcher or proposal capability. */
 export function createAssessment({ platform, history, states, audit, now = Date.now }: {
   platform: Pick<WatchPlatform, "overview" | "autopilot">;
@@ -11,10 +14,15 @@ export function createAssessment({ platform, history, states, audit, now = Date.
   audit: { appendRecord(entry: RiskEntry): Promise<ChainRecord<RiskEntry>> };
   now?: () => number;
 }) {
-  let queue: Promise<unknown> = Promise.resolve();
-  return (organization: string, agent: string, terms: BallastSettings): Promise<StoredRisk | null> => {
-    const run = queue.then(async () => {
-      const [overview, autopilot] = await Promise.all([platform.overview(organization, agent), platform.autopilot(organization, agent)]);
+  const active = new Set<string>();
+  return async (organization: string, agent: string, terms: BallastSettings): Promise<StoredRisk | null> => {
+    if (active.has(organization) || active.size >= MAX_ACTIVE_ASSESSMENTS) throw new AssessmentBusy("assessment capacity unavailable");
+    active.add(organization);
+    try {
+      const reads = await Promise.allSettled([platform.overview(organization, agent), platform.autopilot(organization, agent)]);
+      const [overviewRead, autopilotRead] = reads;
+      if (overviewRead.status === "rejected" || autopilotRead.status === "rejected") throw new Error("assessment prerequisites unavailable");
+      const overview = overviewRead.value, autopilot = autopilotRead.value;
       if (!overview.ok || !autopilot.ok) throw new Error("assessment prerequisites unavailable");
       if (!terms.diversification && overview.value.book.some(row =>
         row.asset !== PROPOSAL_ASSETS.wNEAR && row.asset !== PROPOSAL_ASSETS.USDC)) return null;
@@ -34,8 +42,6 @@ export function createAssessment({ platform, history, states, audit, now = Date.
       const decide = terms.diversification ? engine.decideDiversified : engine.decide;
       await decide(organization, agent, terms, overview.value, 1, {}, autopilot.value.on, true);
       return recorded;
-    });
-    queue = run.catch(() => {});
-    return run;
+    } finally { active.delete(organization); }
   };
 }

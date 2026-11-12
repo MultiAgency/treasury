@@ -105,3 +105,17 @@ test("explicit assessment is owner scoped, origin protected and reports no propo
   assert.deepEqual(calls, ["owner--near/portfolio"]);
   assert.ok(fake.calls.every(call => call.startsWith("identity ")), fake.calls.join());
 });
+
+test("assessment capacity exhaustion is retryable and returns no success record", async t => {
+  const { AssessmentBusy } = await import("../src/assessment.ts");
+  const { ORIGIN } = await import("./fakes.ts");
+  const fake = fakePlatform({ portfolio: "owner.near" });
+  const w = await testServer({ platform: fake.platform, wallets: [owner], recordRisk: async () => { throw new AssessmentBusy("busy"); } });
+  t.after(() => w.server.close());
+  const cookie = await w.signIn(owner);
+  const response = await fetch(`${w.base}/api/agents/portfolio/risk/assess`, { method: "POST",
+    headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify({ profile: "balanced", monthlySpendUsd: 2000, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"] }) });
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { ok: false, kind: "refused", code: "assessment_busy" });
+});

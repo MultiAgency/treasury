@@ -1,3 +1,4 @@
+import { AssessmentBusy } from "./assessment.ts";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { EventType } from "@ag-ui/core";
@@ -1206,8 +1207,12 @@ export const routes: Route[] = [
       if (input === undefined) return refused(400, "bad_request");
       if (!recordRisk) return unavailable();
       const { owner, agent } = identity!;
-      const found = await relay(async () => ({ ok: true as const, value: await recordRisk(organizationOf(owner), agent, input) }), agent);
+      const found = await relay(async () => ({ ok: true as const, value: await recordRisk(organizationOf(owner), agent, input).catch(error => {
+        if (error instanceof AssessmentBusy) return "busy" as const;
+        throw error;
+      }) }), agent);
       if (!found.ok) return readFailure(found, agent, "risk/assess");
+      if (found.value === "busy") return refused(429, "assessment_busy");
       return found.value ? ok({ risk: riskReportOf(found.value), proposed: false }) : refused(409, "assessment_unavailable");
     },
   },

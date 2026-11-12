@@ -113,3 +113,63 @@ test("DAO assessment requires a current authorized member and records the DAO sc
   assert.equal((await post(cookie)).status, 403);
   assert.equal(w.audit.head().seq, 1);
 });
+
+test("a slow owner does not prevent another owner's platform reads from starting", async () => {
+  const w = await world();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const started: string[] = [];
+  const assess = createAssessment({ ...w, now: () => at, platform: { ...w.platform,
+    overview: async (organization, agent) => {
+      started.push(organization);
+      if (organization === "slow") await gate;
+      return w.platform.overview(organization, agent);
+    },
+  } });
+  const slow = assess("slow", "agent", terms);
+  const fast = assess("fast", "agent", terms);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  const fastStarted = started.includes("fast");
+  release();
+  await Promise.all([slow, fast]);
+  assert.equal(fastStarted, true, "another owner's read must start before the slow owner completes");
+});
+
+test("busy admission is bounded per owner and globally, with no queued reads", async () => {
+  const { AssessmentBusy, MAX_ACTIVE_ASSESSMENTS } = await import("../src/assessment.ts");
+  const w = await world();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let reads = 0;
+  const assess = createAssessment({ ...w, now: () => at, platform: { ...w.platform,
+    overview: async (organization, agent) => { reads++; await gate; return w.platform.overview(organization, agent); },
+  } });
+  const running = Array.from({ length: MAX_ACTIVE_ASSESSMENTS }, (_, i) => assess(`owner-${i}`, "agent", terms));
+  try {
+    await assert.rejects(assess("owner-0", "another-agent", terms), AssessmentBusy);
+    await assert.rejects(assess("overflow", "agent", terms), AssessmentBusy);
+    assert.equal(reads, MAX_ACTIVE_ASSESSMENTS);
+  } finally { release(); await Promise.all(running); }
+  assert.ok(await assess("overflow", "agent", terms), "capacity is released after success");
+});
+
+test("capacity is released after refusal and failure, and waits for both reads to settle", async () => {
+  const { AssessmentBusy } = await import("../src/assessment.ts");
+  const w = await world();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const assess = createAssessment({ ...w, now: () => at, platform: { ...w.platform,
+    overview: async () => { throw new Error("network"); },
+    autopilot: async (...args) => { await gate; return w.platform.autopilot(...args); },
+  } });
+  const failed = assess("owner", "agent", terms);
+  const rejected = assert.rejects(failed, /prerequisites/);
+  await new Promise<void>(resolve => setImmediate(resolve));
+  await assert.rejects(assess("owner", "another", terms), AssessmentBusy);
+  release();
+  await rejected;
+  await assert.rejects(assess("owner", "agent", terms), /prerequisites/);
+  w.book[0]!.priceExpiresAt = "";
+  assert.equal(await w.assess("owner", "agent", terms), null);
+  assert.equal(await w.assess("owner", "agent", terms), null);
+});
