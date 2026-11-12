@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRunNowGuard } from "../src/run-now-guard.ts";
-import { proposalsApi, type Result } from "../src/proposals-api.ts";
-import { fail, lost, ok, scripted } from "./proposals-fixtures.ts";
+import { serverApi, type Result } from "../src/server-api.ts";
+import { fail, lost, ok, scripted } from "./server-fixtures.ts";
 
 type Reply = Result<{ summary: string }>;
 const success: Reply = { ok: true, value: { summary: "Ran: nothing to rebalance." } };
@@ -34,7 +34,7 @@ test("lost, unavailable and malformed tick replies keep their hold rather than s
     ok({ summary: 42 }), ok({ summary: "Ran", unexpected: true }),
     () => Response.json({ ok: false, kind: "unrecognized" })];
   for (const answer of cases) {
-    const guard = createRunNowGuard(), server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+    const guard = createRunNowGuard(), server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
     server.answer("POST /api/agents/portfolio/autopilot/tick", answer);
     const result = await guard.run("portfolio", agent.runNow);
     assert.equal(result?.ok, false);
@@ -56,7 +56,7 @@ test("a thrown run call is also unknown and cannot be repeated", async () => {
 
 test("a parsed tick reply releases its hold without guessing execution outcomes from its summary", async () => {
   for (const summary of ["Ran: nothing to rebalance.", "Skipped: autopilot paused.", "Failed: unresolved operation."]) {
-    const guard = createRunNowGuard(), server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+    const guard = createRunNowGuard(), server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
     server.answer("POST /api/agents/portfolio/autopilot/tick", ok({ summary }));
     assert.deepEqual(await guard.run("portfolio", agent.runNow), { ok: true, value: { summary } });
     assert.equal(guard.hold("portfolio"), undefined, "the attempt answered; platform records still guard unresolved money operations");
@@ -67,7 +67,7 @@ test("parsed admission and policy refusals allow an explicit retry without an au
   for (const [failure, status] of [[{ kind: "not_signed_in" }, 401], [{ kind: "not_owner" }, 403],
     [{ kind: "refused", code: "not_connected" }, 409], [{ kind: "refused", code: "autopilot_refused" }, 409],
     [{ kind: "refused", code: "platform_rate_limited" }, 429]] as const) {
-    const guard = createRunNowGuard(), server = scripted(), agent = proposalsApi(server.fetcher).agent("portfolio");
+    const guard = createRunNowGuard(), server = scripted(), agent = serverApi(server.fetcher).agent("portfolio");
     server.answer("POST /api/agents/portfolio/autopilot/tick", fail(failure, status), ok(success.value));
     assert.equal((await guard.run("portfolio", agent.runNow))?.ok, false);
     assert.equal(guard.hold("portfolio"), undefined);

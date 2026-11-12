@@ -1,6 +1,6 @@
 // What the Activity page shows (#136), from the owner reads: pure, so it's tested without a browser.
 // With its extensions: test/activity-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
-import type { ActivityRead, RecordingRead } from "./proposals-api.ts";
+import type { ActivityRead, RecordingRead } from "./server-api.ts";
 import { actionPhase, outcomeOf, type OwnerActionRecord } from "../../apps/server/src/owner-action.ts";
 
 /** Rows to a page: `activity` answers every row at once, and the browser pages through them (no further reads). */

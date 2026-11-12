@@ -11,7 +11,7 @@ import { askConversation } from "./conversation-request";
 import { busyKeys, conversationKey, conversations, NONE, subscribe, toolProgress, version } from "./conversations";
 import { SwapPreview } from "./assistant-note";
 import { AGENT_PAGES, agentAddress, type AgentPage } from "./pages";
-import type { AssistantAnswer, AssistantDraft, AssistantPersona } from "./proposals-api";
+import type { AssistantAnswer, AssistantDraft, AssistantPersona } from "./server-api";
 import { agentReads, assistantStatus } from "./queries";
 import { WhatIfResult } from "./what-if-result";
 import { when } from "./ui";

@@ -8,7 +8,7 @@ import { useWaiting } from "./owner-flow";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
-import type { GrantPrepared, Identity, StrategyRead } from "./proposals-api";
+import type { GrantPrepared, Identity, StrategyRead } from "./server-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";

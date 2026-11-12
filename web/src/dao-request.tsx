@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { Button, errorMessage } from "./shared/ui";
-import type { DaoRequest } from "./proposals-api";
+import type { DaoRequest } from "./server-api";
 import { when } from "./ui";
 import { file, WrongAccount } from "./wallet";
 

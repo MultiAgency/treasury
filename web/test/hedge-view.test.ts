@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hedgeRead } from "../../apps/server/src/contract.ts";
 import { BLOCK_LABEL, intentsLine, moveRows, planNote, priceText, registryRows } from "../src/hedge-view.ts";
-import type { HedgeRead } from "../src/proposals-api.ts";
+import type { HedgeRead } from "../src/server-api.ts";
 
 const row = (symbol: string, change: Partial<HedgeRead["registry"][number]> = {}): HedgeRead["registry"][number] =>
   ({ symbol, id: `nep141:${symbol}`, class: "volatile", chain: "eth", route: "omft", venues: ["near-intents", "omft-ethereum"], proposable: false, listed: true, priceUsd: 4018.56, heldUsd: 0, drift: [], ...change });

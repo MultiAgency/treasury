@@ -2,7 +2,7 @@ import { mayCall } from "@multiagency/sdk";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button, CopyButton, ErrorBox, input, Loading, QueryError, Spinner } from "./shared/ui";
-import type { Identity } from "./proposals-api";
+import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";
 import { failureText } from "./words";

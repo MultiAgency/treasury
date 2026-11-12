@@ -1,4 +1,4 @@
-import type { Creation, Identity } from "./proposals-api.ts";
+import type { Creation, Identity } from "./server-api.ts";
 
 /** The provider recipient may differ from the host: bind the hosting origin separately from the exact signing payload. */
 export function creationMatches(creation: Creation, identity: Identity): boolean {

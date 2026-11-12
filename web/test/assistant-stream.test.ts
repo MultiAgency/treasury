@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readAssistantStream } from "../src/assistant-stream.ts";
-import { proposalsApi, type AssistantStreamEvent } from "../src/proposals-api.ts";
+import { serverApi, type AssistantStreamEvent } from "../src/server-api.ts";
 
 const answer = { answer: "Runway holds — $60,000 remains.", sources: [], drafts: [], model: "rules" };
 const start = { type: "RUN_STARTED", threadId: "treasury", runId: "run-1" };
@@ -65,7 +65,7 @@ test("stream errors use codes, and pre-stream JSON admission failures retain the
 
 test("askStream sends only the selected scenario and text history, same-origin, once", async () => {
   const sent: { path: string; init: RequestInit }[] = [];
-  const api = proposalsApi(async (path, init) => {
+  const api = serverApi(async (path, init) => {
     sent.push({ path: String(path), init: init! });
     return sse(encode(start) + encode(finish));
   });
@@ -78,6 +78,6 @@ test("askStream sends only the selected scenario and text history, same-origin, 
   await assert.rejects(api.agent("portfolio").askStream("Explain", [], "stabilization", { context: { whatIf: { balance: 10 } } as never }));
   assert.equal(sent.length, 1, "invalid context never reaches the server");
   let calls = 0;
-  assert.deepEqual(await proposalsApi(async () => { calls++; throw new Error("connection closed"); }).agent("portfolio").askStream("What if?", []), { ok: false, kind: "lost" });
+  assert.deepEqual(await serverApi(async () => { calls++; throw new Error("connection closed"); }).agent("portfolio").askStream("What if?", []), { ok: false, kind: "lost" });
   assert.equal(calls, 1, "a lost stream is never automatically retried");
 });

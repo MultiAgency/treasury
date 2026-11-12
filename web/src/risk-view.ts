@@ -1,7 +1,7 @@
 // What the agent's forward risk report shows, from the server's contract (#220): pure, so it's tested without a browser.
 // With its extension: test/risk-view.test.ts loads this module under Node, which resolves only explicit `.ts` paths.
 import { symbolOf, usd } from "./shared/format.ts";
-import type { RiskReport } from "./proposals-api.ts";
+import type { RiskReport } from "./server-api.ts";
 
 /** A level's wording and tone: never colour alone, and the explanation says what the level does to trades. */
 export type LevelView = { label: string; tone: "success" | "info" | "warning" | "destructive"; explanation: string };

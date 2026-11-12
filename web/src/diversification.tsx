@@ -4,7 +4,7 @@ import { DataTable, td, th, TokenChip, tr, ValuePill } from "@/components/ui/dat
 import { usd } from "./shared/format";
 import { Badge, Card, Loading, QueryError } from "./shared/ui";
 import { assetColors } from "./book";
-import type { DiversificationRead } from "./proposals-api";
+import type { DiversificationRead } from "./server-api";
 import { Hedge } from "./hedge";
 import { CAP_CAVEAT, holdingViews, phaseViews, sourceText, stableViews, venueViews } from "./diversification-view";
 import type { agentReads } from "./queries";

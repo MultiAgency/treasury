@@ -1,6 +1,6 @@
-// The proposals page, served by the app server, on its own fresh stack (platform at PLATFORM_COMMIT, `--treasury --app`):
+// The app, served by the app server, on its own fresh stack (platform at PLATFORM_COMMIT, `--treasury --app`):
 // it records operations, so no other test shares the stack. The app server runs in-process against the stack's gateway
-// with its operator-issued `tap_` credential and serves the proposals page's build (`dist/`). The owner's wallet is near-connect's
+// with its operator-issued `tap_` credential and serves the app's build (`dist/`). The owner's wallet is near-connect's
 // injected-wallet interface, as the platform's own specs install it (`test/e2e/wallet.mjs`), signing through the stack's
 // `signOwner` control; the stack doesn't publish its chain RPC, so the server's key check is a stand-in for the owner's key.
 import { after, before, test } from "node:test";
@@ -26,7 +26,7 @@ import { createPlatform } from "../../apps/server/src/platform.ts";
 import { createSessions } from "../../apps/server/src/sessions.ts";
 import { createSignIn } from "../../apps/server/src/signin.ts";
 import { signOnConfirmPage } from "./confirm-page.ts";
-import type { Creation } from "../src/proposals-api.ts";
+import type { Creation } from "../src/server-api.ts";
 import { ETH, fundPublic, setTargets, signOwner, signOwnerDelegate, stackFetch, startStack, USDC, WNEAR, type Stack } from "../../scripts/stack.ts";
 import { tempDir } from "../../scripts/temp-dirs.ts";
 

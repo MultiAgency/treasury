@@ -3,7 +3,7 @@ import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { actionPhase, isFinal, outcomeOf, statusText, type OwnerOutcome, type OwnerStatus, type PhaseWords } from "../../apps/server/src/owner-action.ts";
 import { ErrorBox, errorMessage } from "./shared/ui";
 import { waitingOn } from "./freeze-view";
-import type { Identity, OwnerActionPrepared, Result } from "./proposals-api";
+import type { Identity, OwnerActionPrepared, Result } from "./server-api";
 import type { agentReads } from "./queries";
 import { when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";

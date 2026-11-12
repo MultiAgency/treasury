@@ -20,7 +20,7 @@ Three distinctions matter for the remaining work:
 
 | Part | Client | What it does through the SDK |
 |---|---|---|
-| Browser app (`web/src/`) | No SDK network client; same-origin `/api/` calls through `proposals-api.ts` | Parses app-server answers and uses SDK schemas, signing text and funding helpers; the wallet signs the reviewed text or transaction |
+| Browser app (`web/src/`) | No SDK network client; same-origin `/api/` calls through `server-api.ts` | Parses app-server answers and uses SDK schemas, signing text and funding helpers; the wallet signs the reviewed text or transaction |
 | App server (`apps/server/`) | `appClient` on `/apps/v1` with the deployment's `tap_` credential | Identity, setup, consents, owner reads/actions, strategy and autopilot, funding, proposals and their execution, DAO coordination |
 | `watch` and Ballast integration | The server's platform wrapper over `appClient` | Reads the book and strategy, evaluates the engine, records decisions and creates proposals with exact raw-unit legs |
 | Engines (`packages/core/`) | None | Pure oracle, bands, sizing, whipsaw, policy, levels, detectors, mandate, risk, multi-sleeve evaluation and replay logic |

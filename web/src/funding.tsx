@@ -13,7 +13,7 @@ import { ago, fromUnits, linkedBalances, toUnits, units, usd } from "./shared/fo
 import { totalUsd } from "./shared/prices";
 import { Badge, Button, Card, CopyButton, ErrorBox, errorMessage, input, Loading, QueryError, Spinner } from "./shared/ui";
 import { assetColors } from "./book";
-import type { DepositRead, Identity, OverviewRead, TreasuryRead } from "./proposals-api";
+import type { DepositRead, Identity, OverviewRead, TreasuryRead } from "./server-api";
 import type { agentReads } from "./queries";
 import { Sweep } from "./sweep";
 import { ReviewDialog, when } from "./ui";

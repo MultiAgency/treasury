@@ -7,7 +7,7 @@ import { confirmDiscard, useDirtyDraft } from "./shared/dirty-draft";
 import { Field, FieldGroup, focusInvalid } from "./shared/form";
 import { symbolOf } from "./shared/format";
 import { Button, Details, ErrorBox, Spinner } from "./shared/ui";
-import type { AssistantDraft, StrategyRead } from "./proposals-api";
+import type { AssistantDraft, StrategyRead } from "./server-api";
 import type { agentReads } from "./queries";
 import { StrategyTerms } from "./strategy-terms";
 import { failureText } from "./words";

@@ -1,7 +1,7 @@
 import type { OwnerFailure, OwnerOutput } from "@multiagency/sdk";
 import { sweepActivity, SWEEP_ACTIVITY } from "../../apps/server/src/contract.ts";
 import { settle, type Outcome } from "./shared/execution-outcome.ts";
-import type { SweepRun } from "./proposals-api.ts";
+import type { SweepRun } from "./server-api.ts";
 
 type Activity = ReturnType<typeof sweepActivity.parse>;
 

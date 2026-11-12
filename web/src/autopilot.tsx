@@ -7,7 +7,7 @@ import { Kv, KvGrid } from "@/components/ui/kv-grid";
 import { Step, Stepper, type StepState } from "@/components/ui/stepper";
 import { ago } from "./shared/format";
 import { Badge, Button, Card, CopyButton, Details, ErrorBox, Loading, QueryError, Spinner } from "./shared/ui";
-import type { AssistantDraft, Identity } from "./proposals-api";
+import type { AssistantDraft, Identity } from "./server-api";
 import { useTakeDraft } from "./assistant-drafts";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { Grant } from "./grant";

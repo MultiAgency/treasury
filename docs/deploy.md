@@ -1,6 +1,6 @@
 # Deploying the app server
 
-The Treasury app server, with the proposals page it serves, runs on Railway: project `treasury`, environment
+The Treasury app server, with the app it serves, runs on Railway: project `treasury`, environment
 `production`, one service `server`, built from this repository's `Dockerfile` with the settings in
 `.railway/railway.ts`. It talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners
 and funds. When the platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
@@ -99,7 +99,7 @@ CNAME for `<host>` at the domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to i
 Read-only, from outside:
 
 - `GET https://<host>/api/health` answers `{"ok":true,"value":{"status":"up"}}`.
-- `GET https://<host>/` is the proposals page, with `cache-control: no-store` and `x-frame-options: DENY`.
+- `GET https://<host>/` is the app, with `cache-control: no-store` and `x-frame-options: DENY`.
 - `POST https://<host>/api/session/challenge` without an `Origin` is 403; with `Origin: https://<host>` it issues a
   challenge whose recipient is `<host>`.
 - The deploy log starts with `secret_file_written` for the credential, then `listening`, never `Invalid configuration`.

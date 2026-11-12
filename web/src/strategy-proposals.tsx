@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { SectionHeader } from "@/components/ui/action-row";
 import { Badge, Button, Card, ErrorBox, QueryError, Spinner } from "./shared/ui";
-import type { Identity, StrategyProposal, StrategyRead } from "./proposals-api";
+import type { Identity, StrategyProposal, StrategyRead } from "./server-api";
 import { sourceName, strategyRows } from "./strategy-proposals-view";
 import type { agentReads } from "./queries";
 import { ReviewDialog, when } from "./ui";

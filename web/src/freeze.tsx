@@ -11,7 +11,7 @@ import { stopControls } from "./freeze-view";
 import { useOwnerFlow } from "./owner-flow";
 import { PageLink } from "./nav";
 import { agentAddress, place } from "./pages";
-import type { Identity } from "./proposals-api";
+import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
 import type { PhaseWords } from "../../apps/server/src/owner-action.ts";
 import { ReviewDialog } from "./ui";

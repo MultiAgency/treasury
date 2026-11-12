@@ -61,7 +61,7 @@ const HOLD_DETAIL: Record<HoldReason, string> = {
   "unresolved-operations": "the agent has unresolved operations: nothing is proposed until they are resolved",
   "autopilot-on": "autopilot is on: two proposers on one agent would race, so watch waits",
   "policy-not-in-force": "the policy isn't in force: nothing is proposed until it is",
-  "consent-ended": "the owner's consent for this app has ended: they connect again on the proposals page",
+  "consent-ended": "the owner's consent for this app has ended: they connect again in the app",
 };
 
 /** Drift a rebalance can act on: the largest gap in points of the total, and the first leg it would move. */
@@ -190,7 +190,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
     }
     state.stopped = { reason: "not connected", resumable: true };
     await settleHold(watched, "consent-ended", event);
-    return event({ stopped: state.stopped.reason, note: "the owner's consent for this app has ended: they connect again on the proposals page" });
+    return event({ stopped: state.stopped.reason, note: "the owner's consent for this app has ended: they connect again in the app" });
   };
 
   /**

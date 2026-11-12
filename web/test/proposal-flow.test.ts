@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { proposalText, type ProposalView } from "@multiagency/sdk";
 import { checkVerdict } from "../../apps/server/src/proposals.ts";
 import { execute, executeOffered, heldAfter, review, shownAfter, signVerdict, verdictOffered, verdictText } from "../src/proposal-flow.ts";
-import { proposalsApi, type SignRequest } from "../src/proposals-api.ts";
-import { fail, ID, lost, ok, proposal, refused, scripted } from "./proposals-fixtures.ts";
+import { serverApi, type SignRequest } from "../src/server-api.ts";
+import { fail, ID, lost, ok, proposal, refused, scripted } from "./server-fixtures.ts";
 
 const READ = `GET /api/agents/portfolio/proposals/${ID}`, EXECUTE = `POST /api/agents/portfolio/proposals/${ID}/execute`;
 const APPROVE = `POST /api/agents/portfolio/proposals/${ID}/approve`;
 const HOST = "platform.test", OWNER = "owner.near", KEY = `ed25519:${"1".repeat(44)}`;
-const setup = () => { const server = scripted(); return { server, agent: proposalsApi(server.fetcher).agent("portfolio") }; };
+const setup = () => { const server = scripted(); return { server, agent: serverApi(server.fetcher).agent("portfolio") }; };
 /** A wallet that signs as `account` and records what it was asked to sign. */
 const walletFor = (account = OWNER) => {
   const asked: SignRequest[] = [];

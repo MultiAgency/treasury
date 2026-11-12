@@ -1,6 +1,6 @@
 import type { ProposalState } from "@multiagency/sdk";
 import type { Outcome } from "./shared/execution-outcome.ts";
-import type { Failure } from "./proposals-api.ts";
+import type { Failure } from "./server-api.ts";
 import type { PhaseWords } from "../../apps/server/src/owner-action.ts";
 
 /** Where a failure happened: the same code reads differently for a sign-in and a proposal (`expired`). */

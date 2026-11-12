@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import type { DiversificationRead } from "../src/proposals-api.ts";
+import type { DiversificationRead } from "../src/server-api.ts";
 import { holdingViews, phaseViews, sourceText, stableViews, venueViews } from "../src/diversification-view.ts";
 
 const read: DiversificationRead = {

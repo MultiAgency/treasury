@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { policyUpdateRequest } from "../../apps/server/src/contract.ts";
-import type { OverviewRead } from "./proposals-api.ts";
+import type { OverviewRead } from "./server-api.ts";
 
 type ReviewedPolicy = z.input<typeof policyUpdateRequest>["expectedPolicy"];
 

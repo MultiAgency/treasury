@@ -1,7 +1,7 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { blockShield, forgetGrant, keepGrant, keptGrant, resetKeptOutcomes, shieldBlocked } from "../src/kept-outcomes.ts";
-import type { GrantPrepared } from "../src/proposals-api.ts";
+import type { GrantPrepared } from "../src/server-api.ts";
 
 beforeEach(() => resetKeptOutcomes());
 

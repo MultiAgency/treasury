@@ -5,7 +5,7 @@
 import { bindingWindow, PERIOD } from "./shared/budget.ts";
 import { fromUnits } from "./shared/format.ts";
 import { priceState, totalUsd } from "./shared/prices.ts";
-import type { OverviewRead } from "./proposals-api.ts";
+import type { OverviewRead } from "./server-api.ts";
 
 type Book = Pick<OverviewRead, "book" | "target" | "policy">;
 

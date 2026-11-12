@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { creationMatches, sameCreation } from "../src/creation-review.ts";
-import type { Creation, Identity } from "../src/proposals-api.ts";
+import type { Creation, Identity } from "../src/server-api.ts";
 
 const identity: Identity = { agent: "portfolio", owner: "owner.near", account: "owner.near", host: "platform.test", agentId: null, signer: "wallet",
   access: { canSign: true, canPropose: false, canVote: false, canExecute: true, canManage: true } };

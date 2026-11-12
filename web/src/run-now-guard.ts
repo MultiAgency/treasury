@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Result } from "./proposals-api.ts";
+import type { Result } from "./server-api.ts";
 
 type Reply = Result<{ summary: string }>;
 export type RunNowHold = "pending" | "unknown";

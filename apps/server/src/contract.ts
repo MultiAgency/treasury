@@ -1,5 +1,5 @@
 /**
- * The server's API as schemas: what each route takes and answers. The proposals page imports this module too, so the
+ * The server's API as schemas: what each route takes and answers. The app imports this module too, so the
  * two can't drift apart. Every answer is `{ ok: true, value }` or a failure decided by `kind`, never by message text.
  */
 import { appConsentSubmission, ASSETS, ownerAction, ownerOutputs, proposalId, proposalSignature, proposalView, RecordingSchema } from "@multiagency/sdk";

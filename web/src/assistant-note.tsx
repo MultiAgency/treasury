@@ -1,6 +1,6 @@
 import { Sparkle } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
-import type { AssistantDraft } from "./proposals-api";
+import type { AssistantDraft } from "./server-api";
 
 type Leg = NonNullable<Extract<AssistantDraft, { kind: "strategy" }>["legs"]>[number];
 
