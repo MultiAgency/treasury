@@ -1,12 +1,14 @@
-import { ArrowRight, Bell, CheckCircle, Compass } from "@phosphor-icons/react";
+import { ArrowRight, Bell, CheckCircle, ClockCounterClockwise, Compass } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PanelTitle } from "@/components/ui/stat";
 import { ago } from "./shared/format";
 import { Badge, Card, Loading, QueryError, short, type Tone } from "./shared/ui";
 import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
+import { levelView } from "./risk-view";
+import { lastVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "./since-view";
 import { agentAddress, proposalAddress } from "./pages";
 import type { Identity } from "./server-api";
 import type { agentReads } from "./queries";
@@ -131,6 +133,50 @@ export function Standing({ reads, identity }: { reads: Reads; identity: Identity
         <StandingCell label="Strategy" read={strategy} status={bound} to={agentAddress(identity.agent, "strategy")} />
         <StandingCell label="Autopilot" read={autopilot} status={running} to={agentAddress(identity.agent, "strategy")} />
       </ul>
+    </Card>
+  </section>;
+}
+
+/** The browser's storage, or undefined where reading it throws (a private window, blocked site data). */
+const storage = (): Storage | undefined => { try { return window.localStorage; } catch { return undefined; } };
+
+/**
+ * What happened since the owner last looked (#263): the autopilot's runs, the proposals and the risk assessments after
+ * the last visit, from reads the page already makes. The last visit is kept in this browser only, per account and
+ * agent, and written when the owner leaves Home (or the page), so a reload before then shows the same summary. With no
+ * earlier visit it covers the last seven days and says so. Nothing happened: the card is not shown.
+ */
+export function SinceLastLooked({ reads, identity }: { reads: Reads; identity: Identity }) {
+  const key = visitKey(identity.account, identity.agent);
+  // Read once, when Home opens: leaving writes the new time, and the next visit then summarizes from this one.
+  const [{ since, fallback }] = useState(() => sinceFrom(lastVisit(storage(), key, Date.now()), Date.now()));
+  const keyRef = useRef(key);
+  keyRef.current = key;
+  useEffect(() => {
+    const leave = () => rememberVisit(storage(), keyRef.current, Date.now());
+    window.addEventListener("pagehide", leave);
+    return () => { window.removeEventListener("pagehide", leave); leave(); };
+  }, []);
+  const runs = useQuery(reads.runs);
+  const proposals = useQuery({ ...reads.proposals, refetchInterval: false });
+  const risk = useQuery(reads.riskHistory);
+  if (!runs.data && !proposals.data && !risk.data) return null;
+  const lines = sinceLines(summarize({
+    since, runs: runs.data?.ticks ?? [], proposals: proposals.data ?? [], assessments: risk.data?.entries ?? [],
+  }), level => levelView(level).label);
+  if (lines.length === 0) return null;
+  return <section id="since" aria-labelledby="since-title">
+    <Card className="gap-3">
+      <PanelTitle id="since-title" title="Since you last looked" icon={<ClockCounterClockwise weight="duotone" />} tone="brand">
+        <Badge tone="neutral">{fallback ? "Last 7 days" : <>Since <At iso={new Date(since).toISOString()} /></>}</Badge>
+      </PanelTitle>
+      <ul aria-label="Since you last looked" className="flex flex-col gap-1 text-sm">
+        {lines.map(line => <li key={line}>{line}</li>)}
+      </ul>
+      {fallback && <p className="text-xs text-muted-foreground">This is the first visit from this browser, so it covers the last 7 days.</p>}
+      <div className="flex flex-wrap gap-2">
+        <PageLink to={agentAddress(identity.agent, "activity")} className={LINK}>Open the activity<ArrowRight aria-hidden="true" className="size-3.5 text-muted-foreground" /></PageLink>
+      </div>
     </Card>
   </section>;
 }
