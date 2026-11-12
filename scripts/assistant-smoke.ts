@@ -59,11 +59,11 @@ const scenarios: Scenario[] = [
     context: { whatIf: { volatileDropPct: -5 } }, event: { volatileDropPct: -5 }, invalid: true },
 ];
 
-// Four scenarios, at most four model turns each, a 30-second request timeout and a three-minute overall deadline.
+// Four scenarios, at most four model turns each, the app's request timeout and a five-minute overall deadline.
 // The provider adapter retains its existing bounded retry behavior; this runner never retries a question.
-const deadline = AbortSignal.timeout(180_000);
+const deadline = AbortSignal.timeout(300_000);
 const provider = useRules ? rulesModel() : nearAiModel({ apiKey: new Secret(key!), ...(process.env.TREASURY_ASSISTANT_MODEL && { model: process.env.TREASURY_ASSISTANT_MODEL }),
-  timeoutMs: 30_000, fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.any([deadline, init?.signal ?? deadline]) }) });
+  fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.any([deadline, init?.signal ?? deadline]) }) });
 const daoRequests = await createDaoRequests(join(tempDir("treasury-assistant-smoke-"), "dao.json"));
 let failures = 0, passed = 0;
 console.log(`${useRules ? "Rules" : "Live"} assistant smoke: four scenarios using synthetic treasury records only.`);

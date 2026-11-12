@@ -52,7 +52,8 @@ artifacts and streamed snapshots, source citations, and that no scenario produce
 `pnpm smoke:assistant` runs those checks against NEAR AI Cloud using the locally configured `NEARAI_API_KEY` and
 `TREASURY_ASSISTANT_MODEL` (or its existing default). It uses synthetic records only, starts no app server and reads
 no hosted treasury. It exits with code 2 before making requests when the key is unset. Each question is bounded to
-four model turns and four tool calls, with a 30-second request timeout and a three-minute overall deadline.
+four model turns and four tool calls. Model requests use the app's timeout (currently 120 seconds), with a five-minute
+overall deadline. The runner never retries a question; the provider adapter retains its bounded transient-error retries.
 The live check is opt-in and separate from `pnpm check`; a passing rules run does not establish live-model behavior.
 
 ## What it can read
