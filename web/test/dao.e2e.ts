@@ -207,11 +207,13 @@ test("the DAO funds its agent from its own account: no link controls, and Trezu 
   assert.deepEqual(unexpected, []);
 });
 
-test("a confidential DAO is offered both ways to fund its agent, the confidential balance first; Trezu files exactly the reviewed transfer from the public one (#214)", { timeout: 90_000 }, async () => {
+test("a confidential DAO leads with its confidential balance, the public one under Other ways; Trezu files exactly the reviewed transfer from the public one (#214)", { timeout: 90_000 }, async () => {
   await daoConfidentialSetup(target);
   await page.goto(`${origin}/agents/${target.agent}/funding`);
   const funding = page.getByRole("region", { name: "Funding" });
   const paths = funding.getByRole("region", { name: /^From the (confidential|public) balance$/ });
+  await visible(paths.nth(0));
+  await funding.getByText("Other ways to fund the agent").click();
   await visible(paths.nth(1));
   assert.deepEqual(await paths.evaluateAll(sections => sections.map(section => section.getAttribute("aria-labelledby"))),
     ["money-in-confidential", "money-in-public"], "the confidential path first");

@@ -557,6 +557,7 @@ test("the owner links their own account to fund the agent, sends exactly the rev
   const ft = transfer!.actions.find(action => action.params.methodName === "ft_transfer")!;
   assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "1500000"], "exactly the address and amount reviewed");
 
+  await funding.getByText("Other ways to fund the agent").click();
   await funding.getByRole("button", { name: "Get a deposit address" }).click();
   await visible(funding.getByText("Deposit address", { exact: true }));
   assert.deepEqual(await axe(), [], "a deposit address");
