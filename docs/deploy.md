@@ -201,6 +201,16 @@ volume. A newer build may have written records the older one reads as it always 
 
 ### Lost operation ID: provider recovery review
 
+`pnpm --filter @treasury/server test:stack` includes full-server submission-boundary crash tests against the pinned
+platform (`TREASURY_PLATFORM`). Each case starts a fresh synthetic provider and refuses a fixture with unresolved
+operations. The provider holds its response after updating its balances and ledger; the test verifies the journal,
+freezes through the owner API, then sends SIGKILL to both Treasury and the platform executor while execution still
+awaits acknowledgement. After two restarts with the same state, balances, transaction records and send-attempt counts
+must show one swap. A recorded operation ID reconciles while frozen; a missing ID remains unresolved. Executor lease
+takeover uses its normal stale timeout, never manual lock removal. These are synthetic-provider tests, not mainnet or
+provider-process durability evidence. A pending answer alone is not a passed acceptance check. Preserve an existing
+unresolved fixture for review and create a separate fixture for the next case; do not clear its journal to unblock a test.
+
 Reviewed 2026-11-12 against the pinned platform and its Agent API SDK 0.8.2. A submission-attempted journal entry without a provider operation ID remains unresolved; preserve its key and exact body, stop new sends, and keep the journal and submission evidence. Amount, recipient and timestamp similarity do not establish identity. Do not generate a replacement key or edit the journal to mark success.
 
 The provider's [execution documentation](https://docs.agentsonintents.com/integration/agent-api/executions#idempotency) describes identical-body replay with the original grant-scoped key. Its [SDK documentation](https://docs.agentsonintents.com/integration/agent-api/sdk#idempotency) describes key preservation across failures. These are documented semantics, not observations of the deployed provider. The reviewed SDK exposes history and status reads but no read-only lookup by idempotency key. History matches alone cannot resolve a missing ID.
