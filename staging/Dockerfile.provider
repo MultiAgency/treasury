@@ -1,0 +1,11 @@
+FROM node:24.22.0-slim
+WORKDIR /app
+RUN npm install --global --allow-scripts=pnpm pnpm@12.16.1
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/server/package.json apps/server/
+COPY packages/core/package.json packages/core/
+COPY web/package.json web/
+COPY vendor/sdk/final-252cba1 vendor/sdk/final-252cba1
+RUN mkdir -p .claude/skills && pnpm install --frozen-lockfile --prod --filter @treasury/server
+COPY staging staging
+CMD ["node","staging/main.ts"]

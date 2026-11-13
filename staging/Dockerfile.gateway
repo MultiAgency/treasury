@@ -1,0 +1,11 @@
+FROM node:24.22.0-slim
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile --prod
+COPY tsconfig.json ./
+COPY src src
+COPY web/dist web/dist
+COPY staging staging
+COPY manifest.json release-manifest.json
+CMD ["node","staging/gateway-entry.mjs"]
