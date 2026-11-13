@@ -68,3 +68,35 @@ jobs:
         run: pnpm --filter @treasury/web test:stack
       - name: Frozen SDK compatibility and rollback gates
         run: pnpm test:compatibility
+
+  staging:
+    name: Persistent staging harness (full journey)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      STAGING_PLATFORM_SOURCE: ${{ github.workspace }}/platform
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: MultiAgency/platform
+          # Reviewed reconciliation source used by hosted synthetic acceptance.
+          ref: 730e910807a27da94f3797e4f1da875e24a6dbfa
+          path: platform
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.22.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install and build the reviewed platform
+        working-directory: platform
+        run: pnpm install --frozen-lockfile && pnpm exec rsbuild build --root web
+      - name: Build Treasury and install its test browser
+        run: pnpm --filter @treasury/web build && pnpm --filter @treasury/web exec playwright install --with-deps chromium
+      - run: pnpm typecheck:staging
+      - name: Run every harness integration; fail on missing inputs or skipped tests
+        run: pnpm test:staging
