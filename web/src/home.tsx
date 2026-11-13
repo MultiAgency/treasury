@@ -6,6 +6,7 @@ import { ago } from "./shared/format";
 import { Badge, Button, Card, Loading, QueryError, short, type Tone } from "./shared/ui";
 import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
+import { firstSteps, nextStep, type StepState } from "./first-transaction-view";
 import { needsDecision, type Need } from "./needs-decision";
 import { levelView } from "./risk-view";
 import { lastVisit, observedVisit, rememberVisit, sinceFrom, sinceLines, summarize, visitKey } from "./since-view";
@@ -107,23 +108,19 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
   </section>;
 }
 
+/** What a step's badge says. Unread steps wait on the connection, so they say so and never "To do". */
+const STEP_STATE: Record<StepState, string> = { done: "Done", todo: "To do", unread: "After connecting" };
+
 /** Readiness comes from live reads, so returning owners resume at the current prerequisite. */
 export function FirstTransaction({ reads, identity, connected }: { reads: Reads; identity: Identity; connected: boolean }) {
   const overview = useQuery({ ...reads.overview, enabled: connected });
   const proposals = useQuery({ ...reads.proposals, enabled: connected, refetchInterval: false });
   const strategy = useQuery({ ...reads.strategy, enabled: connected });
-  const steps = [
-    { label: "Create the agent", done: true, to: agentAddress(identity.agent), hash: undefined },
-    { label: "Connect Treasury", done: connected, to: agentAddress(identity.agent), hash: "connection" },
-    { label: "Fund the agent", done: overview.data ? fundedStatus(overview.data.book).funded : false, to: agentAddress(identity.agent, "funding"), hash: undefined },
-    { label: "Check the policy", done: overview.data ? !overview.data.notInForce : false, to: agentAddress(identity.agent, "policy"), hash: undefined },
-    ...(strategy.data?.grantMatches === null ? [] : [{ label: "Authorize the strategy", done: strategy.data?.grantMatches === true, to: agentAddress(identity.agent, "strategy"), hash: undefined }]),
-    { label: "Review a proposal", done: false, to: agentAddress(identity.agent, "proposals"), hash: undefined },
-  ];
+  const steps = firstSteps({ connected, book: overview.data?.book, notInForce: overview.data?.notInForce, grantMatches: strategy.data?.grantMatches });
   if (proposals.data?.some(proposal => proposal.state === "executed")) return null;
   const waiting = connected && (overview.isPending || proposals.isPending || strategy.isPending);
   const failed = connected && (overview.isError || proposals.isError || strategy.isError);
-  const next = steps.find(step => !step.done)!;
+  const next = nextStep(steps);
   return <section aria-labelledby="first-transaction-title">
     <Card className="gap-4">
       <h2 id="first-transaction-title" className="text-lg font-semibold">Your first Treasury transaction</h2>
@@ -133,10 +130,10 @@ export function FirstTransaction({ reads, identity, connected }: { reads: Reads;
         <Button variant="outline" onClick={() => { void overview.refetch(); void proposals.refetch(); void strategy.refetch(); }}>Check readiness again</Button>
       </> : <>
         <ol aria-label="Transaction readiness" className="grid gap-2 text-sm sm:grid-cols-2">
-          {steps.map(step => <li key={step.label} className="flex items-center gap-2"><Badge tone={step.done ? "success" : "neutral"}>{step.done ? "Done" : "To do"}</Badge>{step.label}</li>)}
+          {steps.map(step => <li key={step.label} className="flex items-center gap-2"><Badge tone={step.state === "done" ? "success" : "neutral"}>{STEP_STATE[step.state]}</Badge>{step.label}</li>)}
         </ol>
-        <PageLink to={next.to} hash={next.hash} className={`${LINK} self-start`}>{next.label}<ArrowRight aria-hidden="true" className="size-3.5" /></PageLink>
-        <p className="text-xs text-muted-foreground">{strategy.data?.grantMatches === null ? "This host only approves proposals; strategy authorization is managed on the agent’s executor." : "Authorize the saved strategy on Strategy before creating a proposal."} Autopilot is optional and can stay off.</p>
+        <PageLink to={agentAddress(identity.agent, next.page)} hash={next.hash} className={`${LINK} self-start`}>{next.label}<ArrowRight aria-hidden="true" className="size-3.5" /></PageLink>
+        {next.note && <p className="text-xs text-muted-foreground">{next.note}</p>}
       </>}
     </Card>
   </section>;
