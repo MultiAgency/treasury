@@ -145,8 +145,8 @@ test("the oracle reads the three sources, not the platform's price: one missing,
 
 test("holdings off the records by over 0.1% of the book are a malfunction at L3: Ballast holds; the books are read at most hourly, and again next tick after a failed read (H9)", async () => {
   const w = await world();
-  // 200 USDC the API's records don't account for: 0.2% of a 100,000 USD book.
-  w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" }, confidential: { api: "85200000000", recorded: "85000000000", unattributed: "200000000" } }];
+  // A 200 USDC shortfall against recorded funds: 0.2% of a 100,000 USD book.
+  w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" }, confidential: { api: "84800000000", recorded: "85000000000", unattributed: "-200000000" } }];
   const tick = async (minutes: number) => { w.clock.now += minutes * 60_000; w.answers.overview = overview(3.12, w.clock.now); return w.tick(); };
   const held = (event: Record<string, unknown>, why: RegExp) => {
     assert.deepEqual([event.skipped, event.reason, event.level], ["ballast holds", "regime system-fault: not trading", 3], JSON.stringify(event));
@@ -621,7 +621,7 @@ test("stablecoin fault detection uses independent quotes, not a healthy overview
 test("cached reconciliation evidence is revalued with current prices and refuses expired prices", async () => {
   const w = await world();
   w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" },
-    confidential: { api: "85200000000", recorded: "85000000000", unattributed: "200000000" } }];
+    confidential: { api: "84800000000", recorded: "85000000000", unattributed: "-200000000" } }];
   const first = await w.tick();
   assert.match(JSON.stringify(first.faults), /holdings are off the records/);
   const stable = w.answers.overview.book.find(row => row.asset === USDC)!;
@@ -635,4 +635,18 @@ test("cached reconciliation evidence is revalued with current prices and refuses
   assert.equal(w.reads.books, 1);
   assert.match(JSON.stringify(stale.faults), /holdings can't be reconciled/);
   assert.equal(w.sent.length, 0);
+});
+
+test("a positive confidential residual holds for incomplete history and a recorded credit clears that hold", async () => {
+ const w = await world();
+ w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" }, confidential: { api: "10000000", recorded: "0", unattributed: "10000000" } }];
+ const held = await w.tick();
+ assert.match(JSON.stringify(held.faults), /incoming confidential history is incomplete/);
+ assert.doesNotMatch(JSON.stringify(held.faults), /holdings are off the records/);
+ assert.equal(w.sent.length, 0);
+ w.answers.books[0]!.confidential.recorded = "10000000";
+ w.answers.books[0]!.confidential.unattributed = "0";
+ w.clock.now += 3_600_001;
+ const reconciled = await w.tick();
+ assert.doesNotMatch(JSON.stringify(reconciled.faults), /incoming confidential history is incomplete/);
 });

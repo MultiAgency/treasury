@@ -6,7 +6,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { checkStrategyReview } from "./strategy-review.ts";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -671,6 +671,37 @@ test("the owner previews a public wNEAR balance, shields it once after reviewing
   await nav("Activity").click();
   await visible(page.getByRole("region", { name: "Books" }).getByRole("table", { name: "Books" }));
   assert.deepEqual(unexpected, []);
+});
+
+test("Books distinguishes missing incoming history, shortfalls and attested matched credits", { timeout: 90_000 }, async () => {
+  const path = `${origin}/api/agents/${target.agent}/books`;
+  let residual = "10000000", credits: { issuer: string; receiptId: string; evidence: string }[] = [];
+  await page.route(path, route => route.fulfill({ json: { ok: true, value: [{ asset: USDC, symbol: "USDC",
+    public: { api: "0", chain: "0", drift: "0" }, confidential: { api: "10000000", recorded: residual === "0" ? "10000000" : "0", unattributed: residual, credits } }] } }));
+  const books = page.getByRole("region", { name: "Books" });
+  const evidenceDir = process.env.TREASURY_COVERAGE_SCREENSHOTS;
+  try {
+    await page.goto(here("/activity"));
+    await signInIfAsked(books);
+    await visible(books.getByText("Incoming history incomplete", { exact: true }));
+    assert.equal(await books.getByText(/malfunction/i).count(), 0);
+    assert.deepEqual(await axe(), []);
+    if (evidenceDir) {
+      mkdirSync(evidenceDir, { recursive: true });
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await books.screenshot({ path: join(evidenceDir, "books-desktop.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await books.screenshot({ path: join(evidenceDir, "books-mobile.png") });
+    }
+    residual = "-1000000";
+    await page.reload();
+    await visible(books.getByText("Balance below recorded funds", { exact: true }));
+    residual = "0"; credits = [{ issuer: "https://receipt.example", receiptId: "fixture:1", evidence: "operator-receipt" }];
+    await page.reload();
+    await visible(books.getByText("Recorded balance matches", { exact: true }));
+    await visible(books.getByText("Includes operator-attested funding receipts", { exact: true }));
+    assert.deepEqual(await axe(), []);
+  } finally { await page.unroute(path); await page.setViewportSize({ width: 1280, height: 900 }); }
 });
 
 test("the owner asks for a rebalance to the drifted strategy, and reviews the proposal it made, awaiting their decision", { timeout: 90_000 }, async () => {
