@@ -19,6 +19,9 @@ import type { agentReads } from "./queries";
 import { Sweep } from "./sweep";
 import { ReviewDialog, when } from "./ui";
 import { fund, WrongAccount } from "./wallet";
+import { readReceipt, type FundingReceipt } from "./funding-receipt";
+import { PageLink } from "./nav";
+import { agentAddress } from "./pages";
 import { failureText } from "./words";
 
 type Reads = ReturnType<typeof agentReads>;
@@ -116,8 +119,6 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
       <h2 id="funding-title" className="text-base font-medium">Balances and funding</h2>
       <Button variant="ghost" size="sm" disabled={treasury.isFetching || overview.isFetching} onClick={refresh}>{treasury.isFetching || overview.isFetching ? "Checking…" : "Check again"}</Button>
     </div>
-    <FundingFigures overview={overview.data} />
-    <Balances reads={reads} />
     <Card className="gap-3">
       <PanelTitle level={3} title={lead === "link" ? "Link a funding account" : lead === "receive" ? "Receive funds" : "Money in"} icon={lead === "link" ? <Bank weight="duotone" /> : lead === "receive" ? <QrCode weight="duotone" /> : <ArrowDown weight="bold" />}
         tone={lead === "receive" ? "usdc" : "brand"} description={linked && lead !== "receive" ? <>From <span className="font-mono">{linked.accountId}</span> to this agent</> : undefined}
@@ -144,6 +145,8 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
         {receiveIsOther(lead) && <ReceiveCard reads={reads} identity={identity} />}
       </div>
     </details>}
+    <FundingFigures overview={overview.data} />
+    <Balances reads={reads} />
     <Card className="gap-4">
       <PanelTitle level={3} title="Shield public balances" icon={<ShieldCheck weight="duotone" />} tone="eth" description="Preview what is in public view, then shield it into the private balance."
         infoLabel="About shielding" info="Shields public USDC, wNEAR and ETH balances into the agent's private balance. Other assets aren't included. Shielding needs the agent to hold a treasury grant." />
@@ -243,7 +246,14 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
   const client = useQueryClient();
   const dao = Boolean(linked.dao);
   const blocked = useFundingBlock(reads.name);
-  const canFund = mayCall(identity.access, "deposit") && !blocked;
+  const receiptKey = JSON.stringify(["treasury-funding-receipt", identity.account, reads.name]);
+  const [receipt, setReceipt] = useState<FundingReceipt | undefined>(() => { try { return readReceipt(receiptKey, localStorage); } catch { return undefined; } });
+  const balances = useQuery(reads.overview);
+  const saveReceipt = (value: FundingReceipt) => {
+    setReceipt(value);
+    try { localStorage.setItem(receiptKey, JSON.stringify(value)); } catch { /* Keep the visible receipt when storage is unavailable. */ }
+  };
+  const canFund = mayCall(identity.access, "deposit") && !blocked && receipt?.state !== "unknown";
   const [asset, setAsset] = useState<FundingAsset>("USDC");
   const [value, setValue] = useState("");
   const [submitted, setSubmitted] = useState(false);
@@ -280,20 +290,26 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
       // The address may have come close to expiring while the review was open.
       const expired = expiryProblem(reviewed.deposit.expiresAt, Date.now());
       if (expired) throw new Error(expired);
+      const receiptBase = { account: reviewed.account, amount: reviewed.transfer.amount, symbol: reviewed.transfer.symbol,
+        address: reviewed.transfer.address, dao, at: new Date().toISOString() };
       let outcome: Awaited<ReturnType<typeof fund>>;
       try {
         outcome = await fund(reviewed.transaction, reviewed.account, { dao });
       } catch (problem) {
         if (problem instanceof WrongAccount) throw problem;
+        saveReceipt({ ...receiptBase, state: "unknown" });
         blockFunding(reads.name, mayHaveSent);
         throw new Error(`${errorMessage(problem)} ${mayHaveSent}`);
       }
       // One receipt, reverted as one: nothing moved, or nothing was filed.
       if (outcome.kind === "failed") throw new Error(`The transaction failed, so nothing was ${dao ? "filed" : "sent"}.`);
       if (outcome.kind === "unknown") {
+        saveReceipt({ ...receiptBase, state: "unknown" });
         blockFunding(reads.name, mayHaveSent);
         throw new Error(`The wallet didn't report how the transaction ended. ${mayHaveSent}`);
       }
+      saveReceipt({ ...receiptBase, state: "submitted" });
+      void client.invalidateQueries({ queryKey: reads.overview.queryKey });
       setValue("");
       setSubmitted(false);
       setDone(dao ? `Filed in Trezu. It pays out once the DAO approves: review and vote at trezu.app/${reviewed.account}/requests.`
@@ -306,6 +322,18 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
   };
 
   return <div className="flex flex-col gap-3 text-sm">
+    {receipt && <section aria-label="Latest funding receipt" className="flex flex-col gap-3 rounded-lg border border-border-strong p-4">
+      <h3 role="status" className="font-medium">{receipt.state === "unknown" ? "Funding outcome needs checking" : receipt.dao ? "Funding proposal filed" : "Transfer submitted"}</h3>
+      <p>{receipt.amount} {receipt.symbol} from <span className="break-all">{receipt.account}</span></p>
+      <p className="text-xs text-muted-foreground">Recorded {when(receipt.at)} in this browser. This receipt does not confirm arrival.</p>
+      <details><summary className="cursor-pointer">Deposit address</summary><code className="break-all text-xs">{receipt.address}</code></details>
+      <p>{receipt.state === "unknown" ? "Check the source account and the agent’s balances before sending again. A new transfer is blocked while this outcome is uncertain." : receipt.dao ? "Awaiting the DAO’s approval and deposit arrival. Check the request in Trezu, then check balances here." : "Awaiting deposit arrival. Check the agent’s balances before continuing."}</p>
+      {receipt.dao && <a className="underline" href={`https://trezu.app/${encodeURIComponent(receipt.account)}/requests`} target="_blank" rel="noopener noreferrer">View requests in Trezu</a>}
+      <Button variant="outline" disabled={balances.isFetching} onClick={() => void balances.refetch()}>{balances.isFetching ? "Checking balances…" : "Check agent balances"}</Button>
+      {balances.isError && <QueryError error={balances.error} retry={() => balances.refetch()} />}
+      {balances.dataUpdatedAt > 0 && <p className="text-xs text-muted-foreground">Balances last checked {when(new Date(balances.dataUpdatedAt).toISOString())}. Balance changes cannot confirm this individual transfer.</p>}
+      <PageLink to={agentAddress(reads.name)} className="underline">Return to transaction readiness</PageLink>
+    </section>}
     {review ? <div role="group" aria-label="Funding transfer to sign" className="flex flex-col gap-3 rounded-lg border border-border-strong bg-background/40 p-4">
       <p>{dao ? "The proposal pays" : "Your wallet signs a transfer of"} exactly <span className="font-medium tabular-nums">{review.transfer.amount} {review.transfer.symbol}</span>
         {review.transfer.symbol === "NEAR" && " (wrapped as wNEAR)"} from <span className="break-all">{review.account}</span> to the deposit address:</p>

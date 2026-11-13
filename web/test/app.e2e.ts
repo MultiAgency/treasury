@@ -468,9 +468,9 @@ test("the owner approves a proposal by its exact text, executes it once to execu
 
   await list.getByRole("link", { name: `Review proposal ${first.id.slice(0, 8)}…${first.id.slice(-6)}` }).click();
   await visible(page.getByRole("heading", { level: 1, name: "Proposal" }));
-  const state = page.getByRole("region", { name: "State" });
+  const state = page.getByRole("region", { name: "Transaction progress" });
   await visible(state.getByText("Awaiting your decision"));
-  assert.equal(await state.getByRole("button", { name: "Execute" }).count(), 0, "not approved, nothing to execute");
+  assert.equal(await state.getByRole("button", { name: "Review execution" }).count(), 0, "not approved, nothing to execute");
   assert.deepEqual(await axe(), [], "a proposal");
 
   await state.getByRole("button", { name: "Approve" }).click();
@@ -479,10 +479,10 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   assert.equal(await approve.getByLabel("Text to sign").innerText(), proposalText(first, "approve"), "exactly the SDK's text, shown before signing");
   assert.deepEqual(await axe(), [], "the approval dialog");
   await approve.getByRole("button", { name: "Sign and approve" }).click();
-  await visible(state.getByRole("status").filter({ hasText: "You approved this proposal." }));
+  await visible(state.getByRole("status").filter({ hasText: "You approved the terms. Execute the swaps next; approval alone does not move funds." }));
   await visible(state.getByText("Approved", { exact: true }));
 
-  await state.getByRole("button", { name: "Execute" }).click();
+  await state.getByRole("button", { name: "Review execution" }).click();
   const run = dialog("Execute this proposal?");
   await visible(run);
   assert.deepEqual(await axe(), [], "the execute dialog");
@@ -491,11 +491,11 @@ test("the owner approves a proposal by its exact text, executes it once to execu
   const reread: string[] = [];
   const read = (request: { url(): string }) => { const url = new URL(request.url()); if (url.origin === origin) reread.push(url.pathname); };
   page.on("request", read);
-  await run.getByRole("button", { name: "Execute now" }).click();
+  await run.getByRole("button", { name: "Execute swaps" }).click();
   await visible(state.getByRole("status").filter({ hasText: "Executed. Every swap succeeded." }));
   await visible(state.getByText("Executed", { exact: true }));
   await visible(state.getByRole("list", { name: "Operations" }).getByText("success"));
-  assert.equal(await state.getByRole("button", { name: "Execute" }).count(), 0, "it ran once; nothing to execute again");
+  assert.equal(await state.getByRole("button", { name: "Review execution" }).count(), 0, "it ran once; nothing to execute again");
   assert.deepEqual(await axe(), [], "an executed proposal");
   // What the swap changed is read again when it is next shown: never the book from before it. The Home shows the book, the
   // held payouts and what needs a decision; the history and the books are on the Activity page (#136), read when it is.
@@ -633,9 +633,29 @@ test("the owner links their own account to fund the agent, sends exactly the rev
   const ft = transfer!.actions.find(action => action.params.methodName === "ft_transfer")!;
   assert.deepEqual([ft.params.args.receiver_id, ft.params.args.amount], [address, "1500000"], "exactly the address and amount reviewed");
 
+  const receipt = funding.getByRole("region", { name: "Latest funding receipt" });
+  await visible(receipt.getByRole("status").filter({ hasText: "Transfer submitted" }));
+  await page.reload();
+  await visible(receipt.getByRole("status").filter({ hasText: "Transfer submitted" }));
+  assert.match(await receipt.innerText(), /does not confirm arrival/);
+  const receiptKey = JSON.stringify(["treasury-funding-receipt", owner, target.agent]);
+  await page.evaluate(key => {
+    const saved = JSON.parse(localStorage.getItem(key)!);
+    localStorage.setItem(key, JSON.stringify({ ...saved, state: "unknown" }));
+  }, receiptKey);
+  await page.reload();
+  await visible(receipt.getByRole("status").filter({ hasText: "Funding outcome needs checking" }));
+  assert.equal(await funding.getByRole("button", { name: "Review transfer" }).isDisabled(), true);
+  await receipt.getByRole("button", { name: "Check agent balances" }).click();
+  await visible(receipt.getByText(/Balances last checked/));
+  assert.equal(await funding.getByRole("button", { name: "Review transfer" }).isDisabled(), true, "balance reads cannot prove this transfer settled");
+  assert.equal(sent.length, 1, "reloads and balance checks never resend funding");
+  await page.evaluate(key => localStorage.removeItem(key), receiptKey);
+  await page.reload();
+
   await funding.getByText("Other ways to fund the agent").click();
   await funding.getByRole("button", { name: "Get a deposit address" }).click();
-  await visible(funding.getByText("Deposit address", { exact: true }));
+  await visible(funding.locator("span").filter({ hasText: /^Deposit address$/ }));
   assert.deepEqual(await axe(), [], "a deposit address");
 
   await funding.getByRole("button", { name: "Unlink" }).click();
@@ -690,7 +710,7 @@ test("the owner asks for a rebalance to the drifted strategy, and reviews the pr
   assert.deepEqual(await axe(), [], "proposed");
   await proposals.getByRole("link", { name: "Review the proposal" }).click();
   await visible(page.getByRole("heading", { level: 1, name: "Proposal" }));
-  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+  await visible(page.getByRole("region", { name: "Transaction progress" }).getByText("Awaiting your decision"));
   assert.deepEqual(unexpected, []);
 });
 
@@ -724,7 +744,7 @@ test("the owner allows owner actions: told first that open proposals are withdra
   // Made under the connection without owner, and open until the upgrade replaces that connection.
   const open = await propose(`page-${Date.now()}-owner`);
   await page.goto(here(`/proposals/${open.id}`));
-  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+  await visible(page.getByRole("region", { name: "Transaction progress" }).getByText("Awaiting your decision"));
   await page.goto(here());
   await visible(connection.getByRole("status").filter({ hasText: /^Connected: read and treasury, until / }));
   await signInIfAsked(connection.getByRole("button", { name: "Allow owner actions" }));
@@ -786,7 +806,7 @@ test("the home lists what needs the owner: a proposal awaiting a decision, then 
   assert.deepEqual(await axe(), [], "the home, a proposal awaiting a decision");
 
   await item().getByRole("link", { name: link }).click();
-  const state = page.getByRole("region", { name: "State" });
+  const state = page.getByRole("region", { name: "Transaction progress" });
   await state.getByRole("button", { name: "Approve" }).click();
   await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
   await visible(state.getByText("Approved", { exact: true }));
@@ -795,8 +815,8 @@ test("the home lists what needs the owner: a proposal awaiting a decision, then 
   assert.deepEqual(await axe(), [], "the home, approved and not executed");
 
   await item().getByRole("link", { name: link }).click();
-  await state.getByRole("button", { name: "Execute" }).click();
-  await dialog("Execute this proposal?").getByRole("button", { name: "Execute now" }).click();
+  await state.getByRole("button", { name: "Review execution" }).click();
+  await dialog("Execute this proposal?").getByRole("button", { name: "Execute swaps" }).click();
   await visible(state.getByText("Executed", { exact: true }));
   await nav("Home").click();
   await visible(needs());
@@ -1527,7 +1547,7 @@ test("the link a watch notice sends opens the proposal", { timeout: 60_000 }, as
   // As `watch` builds it: the server's origin, then /agents/<agent>/proposals/<id>.
   await page.goto(`${origin}/agents/${target.agent}/proposals/${made.id}`);
   await visible(page.getByRole("heading", { level: 1, name: "Proposal", exact: true }));
-  await visible(page.getByRole("region", { name: "State" }).getByText("Awaiting your decision"));
+  await visible(page.getByRole("region", { name: "Transaction progress" }).getByText("Awaiting your decision"));
 });
 
 test("the policy page leads with the terms as signed, then limits and grants, and keeps the revisions and the mandate digest collapsed", { timeout: 90_000 }, async () => {
@@ -1637,7 +1657,7 @@ test("a refusal because the policy isn't in force links to the Policy page", { t
   const made = await propose(`policy-link-${Date.now()}`);
   await page.route("**/api/agents/*/proposals/*/approve", route => route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "policy_not_in_force" } }));
   await page.goto(here(`/proposals/${made.id}`));
-  const state = page.getByRole("region", { name: "State" });
+  const state = page.getByRole("region", { name: "Transaction progress" });
   await state.getByRole("button", { name: "Approve" }).click();
   await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
   const link = page.getByRole("link", { name: "Open the Policy page" });

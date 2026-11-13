@@ -24,7 +24,7 @@ type Notice = { tone: "status" | "alert"; body: ReactNode };
 /** The states a proposal reaches once an execute is sent: from then on, its swaps may have changed the book. */
 const EXECUTION_STATES = new Set(["executing", "executed", "stopped", "unknown"]);
 
-const VERDICT_WORDS = { approve: { title: "Approve this proposal?", confirm: "Sign and approve", done: "You approved this proposal." },
+const VERDICT_WORDS = { approve: { title: "Approve this proposal?", confirm: "Sign and approve", done: "You approved the terms. Execute the swaps next; approval alone does not move funds." },
   reject: { title: "Reject this proposal?", confirm: "Sign and reject", done: "You rejected this proposal." } } as const;
 
 /**
@@ -197,8 +197,15 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
     </section>
 
     <section aria-labelledby="state-title" className="flex flex-col gap-4">
-      <h2 id="state-title" className="text-xl font-semibold">State</h2>
+      <h2 id="state-title" className="text-xl font-semibold">Transaction progress</h2>
       <Card className="gap-4">
+        <ol aria-label="Transaction steps" className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+          <li>1. Approve terms</li><li>2. Execute swaps</li><li>3. Confirm outcome</li>
+        </ol>
+        {view.state === "proposed" && !verdictOffered(view) && <p role="status" className="text-sm">The approval window has expired. This proposal can no longer be approved. Return to proposals to review another proposal or request a new rebalance.</p>}
+        {held && <p role="status" className="text-sm">Execution is paused here until a fresh status check succeeds. Choose Check again to recover the recorded outcome before continuing.</p>}
+        <p className="text-sm text-muted-foreground">{view.state === "proposed" ? (verdictOffered(view) ? "Review the terms before approving. Approval does not move funds." : "Approval is no longer available for these terms.") : view.state === "approved" ? (identity.access.canExecute ? "Terms approved. Review and execute the swaps to continue." : "Terms approved. An account with execution access must execute the swaps.") : view.state === "executing" || view.state === "unknown" ? "Execution was submitted. Check its outcome here before taking another action." : "Read the recorded outcome below."}</p>
+        {proposal.dataUpdatedAt > 0 && <p className="text-xs text-muted-foreground">Last checked {when(new Date(proposal.dataUpdatedAt).toISOString())}</p>}
         <div className="flex flex-wrap items-center gap-3"><StateBadge state={view.state} />{view.reason && <span className="text-sm">{view.reason}</span>}</div>
         {view.approvedAt && <p className="text-sm">Approved {when(view.approvedAt)}.</p>}
         {view.operations.length > 0 && <ul aria-label="Operations" className="flex flex-col gap-2">
@@ -218,7 +225,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
             <Button disabled={verdict !== undefined} onClick={() => startVerdict("approve")}>{verdict?.verdict === "approve" && verdict.phase === "reading" ? "Reading…" : dao ? "Ask the DAO to approve" : "Approve"}</Button>
             <Button variant="outline" disabled={verdict !== undefined} onClick={() => startVerdict("reject")}>{verdict?.verdict === "reject" && verdict.phase === "reading" ? "Reading…" : dao ? "Ask the DAO to reject" : "Reject"}</Button>
           </>}
-          {executable && <Button disabled={executing} onClick={() => setConfirming(true)}>{executing ? "Executing…" : "Execute"}</Button>}
+          {executable && <Button disabled={executing} onClick={() => setConfirming(true)}>{executing ? "Executing…" : "Review execution"}</Button>}
           <Button variant="ghost" disabled={proposal.isFetching} onClick={recheck}>{proposal.isFetching ? "Checking…" : "Check again"}</Button>
         </div>
       </Card>
@@ -237,7 +244,7 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
 
     <ReviewDialog open={confirming} onClose={() => setConfirming(false)} title="Execute this proposal?"
       description="The platform quotes each swap again and sends it only at or above its signed floor, under your policy. It runs once: if its outcome is unknown, it isn't sent again."
-      actions={<Button disabled={!executable || executing} onClick={runExecute}>Execute now</Button>}>
+      actions={<Button disabled={!executable || executing} onClick={runExecute}>Execute swaps</Button>}>
       <Legs view={view} />
     </ReviewDialog>
   </div>;
