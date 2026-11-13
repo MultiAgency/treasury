@@ -1,12 +1,30 @@
 # Deploying the app server
 
-The Treasury app server, with the app it serves, runs on Railway: project `treasury`, environment
-`production`, one service `server`, built from this repository's `Dockerfile` with the settings in
-`.railway/railway.ts`. It talks to the platform at `api.dev.multiagency.ai`, which runs on mainnet: real agents, owners
-and funds. When the platform's production host (`api.multiagency.ai`) exists, the same service moves there by changing
-`TREASURY_PLATFORM_ORIGIN` and the credential, which is issued per host.
+The Treasury app has two operating lanes: **live/mainnet** and **synthetic staging**. Railway's environment names and the `.dev` suffix do not identify the fund boundary. The [operating inventory](../.railway/environments.json) records exact environment, service, volume and release identities without credentials. It is documentation, not infrastructure configuration.
 
-The old prototype (`dao/treasury`) is a different service, `treasury` in the platform's own project; nothing here touches it.
+## Environment map
+
+Verified November 12, 2026 (America/New_York). This is an observed snapshot; inspect Railway and runtime origins again before any deployment or configuration change.
+
+| Lane | Treasury host | Platform API | Funds | Railway environment | Observed app commit |
+| --- | --- | --- | --- | --- | --- |
+| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `fe845b9` |
+| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `synthetic-platform-staging.up.railway.app` | Synthetic fixtures | `staging` | `62faea4` |
+
+The hostname convention is **live at `treasury.multiagency.ai`, synthetic staging at `treasury.dev.multiagency.ai`**. Both DNS/TLS routes and configured sign-in/write origins are active and verified. Each app rejects the other environment's write Origin. The Railway staging hostname remains a diagnostic alias; it is not the accepted write Origin and does not identify another environment.
+
+`TREASURY_PUBLIC_ORIGIN` controls the sign-in recipient and accepted write Origin. HTTPS health alone is insufficient: verify the challenge recipient and rejection of the former/cross-environment Origin after each cutover. Existing sessions need a fresh sign-in after app restart. The hostname migration preserves the platform API, credentials, source versions and financial state in each environment.
+The live watch file currently contains two Ballast entries and no risk blocks. The staging watch file is empty and its synthetic agent is frozen. A missing `risk` block only means automatic risk assessment is off; it does not establish that the Ballast proposer is off. Do not infer automation state from the risk card or a filename alone. These counts describe configuration, not proof that each tick succeeds.
+
+The app service ID is shared across Railway environments, so **service ID alone is insufficient deployment scope**. The live app volume, staging app volume and synthetic platform volume are separate. Never duplicate the live environment's credentials or volume contents into staging.
+
+## Host and release conventions
+
+- Call the current real-money lane **live/mainnet**, even though its API is named `api.dev`. Call the other lane **synthetic staging**.
+- `api.multiagency.ai` is not configured for this Treasury deployment. An API host migration requires separately verified availability, fresh host-scoped credentials, ownership/consent checks and fund boundaries; a hostname change alone is not a migration.
+- The live public origin is `treasury.multiagency.ai`; `.dev` is reserved for synthetic staging. Both canonical origins are verified; any later hostname migration needs the same DNS, TLS, recipient and cross-environment Origin checks.
+- `main` at `62faea4` and a successful staging deployment do not mean that commit serves live traffic. The release ledger above distinguishes source, staging and live state.
+- The old `dao/treasury` prototype is another service in the platform project. It is not either lane in this map.
 
 ## The service
 
@@ -78,19 +96,25 @@ It lasts 90 days. Before it expires, issue a new one the same way, set the varia
 
 ## Deploying
 
-Railway builds from the `Dockerfile`, not from a local folder's guess. Either connect the service to this repository's
-`main` on GitHub (each merge deploys; the health check holds a broken one back), or upload a clean export, so nothing
-untracked beside a checkout goes with it:
+Railway builds from the `Dockerfile`. Deploy only a clean exact-commit export. The existing services use explicit uploads; do not assume that merging a PR deploys either environment. Enabling GitHub auto-deploy would be an infrastructure change requiring separate review.
+
+Every command must include the project, environment and service IDs from the operating inventory. First verify the intended fund boundary, current release, volume, origins and watcher contents. Provisioning is separate from a code release; do not run `railway config apply` merely to upload source.
+
+Example for the **synthetic staging lane only**, after preparing `/tmp/treasury-release-62faea4` from the selected commit:
 
 ```sh
-railway config plan --detailed-exit-code   # exits 2 while .railway/railway.ts has changes not applied: apply them first
-rm -rf /tmp/treasury-deploy && git worktree prune && git worktree add --detach /tmp/treasury-deploy <commit>
-railway up /tmp/treasury-deploy --path-as-root --service server --environment production
-git worktree remove /tmp/treasury-deploy
+railway up /tmp/treasury-release-62faea4 --path-as-root \
+  --project 7113126f-e45d-4ce1-ab6c-8604ade66134 \
+  --environment 343dceb7-e189-409d-bf96-9cc0be45d10b \
+  --service d6734b71-4e83-4e74-8995-2ca7570c454a \
+  --detach --json -m "Staging: 62faea4"
 ```
 
-The first deploy: set the variables, `railway config apply`, deploy, then `railway domain` for the service, point a
-CNAME for `<host>` at the domain it shows, and set `TREASURY_PUBLIC_ORIGIN` to it.
+Record the returned deployment ID and follow that exact ID to `SUCCESS`; upload completion alone is insufficient. Confirm both the staging target and production baseline after verification. Synthetic acceptance does not establish mainnet settlement or provider-side crash durability. Preserve unresolved-operation evidence and keep automatic replay disabled.
+
+For a live release, prepare a separate reviewed command with the live environment ID and a known healthy rollback deployment. Confirm live watcher contents first: the new price-feed and detector behavior affects configured Ballast entries. A cancellation can race deployment activation; inspect active deployments and public health rather than assuming cancellation retained the previous release. Never remove journals, leases or state to unblock a rollout.
+
+Provisioning a new service is separate from this release procedure. The current `.railway/railway.ts` describes the live service and volume; it is not a staging blueprint. Review a scoped plan before applying infrastructure, then configure that environment's variables, hostname and independent volume.
 
 ## Checks after a deploy
 
