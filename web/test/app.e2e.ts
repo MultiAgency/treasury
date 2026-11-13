@@ -1165,7 +1165,7 @@ test("the Agents page shows the stabilization agent and the NEAR agent, each wit
   // This stack's server doesn't run the stabilization agent, and the page says so rather than showing a level it doesn't have.
   const stabilization = page.locator("#stabilization-agent");
   await visible(stabilization.getByText("Not running", { exact: true }));
-  await visible(stabilization.getByText(/No forward risk assessment has been recorded/).first());
+  await visible(stabilization.getByText(/No risk assessment has been recorded/).first());
   await visible(page.getByRole("heading", { name: "What it has been doing" }));
   assert.deepEqual(await axe(), [], "the Agents page");
 
