@@ -108,6 +108,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
   /** Why each agent was last reported held, kept across restarts so a hold isn't announced twice. */
   holds?: Holds;
 }) {
+  const ticking = new Set<string>();
   const agents = new Map<string, { backoffUntil: number; stopped?: Stop }>();
   const stateOf = ({ organization, agent }: WatchedAgent) => {
     const key = `${organization}/${agent}`;
@@ -233,7 +234,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
       state.stopped = { reason: `refused: ${answer.code ?? answer.error}`, resumable: false };
       return event({ stopped: state.stopped.reason, note: "a request this server built was refused: a bug to report" });
     }
-    if (answer.kind === "forbidden") { await dropUnstored(watched, request); return stop(watched, event); }
+    if (answer.kind === "forbidden") { await dropUnstored(watched, request); return await stop(watched, event); }
     // The gateway answers a request it refuses with a plain 4xx, which the SDK reports as unknown: nothing reached the agent.
     if (answer.kind === "unknown" && answer.httpStatus !== undefined && answer.httpStatus >= 400 && answer.httpStatus < 500 && answer.httpStatus !== 408 && answer.httpStatus !== 429) {
       await dropUnstored(watched, request);
@@ -252,95 +253,100 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
   return {
     /** One tick for `watched`: at most one proposal, and one event describing what happened. */
     async tick(watched: WatchedAgent): Promise<WatchEvent> {
-      const { organization, agent } = watched, state = stateOf(watched);
-      const event: Eventer = Object.assign(
-        (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail, ...(event.notices.length > 0 && { notices: event.notices }),
-          ...(event.strategy !== undefined && { strategy: event.strategy }) }),
-        { notices: [] as Eventer["notices"] });
+      const key = `${watched.organization}/${watched.agent}`;
+      if (ticking.has(key)) return { organization: watched.organization, agent: watched.agent, skipped: "tick in progress" };
+      ticking.add(key);
+      try {
+        const { organization, agent } = watched, state = stateOf(watched);
+        const event: Eventer = Object.assign(
+          (detail: Record<string, unknown>): WatchEvent => ({ organization, agent, ...detail, ...(event.notices.length > 0 && { notices: event.notices }),
+            ...(event.strategy !== undefined && { strategy: event.strategy }) }),
+          { notices: [] as Eventer["notices"] });
 
-      if (state.stopped) {
-        if (!state.stopped.resumable) return event({ skipped: "stopped", stopped: state.stopped.reason });
-        if (!await connected(watched)) return event({ skipped: "not connected" });
-        state.stopped = undefined;
-      }
-      if (now() < state.backoffUntil) return event({ skipped: "backoff", until: new Date(state.backoffUntil).toISOString() });
-
-      for (const request of requests.of(organization, agent)) {
-        if (request.proposalId === null) {
-          // Unanswered: send it again, unchanged, unless the platform would refuse it as expiring (it answers a stored
-          // one whatever its expiry, so one stored and expired this close is harmless to forget).
-          if (Date.parse(requests.input(request).expiresAt) - now() <= MIN_VALIDITY_MS) { await requests.drop(request); continue; }
-          return send(watched, request, event);
+        if (state.stopped) {
+          if (!state.stopped.resumable) return event({ skipped: "stopped", stopped: state.stopped.reason });
+          if (!await connected(watched)) return event({ skipped: "not connected" });
+          state.stopped = undefined;
         }
-        const read = await platform.get(organization, agent, request.proposalId);
-        if (!read.ok) {
-          if (read.kind === "forbidden") return stop(watched, event);
-          if (read.kind === "refused" && read.code === "not_found") { await ballast?.settled(organization, agent, request.requestId, "not_found"); await requests.drop(request); continue; }
-          return event({ failed: "proposals/get", kind: read.kind, proposalId: request.proposalId });
+        if (now() < state.backoffUntil) return event({ skipped: "backoff", until: new Date(state.backoffUntil).toISOString() });
+
+        for (const request of requests.of(organization, agent)) {
+          if (request.proposalId === null) {
+            // Unanswered: send it again, unchanged, unless the platform would refuse it as expiring (it answers a stored
+            // one whatever its expiry, so one stored and expired this close is harmless to forget).
+            if (Date.parse(requests.input(request).expiresAt) - now() <= MIN_VALIDITY_MS) { await requests.drop(request); continue; }
+            return await send(watched, request, event);
+          }
+          const read = await platform.get(organization, agent, request.proposalId);
+          if (!read.ok) {
+            if (read.kind === "forbidden") return await stop(watched, event);
+            if (read.kind === "refused" && read.code === "not_found") { await ballast?.settled(organization, agent, request.requestId, "not_found"); await requests.drop(request); continue; }
+            return event({ failed: "proposals/get", kind: read.kind, proposalId: request.proposalId });
+          }
+          const { state: proposalState } = read.value;
+          // Told before the request is dropped or the tick ends: from the proposal just read, so these cost no platform call.
+          await noticeProposal(watched, request, read.value, event);
+          // Open, or claimed and not final: `executing` can read while `unresolved` is still empty (claimed before its first
+          // swap is journaled), and `unknown` is read later, never proposed over.
+          if (["proposed", "approved", "executing", "unknown"].includes(proposalState)) return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
+          // Final: no longer ours to hold for. Ballast learns how it ended first, so an executed buy spends its DCA units.
+          await ballast?.settled(organization, agent, request.requestId, proposalState);
+          await requests.drop(request);
         }
-        const { state: proposalState } = read.value;
-        // Told before the request is dropped or the tick ends: from the proposal just read, so these cost no platform call.
-        await noticeProposal(watched, request, read.value, event);
-        // Open, or claimed and not final: `executing` can read while `unresolved` is still empty (claimed before its first
-        // swap is journaled), and `unknown` is read later, never proposed over.
-        if (["proposed", "approved", "executing", "unknown"].includes(proposalState)) return event({ skipped: "live proposal", proposalId: request.proposalId, state: proposalState });
-        // Final: no longer ours to hold for. Ballast learns how it ended first, so an executed buy spends its DCA units.
-        await ballast?.settled(organization, agent, request.requestId, proposalState);
-        await requests.drop(request);
-      }
 
-      const [overview, unresolved, autopilot] = await Promise.all([
-        platform.overview(organization, agent), platform.unresolved(organization, agent), platform.autopilot(organization, agent)]);
-      if (!overview.ok || !unresolved.ok || !autopilot.ok) {
-        const failed = Object.entries({ overview, unresolved, "autopilot/get": autopilot }).flatMap(([name, result]) => result.ok ? [] : [{ name, kind: result.kind }]);
-        if (failed.some(({ kind }) => kind === "forbidden")) return stop(watched, event);
-        const limited = [overview, unresolved, autopilot].some(result => !result.ok && (result.kind === "rate_limited" || ("httpStatus" in result && result.httpStatus === 429)));
-        if (limited) backoff(watched);
-        return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
-      }
-      // The mandate proposer proposes a strategy, not a trade: whatever holds the trades below, it runs (#206).
-      if (watched.ballast && strategyProposals) event.strategy = await proposeMandate({ agent, settings: watched.ballast, overview: overview.value,
-        strategy: () => platform.strategy(organization, agent), proposals: strategyProposals });
-      if (unresolved.value.length) { await settleHold(watched, "unresolved-operations", event); return event({ held: "unresolved", operations: unresolved.value.length }); }
-      // Two proposers on one agent would race; turning autopilot off is the owner's call.
-      if (autopilot.value.on) {
-        await settleHold(watched, "autopilot-on", event);
-        // The risk agent still assesses an agent whose autopilot runs, and may recommend pausing it; Ballast proposes nothing.
-        const assessed = watched.risk && watched.ballast && ballast
-          ? await (watched.ballast.diversification ? ballast.decideDiversified : ballast.decide)(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, true) : undefined;
-        const risk = assessed && "risk" in assessed ? assessed.risk : undefined;
-        return event({ held: "autopilot", ...(risk !== undefined && { risk }) });
-      }
-      if (overview.value.notInForce) { await settleHold(watched, "policy-not-in-force", event); return event({ held: "policy not in force", notInForce: overview.value.notInForce }); }
-      // Past every hold: one that was reported has ended.
-      await settleHold(watched, null, event);
-      if (watched.risk && !watched.ballast) { state.stopped = { reason: "the risk agent needs Ballast's mandate settings", resumable: false }; return event({ stopped: state.stopped.reason }); }
-      if (watched.ballast) {
-        if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
-        // A `diversification` block runs the multi-sleeve book (#221); without it, the two-asset step. Either runs the
-        // stabilization agent beside it when the entry has a `risk` block (#220): on the book it has.
-        const decided = watched.ballast.diversification
-          ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on)
-          : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on);
-        if ("skipped" in decided) return event(decided);
-        // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
-        // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one
-        // made and not counted.
-        const { requestId } = decided;
-        await ballast.proposed(organization, agent, requestId, decided.intent, decided.asset);
-        const request = await requests.add(organization, agent, decided.body, requestId);
-        if (!request) return event({ held: "stored requests full", ...(decided.risk && { risk: decided.risk }) });
-        return send(watched, request, event).then(sent => ({ ...sent, ballast: decided.detail, ...(decided.risk && { risk: decided.risk }) }));
-      }
-      const trigger = drift(overview.value, watched.driftPoints);
-      if ("skipped" in trigger) return event(trigger);
+        const [overview, unresolved, autopilot] = await Promise.all([
+          platform.overview(organization, agent), platform.unresolved(organization, agent), platform.autopilot(organization, agent)]);
+        if (!overview.ok || !unresolved.ok || !autopilot.ok) {
+          const failed = Object.entries({ overview, unresolved, "autopilot/get": autopilot }).flatMap(([name, result]) => result.ok ? [] : [{ name, kind: result.kind }]);
+          if (failed.some(({ kind }) => kind === "forbidden")) return await stop(watched, event);
+          const limited = [overview, unresolved, autopilot].some(result => !result.ok && (result.kind === "rate_limited" || ("httpStatus" in result && result.httpStatus === 429)));
+          if (limited) backoff(watched);
+          return event({ failed: failed.map(({ name }) => name), kinds: failed.map(({ kind }) => kind), ...(limited && { backoffTicks: WATCH.backoffTicks }) });
+        }
+        // The mandate proposer proposes a strategy, not a trade: whatever holds the trades below, it runs (#206).
+        if (watched.ballast && strategyProposals) event.strategy = await proposeMandate({ agent, settings: watched.ballast, overview: overview.value,
+          strategy: () => platform.strategy(organization, agent), proposals: strategyProposals });
+        if (unresolved.value.length) { await settleHold(watched, "unresolved-operations", event); return event({ held: "unresolved", operations: unresolved.value.length }); }
+        // Two proposers on one agent would race; turning autopilot off is the owner's call.
+        if (autopilot.value.on) {
+          await settleHold(watched, "autopilot-on", event);
+          // The risk agent still assesses an agent whose autopilot runs, and may recommend pausing it; Ballast proposes nothing.
+          const assessed = watched.risk && watched.ballast && ballast
+            ? await (watched.ballast.diversification ? ballast.decideDiversified : ballast.decide)(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, true) : undefined;
+          const risk = assessed && "risk" in assessed ? assessed.risk : undefined;
+          return event({ held: "autopilot", ...(risk !== undefined && { risk }) });
+        }
+        if (overview.value.notInForce) { await settleHold(watched, "policy-not-in-force", event); return event({ held: "policy not in force", notInForce: overview.value.notInForce }); }
+        // Past every hold: one that was reported has ended.
+        await settleHold(watched, null, event);
+        if (watched.risk && !watched.ballast) { state.stopped = { reason: "the risk agent needs Ballast's mandate settings", resumable: false }; return event({ stopped: state.stopped.reason }); }
+        if (watched.ballast) {
+          if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
+          // A `diversification` block runs the multi-sleeve book (#221); without it, the two-asset step. Either runs the
+          // stabilization agent beside it when the entry has a `risk` block (#220): on the book it has.
+          const decided = watched.ballast.diversification
+            ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on)
+            : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on);
+          if ("skipped" in decided) return event(decided);
+          // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
+          // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one
+          // made and not counted.
+          const { requestId } = decided;
+          await ballast.proposed(organization, agent, requestId, decided.intent, decided.asset);
+          const request = await requests.add(organization, agent, decided.body, requestId);
+          if (!request) return event({ held: "stored requests full", ...(decided.risk && { risk: decided.risk }) });
+          return await send(watched, request, event).then(sent => ({ ...sent, ballast: decided.detail, ...(decided.risk && { risk: decided.risk }) }));
+        }
+        const trigger = drift(overview.value, watched.driftPoints);
+        if ("skipped" in trigger) return event(trigger);
 
-      const request = await requests.add(organization, agent, {
-        legs: "strategy", expiresAt: new Date(now() + watched.proposalHours * 3_600_000).toISOString(),
-        note: `Drift ${trigger.points.toFixed(1)} points from the targets`,
-      });
-      if (!request) return event({ held: "stored requests full" });
-      return send(watched, request, event, trigger.points);
+        const request = await requests.add(organization, agent, {
+          legs: "strategy", expiresAt: new Date(now() + watched.proposalHours * 3_600_000).toISOString(),
+          note: `Drift ${trigger.points.toFixed(1)} points from the targets`,
+        });
+        if (!request) return event({ held: "stored requests full" });
+        return await send(watched, request, event, trigger.points);
+      } finally { ticking.delete(key); }
     },
   };
 }

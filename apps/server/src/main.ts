@@ -59,7 +59,7 @@ const anchorChain = settings.TREASURY_ANCHOR_ACCOUNT && settings.TREASURY_ANCHOR
 // Refuse to start with watch named but its agents or its stored requests unreadable, or past the read budget.
 const watched = settings.TREASURY_WATCH_FILE ? {
   agents: await loadWatchConfig(settings.TREASURY_WATCH_FILE),
-  requests: await createRequests(settings.TREASURY_REQUESTS_FILE!),
+  requests: await createRequests(settings.TREASURY_REQUESTS_FILE!, { exclusive: true }),
   // Why each agent was last reported held, beside the requests (`<TREASURY_REQUESTS_FILE>.holds`): a restart doesn't announce it again.
   holds: await createHolds(`${settings.TREASURY_REQUESTS_FILE!}.holds`),
 } : undefined;
@@ -185,6 +185,6 @@ const anchoring = anchorChain ? runAnchor({
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     shutdown.abort();
-    server.close(() => { void Promise.all([watching, reading, anchoring]).then(() => process.exit(0)); });
+    server.close(() => { void Promise.all([watching, reading, anchoring]).then(async () => { await watched?.requests.release(); process.exit(0); }); });
   });
 }
