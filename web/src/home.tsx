@@ -111,16 +111,18 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
 export function FirstTransaction({ reads, identity, connected }: { reads: Reads; identity: Identity; connected: boolean }) {
   const overview = useQuery({ ...reads.overview, enabled: connected });
   const proposals = useQuery({ ...reads.proposals, enabled: connected, refetchInterval: false });
+  const strategy = useQuery({ ...reads.strategy, enabled: connected });
   const steps = [
     { label: "Create the agent", done: true, to: agentAddress(identity.agent), hash: undefined },
     { label: "Connect Treasury", done: connected, to: agentAddress(identity.agent), hash: "connection" },
     { label: "Fund the agent", done: overview.data ? fundedStatus(overview.data.book).funded : false, to: agentAddress(identity.agent, "funding"), hash: undefined },
     { label: "Check the policy", done: overview.data ? !overview.data.notInForce : false, to: agentAddress(identity.agent, "policy"), hash: undefined },
+    ...(strategy.data?.grantMatches === null ? [] : [{ label: "Authorize the strategy", done: strategy.data?.grantMatches === true, to: agentAddress(identity.agent, "strategy"), hash: undefined }]),
     { label: "Review a proposal", done: false, to: agentAddress(identity.agent, "proposals"), hash: undefined },
   ];
   if (proposals.data?.some(proposal => proposal.state === "executed")) return null;
-  const waiting = connected && (overview.isPending || proposals.isPending);
-  const failed = connected && (overview.isError || proposals.isError);
+  const waiting = connected && (overview.isPending || proposals.isPending || strategy.isPending);
+  const failed = connected && (overview.isError || proposals.isError || strategy.isError);
   const next = steps.find(step => !step.done)!;
   return <section aria-labelledby="first-transaction-title">
     <Card className="gap-4">
@@ -128,13 +130,13 @@ export function FirstTransaction({ reads, identity, connected }: { reads: Reads;
       <p className="text-sm text-muted-foreground">Prepare the agent, then approve and execute a proposal. Approval and execution are separate steps.{identity.signer === "dao" && " DAO decisions may need a council vote before you can continue."}</p>
       {waiting ? <Loading label="Checking transaction readiness…" /> : failed ? <>
         <p className="text-sm" role="alert">Readiness could not be checked. Your completed steps have not been changed.</p>
-        <Button variant="outline" onClick={() => { void overview.refetch(); void proposals.refetch(); }}>Check readiness again</Button>
+        <Button variant="outline" onClick={() => { void overview.refetch(); void proposals.refetch(); void strategy.refetch(); }}>Check readiness again</Button>
       </> : <>
         <ol aria-label="Transaction readiness" className="grid gap-2 text-sm sm:grid-cols-2">
           {steps.map(step => <li key={step.label} className="flex items-center gap-2"><Badge tone={step.done ? "success" : "neutral"}>{step.done ? "Done" : "To do"}</Badge>{step.label}</li>)}
         </ol>
         <PageLink to={next.to} hash={next.hash} className={`${LINK} self-start`}>{next.label}<ArrowRight aria-hidden="true" className="size-3.5" /></PageLink>
-        <p className="text-xs text-muted-foreground">Strategy grants are managed on Strategy when needed. Autopilot is optional; it is not required to review a proposal.</p>
+        <p className="text-xs text-muted-foreground">{strategy.data?.grantMatches === null ? "This host only approves proposals; strategy authorization is managed on the agent’s executor." : "Authorize the saved strategy on Strategy before creating a proposal."} Autopilot is optional and can stay off.</p>
       </>}
     </Card>
   </section>;
