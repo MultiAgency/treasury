@@ -15,8 +15,12 @@ const wallet = walletSession(() => new NearConnector({ network: "mainnet", manif
 
 /** Signs the message in a wallet; new server sign-ins set `chooseWallet` to offer another wallet or account. */
 export async function sign({ message, recipient, nonce }: SignRequest, { chooseWallet = false }: { chooseWallet?: boolean } = {}): Promise<Signed> {
-  if (chooseWallet || (await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
-  const { wallet: connected } = await wallet.connector.getConnectedWallet();
+  if (chooseWallet) await wallet.connect();
+  const session = await wallet.connector.getConnectedWallet().catch(() => null);
+  if (!session?.accounts.length) {
+    throw new Error("Your wallet connection is unavailable. Sign out and sign in again to reconnect your wallet, then try again");
+  }
+  const { wallet: connected } = session;
   const signed = await connected.signMessage({ message, recipient, nonce: fromBase64(nonce) });
   return { accountId: signed.accountId, publicKey: signed.publicKey, signature: signed.signature };
 }
