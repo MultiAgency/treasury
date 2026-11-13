@@ -1,6 +1,6 @@
 /*
  * Agentic Treasury's palette (#193): a pure black page, panels one step lighter with hairline borders, white and grey
- * type, and colour only where it carries meaning: the mint brand (the active page, primary actions, focus), one colour
+ * type, and colour only where it carries meaning: the gold brand (the active page, primary actions, focus), one colour
  * per asset, and the four statuses. Dark only; there is no light theme.
  *
  * Unscoped on purpose: these are plain `:root` variables, gated on no class, so whatever imports `styles.css` (which
@@ -24,9 +24,9 @@
   --ink: #fafafa;
   --ink-muted: #a3a3a3;
 
-  /* The brand: mint, with near-black text on it. */
-  --brand-mint: #5fd3a6;
-  --brand-mint-ink: #03140d;
+  /* The brand: gold, with near-black text on it. */
+  --brand-primary: #f5d68f;
+  --brand-primary-ink: #191503;
 
   /* One colour per asset; any other asset takes amber, then pink (`assetColor` in shared/format.ts). */
   --asset-wnear: #3dd6b5;
@@ -46,7 +46,7 @@
   --status-info-ink: #7aa9f9;
 
   /* Tinted backgrounds: the colour at 14%, for badges, alerts and icon tiles. */
-  --tint-brand: color-mix(in oklab, var(--brand-mint) 14%, transparent);
+  --tint-brand: color-mix(in oklab, var(--brand-primary) 14%, transparent);
   --tint-success: color-mix(in oklab, var(--status-success) 14%, transparent);
   --tint-warning: color-mix(in oklab, var(--status-warning) 14%, transparent);
   --tint-danger: color-mix(in oklab, var(--status-danger) 14%, transparent);

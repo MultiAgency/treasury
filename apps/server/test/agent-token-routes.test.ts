@@ -77,7 +77,7 @@ test("the owner issues a token for one agent, sees it listed without its secret,
   assert.equal(JSON.stringify(listed.body).includes(token.split(".")[2]!), false, "never the secret again");
   assert.equal((await bearer(token, "GET", "overview")).status, 200);
   assert.equal((await session("POST", `tokens/${view.id}/revoke`)).status, 200);
-  assert.deepEqual((await bearer(token, "GET", "overview")).body, { ok: false, kind: "refused", code: "invalid_token" });
+  assert.deepEqual((await bearer(token, "GET", "overview")).body, { ok: false, kind: "refused", code: "token_revoked" });
   assert.deepEqual((await session("GET", "tokens")).body.value, []);
   assert.deepEqual((await session("POST", `tokens/${view.id}/revoke`)).body, { ok: false, kind: "refused", code: "no_token" });
 });
@@ -124,13 +124,17 @@ test("a token works only for its own agent, and a made-up or malformed one is re
   assert.equal(response.status, 401, "not a Bearer header");
 });
 
-test("an expired token is refused", async () => {
+test("an expired token is refused as expired, so its holder knows to ask the owner for another; a wrong secret for it learns nothing", async () => {
   reset();
   const { token } = await issue(1);
   assert.equal((await bearer(token, "GET", "overview")).status, 200);
   time.now += 2 * DAY;
-  try { assert.deepEqual((await bearer(token, "GET", "overview")).body, { ok: false, kind: "refused", code: "invalid_token" }); }
-  finally { time.now -= 2 * DAY; }
+  try {
+    const expired = await bearer(token, "GET", "overview");
+    assert.equal(expired.status, 401);
+    assert.deepEqual(expired.body, { ok: false, kind: "refused", code: "token_expired" });
+    assert.deepEqual((await bearer(token.slice(0, -2) + "xx", "GET", "overview")).body, { ok: false, kind: "refused", code: "invalid_token" }, "only the true secret is told why");
+  } finally { time.now -= 2 * DAY; }
 });
 
 test("disconnecting the agent revokes its tokens, and only its own", async () => {
@@ -140,7 +144,7 @@ test("disconnecting the agent revokes its tokens, and only its own", async () =>
     return made.body.value as { token: string };
   })());
   assert.equal((await session("POST", "consent/revoke")).status, 200);
-  assert.deepEqual((await bearer(mine.token, "GET", "overview")).body, { ok: false, kind: "refused", code: "invalid_token" });
+  assert.deepEqual((await bearer(mine.token, "GET", "overview")).body, { ok: false, kind: "refused", code: "token_revoked" });
   assert.equal((await bearer(other.token, "GET", "overview", undefined, "elsewhere")).status, 200, "another agent's stays");
 });
 
@@ -151,6 +155,10 @@ test("a token is counted on its own: the account's page is unaffected when it is
   for (let i = 0; i < 10; i++) statuses.push((await bearer(token, "GET", "overview")).status);
   assert.deepEqual(statuses.slice(-2), [429, 429], "past 8 an hour");
   assert.equal((await session("GET", "overview")).status, 200, "the owner's own page");
+  const limited = await fetch(`${base}/api/agents/portfolio/overview`, { headers: { authorization: `Bearer ${token}` } });
+  const wait = Number(limited.headers.get("retry-after"));
+  assert.equal(limited.status, 429);
+  assert.ok(Number.isInteger(wait) && wait > 0 && wait <= 3_600, `says when to call again, in seconds: ${limited.headers.get("retry-after")}`);
 });
 
 test("only the agent's owner issues, lists or revokes tokens", async () => {
@@ -174,6 +182,27 @@ test("the API description is public and lists exactly the routes a token may cal
   assert.ok(posted("/api/agents/:agent/proposals").request.properties.requestId, "the request schema is described");
   assert.deepEqual(Object.keys(posted("/api/agents/:agent/strategy-proposals").request.properties).sort(), ["expectedDigest", "reasons", "strategy"]);
 });
+test("the API description answers software that sends its token with every call, without counting the call against it", async () => {
+  reset();
+  const { token } = await issue();
+  for (let i = 0; i < 12; i++) {
+    const response = await fetch(`${base}/api/agent-api`, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 200, "more calls than the token's hourly limit");
+  }
+  assert.equal((await fetch(`${base}/api/agent-api`, { headers: { authorization: "Bearer nonsense" } })).status, 200, "public, whatever is sent with it");
+  assert.equal((await bearer(token, "GET", "overview")).status, 200, "the token's own limit is untouched");
+  assert.equal(fake.calls.length > 0, true);
+  const health = await fetch(`${base}/api/health`, { headers: { authorization: `Bearer ${token}` } });
+  assert.deepEqual(await health.json(), { ok: false, kind: "refused", code: "token_not_allowed" }, "every other route still refuses a token");
+});
+
+test("the API description states a token's limits and what each refusal means", async () => {
+  const { value } = await (await fetch(`${base}/api/agent-api`)).json() as any;
+  assert.deepEqual(value.limits, { requestsPerHour: 8, bodyBytes: 16 * 1024 });
+  for (const code of ["invalid_token", "token_expired", "token_revoked", "token_not_allowed", "rate_limited", "not_connected", "bad_request"])
+    assert.equal(typeof value.refusals[code], "string", code);
+});
+
 
 test("all tokens together stay within their share of the platform's hourly budget, whichever token makes the calls", async () => {
   reset();

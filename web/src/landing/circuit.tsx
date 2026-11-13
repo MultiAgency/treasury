@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { NEAR_MARK } from "./near-mark";
 
 /**
  * Hairline traces from the vault to its three token chips, routed like a board: straight runs, one radius per
@@ -11,7 +12,7 @@ const CHIP_H = 54;
 const RADIUS = 16;
 const snap = (value: number) => Math.round(value / 8) * 8;
 
-type Chip = { name: string; mark: string; value: string; x: number; y: number; path: string; start: [number, number]; end: [number, number] };
+type Chip = { name: string; mark: ReactNode; value: string; x: number; y: number; path: string; start: [number, number]; end: [number, number] };
 
 function layout(w: number, h: number, cyRatio: number): Chip[] {
   const cy = snap(h * cyRatio);
@@ -28,7 +29,7 @@ function layout(w: number, h: number, cyRatio: number): Chip[] {
   };
   const rightStart = w - pad - CHIP_W;
   return [
-    { name: "wNEAR", mark: "N", value: "Allocation target", x: pad, y: cy - gap, path: fork(cy - gap), start: [chipRight, cy - gap], end: [leftEnd, cy] },
+    { name: "wNEAR", mark: <svg viewBox="36 36 90 90" className="size-4" fill="currentColor" aria-hidden="true"><path d={NEAR_MARK} /></svg>, value: "Allocation target", x: pad, y: cy - gap, path: fork(cy - gap), start: [chipRight, cy - gap], end: [leftEnd, cy] },
     { name: "USDC", mark: "$", value: "Budget in USD", x: pad, y: cy + gap, path: fork(cy + gap), start: [chipRight, cy + gap], end: [leftEnd, cy] },
     { name: "ETH", mark: "Ξ", value: "Per-asset cap", x: rightStart, y: cy, path: `M ${rightStart} ${cy} H ${rightEnd}`, start: [rightStart, cy], end: [rightEnd, cy] },
   ];
@@ -49,9 +50,9 @@ export function Circuit({ cyRatio }: { cyRatio: number }) {
     {size && <svg width={size[0]} height={size[1]} className="absolute inset-0">
       <defs>
         {chips.map(chip => <linearGradient key={chip.name} id={`lp-fade-${chip.name}`} gradientUnits="userSpaceOnUse" x1={chip.start[0]} y1={chip.start[1]} x2={chip.end[0]} y2={chip.end[1]}>
-          <stop offset="0" stopColor="#d9f5e8" stopOpacity="0.55" />
-          <stop offset="0.7" stopColor="#d9f5e8" stopOpacity="0.28" />
-          <stop offset="1" stopColor="#d9f5e8" stopOpacity="0.06" />
+          <stop offset="0" stopColor="#fff7d6" stopOpacity="0.55" />
+          <stop offset="0.7" stopColor="#fff7d6" stopOpacity="0.28" />
+          <stop offset="1" stopColor="#fff7d6" stopOpacity="0.06" />
         </linearGradient>)}
       </defs>
       {chips.map((chip, i) => <g key={chip.name}>

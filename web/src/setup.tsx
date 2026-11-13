@@ -13,7 +13,7 @@ import { file, sign, WrongAccount } from "./wallet";
 import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
 import { creationWords, failureText } from "./words";
-import { useOwnerFlow } from "./owner-flow";
+import { useOwnerFlow, useWaiting } from "./owner-flow";
 import { creationMatches, sameCreation } from "./creation-review";
 
 const agentLink = (agent: string) => `/agents/${encodeURIComponent(agent)}`;
@@ -303,15 +303,18 @@ function DaoCreation({ reads, identity }: { reads: Reads; identity: Identity }) 
    * before and after filing. Creating it again starts a new one, which may be filed.
    */
   const [last, setLast] = useState<{ outcome: TransactionOutcome["kind"]; correlationId: string }>();
+  const records = useWaiting(reads, "agent_create", { poll: created !== undefined });
+  const earlier = created === undefined ? records.waiting : undefined;
+  const correlationId = created?.correlationId ?? earlier?.correlationId;
   const held = last !== undefined && last.correlationId === created?.correlationId && filingHeld(last.outcome);
   const status = useQuery({
-    queryKey: [...reads.identity.queryKey.slice(0, 2), "creation", created?.correlationId],
+    queryKey: [...reads.identity.queryKey.slice(0, 2), "creation", correlationId],
     queryFn: async (): Promise<CreationStatus> => {
-      const read = await reads.agent.creation(created!.correlationId);
+      const read = await reads.agent.creation(correlationId!);
       if (!read.ok) throw new Error(failureText(read, "read"));
       return read.value;
     },
-    enabled: created !== undefined, retry: false,
+    enabled: correlationId !== undefined, retry: false,
     refetchInterval: query => isFinal(query.state.data) ? false : 5_000,
   });
   const phase = statusPhase(status.data);
@@ -353,7 +356,15 @@ function DaoCreation({ reads, identity }: { reads: Reads; identity: Identity }) 
           <p role="status">This Treasury agent is set up but not created yet. {identity.signer === "dao"
             ? `${identity.owner} creates it by a vote that must pass within minutes of being filed.`
             : "You create it with your wallet, on the platform's confirm page."}</p>
-          {canFile ? <Button disabled={busy} onClick={create}>{busy ? "Preparing…" : "Create the agent"}</Button>
+          {records.reading ? <Loading label="Checking earlier creations…" />
+            : records.error ? <QueryError error={records.error} retry={() => records.refetch()} />
+            : earlier ? <>
+              <p role="status">{earlier.why === "vote"
+                ? <>A creation of this agent is already waiting for the DAO's vote. Its deadline is {when(earlier.expiresAt)}.</>
+                : "An earlier creation's outcome is still unknown. Another creation cannot be prepared yet."}</p>
+              <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly." : statusText(status.data, creationWords)}</p>
+            </>
+            : canFile ? <Button disabled={busy} onClick={create}>{busy ? "Preparing…" : "Create the agent"}</Button>
             : <p className="text-sm">A member who may file proposals asks the DAO.</p>}
         </>
           : <>

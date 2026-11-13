@@ -82,7 +82,7 @@ function RunsOn() {
         <Marquee aria-hidden="true" className="[--duration:28s] [--gap:3.5rem]" repeat={4}>
           {[...marks, ...marks].map((mark, i) => <span key={i} className="flex items-center gap-14">
             <span className="lp-wordmark">{mark}</span>
-            <span className="size-1.5 rotate-45 bg-[#a9c4b7]/50" />
+            <span className="size-1.5 rotate-45 bg-[#f5d68f]/50" />
           </span>)}
         </Marquee>
       </div>
@@ -94,7 +94,7 @@ function RunsOn() {
 
 function Manifesto({ reduced }: { reduced: boolean }) {
   return <section id="product" data-lp-section="2" aria-label="Product" className="relative">
-    <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[30%] h-[60vh] w-[70vw] -translate-x-1/2 rounded-full bg-[#5e7f72]/[0.12] blur-[120px]" />
+    <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-[30%] h-[60vh] w-[70vw] -translate-x-1/2 rounded-full bg-[#927827]/[0.12] blur-[120px]" />
     <TextReveal
       className="h-[240vh]"
       heading={<div className="flex flex-col gap-5">
@@ -139,7 +139,7 @@ function AllocationChart({ reduced }: { reduced: boolean }) {
         />
         <motion.div
           className="relative w-[38%] max-w-12 rounded-t-[10px]"
-          style={{ background: "linear-gradient(to top, rgb(94 127 114 / 0.15), rgb(201 255 233 / 0.85) 85%, #fff)", boxShadow: "0 0 30px -2px rgb(169 196 183 / 0.55), inset 0 1px 0 #fff" }}
+          style={{ background: "linear-gradient(to top, rgb(146 120 39 / 0.15), rgb(255 233 138 / 0.85) 85%, #fff)", boxShadow: "0 0 30px -2px rgb(245 214 143 / 0.55), inset 0 1px 0 #fff" }}
           initial={reduced ? false : { height: 0 }}
           animate={{ height: shown ? `${asset.target * 100}%` : 0 }}
           transition={{ duration: 1.6, ease: EASE, delay: 0.2 + i * 0.1 }}
@@ -149,7 +149,7 @@ function AllocationChart({ reduced }: { reduced: boolean }) {
     </div>)}
     <div className="absolute right-0 top-0 flex gap-4 font-mono text-[10.5px] text-white/60">
       <span className="flex items-center gap-1.5"><i className="size-2 rounded-[3px] border border-white/30 bg-white/5" />Now</span>
-      <span className="flex items-center gap-1.5"><i className="size-2 rounded-[3px] bg-[#c9ffe9] shadow-[0_0_8px_#c9ffe9]" />Target</span>
+      <span className="flex items-center gap-1.5"><i className="size-2 rounded-[3px] bg-[#ffe6b3] shadow-[0_0_8px_#ffe6b3]" />Target</span>
     </div>
   </div>;
 }
@@ -166,7 +166,7 @@ function BudgetRings({ reduced }: { reduced: boolean }) {
   return <div className="mt-auto flex items-center gap-6 pt-6">
     <svg ref={ref} aria-hidden="true" viewBox="0 0 180 180" className="size-[170px] shrink-0 -rotate-90 overflow-visible">
       <defs>
-        <linearGradient id="lp-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#7fb39c" /></linearGradient>
+        <linearGradient id="lp-ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffffff" /><stop offset="1" stopColor="#f5d68f" /></linearGradient>
         <filter id="lp-ring-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
       </defs>
       {rings.map((ring, i) => <g key={ring.label}>
@@ -177,7 +177,7 @@ function BudgetRings({ reduced }: { reduced: boolean }) {
     </svg>
     <ul className="flex flex-col gap-3">
       {rings.map((ring, i) => <li key={ring.label} className="flex items-center gap-2.5">
-        <span aria-hidden="true" className="size-2 rounded-full bg-white" style={{ opacity: 1 - i * 0.25, boxShadow: "0 0 8px #c9ffe9" }} />
+        <span aria-hidden="true" className="size-2 rounded-full bg-white" style={{ opacity: 1 - i * 0.25, boxShadow: "0 0 8px #ffe6b3" }} />
         <span className="flex flex-col"><span className="text-[13.5px] text-white/90">{ring.label}</span><span className="font-mono text-[10.5px] text-white/60">Budget in USD</span></span>
       </li>)}
     </ul>
@@ -190,7 +190,7 @@ function GlassCube() {
     <div className="flex flex-col gap-2 font-mono text-[10.5px]">
       <span className="rounded-full border border-white/10 px-2.5 py-1 text-white/65">Public balance</span>
       <span className="lp-shimmer-arrow pl-3 text-white/60" aria-hidden="true">↓ shield</span>
-      <span className="rounded-full border border-[#c9ffe9]/40 bg-[#c9ffe9]/[0.06] px-2.5 py-1 text-[#e6fff4] shadow-[0_0_16px_-4px_#c9ffe9]">Confidential balance</span>
+      <span className="rounded-full border border-[#ffe6b3]/40 bg-[#ffe6b3]/[0.06] px-2.5 py-1 text-[#fff7d6] shadow-[0_0_16px_-4px_#ffe6b3]">Confidential balance</span>
     </div>
     <div className="lp-cube-scene mr-2" aria-hidden="true">
       <div className="lp-cube"><span /><span /><span /><span /><span /><span /><b /></div>
@@ -204,20 +204,20 @@ function RebalanceBand({ reduced }: { reduced: boolean }) {
   return <div className="relative mt-auto pt-6">
     <svg viewBox="0 0 420 140" className="h-[150px] w-full overflow-visible" preserveAspectRatio="none" aria-hidden="true">
       <defs>
-        <linearGradient id="lp-band" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#a9c4b7" stopOpacity="0.02" /><stop offset="0.5" stopColor="#a9c4b7" stopOpacity="0.16" /><stop offset="1" stopColor="#a9c4b7" stopOpacity="0.02" /></linearGradient>
-        <linearGradient id="lp-trail" x1="0" x2="1"><stop offset="0" stopColor="#fff" stopOpacity="0.1" /><stop offset="1" stopColor="#e6fff4" /></linearGradient>
+        <linearGradient id="lp-band" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#f5d68f" stopOpacity="0.02" /><stop offset="0.5" stopColor="#f5d68f" stopOpacity="0.16" /><stop offset="1" stopColor="#f5d68f" stopOpacity="0.02" /></linearGradient>
+        <linearGradient id="lp-trail" x1="0" x2="1"><stop offset="0" stopColor="#fff" stopOpacity="0.1" /><stop offset="1" stopColor="#fff7d6" /></linearGradient>
       </defs>
       <rect x="0" y="48" width="420" height="44" fill="url(#lp-band)" />
-      <line x1="0" x2="420" y1="48" y2="48" stroke="rgb(169 196 183 / 0.4)" strokeDasharray="3 5" />
-      <line x1="0" x2="420" y1="92" y2="92" stroke="rgb(169 196 183 / 0.4)" strokeDasharray="3 5" />
+      <line x1="0" x2="420" y1="48" y2="48" stroke="rgb(245 214 143 / 0.4)" strokeDasharray="3 5" />
+      <line x1="0" x2="420" y1="92" y2="92" stroke="rgb(245 214 143 / 0.4)" strokeDasharray="3 5" />
       {[105, 245, 385].map((x, i) => <g key={x}>
         <line x1={x} x2={x} y1="8" y2="132" stroke="rgb(255 255 255 / 0.12)" />
-        <circle cx={x} cy="8" r="3" fill="#e6fff4">{!reduced && <animate attributeName="opacity" values="0.3;1;0.3" dur="2.4s" begin={`${i * 0.8}s`} repeatCount="indefinite" />}</circle>
+        <circle cx={x} cy="8" r="3" fill="#fff7d6">{!reduced && <animate attributeName="opacity" values="0.3;1;0.3" dur="2.4s" begin={`${i * 0.8}s`} repeatCount="indefinite" />}</circle>
       </g>)}
       <path d={path} fill="none" stroke="url(#lp-trail)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
       {reduced
-        ? <circle cx="420" cy="70" r="5" fill="#fff" style={{ filter: "drop-shadow(0 0 6px #c9ffe9)" }} />
-        : <circle r="5" fill="#fff" style={{ filter: "drop-shadow(0 0 6px #c9ffe9)" }}><animateMotion dur="7s" repeatCount="indefinite" path={path} /></circle>}
+        ? <circle cx="420" cy="70" r="5" fill="#fff" style={{ filter: "drop-shadow(0 0 6px #ffe6b3)" }} />
+        : <circle r="5" fill="#fff" style={{ filter: "drop-shadow(0 0 6px #ffe6b3)" }}><animateMotion dur="7s" repeatCount="indefinite" path={path} /></circle>}
     </svg>
     <div aria-hidden="true" className="mt-2 flex justify-between font-mono text-[10.5px] text-white/60"><span>Target band</span><span>Scheduled runs</span></div>
   </div>;
@@ -247,8 +247,8 @@ function WalletApproval({ reduced }: { reduced: boolean }) {
         className="mt-4 flex h-10 items-center justify-center gap-2 rounded-full text-[13px] font-medium"
         initial={false}
         animate={step === 2
-          ? { backgroundColor: "rgba(201,255,233,0.12)", color: "#e6fff4", boxShadow: "0 0 0 1px rgba(201,255,233,0.45), 0 0 26px -6px #c9ffe9" }
-          : { backgroundColor: "#ffffff", color: "#050506", boxShadow: step === 1 ? "0 0 0 4px rgba(255,255,255,0.18), 0 0 30px -4px #c9ffe9" : "0 0 0 0px rgba(255,255,255,0)" }}
+          ? { backgroundColor: "rgba(255,233,138,0.12)", color: "#fff7d6", boxShadow: "0 0 0 1px rgba(255,233,138,0.45), 0 0 26px -6px #ffe6b3" }
+          : { backgroundColor: "#ffffff", color: "#050506", boxShadow: step === 1 ? "0 0 0 4px rgba(255,255,255,0.18), 0 0 30px -4px #ffe6b3" : "0 0 0 0px rgba(255,255,255,0)" }}
         transition={{ duration: reduced ? 0 : 0.5 }}
       >
         {step === 2 ? <><Check size={15} weight="bold" /> Approved by the owner</> : step === 1 ? "Signing…" : "Approve in wallet"}
@@ -267,7 +267,7 @@ function Tile({ title, body, children, className = "", reduced }: { title: strin
 
 function HowItWorks({ reduced }: { reduced: boolean }) {
   return <section id="how" data-lp-section="3" aria-label="How it works" className="relative py-28 sm:py-36">
-    <div aria-hidden="true" className="pointer-events-none absolute right-[-10%] top-[10%] h-[50vh] w-[50vw] rounded-full bg-[#a9c4b7]/[0.07] blur-[120px]" />
+    <div aria-hidden="true" className="pointer-events-none absolute right-[-10%] top-[10%] h-[50vh] w-[50vw] rounded-full bg-[#f5d68f]/[0.07] blur-[120px]" />
     <div className="lp-container relative">
       <div className="mb-14 flex flex-col gap-5 md:mb-20 md:flex-row md:items-end md:justify-between">
         <div className="flex flex-col gap-5">
@@ -279,7 +279,7 @@ function HowItWorks({ reduced }: { reduced: boolean }) {
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
         <motion.article className="lp-tile md:col-span-7 md:row-span-2" {...reveal(reduced)}>
-          <MagicCard className="h-full rounded-[26px]" gradientSize={320} gradientColor="rgba(169,196,183,0.12)" gradientFrom="#c9ffe9" gradientTo="#5e7f72">
+          <MagicCard className="h-full rounded-[26px]" gradientSize={320} gradientColor="rgba(245,214,143,0.12)" gradientFrom="#ffe6b3" gradientTo="#927827">
             <div className="lp-tile-inner min-h-[460px]">
               <span className="mb-4 w-fit rounded-full border border-white/10 px-2.5 py-1 font-mono text-[10.5px] text-white/65">wNEAR · USDC · ETH</span>
               <h3>Allocation targets</h3>
@@ -287,7 +287,7 @@ function HowItWorks({ reduced }: { reduced: boolean }) {
               <AllocationChart reduced={reduced} />
             </div>
           </MagicCard>
-          <BorderBeam size={220} duration={9} colorFrom="#ffffff" colorTo="#7fb39c" borderWidth={1.5} />
+          <BorderBeam size={220} duration={9} colorFrom="#ffffff" colorTo="#f5d68f" borderWidth={1.5} />
         </motion.article>
         <Tile reduced={reduced} className="md:col-span-5" title="Signed spending limits" body="Daily, weekly and monthly budgets in USD, plus caps for each asset. You sign them, and the platform checks every operation against them.">
           <BudgetRings reduced={reduced} />
@@ -318,7 +318,7 @@ function PointCard({ point, index }: { point: (typeof POINTS)[number]; index: nu
   const Icon = point.icon;
   return <div className="lp-point-card">
     <div className="mb-3 flex items-center justify-between">
-      <span aria-hidden="true" className="grid size-9 place-items-center rounded-full border border-[#c9ffe9]/30 bg-[#c9ffe9]/[0.06] text-[#e6fff4] shadow-[0_0_20px_-6px_#c9ffe9]"><Icon size={17} /></span>
+      <span aria-hidden="true" className="grid size-9 place-items-center rounded-full border border-[#ffe6b3]/30 bg-[#ffe6b3]/[0.06] text-[#fff7d6] shadow-[0_0_20px_-6px_#ffe6b3]"><Icon size={17} /></span>
       <span aria-hidden="true" className="lp-point-index">0{index + 1}</span>
     </div>
     <h3>{point.title}</h3>
@@ -347,7 +347,7 @@ function MobilePoints({ progress }: { progress: MotionValue<number> }) {
   return <div aria-hidden="true" className="absolute inset-x-4 bottom-[9%] md:hidden">
     <motion.div key={current} className="lp-point-card" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div className="mb-2 flex items-center gap-3">
-        <span className="grid size-8 place-items-center rounded-full border border-[#c9ffe9]/30 text-[#e6fff4]"><Icon size={15} /></span>
+        <span className="grid size-8 place-items-center rounded-full border border-[#ffe6b3]/30 text-[#fff7d6]"><Icon size={15} /></span>
         <span className="lp-point-index">0{current + 1}/03</span>
       </div>
       <h3>{point.title}</h3>
@@ -439,7 +439,7 @@ function FinalCall({ reduced }: { reduced: boolean }) {
     <div className="lp-final-glow" aria-hidden="true" />
     {[360, 560, 780, 1020].map((size, i) => <span key={size} className="lp-final-ring" style={{ width: size, height: size, opacity: 1 - i * 0.2 }} aria-hidden="true" />)}
     <motion.div className="lp-container relative flex flex-col items-center gap-7 text-center" {...reveal(reduced, 10, 1.1)}>
-      <Logo className="size-14 drop-shadow-[0_0_24px_rgba(201,255,233,0.5)]" />
+      <Logo className="size-14 drop-shadow-[0_0_24px_rgba(255,233,138,0.5)]" bars={22} />
       <h2 className="lp-h2 !text-[clamp(2.6rem,6.4vw,6.6rem)]">Set the limits.<br /><span className="lp-fade-word">Let it run.</span></h2>
       <p className="max-w-md text-[16px] leading-relaxed text-white/70">Sign-in signs a message. It moves nothing.</p>
       <ConnectWallet containerClassName="lp-signin" className="lp-btn lp-btn-lg" />

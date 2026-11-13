@@ -133,10 +133,10 @@ function Gate({ name, title, home }: { name: string; title: string; home: boolea
   return <AgentContext.Provider value={{ reads, identity: identity.data }}>
     {heading}
     {signedIn}
-    {/* The emergency stop is in the frame of every page of an agent that exists, and never hidden by what the page is doing. */}
-    {agentId !== null && <EmergencyStop reads={reads} identity={identity.data} />}
     {/* An agent set up but not created yet: its creation comes first, on its home, and nothing else reaches it until then. */}
     {agentId === null && !home ? <p role="status">This agent hasn't been created yet. <PageLink to={agentAddress(name)} className="underline">Create it on its home page</PageLink>.</p> : <Outlet />}
+    {/* The emergency stop closes every page of an agent that exists; the top bar's link (`shell.tsx`) reaches it from anywhere on the page. */}
+    {agentId !== null && <EmergencyStop reads={reads} identity={identity.data} />}
   </AgentContext.Provider>;
 }
 

@@ -524,7 +524,7 @@ export const riskHistoryRead = z.strictObject({ configured: z.boolean(), interva
  * - `not_owner` (403): the session's account doesn't own this agent, or no such agent exists: the same answer for both,
  *   so a signed-in stranger can't tell which agents exist;
  * - `refused` with a `code`: the request itself was refused (`origin`, `content_type`, `bad_request`, `not_found`,
- *   `too_large`, `rate_limited`, `platform_rate_limited` (the platform's limit on the deployment's calls: nothing was done), `not_permitted` (a DAO member whose roles don't allow this), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
+ *   `too_large`, `rate_limited`, `platform_rate_limited` (the platform's limit on the deployment's calls: nothing was done), `not_permitted` (a DAO member whose roles don't allow this), a token's `invalid_token`, `token_expired`, `token_revoked`, `token_not_allowed` (each described for software at `GET /api/agent-api`), a sign-in code, or a consent code: `not_created`, `already_connected`, `not_this_consent`, `agent_changed`,
  *   `consent_refused`, `owner_stopped` (the owner's wallet stop came after the text's nonce: a new text, and a new
  *   signature; a setup's too), a setup code: `not_this_setup`, `already_set_up`, `setup_unavailable`, `setup_refused`,
  *   `not_set_up`, `already_created`, `creation_refused`, `no_creation`, `not_a_dao`, a proposal code: `no_proposal`, `not_this_text`, `not_open`, `expired`, `not_approved`,

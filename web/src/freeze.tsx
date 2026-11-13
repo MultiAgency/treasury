@@ -81,7 +81,7 @@ function Stop({ reads, identity, inPage }: { reads: Reads; identity: Identity; i
     {controls.kind === "needs-member" && <p className="text-xs text-muted-foreground">A member who may file proposals asks the DAO to freeze it.</p>}
   </>;
   return <section id="emergency-stop" aria-labelledby="emergency-stop-title"
-    className={inPage ? undefined : cn("rounded-xl border bg-card", frozen ? "border-destructive/40" : "border-border")}>
+    className={cn("scroll-mt-20", !inPage && "rounded-xl border bg-card", !inPage && (frozen ? "border-destructive/40" : "border-border"))}>
     <ActionRow titleId="emergency-stop-title" level={inPage ? 3 : 2} title="Emergency stop" icon={frozen ? <Sun /> : <Snowflake />} tone={frozen ? "danger" : "info"}
       effect={frozen === undefined ? "Freezing refuses every send, under every grant."
         : <p role="status" className={frozen ? "font-medium text-destructive" : undefined}>{frozen ? "Frozen: the agent refuses every send." : "Not frozen."}</p>}

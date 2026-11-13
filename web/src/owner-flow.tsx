@@ -4,7 +4,7 @@ import { actionPhase, isFinal, outcomeOf, statusText, type OwnerOutcome, type Ow
 import { ErrorBox, errorMessage } from "./shared/ui";
 import { waitingOn } from "./freeze-view";
 import type { Identity, OwnerActionPrepared, Result } from "./server-api";
-import type { agentReads } from "./queries";
+import { refreshPortfolio, type agentReads } from "./queries";
 import { when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
 import { filedText } from "./dao-filing";
@@ -92,7 +92,15 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
     if (found) setFollowing({ correlationId: found.correlationId, expiresAt: found.expiresAt });
   }, [resumeWaiting, current, records.actions, kind]);
   const holding = waiting !== undefined || inFlight || toFile !== undefined || toSign !== undefined;
-  const refresh = () => [reads.overview, reads.ownerActions, reads.account, reads.policyHistory].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
+  /**
+   * An owner action changes what every page reads of the agent: a freeze or a policy edit invalidates its proposals, a
+   * revoked grant unbinds its strategy and stops its autopilot. So the portfolio's reads are made again with the action's
+   * own, each when its page next shows it, rather than left as they were for the minute a read is kept.
+   */
+  const refresh = () => {
+    refreshPortfolio(client, reads);
+    for (const read of [reads.ownerActions, reads.account, reads.policyHistory]) void client.invalidateQueries({ queryKey: read.queryKey });
+  };
   const notified = useRef<string | undefined>(undefined);
   useEffect(() => {
     if (current && outcome && notified.current !== current.correlationId) {

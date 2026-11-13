@@ -3,10 +3,11 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Bloom, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
+import { NEAR_MARK } from "./near-mark";
 
 /**
  * The landing's glass vault: a refracting cube with a glowing core, the treasury's three tokens orbiting it as coins,
- * a sage aurora behind it and a lit grid below. Loaded lazily (`React.lazy`, from the landing), so the signed-in
+ * a gold aurora behind it and a lit grid below. Loaded lazily (`React.lazy`, from the landing), so the signed-in
  * pages never load three.js. Decorative: the whole canvas is hidden from assistive technology. With reduced motion it
  * draws one still frame and nothing moves after it, not even with the pointer.
  */
@@ -27,7 +28,7 @@ function listenToPointer() {
 
 const linear = (hex: string) => new THREE.Color(hex);
 
-/** A soft, slowly drifting sage aurora that the glass refracts. */
+/** A soft, slowly drifting gold aurora that the glass refracts. */
 function Aurora({ z = -5 }: { z?: number }) {
   const material = useRef<THREE.ShaderMaterial>(null);
   const { camera, viewport } = useThree();
@@ -35,9 +36,9 @@ function Aurora({ z = -5 }: { z?: number }) {
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uBg: { value: linear(BG) },
-    uA: { value: linear("#8FE0BC") },
-    uB: { value: linear("#3FA37C") },
-    uC: { value: linear("#C9FFE9") },
+    uA: { value: linear("#F5D68F") },
+    uB: { value: linear("#A38626") },
+    uC: { value: linear("#FFE6B3") },
     uAspect: { value: 1 },
   }), []);
   useFrame((_, delta) => {
@@ -67,9 +68,9 @@ function Aurora({ z = -5 }: { z?: number }) {
   </mesh>;
 }
 
-/** A floor of fine mint lines that fades out from under the vault, like a lit vault floor. */
+/** A floor of fine gold lines that fades out from under the vault, like a lit vault floor. */
 function Grid({ y }: { y: number }) {
-  const uniforms = useMemo(() => ({ uLine: { value: linear("#9FD8BF") }, uTime: { value: 0 } }), []);
+  const uniforms = useMemo(() => ({ uLine: { value: linear("#DCC08A") }, uTime: { value: 0 } }), []);
   const material = useRef<THREE.ShaderMaterial>(null);
   useFrame((_, delta) => { if (material.current) material.current.uniforms.uTime!.value += delta; });
   return <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, y, -1]}>
@@ -92,7 +93,7 @@ function Grid({ y }: { y: number }) {
 
 type Token = { glyph: string; body: string; glow: string };
 const TOKENS: Token[] = [
-  { glyph: "N", body: "#dfeae5", glow: "#c9ffe9" },
+  { glyph: "N", body: "#dfeae5", glow: "#ffe6b3" },
   { glyph: "$", body: "#9fbcb0", glow: "#e9fff6" },
   { glyph: "Ξ", body: "#c9c4e6", glow: "#ece6ff" },
 ];
@@ -131,14 +132,10 @@ function face(glyph: string, glowOnly: boolean, glow: string) {
   g.textAlign = "center";
   g.textBaseline = "middle";
   if (glyph === "N") {
-    // NEAR's N: two uprights joined by a diagonal, drawn rather than typed.
-    g.strokeStyle = g.fillStyle as string;
-    g.lineWidth = 34;
-    g.lineCap = "round";
-    g.lineJoin = "round";
-    g.beginPath();
-    g.moveTo(180, 340); g.lineTo(180, 172); g.lineTo(332, 340); g.lineTo(332, 172);
-    g.stroke();
+    // NEAR's mark, drawn rather than typed: its square, doubled and centred on the coin.
+    g.translate(94, 94);
+    g.scale(2, 2);
+    g.fill(new Path2D(NEAR_MARK));
   } else g.fillText(glyph, 256, 268);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -185,9 +182,9 @@ function useGlowTexture() {
     const g = canvas.getContext("2d")!;
     const fill = g.createRadialGradient(128, 128, 0, 128, 128, 128);
     fill.addColorStop(0, "rgba(255,255,255,1)");
-    fill.addColorStop(0.12, "rgba(230,255,244,0.9)");
-    fill.addColorStop(0.35, "rgba(143,224,188,0.35)");
-    fill.addColorStop(0.7, "rgba(63,163,124,0.08)");
+    fill.addColorStop(0.12, "rgba(255,247,214,0.9)");
+    fill.addColorStop(0.35, "rgba(245,214,143,0.35)");
+    fill.addColorStop(0.7, "rgba(146,120,39,0.08)");
     fill.addColorStop(1, "rgba(0,0,0,0)");
     g.fillStyle = fill;
     g.fillRect(0, 0, 256, 256);
@@ -248,10 +245,10 @@ function Vault({ mobile, progress, still }: { mobile: boolean; progress?: RefObj
                 backside backsideThickness={0.35} thickness={0.9} samples={mobile ? 4 : 6} resolution={mobile ? 384 : 768}
                 transmission={1} roughness={0.02} ior={1.38} chromaticAberration={0.12} anisotropicBlur={0.1}
                 distortion={0.12} distortionScale={0.3} temporalDistortion={0.04} clearcoat={1} clearcoatRoughness={0}
-                attenuationDistance={8} attenuationColor="#f2fff9" color="#ffffff" envMapIntensity={1.6} />
+                attenuationDistance={8} attenuationColor="#fffbea" color="#ffffff" envMapIntensity={1.6} />
             </RoundedBox>
             <lineSegments geometry={frame}>
-              <lineBasicMaterial color="#bff5dc" transparent opacity={0.3} />
+              <lineBasicMaterial color="#fff0ae" transparent opacity={0.3} />
             </lineSegments>
             {/* Crisp bright edges just inside the rounded glass, caught by the bloom. */}
             <lineSegments geometry={rim}>
@@ -273,12 +270,12 @@ function Vault({ mobile, progress, still }: { mobile: boolean; progress?: RefObj
         </mesh>
         <mesh ref={halo}>
           <sphereGeometry args={[0.3, 32, 32]} />
-          <meshBasicMaterial color="#9fe8c8" transparent opacity={0.06} depthWrite={false} toneMapped={false} />
+          <meshBasicMaterial color="#f5d68f" transparent opacity={0.06} depthWrite={false} toneMapped={false} />
         </mesh>
         <sprite ref={glow} renderOrder={10}>
-          <spriteMaterial map={glowTexture} color={new THREE.Color(0.5, 0.66, 0.6)} blending={THREE.AdditiveBlending} depthWrite={false} depthTest={false} transparent toneMapped={false} />
+          <spriteMaterial map={glowTexture} color={new THREE.Color(0.66, 0.58, 0.39)} blending={THREE.AdditiveBlending} depthWrite={false} depthTest={false} transparent toneMapped={false} />
         </sprite>
-        <pointLight ref={light} color="#c8ffe6" intensity={9} distance={5} decay={1.6} />
+        <pointLight ref={light} color="#fff0ae" intensity={9} distance={5} decay={1.6} />
       </group>
       {TOKENS.map((token, index) => <Coin key={token.glyph} token={token} index={index} radius={mobile ? 1.2 : 1.6} mobile={mobile} />)}
     </Float>
@@ -288,10 +285,10 @@ function Vault({ mobile, progress, still }: { mobile: boolean; progress?: RefObj
 function Studio() {
   return <Environment resolution={256} frames={1}>
     <Lightformer form="rect" intensity={4} color="#ffffff" position={[0, 5, -2]} scale={[10, 2, 1]} rotation-x={Math.PI / 2} />
-    <Lightformer form="rect" intensity={6} color="#a8ffd8" position={[-5, 1, 1]} scale={[2, 6, 1]} rotation-y={Math.PI / 2} />
+    <Lightformer form="rect" intensity={6} color="#f5d68f" position={[-5, 1, 1]} scale={[2, 6, 1]} rotation-y={Math.PI / 2} />
     <Lightformer form="rect" intensity={4} color="#b8a8ff" position={[5, 0, -1]} scale={[1.2, 6, 1]} rotation-y={-Math.PI / 2} />
-    <Lightformer form="ring" intensity={2.4} color="#e8fff5" position={[0, 0, 6]} scale={3} />
-    <Lightformer form="rect" intensity={1} color="#5e7f72" position={[0, -4, 0]} scale={[10, 10, 1]} rotation-x={-Math.PI / 2} />
+    <Lightformer form="ring" intensity={2.4} color="#fff8db" position={[0, 0, 6]} scale={3} />
+    <Lightformer form="rect" intensity={1} color="#927827" position={[0, -4, 0]} scale={[10, 10, 1]} rotation-x={-Math.PI / 2} />
   </Environment>;
 }
 

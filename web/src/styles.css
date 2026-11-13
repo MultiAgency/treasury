@@ -23,8 +23,8 @@
   --card-foreground: var(--ink);
   --popover: var(--panel-raised);
   --popover-foreground: var(--ink);
-  --primary: var(--brand-mint);
-  --primary-foreground: var(--brand-mint-ink);
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-ink);
   --muted: var(--field);
   --muted-foreground: var(--ink-muted);
   --secondary: var(--panel-hover);
@@ -36,9 +36,9 @@
   --border-strong: var(--hairline-strong);
   --input: var(--control-edge);
   --input-surface: var(--field);
-  --ring: var(--brand-mint);
-  --brand: var(--brand-mint);
-  --brand-strong: var(--brand-mint);
+  --ring: var(--brand-primary);
+  --brand: var(--brand-primary);
+  --brand-strong: var(--brand-primary);
   --brand-muted: var(--tint-brand);
   --success: var(--status-success);
   --success-muted: var(--tint-success);
@@ -61,16 +61,12 @@
   --chart-5: var(--asset-other-2);
   --sidebar: #0a0a0a;
   --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--brand-mint);
-  --sidebar-primary-foreground: var(--brand-mint-ink);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--brand-primary-ink);
   --sidebar-accent: var(--panel-raised);
   --sidebar-accent-foreground: var(--ink);
   --sidebar-border: var(--hairline);
-  --sidebar-ring: var(--brand-mint);
-  /* The logo: the brand mint, as the favicon draws it. */
-  --logo: var(--brand-mint);
-  /* The door's tint behind the frame. */
-  --logo-tint: 0.25;
+  --sidebar-ring: var(--brand-primary);
 }
 
 @theme inline {
@@ -114,7 +110,6 @@
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
-  --color-logo: var(--logo);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-warning: var(--warning);
@@ -183,7 +178,7 @@
   :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
   /* A heading or the main region the page moves focus to after navigating (`Shell`): not a control, so no ring. */
   h1[tabindex="-1"]:focus, main[tabindex="-1"]:focus, [id][tabindex="-1"]:focus { outline: none; }
-  ::selection { background: color-mix(in oklab, var(--brand-mint) 35%, transparent); }
+  ::selection { background: color-mix(in oklab, var(--brand-primary) 35%, transparent); }
   input, select, textarea { scroll-margin-block: 14rem 2rem; }
   select { background-color: var(--input-surface); color: var(--foreground); }
   dialog { overscroll-behavior: contain; }

@@ -32,6 +32,8 @@ test("a token lasts 1 to 30 days, and lapses", async () => {
   assert.ok(tokens.find(issued.token));
   time.now += 2;
   assert.equal(tokens.find(issued.token), undefined, "expired");
+  assert.equal(tokens.ended(issued.token), "expired", "its holder is told why");
+  assert.equal(tokens.ended(issued.token.slice(0, -1) + (issued.token.endsWith("A") ? "B" : "A")), undefined, "a wrong secret is told nothing");
   assert.deepEqual(tokens.list("portfolio"), []);
 });
 
@@ -43,6 +45,8 @@ test("a revoked token is refused from the next call, and only that agent's own c
   assert.ok(tokens.find(mine.token));
   assert.equal(await tokens.revoke("portfolio", mine.view.id), true);
   assert.equal(tokens.find(mine.token), undefined);
+  assert.equal(tokens.ended(mine.token), "revoked");
+  assert.equal(tokens.ended(other.token), undefined, "a live token hasn't ended");
   assert.equal(await tokens.revoke("portfolio", mine.view.id), false, "already revoked");
   assert.ok(tokens.find(other.token), "another agent's is untouched");
 });

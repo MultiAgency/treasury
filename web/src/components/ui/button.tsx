@@ -8,7 +8,7 @@ const buttonVariants = cva(
   {
     variants: {
       /*
-       * Compact on a pointer (36px, 32px small), 44px on a phone's touch. The primary action is the brand mint; a
+       * Compact on a pointer (36px, 32px small), 44px on a phone's touch. The primary action is the brand gold; a
        * destructive one is a red tint, and `danger` its trigger's red outline.
        */
       variant: {
