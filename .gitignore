@@ -5,3 +5,11 @@ node_modules/
 dist/
 !.env.example
 .test-artifacts/
+
+# Generated local design reports
+.impeccable/critique/
+
+# Synthetic staging runtime databases
+/staging/*.sqlite
+/staging/*.sqlite-wal
+/staging/*.sqlite-shm

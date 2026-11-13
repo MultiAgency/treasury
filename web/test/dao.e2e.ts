@@ -165,7 +165,7 @@ test("a council member asks the DAO to approve a proposal, files the vote from t
   const proposal = made.value as ProposalView;
 
   await page.goto(`${origin}/agents/${target.agent}/proposals/${proposal.id}`);
-  const region = page.getByRole("region", { name: "State" });
+  const region = page.getByRole("region", { name: "Transaction progress" });
   await visible(region.getByRole("button", { name: "Ask the DAO to approve" }));
   await region.getByRole("button", { name: "Ask the DAO to approve" }).click();
   await visible(region.getByRole("status").filter({ hasText: `${dao} votes to approve this proposal.` }));

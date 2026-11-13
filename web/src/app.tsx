@@ -11,7 +11,7 @@ import { Connection } from "./connection";
 import { Diversification } from "./diversification";
 import { EmergencyStop } from "./freeze";
 import { Funding } from "./funding";
-import { NeedsDecision, SinceLastLooked, Standing } from "./home";
+import { FirstTransaction, NeedsDecision, SinceLastLooked, Standing } from "./home";
 import { PageLink } from "./nav";
 import { agentAddress, isProposalId, isRunId, MISSING_TITLE, place, ROOT_TITLE, type Place } from "./pages";
 import { Portfolio } from "./portfolio";
@@ -160,6 +160,7 @@ export function HomePage() {
   // stays at one position in the list, whether or not the agent is connected: moved, it would remount and lose the notice
   // that says it just connected. Not connected, it is the only thing on the page, and what needs doing.
   return <div className="flex flex-col gap-4">
+    <FirstTransaction reads={reads} identity={identity} connected={connected} />
     <NeedsDecision reads={reads} identity={identity} connected={connected} />
     {connected ? <SinceLastLooked key={JSON.stringify([identity.account, identity.agent])} reads={reads} identity={identity} /> : null}
     {connected ? <Standing reads={reads} identity={identity} /> : null}

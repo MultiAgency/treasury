@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PanelTitle } from "@/components/ui/stat";
 import { ago } from "./shared/format";
-import { Badge, Card, Loading, QueryError, short, type Tone } from "./shared/ui";
+import { Badge, Button, Card, Loading, QueryError, short, type Tone } from "./shared/ui";
 import { unresolvedAnchor } from "./activity-view";
 import { PageLink } from "./nav";
 import { needsDecision, type Need } from "./needs-decision";
@@ -103,6 +103,39 @@ export function NeedsDecision({ reads, identity, connected }: { reads: Reads; id
         <h3 className="text-sm font-medium">Pending <span className="font-normal text-muted-foreground">· no action needed</span></h3>
         <NeedList label="Pending, no action needed" items={checking} agent={identity.agent} />
       </div>}
+    </Card>
+  </section>;
+}
+
+/** Readiness comes from live reads, so returning owners resume at the current prerequisite. */
+export function FirstTransaction({ reads, identity, connected }: { reads: Reads; identity: Identity; connected: boolean }) {
+  const overview = useQuery({ ...reads.overview, enabled: connected });
+  const proposals = useQuery({ ...reads.proposals, enabled: connected, refetchInterval: false });
+  const steps = [
+    { label: "Create the agent", done: true, to: agentAddress(identity.agent), hash: undefined },
+    { label: "Connect Treasury", done: connected, to: agentAddress(identity.agent), hash: "connection" },
+    { label: "Fund the agent", done: overview.data ? fundedStatus(overview.data.book).funded : false, to: agentAddress(identity.agent, "funding"), hash: undefined },
+    { label: "Check the policy", done: overview.data ? !overview.data.notInForce : false, to: agentAddress(identity.agent, "policy"), hash: undefined },
+    { label: "Review a proposal", done: false, to: agentAddress(identity.agent, "proposals"), hash: undefined },
+  ];
+  if (proposals.data?.some(proposal => proposal.state === "executed")) return null;
+  const waiting = connected && (overview.isPending || proposals.isPending);
+  const failed = connected && (overview.isError || proposals.isError);
+  const next = steps.find(step => !step.done)!;
+  return <section aria-labelledby="first-transaction-title">
+    <Card className="gap-4">
+      <h2 id="first-transaction-title" className="text-lg font-semibold">Your first Treasury transaction</h2>
+      <p className="text-sm text-muted-foreground">Prepare the agent, then approve and execute a proposal. Approval and execution are separate steps.{identity.signer === "dao" && " DAO decisions may need a council vote before you can continue."}</p>
+      {waiting ? <Loading label="Checking transaction readiness…" /> : failed ? <>
+        <p className="text-sm" role="alert">Readiness could not be checked. Your completed steps have not been changed.</p>
+        <Button variant="outline" onClick={() => { void overview.refetch(); void proposals.refetch(); }}>Check readiness again</Button>
+      </> : <>
+        <ol aria-label="Transaction readiness" className="grid gap-2 text-sm sm:grid-cols-2">
+          {steps.map(step => <li key={step.label} className="flex items-center gap-2"><Badge tone={step.done ? "success" : "neutral"}>{step.done ? "Done" : "To do"}</Badge>{step.label}</li>)}
+        </ol>
+        <PageLink to={next.to} hash={next.hash} className={`${LINK} self-start`}>{next.label}<ArrowRight aria-hidden="true" className="size-3.5" /></PageLink>
+        <p className="text-xs text-muted-foreground">Strategy grants are managed on Strategy when needed. Autopilot is optional; it is not required to review a proposal.</p>
+      </>}
     </Card>
   </section>;
 }
