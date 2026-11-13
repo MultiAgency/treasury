@@ -20,6 +20,8 @@ const common = { ...base, agent: z.string().regex(/^[a-z0-9-]{1,32}$/) };
  * set it up after the vote (the DAO's Treasury agent is already created, or its key changed).
  */
 export type DaoEnding = "expired" | "stopped" | "rejected" | "changed" | "refused";
+/** Endings kept in memory at once. */
+const MAX_ENDINGS = 1_024;
 /**
  * A DAO's consent to this app, its vote on one of this app's Treasury proposals, or its setup of its Organization's
  * Treasury agent, which names no agent until the platform reserves one.
@@ -47,14 +49,17 @@ export async function createDaoRequests(path: string, { max = 256 } = {}) {
   const { all, commit } = await createRecords(path, "requests", storedDaoRequest, "the DAO requests this server filed");
   const records = () => all() as readonly StoredDaoRequest[];
   /**
-   * Why each agent's last consent request, and each Organization's last setup, ended without completing, until another
-   * is filed: whichever read saw it end (a page's or the background reader's), the page can say why. Kept in memory
-   * only: a restart forgets the reason, never a request.
+   * Why each agent's last consent request, each Organization's last setup, and the last vote on each proposal ended
+   * without completing, until another is filed: whichever read saw it end (a page's or the background reader's), the
+   * page can say why. Kept in memory only: a restart forgets the reason, never a request. At most `MAX_ENDINGS`, the
+   * oldest forgotten first, since proposals keep coming.
    */
   const endings = new Map<string, DaoEnding>();
   const agentKey = (organization: string, agent: string) => `${organization} ${agent}`;
-  /** Where a consent's or a setup's ending is kept: a setup names no agent, and no agent's name has a space. */
-  const endingKey = (record: StoredDaoRequest) => record.kind === "setup" ? `${record.organization} setup` : agentKey(record.organization, record.agent);
+  const voteKey = (organization: string, agent: string, proposal: string) => `${agentKey(organization, agent)} vote ${proposal}`;
+  /** Where a request's ending is kept: a setup names no agent, a vote names its proposal, and no agent's name has a space. */
+  const endingKey = (record: StoredDaoRequest) => record.kind === "setup" ? `${record.organization} setup`
+    : record.kind === "vote" ? voteKey(record.organization, record.agent, record.proposal) : agentKey(record.organization, record.agent);
   /** Whether `b` would duplicate the open `a`: the same Organization's setup, the same agent's consent, or a vote on the same proposal. */
   const sameSubject = (a: StoredDaoRequest, b: StoredDaoRequest) => a.kind === b.kind && a.organization === b.organization
     && (a.kind === "setup" || (a.agent === (b as StoredAgentRequest).agent && (a.kind === "consent" || a.proposal === (b as StoredDaoVote).proposal)));
@@ -74,17 +79,22 @@ export async function createDaoRequests(path: string, { max = 256 } = {}) {
     /** Stores a new request; false, storing nothing, while one for the same subject is open or `max` are kept. */
     async add(record: StoredDaoRequest) {
       const added = await commit(current => current.length >= max || (current as readonly StoredDaoRequest[]).some(open => sameSubject(open, record)) ? null : [...current, record]);
-      if (added && record.kind !== "vote") endings.delete(endingKey(record));
+      if (added) endings.delete(endingKey(record));
       return added;
     },
-    /** Forgets a request that has ended: completed, refused, or past its vote; a consent's or setup's `why`, if it ended without completing, is kept. */
+    /** Forgets a request that has ended: completed, refused, or past its vote; its `why`, if it ended without completing, is kept. */
     async close(id: string, why?: DaoEnding) {
       const closing = records().find(record => record.id === id);
       await commit(current => current.filter(record => record.id !== id));
-      if (closing && closing.kind !== "vote" && why) endings.set(endingKey(closing), why);
+      if (!closing || !why) return;
+      endings.delete(endingKey(closing));
+      while (endings.size >= MAX_ENDINGS) endings.delete(endings.keys().next().value!);
+      endings.set(endingKey(closing), why);
     },
     /** Why the agent's last consent request ended without a consent, if it did and none has been filed since. */
     ended: (organization: string, agent: string) => endings.get(agentKey(organization, agent)),
+    /** Why the last vote on the agent's proposal ended without a verdict, if it did and none has been filed on it since. */
+    voteEnded: (organization: string, agent: string, proposal: string) => endings.get(voteKey(organization, agent, proposal)),
     /** Why the Organization's last setup ended without reserving its agent, if it did and none has been filed since. */
     setupEnded: (organization: string) => endings.get(`${organization} setup`),
   };

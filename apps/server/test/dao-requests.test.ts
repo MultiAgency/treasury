@@ -87,3 +87,18 @@ test("one setup is open per Organization, beside its agents' consent requests an
   assert.equal(reloaded.setupEnded("agentic--sputnik-dao--near"), "expired");
   assert.equal(reloaded.ended("agentic--sputnik-dao--near", "dao-treasury"), undefined, "a setup's ending isn't an agent's");
 });
+
+test("why a vote on a proposal ended without a verdict is kept for that proposal, until another vote on it is filed", async () => {
+  const requests = await createDaoRequests(scratch());
+  const organization = "agentic--sputnik-dao--near", first = "1".repeat(32), second = "2".repeat(32);
+  assert.equal(await requests.add(vote(first, "cd".repeat(32))), true);
+  assert.equal(await requests.add(vote(second, "ef".repeat(32))), true);
+  await requests.close("cd".repeat(32), "rejected");
+  assert.equal(requests.voteEnded(organization, "dao-treasury", first), "rejected", "the DAO voted it down");
+  assert.equal(requests.voteEnded(organization, "dao-treasury", second), undefined, "another proposal's vote is still open");
+  assert.equal(requests.ended(organization, "dao-treasury"), undefined, "a vote's ending isn't the agent's consent's");
+  await requests.close("ef".repeat(32));
+  assert.equal(requests.voteEnded(organization, "dao-treasury", second), undefined, "one that completed ended with a verdict: nothing to say");
+  assert.equal(await requests.add(vote(first, "ab".repeat(32), "reject")), true);
+  assert.equal(requests.voteEnded(organization, "dao-treasury", first), undefined, "a new vote on it is what the page shows");
+});
