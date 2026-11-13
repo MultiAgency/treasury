@@ -57,8 +57,14 @@ export async function startStack({ args = ["--no-browser"], owner = "wallet", pl
   const exited = new Promise<number | null>(resolve => child.once("exit", resolve));
   const stop = async () => {
     if (child.exitCode === null) writeFileSync(join(directory, "stop"), "");
-    const code = await Promise.race([exited, delay(30_000, "timeout" as const)]);
-    if (code === "timeout") child.kill("SIGTERM");
+    const deadline = AbortSignal.timeout(30_000);
+    const code = await Promise.race([exited, new Promise<"timeout">(resolve => deadline.addEventListener("abort", () => resolve("timeout"), { once: true }))]);
+    if (code === "timeout") {
+      child.kill("SIGKILL");
+      await exited;
+      throw new Error(`Stack teardown timed out:\n${output.slice(-2_000)}`);
+    }
+    if (code !== 0) throw new Error(`Stack exited with ${code}:\n${output.slice(-2_000)}`);
   };
   for (let waited = 0; !output.includes("Isolated stack ready"); waited += 250) {
     if (child.exitCode !== null || waited > 120_000) {
@@ -85,7 +91,7 @@ export async function startStack({ args = ["--no-browser"], owner = "wallet", pl
 /** A fetch that trusts only the running stack's own certificate (`Stack.ca`): what a server on the app route calls it with. */
 export const stackFetch = (ca: Buffer): typeof fetch => async (input, init) => new Promise((resolve, reject) => {
   const url = new URL(input instanceof Request ? input.url : String(input));
-  const req = request(url, { method: init?.method ?? "GET", headers: Object.fromEntries(new Headers(init?.headers)), ca, signal: init?.signal ?? undefined }, res => {
+  const req = request(url, { agent: false, method: init?.method ?? "GET", headers: Object.fromEntries(new Headers(init?.headers)), ca, signal: init?.signal ?? undefined }, res => {
     const chunks: Buffer[] = [];
     res.on("data", chunk => chunks.push(chunk));
     res.on("end", () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode, headers: res.headers as Record<string, string> })));

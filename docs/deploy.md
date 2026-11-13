@@ -200,3 +200,13 @@ change that allowance or make GitHub deliver its schedule on time. See the [cred
 
 Redeploy the previous deployment (`railway deployment list`, then redeploy it in the dashboard). State stays on the
 volume. A newer build may have written records the older one reads as it always did: the audit trail only grows.
+
+### Lost operation ID: provider recovery review
+
+Reviewed 2026-11-12 against the pinned platform and its Agent API SDK 0.8.2. A submission-attempted journal entry without a provider operation ID remains unresolved; preserve its key and exact body, stop new sends, and keep the journal and submission evidence. Amount, recipient and timestamp similarity do not establish identity. Do not generate a replacement key or edit the journal to mark success.
+
+The provider's [execution documentation](https://docs.agentsonintents.com/integration/agent-api/executions#idempotency) describes identical-body replay with the original grant-scoped key. Its [SDK documentation](https://docs.agentsonintents.com/integration/agent-api/sdk#idempotency) describes key preservation across failures. These are documented semantics, not observations of the deployed provider. The reviewed SDK exposes history and status reads but no read-only lookup by idempotency key. History matches alone cannot resolve a missing ID.
+
+The documented `recover` POST requires a correlation ID and the original request and credentials. It may dispatch work proved never committed; it is not a read-only lost-ID lookup. A freeze also cannot recall a transfer already submitted. The local sandbox tests verify refusal before submission and status-only reconciliation while frozen through a test adapter, not provider freeze propagation.
+
+Before implementing lost-ID recovery, obtain a provider contract covering: a read-only lookup keyed by agent, original grant and idempotency key; exact request binding; key retention/expiry; visibility while acceptance is in flight; behavior after grant/API-key revocation or rotation and freeze; and whether a negative lookup proves non-submission. If only replay is offered, establish whether it can create work after a missing or expired record. Keep automatic replay disabled until those semantics and a lost-response integration test are verified. The [provider inquiry](https://github.com/NEAR-Intents-Agent-API/sdk-typescript/issues/37) has been submitted; these checks did not execute live payment requests.
