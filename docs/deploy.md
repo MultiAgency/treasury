@@ -206,8 +206,10 @@ platform (`TREASURY_PLATFORM`). Each case starts a fresh synthetic provider and 
 operations. The provider holds its response after updating its balances and ledger; the test verifies the journal,
 freezes through the owner API, then sends SIGKILL to both Treasury and the platform executor while execution still
 awaits acknowledgement. After two restarts with the same state, balances, transaction records and send-attempt counts
-must show one swap. A recorded operation ID reconciles while frozen; a missing ID remains unresolved. Executor lease
-takeover uses its normal stale timeout, never manual lock removal. These are synthetic-provider tests, not mainnet or
+must show one swap. Each restart completes an owner recovery call; the missing-ID case must report the original key
+as unknown, rather than pass by reading unchanged state before recovery runs. A recorded operation ID reconciles
+while frozen; a missing ID remains unresolved. Executor lease takeover uses its normal stale timeout, never manual
+lock removal. These are synthetic-provider tests, not mainnet or
 provider-process durability evidence. A pending answer alone is not a passed acceptance check. Preserve an existing
 unresolved fixture for review and create a separate fixture for the next case; do not clear its journal to unblock a test.
 

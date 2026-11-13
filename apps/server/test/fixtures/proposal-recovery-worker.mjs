@@ -7,7 +7,7 @@ import { Server, createServer } from 'node:http';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { appClient, proposalText } from '@multiagency/sdk';
+import { appClient, ownerClient, proposalText } from '@multiagency/sdk';
 
 const [boundary, platform, directory, app] = process.argv.slice(2);
 assert.ok(['before-id', 'after-id'].includes(boundary));
@@ -15,7 +15,7 @@ const load = p => import(pathToFileURL(join(platform, p)).href);
 const { offlineEnvironment } = await load('scripts/test-environment.mjs');
 const { environment } = await load('test/e2e/environment.mjs');
 const { stackControls, appCredential, stackFetch } = await load('test/e2e/stack-controls.mjs');
-const { OWNER, USDC } = await load('test/e2e/provider.mjs');
+const { OWNER, USDC, sign } = await load('test/e2e/provider.mjs');
 const WNEAR = 'nep141:wrap.near';
 const delay = ms => new Promise(r => setTimeout(r, ms));
 const bounded = (promise, label, ms = 25_000) => new Promise((resolve, reject) => {
@@ -87,6 +87,16 @@ try {
   const deployment = 'crash-acceptance', credential = await appCredential(stack, deployment);
   const client = appClient({ base: stack.dashboard, credential, fetch: stackFetch(stack) });
   const calls = client.agent('owner--near', 'portfolio');
+  // Recovery is an owner maintenance procedure, not an app permission. Use the fixture owner's real gateway session.
+  const gatewayFetch = stackFetch(stack);
+  const ownerChallenge = await (await gatewayFetch('/gw/challenge')).json();
+  const ownerSignature = await sign(OWNER, ownerChallenge);
+  const ownerSession = await gatewayFetch('/gw/session', { method: 'POST', headers: { 'content-type': 'application/json', origin: stack.dashboard },
+    body: JSON.stringify({ ...ownerSignature, nonce: ownerChallenge.nonce }) });
+  assert.equal(ownerSession.status, 200);
+  const ownerCookie = ownerSession.headers.getSetCookie()[0].split(';')[0];
+  const owner = ownerClient({ base: `${stack.dashboard}/a/portfolio`, fetch: (url, init = {}) => gatewayFetch(url, { ...init,
+    headers: { ...Object.fromEntries(new Headers(init.headers)), cookie: ownerCookie, origin: stack.dashboard } }) });
   const port = await freePort(), origin = `http://localhost:${port}`, state = join(directory, 'treasury');
   mkdirSync(state);
   writeFileSync(join(state, 'credential'), credential, { mode: 0o600 });
@@ -143,6 +153,7 @@ try {
   const journalBefore = readFileSync(journalPath, 'utf8');
   const lines = journalBefore.trim().split('\n').map(JSON.parse);
   assert.equal(lines.filter(l => l.request).length, 1);
+  const operationKey = lines.find(l => l.request).idempotencyKey;
   assert.ok(lines.some(l => l.submissionState === 'SUBMISSION_ATTEMPTED'));
   assert.equal(lines.some(l => l.correlation_id === witness.correlationId), boundary === 'after-id');
   assert.equal(lines.some(l => l.status === 'SUCCESS'), false, 'Crash precedes acknowledgement of settlement');
@@ -195,6 +206,19 @@ try {
       if (boundary === 'before-id' || recovered.value.state === 'executed') break;
       assert.ok(i < 150, JSON.stringify(recovered)); await delay(100);
     }
+    // Reading an unchanged `unknown` proposal does not prove recovery ran. Require a completed reconciliation on
+    // each restart; an absent ID must report this exact key unknown, rather than merely stay unknown until shutdown.
+    let reconciliation;
+    for (const deadline = Date.now() + 20_000; ;) {
+      reconciliation = await bounded(owner.call('recover'), 'Recovery RPC');
+      if (reconciliation.ok) break;
+      assert.ok(reconciliation.kind === 'busy' && Date.now() < deadline, JSON.stringify(reconciliation));
+      await delay(100);
+    }
+    if (boundary === 'before-id') {
+      assert.deepEqual(reconciliation.value.map(({ key, outcome, status }) => ({ key, outcome, status })),
+        [{ key: operationKey, outcome: 'unknown', status: null }]);
+    }
     const expected = boundary === 'after-id' ? 'executed' : 'unknown';
     assert.equal(recovered.value.state, expected, JSON.stringify(recovered));
     const replay = await call(`${agent}/proposals/${view.id}/execute`, {});
@@ -215,7 +239,7 @@ try {
     assert.equal(payments[0][header.indexOf('correlationId')], witness.correlationId);
     assert.equal(payments[0][header.indexOf('amountIn')], '1000000');
     assert.equal(payments[0][header.indexOf('amountOut')], swap.amountOut);
-    restarts.push({ pass, proposal: recovered.value, balances: stack.portfolio.treasuryBalances() });
+    restarts.push({ pass, reconciliation: reconciliation.value, proposal: recovered.value, balances: stack.portfolio.treasuryBalances() });
     await kill(treasury); await kill(executor);
   }
   const auditText = readFileSync(join(state, 'audit.jsonl'), 'utf8');
