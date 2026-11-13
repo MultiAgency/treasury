@@ -173,7 +173,7 @@ export function Chat({ reads, persona, examples, label = "Your question", logLab
       <div className="flex items-end gap-2">
         <label className="sr-only" htmlFor={field}>{label}</label>
         <textarea id={field} rows={2} maxLength={2_000} value={question} disabled={busy} placeholder={placeholder}
-          className={cn(input, "min-h-11 flex-1 resize-none py-2")} onChange={event => setQuestion(event.target.value)}
+          className={cn(input, "field-sizing-content h-auto max-h-40 min-h-14 flex-1 resize-none py-2 md:h-auto")} onChange={event => setQuestion(event.target.value)}
           onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(question); } }} />
         <Button type="submit" size="icon" aria-label={inline ? `Ask: ${label}` : "Ask"} disabled={busy || !question.trim()}><PaperPlaneRight aria-hidden="true" /></Button>
       </div>
