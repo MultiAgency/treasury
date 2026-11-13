@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "verifiedOn": "2026-11-12",
+  "timeZone": "America/New_York",
+  "purpose": "Read-only operating inventory; not Railway apply configuration. Reverify live state before mutations.",
+  "projectId": "7113126f-e45d-4ce1-ab6c-8604ade66134",
+  "environments": {
+    "live": {
+      "railwayName": "production",
+      "railwayEnvironmentId": "e4bad0b7-1433-48b8-b880-aaacbfa51d25",
+      "serverServiceId": "d6734b71-4e83-4e74-8995-2ca7570c454a",
+      "configuredPublicOrigin": "https://treasury.dev.multiagency.ai",
+      "aliasOrigins": [
+        "https://treasury.multiagency.ai"
+      ],
+      "platformOrigin": "https://api.dev.multiagency.ai",
+      "funds": "real-mainnet",
+      "volumeId": "676ea8f0-543c-4fb2-97fe-62596b7763c2",
+      "observedCommit": "fe845b9a8936cc99d86b44511ead1ccfaea5b876",
+      "observedDeploymentId": "863af4bf-49f3-4a42-a8bc-80ad7d72e6e9",
+      "observedWatchFileEntries": 2,
+      "observedBallastEntries": 2,
+      "observedRiskEntries": 0
+    },
+    "syntheticStaging": {
+      "railwayName": "staging",
+      "railwayEnvironmentId": "343dceb7-e189-409d-bf96-9cc0be45d10b",
+      "serverServiceId": "d6734b71-4e83-4e74-8995-2ca7570c454a",
+      "configuredPublicOrigin": "https://server-staging-3c433768.up.railway.app",
+      "platformOrigin": "https://synthetic-platform-staging.up.railway.app",
+      "funds": "synthetic",
+      "volumeId": "4cbc3a29-fc0f-4ef2-b9b3-db8605436e7f",
+      "platformServiceId": "56fce9c3-9fd2-452d-a7e4-90feb419893e",
+      "platformVolumeId": "ba5166d0-e0a8-4aef-8535-55a98d2fe5a3",
+      "observedCommit": "62faea4b2dc81375d45ba629ee7577ddb000ce19",
+      "observedDeploymentId": "82a8755d-7954-445f-9c51-f55c89b194ad",
+      "observedWatchFileEntries": 0,
+      "observedSyntheticAgentFrozen": true
+    }
+  }
+}
