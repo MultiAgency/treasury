@@ -91,7 +91,7 @@ export function runSummary(recording: RecordingRead): RunSummary {
         case "send": stages.push({ stage: "send", detail: `operation ${payload.correlationId || "(none)"}: ${payload.status}${payload.failureCode ? ` (${payload.failureCode})` : ""}` }); break;
         case "shield": stages.push({ stage: "shield", detail: `${payload.asset}: ${payload.status}${payload.failureCode ? ` (${payload.failureCode})` : ""}` }); break;
         case "before": case "after": stages.push({ stage: payload.stage, detail: "error" in payload.observation ? `couldn't read: ${payload.observation.error}`
-          : `${payload.observation.unresolved} unresolved, drift ${payload.observation.driftBps} bps` }); break;
+          : `${payload.observation.unresolved} pending operation(s), drift ${payload.observation.driftBps} bps` }); break;
         default: stages.push({ stage: payload.stage, detail: "recorded" });
       }
     }

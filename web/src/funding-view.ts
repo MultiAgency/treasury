@@ -15,6 +15,9 @@ export function leadWay({ linked, confidential, canLink }: { linked: boolean; co
   return canLink ? "link" : "receive";
 }
 
+/** The lead card's title. Until the funding account is read the lead isn't known (`undefined`), so the title is the neutral one: never "Link" to an owner who may have one linked. */
+export const leadTitle = (lead: Lead | undefined): string => lead === "link" ? "Link a funding account" : lead === "receive" ? "Receive funds" : "Money in";
+
 /** Whether the one-time deposit address is the lead, and so isn't also listed under "Other ways". */
 export const receiveIsOther = (lead: Lead): boolean => lead !== "receive";
 
