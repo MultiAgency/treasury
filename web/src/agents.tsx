@@ -84,7 +84,7 @@ function Doing({ entries, configured }: { entries: RiskHistory["entries"]; confi
       <PanelTitle id="agent-activity-title" title="What it has been doing" icon={<ListChecks weight="duotone" />} tone="info"
         description="Each assessment the agent recorded, newest first." />
       {entries.length === 0
-        ? <p role="status" className="text-sm text-muted-foreground">{configured ? "No assessment has been recorded yet: the first is made on the next watch tick." : "No assessment has been recorded: this server isn't running the agent for this treasury."}</p>
+        ? <p role="status" className="text-sm text-muted-foreground">{configured ? "No assessment has been recorded yet. Automatic monitoring will record one on its next scheduled check." : "No assessment has been recorded yet. An owner can request one without enabling automatic monitoring."}</p>
         : <ul aria-label="Recent assessments" className="flex flex-col gap-1.5 text-sm">
           {entries.slice(0, 8).map(entry => {
             const level = levelView(entry.level);

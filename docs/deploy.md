@@ -43,11 +43,9 @@ The old prototype (`dao/treasury`) is a different service, `treasury` in the pla
 `PORT` is Railway's. `TREASURY_PAGE_DIR` is set by the image. `watch` runs only with `TREASURY_WATCH_FILE` and
 `TREASURY_REQUESTS_FILE` (on `/data`); `.env.example` lists the rest, each with a default.
 
-Producing risk assessments currently requires a watch entry with `ballast` and `risk`; the report and what-if routes only use existing
-records. Enabling `watch` can create trade proposals and strategy suggestions, so it is not an assessment-only setup
-step. With no recorded assessment, a what-if returns problems and no numerical result, even when the assistant's
-stream completes. See [the what-if prerequisites](assistant.md#live-progress-and-the-what-if-workspace) and the
-[assessment-only follow-up](https://github.com/MultiAgency/treasury/issues/250).
+Owners can explicitly record an assessment with `POST /api/agents/:agent/risk/assess` while watch remains unconfigured. Supply reviewed Ballast spend, cash-floor, profile and diversification terms; the server validates these against current reads and records the assessment through its canonical audit writer. See [ADR 5](adr/0005-forward-risk.md#explicit-assessment-without-watch-250).
+
+Automatic assessments require a watch entry with `ballast` and `risk`. Enabling watch can create trade proposals and strategy suggestions. With no recorded assessment, what-if returns problems and no numerical result; incomplete genuine price history remains an explicit projection limitation after recording. Neither verification nor a lack of history calls for enabling watch, funding an agent or inserting synthetic production records.
 
 ## Service settings
 

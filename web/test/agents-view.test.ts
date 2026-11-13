@@ -52,7 +52,8 @@ test("the status line says whether this server runs the agent and how often, and
   assert.match(statusLine(history(true, null)).text, /on each watch tick/);
   const off = statusLine(history(false, null));
   assert.equal(off.running, false);
-  assert.match(off.text, /isn't running the stabilization agent/);
+  assert.match(off.text, /Automatic risk monitoring is off/);
+  assert.match(off.text, /owner can still request an assessment/);
 });
 
 test("recommendations read as words", () => {
