@@ -48,5 +48,5 @@ test("watch reads the agent's identity and the Organization's consents, to tell 
 // The type test: `watch` is given these and nothing else. Approving, executing, withdrawing, consenting, saving a
 // strategy, autopilot changes and plans are out of its reach; adding any here fails the typecheck.
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
-const reach: Same<keyof WatchPlatform, "overview" | "unresolved" | "autopilot" | "strategy" | "list" | "get" | "create" | "identity" | "consents"> = true;
+const reach: Same<keyof WatchPlatform, "overview" | "unresolved" | "books" | "autopilot" | "strategy" | "list" | "get" | "create" | "identity" | "consents"> = true;
 void reach;

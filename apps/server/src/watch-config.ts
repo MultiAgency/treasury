@@ -29,11 +29,11 @@ const agentSettings = z.strictObject({
 const watchFile = z.strictObject({ agents: z.array(agentSettings) });
 
 /**
- * Calls an hour the agents' ticks make in steady state: 3 a tick, or 1 while a proposal of the agent's own is open. A
+ * Conservative read budget, allowing a failed reconciliation read on every Ballast tick. Calls an hour: 3 a tick, or 1 while a proposal of the agent's own is open. A
  * tick that proposes, or that reads why it was refused, makes up to 5; neither repeats every tick.
  */
-export const readsPerHour = (agents: readonly Pick<WatchedAgent, "intervalS">[]) =>
-  Math.ceil(agents.reduce((sum, { intervalS }) => sum + READS_PER_TICK * 3_600 / intervalS, 0));
+export const readsPerHour = (agents: readonly (Pick<WatchedAgent, "intervalS"> & Partial<Pick<WatchedAgent, "ballast">>)[]) =>
+  Math.ceil(agents.reduce((sum, { intervalS, ballast }) => sum + (READS_PER_TICK + (ballast ? 1 : 0)) * 3_600 / intervalS, 0));
 
 /**
  * The agents `watch` proposes for, from an owner-only JSON file: `{ "agents": [{ "organization", "agent", … }] }`. It

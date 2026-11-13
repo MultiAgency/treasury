@@ -28,6 +28,7 @@ import { createSignIn } from "../src/signin.ts";
 import { createWatch } from "../src/watch.ts";
 import { HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { unreconciledUsd } from "../../../packages/core/src/index.ts";
 
 const intruder = wallet("intruder.near");
 /** A spend small enough that the stack's portfolio holds its floor, and ETH, which the platform lists, as the hedge sleeve. */
@@ -325,6 +326,11 @@ test("a public wNEAR balance is previewed and shielded once through the server, 
   const books = await get(`${agent}/books`, cookie);
   assert.equal(books.status, 200);
   contract.booksRead.parse(((await books.json()) as { value: unknown }).value);
+  // What Ballast's agent-malfunction detector reads (H9): after a shield the API's executions account for every balance.
+  const organization = owner.replaceAll(".", "--");
+  const [read, overview] = await Promise.all([platform.watch.books(organization, target.agent), platform.watch.overview(organization, target.agent)]);
+  assert.ok(read.ok && overview.ok, JSON.stringify([read, overview], (_k, v) => typeof v === "bigint" ? String(v) : v));
+  assert.equal(unreconciledUsd(read.value, [...overview.value.book, ...overview.value.unmanaged]), 0, JSON.stringify(read.value));
 });
 
 test("the owner asks for a rebalance to a drifted strategy: proposed under their consent, found by its requestId, nothing executed", async () => {

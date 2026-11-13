@@ -16,7 +16,7 @@ export const FAULT_DEFAULTS = {
   thinLiquidityBps: { l1: 100, l2: 300 },
   /** A stablecoin this far from $1 is a depeg: L2 at `l2`, L3 at `l3`, in percent. No usable price is L3: unknown ranks as the worst case. */
   depegPct: { l2: 1, l3: 3 },
-  /** Holdings that disagree with the venue by more than this percent are a reconciliation mismatch (L3). */
+  /** Holdings off the records by more than this percent of the book are a reconciliation mismatch (L3). */
   reconciliationMismatchPct: 0.1,
 } as const;
 
@@ -41,9 +41,9 @@ export type FaultObservations = {
   cashFloorUsd: number | null;
   /** Operations whose outcome is unknown (submitted, no result). */
   unknownOutcomes: number | null;
-  /** USD the agent expects to hold against what the venue reports. */
-  expectedUsd: number | null;
-  reportedUsd: number | null;
+  /** The book's value, and how far its holdings are off the records (`unreconciledUsd`), both in USD. */
+  bookUsd: number | null;
+  unreconciledUsd: number | null;
 };
 
 export type FaultName =
@@ -109,11 +109,37 @@ export function detectFaults(obs: FaultObservations, cfg: FaultConfig = FAULT_DE
   if (!num(obs.unknownOutcomes) || obs.unknownOutcomes < 0) add("agent-malfunction", 3, "unknown-outcome count unavailable");
   else if (obs.unknownOutcomes > 0) add("agent-malfunction", 3, `${obs.unknownOutcomes} operation(s) with an unknown outcome`);
   if (rules.reconciliation.ok) {
-    if (!num(obs.expectedUsd) || !num(obs.reportedUsd) || obs.expectedUsd <= 0 || obs.reportedUsd < 0) add("agent-malfunction", 3, "holdings can't be reconciled");
-    else if (Math.abs(obs.expectedUsd - obs.reportedUsd) * 100 > cfg.reconciliationMismatchPct * obs.expectedUsd)
-      add("agent-malfunction", 3, `holdings differ from the venue by more than ${cfg.reconciliationMismatchPct}%`);
+    if (!num(obs.bookUsd) || !num(obs.unreconciledUsd) || obs.bookUsd <= 0 || obs.unreconciledUsd < 0) add("agent-malfunction", 3, "holdings can't be reconciled");
+    else if (obs.unreconciledUsd * 100 > cfg.reconciliationMismatchPct * obs.bookUsd)
+      add("agent-malfunction", 3, `holdings are off the records by more than ${cfg.reconciliationMismatchPct}% of the book`);
   }
   return found;
+}
+
+/** One asset of the platform's `reconcileBooks`: raw-unit differences, as decimal strings. */
+export type BooksRow = { asset: string; public: { drift: string }; confidential: { unattributed: string } };
+/** An asset's price and decimals, as the platform's `overview` reports them. */
+export type PricedAsset = { asset: string; decimals: number | null; price: number | null };
+
+/**
+ * How far the holdings are off the records, in USD: each asset's public drift (the API's balance against the chain's
+ * transfers) and confidential unattributed amount (the API's balance against its recorded executions), valued at its
+ * price. Differences are summed as sizes, so a shortfall in one asset never hides a surplus in another. Null when a
+ * difference can't be read or valued: unknown, which the detector ranks as the worst case.
+ */
+export function unreconciledUsd(rows: readonly BooksRow[], prices: readonly PricedAsset[]): number | null {
+  let total = 0;
+  for (const row of rows) {
+    const amounts = [row.public?.drift, row.confidential?.unattributed];
+    if (!amounts.every(v => typeof v === "string" && /^-?\d+$/.test(v))) return null;
+    const raw = amounts.reduce((sum, v) => { const n = BigInt(v); return sum + (n < 0n ? -n : n); }, 0n);
+    if (raw === 0n) continue;
+    const p = prices.find(x => x.asset === row.asset);
+    if (!p || !num(p.price) || p.price <= 0 || !Number.isInteger(p.decimals) || p.decimals! < 0 || p.decimals! > 255) return null;
+    total += Number(raw) / 10 ** p.decimals! * p.price;
+    if (!Number.isFinite(total)) return null;
+  }
+  return total;
 }
 
 /** The highest level among fault detections (0 when there are none). */

@@ -52,12 +52,13 @@ async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk 
   const history = await createPriceHistory(join(dir, "requests.json.history"));
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, crash(pct, T0, days), T0);
-  const answers: { overview: OwnerOutput<"overview">; create?: ProposalAnswer } = { overview: overview(price, volatileUsd, stableUsd, T0) };
+  const answers: { overview: OwnerOutput<"overview">; quotes: Record<string, import("../../../packages/core/src/index.ts").PriceQuote[]>; books?: OwnerOutput<"reconcileBooks"> | null; create?: ProposalAnswer } = { overview: overview(price, volatileUsd, stableUsd, T0), quotes: {} };
   const stored = new Map<string, ReturnType<typeof proposal>>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
     overview: async () => ({ ok: true, value: answers.overview }),
     unresolved: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["unresolved"]>>,
+    books: async () => (answers.books === null ? { ok: false, kind: "unavailable" } : { ok: true, value: answers.books ?? [] }) as Awaited<ReturnType<WatchPlatform["books"]>>,
     autopilot: async () => ({ ok: true, value: { on: autopilotOn, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
     strategy: async () => ({ ok: true, value: { strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000 }, minLegUsd: 1, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } },
       digest: `sha256:${"c".repeat(64)}` } }) as unknown as Awaited<ReturnType<WatchPlatform["strategy"]>>,
@@ -78,7 +79,7 @@ async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk 
   };
   const audit = chainedFileAudit<Record<string, unknown>>(join(dir, "audit.jsonl"), () => clock.now);
   await audit.check();
-  const ballast = createBallast({ history, states, audit, now: () => clock.now, prices: feedsFromBook(() => answers.overview) });
+  const ballast = createBallast({ history, states, audit, now: () => clock.now, prices: feedsFromBook(() => answers.overview, answers.quotes) });
   const holds = await createHolds(join(dir, "requests.json.holds"));
   const watch = createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
   const watched: WatchedAgent = { organization: ORG, agent: AGENT, driftPoints: 5, intervalS: 300, proposalHours: 24, ballast: ballastChanges,
@@ -211,4 +212,23 @@ test("the watch file takes a risk block only with Ballast, and checks its parame
   await assert.rejects(loadWatchConfig(file), /risk without ballast/);
   await write({ organization: ORG, agent: AGENT, ballast: { ...SETTINGS, risk: { ...SETTINGS } }, risk: {} });
   await assert.rejects(loadWatchConfig(file), /ballast\.risk/);
+});
+
+
+test("unknown reconciliation cannot be bypassed by a forward-risk de-risk proposal", async () => {
+  const w = await world();
+  w.answers.books = null;
+  const event = await w.tick();
+  assert.equal(w.sent.length, 0, JSON.stringify(event));
+  assert.ok(!("proposed" in event));
+  assert.ok((await w.entries()).every(record => !("requestId" in record.entry)));
+});
+
+
+test("a forward de-risk cannot bypass missing independent oracle quotes", async () => {
+  const w = await world();
+  w.answers.quotes[WNEAR] = [];
+  const result = await w.tick();
+  assert.equal(w.sent.length, 0, JSON.stringify(result));
+  assert.ok((await w.entries()).every(record => !("requestId" in record.entry)));
 });

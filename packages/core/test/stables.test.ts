@@ -19,7 +19,7 @@ test("peg levels: on peg, L2 from 1% off, L3 from 3% off or with no usable price
 
 test("the fault detector watches each stablecoin on its own: one off its peg is flagged by name", () => {
   const found = detectFaults({ oracleFrozen: null, quotedSlippageBps: 0, venueUp: true, stablecoinPrices: { USDC: 1, USDT: 0.96 },
-    cashUsd: 100, cashFloorUsd: 1, unknownOutcomes: 0, expectedUsd: null, reportedUsd: null }).filter(d => d.detector === "stablecoin-depeg");
+    cashUsd: 100, cashFloorUsd: 1, unknownOutcomes: 0, bookUsd: null, unreconciledUsd: null }).filter(d => d.detector === "stablecoin-depeg");
   assert.equal(found.length, 1);
   assert.match(found[0]!.reason, /USDT/);
   assert.equal(found[0]!.level, 3);
