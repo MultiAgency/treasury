@@ -6,7 +6,7 @@ import { DataTable, td, th, tr, TokenChip, ValuePill } from "@/components/ui/dat
 import { Meter, SplitBar } from "@/components/ui/meter";
 import { PanelTitle, StatCard } from "@/components/ui/stat";
 import { blockFunding, useFundingBlock } from "./funding-block";
-import { leadWay, publicIsOther, receiveIsOther } from "./funding-view";
+import { leadTitle, leadWay, publicIsOther, receiveIsOther } from "./funding-view";
 import { decimalsOf, expiryProblem, fundingTransfer, type FundingAsset, type Transfer } from "./funding-transaction";
 import { Field, focusInvalid } from "./shared/form";
 import { accountError } from "./shared/form-validation";
@@ -112,7 +112,8 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
   const refresh = () => [reads.treasury, reads.overview].forEach(read => void client.invalidateQueries({ queryKey: read.queryKey }));
   const linked = treasury.data ?? null;
   const confidential = Boolean(linked?.dao && linked.confidential);
-  const lead = leadWay({ linked: linked !== null, confidential, canLink: identity.signer !== "dao" && mayCall(identity.access, "treasury/link") });
+  // Known only once the funding account is read: until then nothing is led with, and the card keeps its neutral title.
+  const lead = treasury.isSuccess ? leadWay({ linked: linked !== null, confidential, canLink: identity.signer !== "dao" && mayCall(identity.access, "treasury/link") }) : undefined;
 
   return <section id="funding" aria-labelledby="funding-title" className="flex flex-col gap-3">
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -120,12 +121,13 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
       <Button variant="ghost" size="sm" disabled={treasury.isFetching || overview.isFetching} onClick={refresh}>{treasury.isFetching || overview.isFetching ? "Checking…" : "Check again"}</Button>
     </div>
     <Card className="gap-3">
-      <PanelTitle level={3} title={lead === "link" ? "Link a funding account" : lead === "receive" ? "Receive funds" : "Money in"} icon={lead === "link" ? <Bank weight="duotone" /> : lead === "receive" ? <QrCode weight="duotone" /> : <ArrowDown weight="bold" />}
+      <PanelTitle level={3} title={leadTitle(lead)} icon={lead === "link" ? <Bank weight="duotone" /> : lead === "receive" ? <QrCode weight="duotone" /> : <ArrowDown weight="bold" />}
         tone={lead === "receive" ? "usdc" : "brand"} description={linked && lead !== "receive" ? <>From <span className="font-mono">{linked.accountId}</span> to this agent</> : undefined}
         infoLabel="About money in" info={lead === "confidential" ? "A confidential DAO pays from its confidential balance in Trezu, to the near.com network, out of public view. What it holds publicly it pays by a proposal to a fresh deposit address, under Other ways."
           : lead === "account" && linked?.dao ? "Files one proposal in Trezu: the DAO pays a fresh deposit address once its members approve. Funds land in the agent's private balance."
           : lead === "account" ? "Sends from the funding account to a fresh deposit address. Funds land in the agent's private balance."
           : lead === "link" ? "Link the NEAR account that funds this agent. Money in then sends from it to a fresh deposit address."
+          : lead === undefined ? undefined
           : "Anyone may pay a one-time deposit address, with no signature from here. It lands in the agent's private balance."} />
       {treasury.isPending ? <Loading label="Reading the funding account…" />
         : treasury.isError ? <QueryError error={treasury.error} retry={() => treasury.refetch()} />
@@ -138,7 +140,7 @@ export function Funding({ reads, identity }: { reads: Reads; identity: Identity 
       <PanelTitle level={3} title="Funding account" icon={<Bank weight="duotone" />} tone="info" />
       <FundingAccount reads={reads} identity={identity} linked={linked} />
     </Card>}
-    {!treasury.isPending && !treasury.isError && (receiveIsOther(lead) || publicIsOther(lead)) && <details className="group rounded-lg border border-border bg-card/40">
+    {lead && (receiveIsOther(lead) || publicIsOther(lead)) && <details className="group rounded-lg border border-border bg-card/40">
       <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium">Other ways to fund the agent</summary>
       <div className="flex flex-col gap-3 px-4 pb-4">
         {publicIsOther(lead) && <FundingPath id="money-in-public" title="From the public balance"><Fund reads={reads} identity={identity} linked={linked!} /></FundingPath>}

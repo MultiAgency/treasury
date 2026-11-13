@@ -181,7 +181,7 @@ export const TOOLS = [
   tool("get_activity", "Everything the agent did (swaps, payments, shields), newest last, with each one's status.",
     listInput, LIST, ({ limit: count = 20 }, scope) => read(scope, "Activity", "activity", () => scope.platform.reads.activity(scope.organization, scope.agent), list => newest(list, count))),
   tool("get_unresolved", "Operations without a proven outcome. While any is open, new sends are blocked.",
-    noInput, EMPTY, (_, scope) => read(scope, "Unresolved operations", "unresolved", () => scope.platform.reads.unresolved(scope.organization, scope.agent))),
+    noInput, EMPTY, (_, scope) => read(scope, "Pending operations", "unresolved", () => scope.platform.reads.unresolved(scope.organization, scope.agent))),
   tool("get_held", "Payouts held for the owner's approval.",
     noInput, EMPTY, (_, scope) => read(scope, "Held payouts", "held", () => scope.platform.reads.held(scope.organization, scope.agent))),
   tool("list_proposals", "The agent's proposals with their status (open, approved, rejected, executed, expired), newest last.",

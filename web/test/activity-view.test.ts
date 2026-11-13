@@ -86,7 +86,7 @@ test("a run's summary: how it started, each stage with what it found or did, and
   ]));
   assert.deepEqual(summary, {
     startedAt: "2026-11-06T10:00:00.000Z", trigger: "schedule", actor: null, completion: "recorded-end", outcome: "executed", refusal: null, failed: null,
-    stages: [{ stage: "before", detail: "0 unresolved, drift 1500 bps" }, { stage: "plan", detail: "Rebalance toward the targets: 2 swap(s), about 42.5 USD" },
+    stages: [{ stage: "before", detail: "0 pending operation(s), drift 1500 bps" }, { stage: "plan", detail: "Rebalance toward the targets: 2 swap(s), about 42.5 USD" },
       { stage: "send", detail: "operation c1: SUCCESS" }, { stage: "after", detail: "couldn't read: prices unavailable" }],
   });
 });

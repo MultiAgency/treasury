@@ -71,7 +71,7 @@ export function useConversation(reads: Reads, persona: AssistantPersona) {
 
 const TOOL_PROGRESS: Record<string, string> = {
   get_overview: "Reading holdings and policy…", get_strategy: "Reading the strategy…", get_autopilot: "Checking autopilot…",
-  get_runs: "Reading recent runs…", get_activity: "Reading activity…", get_unresolved: "Checking unresolved operations…",
+  get_runs: "Reading recent runs…", get_activity: "Reading activity…", get_unresolved: "Checking pending operations…",
   get_held: "Reading held payouts…", list_proposals: "Reading proposals…", get_proposal: "Reading the proposal…",
   get_owner_actions: "Reading owner actions…", get_policy_history: "Reading policy history…", get_account: "Reading the treasury account…",
   get_ballast_decisions: "Reading strategy decisions…", get_audit_trail: "Reading the audit trail…", get_dao_requests: "Reading DAO requests…",

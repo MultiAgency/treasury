@@ -37,7 +37,7 @@ export function Portfolio({ reads, agent }: { reads: Reads; agent: string }) {
       : <>
         {overview.data.notInForce && <p role="status" className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning-muted px-3 py-2 text-sm text-warning-muted-foreground">
           <WarningCircle aria-hidden="true" className="size-4 shrink-0" />
-          <span>The policy isn't in force: {overview.data.notInForce} <PageLink to={agentAddress(agent, "policy")} className="underline">Open the policy</PageLink></span>
+          <span>Blocked: {overview.data.notInForce}. <PageLink to={agentAddress(agent, "policy")} className="underline">Open the policy</PageLink></span>
         </p>}
         <BookFigures overview={overview.data} />
         <Allocation overview={overview.data} now={overview.dataUpdatedAt} holdings={holdingsOf(overview.data)} />
