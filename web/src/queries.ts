@@ -1,6 +1,7 @@
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { serverApi, type Failure, type Result } from "./server-api";
 import { failureText } from "./words";
+import { retryIdentity } from "./identity-retry";
 
 export const api = serverApi();
 
@@ -21,14 +22,15 @@ export const failureOf = (error: unknown) => error instanceof ServerError ? erro
 /** Proposals that may still change on their own are read again every few seconds. */
 const MOVING = new Set(["executing", "unknown"]);
 
-/** One agent's reads, keyed by its name. Reads are never retried here: each failure shows with its own "Check again". */
+/** One agent's reads, keyed by its name. Identity tolerates a brief startup delay; other failures show with their own "Check again". */
 export function agentReads(name: string) {
   const agent = api.agent(name);
   const key = ["agent", name] as const;
   return {
     name,
     agent,
-    identity: queryOptions({ queryKey: [...key, "identity"], queryFn: async () => answered(await agent.identity()), retry: false }),
+    identity: queryOptions({ queryKey: [...key, "identity"], queryFn: async () => answered(await agent.identity()),
+      retry: (count, error) => retryIdentity(count, failureOf(error)), retryDelay: count => 1_000 * 2 ** count }),
     /** The live consent, and for a DAO its consent request while one waits for the vote, read again every half minute. */
     consent: queryOptions({ queryKey: [...key, "consent"], queryFn: async () => answered(await agent.consent()), retry: false,
       refetchInterval: query => query.state.data?.request ? 30_000 : false }),
