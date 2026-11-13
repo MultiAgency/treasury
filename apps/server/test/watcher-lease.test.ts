@@ -1,34 +1,29 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { once } from "node:events";
 import { join } from "node:path";
 import { test } from "node:test";
+import { testChild } from "./test-process.ts";
 import { createRequests } from "../src/requests.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
-test("two watcher processes cannot own one store; process death releases ownership", { timeout: 15_000 }, async () => {
+test("two watcher processes cannot own one store; process death releases ownership", { timeout: 15_000 }, async t => {
   const path = join(tempDir("treasury-lease-"), "requests.json");
   const module = new URL("../src/requests.ts", import.meta.url).href;
-  const child = spawn(process.execPath, ["--input-type=module", "-e", `
+  const managed = testChild(t, ["--input-type=module", "-e", `
     const { createRequests } = await import(${JSON.stringify(module)});
     await createRequests(process.argv[1], { exclusive: true });
     process.send('ready');
     setInterval(() => {}, 1000);
   `, path], { stdio: ["ignore", "ignore", "pipe", "ipc"] });
-  const exited = once(child, "exit");
   try {
-    const ready = await Promise.race([once(child, "message"), exited.then(() => { throw new Error("watcher exited before acquiring lease"); })]);
-    assert.equal(ready[0], "ready");
+    assert.equal(await managed.next<string>(), "ready");
     await assert.rejects(createRequests(path, { exclusive: true }), /Another watcher owns/);
-    child.kill("SIGKILL");
-    await exited;
+    await managed.stop();
     const recovered = await createRequests(path, { exclusive: true });
     await recovered.release();
     const next = await createRequests(path, { exclusive: true });
     await next.release();
   } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    await exited;
+    await managed.stop();
   }
 });
 
