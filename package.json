@@ -15,7 +15,9 @@
     "backtest:diversified": "node scripts/diversify.ts",
     "backtest:stabilization": "node scripts/stabilization-backtest.ts run",
     "verify:sdk": "node scripts/verify-sdk.ts",
-    "test:compatibility": "node scripts/test-compatibility.ts"
+    "test:compatibility": "node scripts/test-compatibility.ts",
+    "typecheck:staging": "tsc -p staging",
+    "test:staging": "node staging/run-acceptance.mjs"
   },
   "packageManager": "pnpm@12.16.1",
   "devDependencies": {
