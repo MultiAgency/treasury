@@ -123,3 +123,11 @@ The plan also had a raised level held until a human lowers it one step at a time
 - **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
 - **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
 - **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.
+
+## Independent live feeds (#252)
+
+Ballast and explicit assessments obtain each asset's three public USD tickers from the asset registry. The platform overview remains the source for holding values and proposal pricing; it is not counted as an independent oracle source. Stablecoin fault detection now also uses the independent three-source median. Missing, stale or disagreeing stablecoin quotes become an unknown price, which the existing fault detector treats as a fault; no overview fallback is used.
+
+Each venue request uses HTTPS, rejects redirects, carries no credentials, times out after five seconds, and consumes at most 100,000 decoded response bytes before JSON parsing. Oversized streams are cancelled even when Content-Length is absent or false. Successful reads are cached for 30 seconds and concurrent readers share an in-flight request. Failures are not cached. Venue timestamps are used where supplied; undated tickers are dated at receipt, which establishes fetch freshness rather than trade freshness. The oracle still requires three fresh distinct sources and enforces its five-minute age, five-second future skew and two-percent disagreement bounds.
+
+Price history is retained across the source change; old observations are not relabelled as independent evidence. Existing replay records preserve their original inputs. A mixed-source warm-up history remains a limitation until enough genuine independent samples have accumulated. This change adds no platform API reads; exchange requests are separate and bounded by the shared cache. Deployment and any live source activation require a separate reviewed release; this work does not enable watch, grants or trading.

@@ -21,6 +21,7 @@ import { chainKeyLookup, rpcHeaders, rpcUrlFor } from "./keys.ts";
 import { loadPage } from "./page.ts";
 import { createPlatform } from "./platform.ts";
 import { createIntents, createIntentsStub } from "./intents.ts";
+import { createPriceFeeds } from "./prices.ts";
 import { createHolds, createRequests } from "./requests.ts";
 import { createRiskHistoryReader, createRiskReader, type RiskEntry } from "./risk.ts";
 import { createSessions } from "./sessions.ts";
@@ -66,11 +67,14 @@ const watched = settings.TREASURY_WATCH_FILE ? {
 // Ballast's price history and engine state, beside the requests (`.history`, `.engine`), when any agent runs it (#47).
 const sharedHistory = await createPriceHistory(settings.TREASURY_REQUESTS_FILE ? `${settings.TREASURY_REQUESTS_FILE}.history` : `${settings.TREASURY_AUDIT_FILE}.assessment-history`);
 const sharedStates = await createEngineState(settings.TREASURY_REQUESTS_FILE ? `${settings.TREASURY_REQUESTS_FILE}.engine` : `${settings.TREASURY_AUDIT_FILE}.assessment-engine`);
+const priceFeeds = createPriceFeeds();
 const ballast = watched?.agents.some(agent => agent.ballast) ? createBallast({
   history: sharedHistory,
   states: sharedStates,
   // Every decision goes to the audit log with its inputs, so a replay of the log makes the same one (A7.2, #54).
   audit,
+  // The oracle's three public, keyless sources for each sleeve (H5): Coinbase, Kraken and Bitstamp.
+  prices: priceFeeds,
 }) : undefined;
 
 // Refuse to start with the DAO requests unreadable.
@@ -132,7 +136,7 @@ const handler = createServer({
   settle,
   // The stabilization agent's latest record for the owner's report (#220): read from the audit log, never computed here.
   latestRisk: createRiskReader(settings.TREASURY_AUDIT_FILE),
-  recordRisk: createAssessment({ platform: platform.watch, history: sharedHistory, states: sharedStates, audit }),
+  recordRisk: createAssessment({ platform: platform.watch, history: sharedHistory, states: sharedStates, audit, prices: priceFeeds }),
   riskHistory: createRiskHistoryReader(settings.TREASURY_AUDIT_FILE),
   // Whether the stabilization agent runs for an agent, from the watch file: the Agents page says so rather than guess.
   riskStatus: (organization, agent) => {

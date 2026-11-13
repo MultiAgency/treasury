@@ -5,13 +5,13 @@ import { test } from "node:test";
 import type { OwnerOutput, ProposalView } from "@multiagency/sdk";
 import { createBallast, createEngineState, createPriceHistory, type BallastSettings, type DecisionEntry } from "../src/ballast.ts";
 import { chainedFileAudit, verifyChain } from "../src/chain.ts";
-import { replayAuditLog } from "../../../packages/core/src/index.ts";
+import { replayAuditLog, type PriceQuote } from "../../../packages/core/src/index.ts";
 import type { ProposalAnswer, WatchPlatform } from "../src/platform.ts";
 import { createHolds, createRequests } from "../src/requests.ts";
 import { createStrategyProposals, memoryProposalRecords } from "../src/strategy-proposals.ts";
 import { loadWatchConfig } from "../src/watch-config.ts";
 import { createWatch, type WatchedAgent } from "../src/watch.ts";
-import { proposal } from "./fakes.ts";
+import { feedsFromBook, proposal } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const ORG = "owner--near", AGENT = "portfolio";
@@ -50,7 +50,8 @@ async function world({ seeded = true, seedEth = false, failAudit = false, max, p
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
   if (seedEth) await history.seed(ETH, fallingHistory(T0), T0);
-  const answers: { overview: OwnerOutput<"overview">; refuse?: string; create?: ProposalAnswer; consented?: boolean } = { overview: overviewValue ?? overview(3.12, T0) };
+  const answers: { overview: OwnerOutput<"overview">; quotes: Record<string, PriceQuote[]>; refuse?: string; create?: ProposalAnswer; consented?: boolean } =
+    { overview: overviewValue ?? overview(3.12, T0), quotes: {} };
   const stored = new Map<string, ProposalView>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
@@ -80,7 +81,7 @@ async function world({ seeded = true, seedEth = false, failAudit = false, max, p
   const audit = chainedFileAudit<DecisionEntry>(join(dir, "audit.jsonl"), () => clock.now,
     failAudit ? async () => { throw new Error("disk full"); } : undefined);
   await audit.check();
-  const ballast = createBallast({ history, states, audit, now: () => clock.now });
+  const ballast = createBallast({ history, states, audit, now: () => clock.now, prices: feedsFromBook(() => answers.overview, answers.quotes) });
   const holds = await createHolds(join(dir, "requests.json.holds"));
   const strategyProposals = proposals ? createStrategyProposals(memoryProposalRecords(), { audit: { append: async () => {} }, now: () => clock.now }) : undefined;
   const start = () => createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast, ...(strategyProposals && { strategyProposals }) });
@@ -112,6 +113,29 @@ test("a warmed-up history 22% under its reference proposes one DCA buy of explic
   const next = await w.tick();
   assert.equal(next.skipped, "live proposal", "one proposal at a time");
   assert.equal(w.sent.length, 1);
+});
+
+test("the oracle reads the three sources, not the platform's price: one missing, or two over 2% apart, freezes it and nothing is proposed (H5)", async () => {
+  const quote = (source: string, price: number) => ({ source, asset: WNEAR, price, observedAt: T0 - 60_000 });
+  const cases: [PriceQuote[], RegExp][] = [
+    [[quote("Coinbase Exchange", 3.12), quote("Kraken", 3.12)], /insufficient-sources/],
+    [[quote("Coinbase Exchange", 3.12), quote("Kraken", 3.12), quote("Bitstamp", 3.2)], /disagreement/],
+  ];
+  for (const [quotes, why] of cases) {
+    const w = await world();
+    w.answers.quotes[WNEAR] = quotes;
+    const event = await w.tick();
+    assert.equal(event.skipped, "ballast holds", JSON.stringify(event));
+    assert.match(String(event.frozen), why);
+    assert.equal(w.sent.length, 0);
+  }
+  // Three agreeing sources a cent off the platform's price: the reading is theirs.
+  const w = await world();
+  w.answers.quotes[WNEAR] = [quote("Coinbase Exchange", 3.11), quote("Kraken", 3.11), quote("Bitstamp", 3.11)];
+  const event = await w.tick();
+  assert.ok("proposed" in event, JSON.stringify(event));
+  assert.equal(w.history.of(WNEAR).at(-1)?.price, 3.11, "history records the independent median; TWAP still includes earlier samples");
+  assert.match(await w.log(), /"source":"Bitstamp"/, "the decision record carries the quotes it read");
 });
 
 test("an executed buy spends its DCA units once; afterwards its zone waits to re-arm", async () => {
@@ -524,7 +548,7 @@ test("a stablecoin the mandate didn't split into holds the tick, so the floor is
 
 test("assessment-only records replayable risk without decisions or proposal request IDs", async () => {
   const w = await world();
-  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, prices: feedsFromBook(() => w.answers.overview), now: () => T0 });
   const result = await engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true);
   assert.equal("skipped" in result && result.skipped, "assessment only");
   const records = (await w.log()).trim().split("\n").map(line => JSON.parse(line));
@@ -538,7 +562,7 @@ test("assessment-only records replayable risk without decisions or proposal requ
 
 test("assessment-only fails closed when the canonical audit append fails", async () => {
   const w = await world({ failAudit: true });
-  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, prices: feedsFromBook(() => w.answers.overview), now: () => T0 });
   await assert.rejects(engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true), /disk full/);
   assert.deepEqual(w.sent, []);
 });
@@ -546,10 +570,18 @@ test("assessment-only fails closed when the canonical audit append fails", async
 
 test("assessment-only with missing history records an explicit unusable projection", async () => {
   const w = await world({ seeded: false });
-  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, now: () => T0 });
+  const engine = createBallast({ history: w.history, states: w.states, audit: w.audit, prices: feedsFromBook(() => w.answers.overview), now: () => T0 });
   await engine.decide(ORG, AGENT, SETTINGS, w.answers.overview, 1, {}, false, true);
   const record = JSON.parse((await w.log()).trim());
   assert.equal(record.entry.assessment.projection.usable, false);
   assert.ok(record.entry.assessment.projection.reasons.length > 0);
   assert.deepEqual(w.sent, []);
+});
+
+test("stablecoin fault detection uses independent quotes, not a healthy overview peg", async () => {
+  const w = await world();
+  w.answers.quotes[USDC] = [];
+  const result = await w.tick();
+  assert.equal(w.sent.length, 0);
+  assert.match(JSON.stringify(result), /USDC|stablecoin|fault|hold/);
 });

@@ -12,7 +12,7 @@ import { checkAuditLog } from "../src/replay-check.ts";
 import { latestRiskRecord, riskReportOf, type RiskSettings } from "../src/risk.ts";
 import { loadWatchConfig } from "../src/watch-config.ts";
 import { createWatch, type WatchedAgent } from "../src/watch.ts";
-import { proposal } from "./fakes.ts";
+import { feedsFromBook, proposal } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const ORG = "owner--near", AGENT = "portfolio";
@@ -78,7 +78,7 @@ async function world({ pct = 50, days = 1, seeded = true, withRisk = true, risk 
   };
   const audit = chainedFileAudit<Record<string, unknown>>(join(dir, "audit.jsonl"), () => clock.now);
   await audit.check();
-  const ballast = createBallast({ history, states, audit, now: () => clock.now });
+  const ballast = createBallast({ history, states, audit, now: () => clock.now, prices: feedsFromBook(() => answers.overview) });
   const holds = await createHolds(join(dir, "requests.json.holds"));
   const watch = createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast });
   const watched: WatchedAgent = { organization: ORG, agent: AGENT, driftPoints: 5, intervalS: 300, proposalHours: 24, ballast: ballastChanges,

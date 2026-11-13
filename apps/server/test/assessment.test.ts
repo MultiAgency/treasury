@@ -1,3 +1,4 @@
+import { feedsFromBook } from "./fakes.ts";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -29,8 +30,8 @@ async function world({ fail = false, seeded = true } = {}) {
     overview: async (organization, agent) => { calls.push(`overview ${organization}/${agent}`); return { ok: true, value: { book } as unknown as OwnerOutput<"overview"> }; },
     autopilot: async () => { calls.push("autopilot"); return { ok: true, value: { on: false } } as Awaited<ReturnType<WatchPlatform["autopilot"]>>; },
   };
-  const assess = createAssessment({ platform, history, states, audit, now: () => at });
-  return { assess, audit, book, calls, history, states, platform };
+  const assess = createAssessment({ platform, history, states, audit, prices: feedsFromBook(() => ({ book })), now: () => at });
+  return { assess, audit, book, calls, history, states, platform, prices: feedsFromBook(() => ({ book })) };
 }
 
 test("production assessment service records the real book, replays, and has only read capabilities", async () => {
