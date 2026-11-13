@@ -276,7 +276,10 @@ test("a council member asks the DAO to authorize the saved strategy: filed from 
   await visible(authorize);
   await checkStrategyReview(page, target.agent);
   await authorize.getByRole("button", { name: "File in your wallet" }).click();
-  await visible(autopilot.getByText(/^Filed with your approval\. If the DAO needs more votes/));
+  // This wait has timed out now and then with nothing logged: when it does, say what the section showed instead.
+  await visible(autopilot.getByText(/^Filed with your approval\. If the DAO needs more votes/)).catch(async error => {
+    throw new Error(`The filed notice never showed. The wallet was sent ${sent.length - filedBefore} transaction(s). The Autopilot section read: ${JSON.stringify(await autopilot.innerText())}`, { cause: error });
+  });
   await autopilot.getByRole("button", { name: "Turn on", disabled: false }).waitFor({ timeout: 45_000 });
   assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
   assert.ok((sent.at(-1)!.actions as { params: { methodName: string } }[]).some(action => action.params.methodName === "act_proposal"), "the filing casts the member's approval");
