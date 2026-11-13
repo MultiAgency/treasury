@@ -51,7 +51,7 @@ export const actionWords = (actions: RiskHistory["entries"][number]["actions"]) 
 
 /** What the agent is doing, in a line: whether this server runs it, how often, and when it last assessed. */
 export function statusLine(history: RiskHistory): { running: boolean; text: string } {
-  if (!history.configured) return { running: false, text: "This server isn't running the stabilization agent for this treasury: its watch file needs a risk block. Nothing new is assessed." };
+  if (!history.configured) return { running: false, text: "Automatic risk monitoring is off for this treasury. An owner can still request an assessment; existing records remain available." };
   const every = history.intervalS === null ? "on each watch tick" : history.intervalS % 60 === 0 ? `every ${history.intervalS / 60} minutes` : `every ${history.intervalS} seconds`;
   return { running: true, text: `Assessing the book ${every}, beside Ballast, within your signed limits.` };
 }

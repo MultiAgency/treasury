@@ -32,8 +32,7 @@ function RiskCard({ reads, id, title, description }: { reads: Reads; id: string;
       {risk.isPending ? <Loading label="Reading the last risk assessment…" />
         : risk.isError ? <QueryError error={risk.error} retry={() => risk.refetch()} />
         : !report ? <p role="status" className="text-sm text-muted-foreground">
-          No forward risk assessment has been recorded for this agent yet. One is recorded on each watch tick once the
-          stabilization agent is configured for it, so there is nothing to report until then.
+          No risk assessment has been recorded for this agent yet. An owner can request an assessment without turning on automatic monitoring.
         </p>
         : <>
           <p className="text-sm"><span className="font-medium">{level!.label}.</span> {report.projection.usable ? level!.explanation : "The projection is unavailable. This assessment recommends holding buys until its inputs are sufficient."}</p>
