@@ -45,7 +45,7 @@ export const COOKIE = "__Host-treasury_session";
  */
 const TOKEN_ROUTES = ["GET /api/agents/:agent/overview", "GET /api/agents/:agent/activity", "GET /api/agents/:agent/unresolved",
   "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
-  "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"] as const;
+  "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals", "GET /api/agents/:agent/strategy-proposals/:id"] as const;
 /** What a token may call, described for software: the one other route that answers a request carrying a token. */
 const TOKEN_API = "GET /api/agent-api";
 const BEARER = /^Bearer (\S+)$/;
@@ -1388,6 +1388,21 @@ export const routes: Route[] = [
   },
   {
     /**
+     * What became of a proposed strategy (#206), so software that proposed one learns the owner's answer without the
+     * owner's list: a token reads only its own, and any other answers as one that doesn't exist. From this server's own
+     * records, which keep every open proposal and each source's last closed one.
+     */
+    method: "GET", path: "/api/agents/:agent/strategy-proposals/:id", access: "owner", needs: "read",
+    async handle({ identity, params, viaToken }, { strategyProposals }) {
+      const id = parse(contract.strategyProposal.shape.id, params.id);
+      const proposal = id && strategyProposals.get(identity!.agent, id);
+      if (!proposal || (viaToken && proposal.source !== `token:${viaToken.id}`)) return refused(404, "no_proposal");
+      return ok({ id: proposal.id, state: proposal.closed?.outcome ?? "open", createdAt: new Date(proposal.createdAt).toISOString(),
+        decidedAt: proposal.closed ? new Date(proposal.closed.at).toISOString() : null });
+    },
+  },
+  {
+    /**
      * A strategy proposed by software holding one of the agent's tokens (#206), for the owner to adopt or decline: checked
      * against the Strategy page's bounds and the policy's assets (one `overview` read), then stored and recorded by the
      * token. A token's next proposal supersedes its open one. The owner changes the strategy themselves, so a session's
@@ -1674,7 +1689,8 @@ function agentApi(requestsPerHour: number) {
       route("GET /api/agents/:agent/proposals", "The agent's proposals", proposalList),
       route("GET /api/agents/:agent/proposals/:id", "One proposal", contract.proposalRead),
       route("POST /api/agents/:agent/proposals", "Proposes a rebalance to the saved strategy for the owner to approve or reject. Name a `requestId`: after a lost answer, ask again with the same one and the proposal made is returned, never a second", contract.rebalanceMade, contract.rebalanceRequest),
-      route("POST /api/agents/:agent/strategy-proposals", "Proposes a strategy, with your reasons, for the owner to adopt or decline. Name the digest of the saved strategy you read (`GET …/strategy`): adopting it saves over that one, or not at all. Targets may name only the policy's assets (`strategy_not_allowed`). Your next proposal replaces your open one, so a lost answer is safe to send again", contract.strategyProposed, contract.strategyProposalRequest),
+      route("POST /api/agents/:agent/strategy-proposals", "Proposes a strategy, with your reasons, for the owner to adopt or decline. Name the digest of the saved strategy you read (`GET …/strategy`): adopting it saves over that one, or not at all. Targets may name only the policy's assets (`strategy_not_allowed`). Your next proposal replaces your open one, so a lost answer is safe to send again. Read what became of it by the `id` answered", contract.strategyProposed, contract.strategyProposalRequest),
+      route("GET /api/agents/:agent/strategy-proposals/:id", "What became of a strategy you proposed: `open`, `adopted`, `declined`, or `superseded` (your next proposal replaced it, or an adoption attempt found a changed saved strategy: propose again against its new digest). Only your own, and only your latest once it is closed: an earlier one answers `no_proposal`", contract.strategyProposalState),
     ],
     refused: "Verdicts, execution, owner actions, funding, sweeps, strategy and autopilot changes and consents are not available to a token: the owner does those in the app, and adopts or declines the strategies a token proposes.",
     /** A token's own limits. */
@@ -1692,7 +1708,7 @@ function agentApi(requestsPerHour: number) {
       too_large: "413. The body is over `limits.bodyBytes`.",
       not_connected: "409. No live consent connects the agent to this app, so nothing is read or proposed until its owner connects it.",
       not_permitted: "403. The account that issued the token may not do this for the agent.",
-      no_proposal: "404. No proposal of the agent's by that ID.",
+      no_proposal: "404. No proposal of the agent's by that ID; or a strategy proposal that isn't yours, or is no longer kept.",
       nothing_to_propose: "409. The saved strategy picks no swap worth its cost now. Nothing was proposed.",
       not_proposable: "409. No rebalance can be proposed for the agent now: its strategy or policy needs the owner. Nothing was proposed.",
       too_many_proposals: "409. The agent has as many open proposals as it may. Wait for the owner to decide some.",

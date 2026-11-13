@@ -431,6 +431,13 @@ export const assistantStatus = z.strictObject({ available: z.boolean(), model: z
  */
 export const strategyProposalRequest = z.strictObject({ strategy: strategyInput, reasons: strategyProposal.shape.reasons, expectedDigest: enableRequest.shape.expectedDigest });
 export const strategyProposed = z.strictObject({ id: strategyProposal.shape.id });
+/**
+ * What became of a proposed strategy, for whoever proposed it: `open` until the owner answers; `adopted` or `declined`
+ * once they have; `superseded` when its source's next proposal replaced it, or an adoption attempt found that the
+ * saved strategy changed under it (propose again against the new digest). Times are ISO 8601.
+ */
+export const strategyProposalState = z.strictObject({ id: strategyProposal.shape.id, state: z.enum(["open", "adopted", "declined", "superseded"]),
+  createdAt: z.string(), decidedAt: z.string().nullable() });
 /** A grant is asked for the saved strategy the owner saw, by its digest: refused if it has changed since. */
 export const grantRequest = enableRequest;
 /**

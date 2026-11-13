@@ -177,7 +177,7 @@ test("the API description is public and lists exactly the routes a token may cal
   assert.equal(answer.ok, true);
   assert.deepEqual(answer.value.routes.map((route: { method: string; path: string }) => `${route.method} ${route.path}`).sort(), [
     "GET /api/agents/:agent/activity", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/overview", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
-    "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/unresolved", "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"]);
+    "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/strategy-proposals/:id", "GET /api/agents/:agent/unresolved", "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"]);
   const posted = (path: string) => answer.value.routes.find((route: { method: string; path: string }) => route.method === "POST" && route.path === path);
   assert.ok(posted("/api/agents/:agent/proposals").request.properties.requestId, "the request schema is described");
   assert.deepEqual(Object.keys(posted("/api/agents/:agent/strategy-proposals").request.properties).sort(), ["expectedDigest", "reasons", "strategy"]);
@@ -257,6 +257,38 @@ test("a token proposes a strategy with its reasons: stored for the owner under t
   const again = await bearer(token, "POST", "strategy-proposals", { strategy: { ...strategy, maxCostBps: 60 }, reasons: "A tighter cost limit.", expectedDigest: DIGEST });
   assert.equal(again.status, 200);
   assert.deepEqual((await session("GET", "strategy-proposals")).body.value.map((p: { id: string }) => p.id), [again.body.value.id], "one open per token");
+  fake.reads.overview = OVERVIEW;
+});
+
+test("a token reads what became of its own strategy proposal: open, then how the owner or a later proposal closed it; never another token's (#206)", async () => {
+  reset();
+  fake.reads.overview = policyOf([USDC, WNEAR]);
+  const { token } = await issue(7, "proposer"), other = await issue(7, "other");
+  const none = { ok: false, kind: "refused", code: "no_proposal" };
+  const propose = async (maxCostBps: number) => {
+    const made = await bearer(token, "POST", "strategy-proposals", { strategy: { ...strategy, maxCostBps }, reasons: "A cost limit.", expectedDigest: DIGEST });
+    assert.equal(made.status, 200, JSON.stringify(made.body));
+    return made.body.value.id as string;
+  };
+  const first = await propose(50);
+  const open = await bearer(token, "GET", `strategy-proposals/${first}`);
+  assert.equal(open.status, 200, JSON.stringify(open.body));
+  assert.deepEqual([open.body.value.id, open.body.value.state, open.body.value.decidedAt], [first, "open", null]);
+  assert.ok(Number.isFinite(Date.parse(open.body.value.createdAt)), "when it was proposed");
+  assert.deepEqual((await bearer(other.token, "GET", `strategy-proposals/${first}`)).body, none, "another token learns nothing of it");
+  assert.equal((await bearer(token, "GET", "strategy-proposals")).status, 403, "the owner's list stays the owner's");
+
+  assert.equal((await session("POST", `strategy-proposals/${first}/decline`)).status, 200);
+  const declined = (await bearer(token, "GET", `strategy-proposals/${first}`)).body.value;
+  assert.equal(declined.state, "declined");
+  assert.ok(Number.isFinite(Date.parse(declined.decidedAt)), "when the owner answered");
+  assert.equal((await session("GET", `strategy-proposals/${first}`)).body.value.state, "declined", "the owner reads the same");
+
+  const second = await propose(60), third = await propose(70);
+  assert.deepEqual((await bearer(token, "GET", `strategy-proposals/${first}`)).body, none, "only a token's latest closed proposal is kept");
+  assert.equal((await bearer(token, "GET", `strategy-proposals/${second}`)).body.value.state, "superseded", "replaced by its next");
+  await strategyProposals.close("portfolio", third, "adopted");
+  assert.equal((await bearer(token, "GET", `strategy-proposals/${third}`)).body.value.state, "adopted");
   fake.reads.overview = OVERVIEW;
 });
 
