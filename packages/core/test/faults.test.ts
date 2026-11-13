@@ -176,3 +176,20 @@ test("reconciliation valuation refuses nonfinite results and unusable precision"
   assert.equal(unreconciledUsd([row], [{ asset: "a", price: 1, decimals: 6 }]), null);
   assert.equal(unreconciledUsd([{ ...row, public: { drift: "1" } }], [{ asset: "a", price: 1, decimals: 1000 }]), null);
 });
+
+test("missing incoming confidential history is a distinct proposal hold, not a confirmed mismatch", async () => {
+  const { reconciliationOf } = await import("../src/faults.ts");
+  const prices = [{ asset: "usdc", decimals: 6, price: 1 }];
+  const row = (pub: string, conf: string) => ({ asset: "usdc", public: { drift: pub }, confidential: { unattributed: conf } });
+  assert.deepEqual(reconciliationOf([row("0", "10000000")], prices), { confirmedUsd: 0, historyIncomplete: true });
+  const observation = reconciliationOf([row("-2000", "10000000")], prices);
+  assert.deepEqual(observation, { confirmedUsd: 0.002, historyIncomplete: true });
+  const detections = detectFaults({ ...healthy, unreconciledUsd: 0, reconciliationHistoryIncomplete: true });
+  assert.deepEqual(detections.map(d => d.detector), ["reconciliation-coverage"]);
+  assert.equal(regimeFrom(detections), "system-fault");
+  assert.equal(highestFaultLevel(detections), 3);
+  assert.deepEqual(reconciliationOf([row("0", "-10000000")], prices), { confirmedUsd: 10, historyIncomplete: false });
+  assert.deepEqual(reconciliationOf([row("0", "0")], prices), { confirmedUsd: 0, historyIncomplete: false });
+  assert.deepEqual(reconciliationOf([row("bad", "0")], prices), { confirmedUsd: null, historyIncomplete: true });
+  assert.deepEqual(detectFaults({ ...healthy, unreconciledUsd: 2000, reconciliationHistoryIncomplete: true }).map(d=>d.detector), ["reconciliation-coverage", "agent-malfunction"]);
+});

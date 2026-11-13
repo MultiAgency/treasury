@@ -44,11 +44,13 @@ export type FaultObservations = {
   /** The book's value, and how far its holdings are off the records (`unreconciledUsd`), both in USD. */
   bookUsd: number | null;
   unreconciledUsd: number | null;
+  /** Positive residuals can be incoming credits omitted by execution history; keep a distinct hold. */
+  reconciliationHistoryIncomplete?: boolean;
 };
 
 export type FaultName =
   | "faults-config" | "source-disagreement" | "source-unavailable" | "thin-liquidity" | "venue-outage"
-  | "stablecoin-depeg" | "cash-floor-breach" | "agent-malfunction";
+  | "stablecoin-depeg" | "cash-floor-breach" | "agent-malfunction" | "reconciliation-coverage";
 export type FaultDetection = { detector: FaultName; level: Level; reason: string };
 
 /** Each threshold rule's check, with the highest level its detector can give: an unusable rule ranks as that. */
@@ -108,6 +110,7 @@ export function detectFaults(obs: FaultObservations, cfg: FaultConfig = FAULT_DE
 
   if (!num(obs.unknownOutcomes) || obs.unknownOutcomes < 0) add("agent-malfunction", 3, "unknown-outcome count unavailable");
   else if (obs.unknownOutcomes > 0) add("agent-malfunction", 3, `${obs.unknownOutcomes} operation(s) with an unknown outcome`);
+  if (obs.reconciliationHistoryIncomplete === true) add("reconciliation-coverage", 3, "incoming confidential history is incomplete; record receipt-backed credits before proposing");
   if (rules.reconciliation.ok) {
     if (!num(obs.bookUsd) || !num(obs.unreconciledUsd) || obs.bookUsd <= 0 || obs.unreconciledUsd < 0) add("agent-malfunction", 3, "holdings can't be reconciled");
     else if (obs.unreconciledUsd * 100 > cfg.reconciliationMismatchPct * obs.bookUsd)
@@ -140,6 +143,20 @@ export function unreconciledUsd(rows: readonly BooksRow[], prices: readonly Pric
     if (!Number.isFinite(total)) return null;
   }
   return total;
+}
+
+/** Separate missing incoming-credit coverage from a shortfall against known records. Never offset assets. */
+export function reconciliationOf(rows: readonly BooksRow[], prices: readonly PricedAsset[]): { confirmedUsd: number | null; historyIncomplete: boolean } {
+  let historyIncomplete = false;
+  const known: BooksRow[] = [];
+  for (const row of rows) {
+    const a = row.public?.drift, b = row.confidential?.unattributed;
+    if (![a, b].every(v => typeof v === "string" && /^-?\d+$/.test(v))) return { confirmedUsd: null, historyIncomplete: true };
+    const residual = BigInt(b);
+    if (residual > 0n) historyIncomplete = true;
+    known.push({ asset: row.asset, public: { drift: a }, confidential: { unattributed: residual > 0n ? "0" : b } });
+  }
+  return { confirmedUsd: unreconciledUsd(known, prices), historyIncomplete };
 }
 
 /** The highest level among fault detections (0 when there are none). */

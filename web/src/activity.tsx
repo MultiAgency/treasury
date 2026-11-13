@@ -1,3 +1,4 @@
+import { confidentialStanding, incomingCreditBasis } from "./reconciliation-view";
 import { ArrowLeft, Books, ClockCounterClockwise, DownloadSimple, Path, Signature, WarningCircle } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
@@ -182,20 +183,20 @@ export function Activity({ reads, identity }: { reads: Reads; identity: Identity
     <section id="books" aria-labelledby="books-title">
       <Card className="gap-3">
         <PanelTitle id="books-title" title="Books" icon={<Books weight="duotone" />} tone="usdc" infoLabel="About the books"
-          info="The provider's balances checked against the chain, and its private balances against recorded executions." />
+          info="Public balances are checked against chain transfers. Private balances include recorded executions and receipt-backed credits. Missing incoming history holds proposals; it does not establish missing funds." />
         {books.isPending ? <Loading label="Reading the books…" />
           : books.isError ? <QueryError error={books.error} retry={() => books.refetch()} />
           : books.data.length === 0 ? <p className="text-sm text-muted-foreground" role="status">No balances to reconcile.</p>
-          : <DataTable caption="Books" minWidth="28rem">
+          : <DataTable caption="Books" minWidth="24rem">
             <thead><tr>
               <th scope="col" className={th()}>Asset</th>
-              <th scope="col" className={th("right")}>Public drift from chain</th>
-              <th scope="col" className={th("right")}>Private, not attributed</th>
+              <th scope="col" className={th("right")}>Private records</th>
+              <th scope="col" className={th("right")}>Public drift</th>
             </tr></thead>
             <tbody>{books.data.map((row, i) => <tr key={row.asset} className={tr()}>
               <th scope="row" className={td("left", "font-normal")}><TokenChip symbol={row.symbol} color={colors[i]!} /></th>
+              <td className={td("right")}>{row.confidential.unattributed === "0" ? <span className="text-muted-foreground">Recorded balance matches</span> : <ValuePill tone="warning">{amountText(row.confidential.unattributed, row.asset)}</ValuePill>}<span className="block text-xs whitespace-normal text-muted-foreground">{row.confidential.unattributed !== "0" && confidentialStanding(row.confidential.unattributed)}</span>{incomingCreditBasis(row.confidential) && <span className="block text-xs whitespace-normal text-muted-foreground">{incomingCreditBasis(row.confidential)}</span>}</td>
               <td className={td("right")}>{row.public.drift === "0" ? <span className="text-muted-foreground">none</span> : <ValuePill tone="warning">{amountText(row.public.drift, row.asset)}</ValuePill>}</td>
-              <td className={td("right")}>{row.confidential.unattributed === "0" ? <span className="text-muted-foreground">none</span> : <ValuePill tone="warning">{amountText(row.confidential.unattributed, row.asset)}</ValuePill>}</td>
             </tr>)}</tbody>
           </DataTable>}
       </Card>

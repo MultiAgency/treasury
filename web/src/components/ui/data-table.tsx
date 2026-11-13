@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils"
  * label in a cell is clipped with the rest). Its caption names it.
  */
 export function DataTable({ caption, minWidth, className, children }: { caption: string; minWidth?: string; className?: string; children: ReactNode }) {
-  return <div data-slot="data-table" className={cn("relative -mx-4 overflow-x-auto sm:-mx-5", className)}>
+  return <div data-slot="data-table" role="group" aria-label={`${caption} table scroll area`} tabIndex={0} className={cn("relative -mx-4 overflow-x-auto sm:-mx-5", className)}>
     <table className="w-full border-separate border-spacing-0 text-sm tabular-nums" style={minWidth ? { minWidth } : undefined}>
       <caption className="sr-only">{caption}</caption>
       {children}

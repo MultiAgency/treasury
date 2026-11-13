@@ -314,7 +314,7 @@ export function createBallast({ history, states, audit, prices: feeds, now = Dat
   };
   return {
     async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null, reconciliationHistoryIncomplete = false): Promise<Decision> {
       const at = now();
       const row = (asset: string) => overview.book.find(h => h.asset === asset) as Holding | undefined;
       const volatile = row(VOLATILE), stable = row(STABLE);
@@ -342,7 +342,7 @@ export function createBallast({ history, states, audit, prices: feeds, now = Dat
       // is the only one left out.
       const faults = detectFaults({
         oracleFrozen: reading.frozen ? reading.reason : null, quotedSlippageBps: null, venueUp: true,
-        stablecoinPrices: { USDC: await stablePrice(assetById(STABLE)!, at) }, cashUsd: stable.usd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled,
+        stablecoinPrices: { USDC: await stablePrice(assetById(STABLE)!, at) }, cashUsd: stable.usd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled, reconciliationHistoryIncomplete,
       }).filter(d => !NOT_JUDGED_HERE.has(d.detector));
       const baseLevel = Math.max(highestLevel(market), highestFaultLevel(faults), m.governance.startLevel) as Level;
       const reserveUsd = Math.max(0, stable.usd! - cashFloorUsd), cashUsd = stable.usd! - reserveUsd;
@@ -469,7 +469,7 @@ export function createBallast({ history, states, audit, prices: feeds, now = Dat
      * and a cash-like real-world asset only when the RWA phase is on and it can be redeemed inside its horizon.
      */
     async decideDiversified(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null, reconciliationHistoryIncomplete = false): Promise<Decision> {
       const at = now();
       if (!settings.diversification) return { skipped: "no diversification terms" };
 
@@ -540,7 +540,7 @@ export function createBallast({ history, states, audit, prices: feeds, now = Dat
       const stablecoinPrices = Object.fromEntries(await Promise.all(stableEntries.map(async ({ entry }) => [entry.symbol, await stablePrice(entry, at)])));
       const faults = detectFaults({
         oracleFrozen: null, quotedSlippageBps: null, venueUp: true, stablecoinPrices,
-        cashUsd: runway.cashUsd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled,
+        cashUsd: runway.cashUsd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled, reconciliationHistoryIncomplete,
       }).filter(d => !NOT_JUDGED_HERE.has(d.detector));
       // What a frozen sleeve's own reading adds: source disagreement or a missing source, never another sleeve's fault.
       const sourceFaults = (reading: OracleReading | undefined) => reading?.frozen
