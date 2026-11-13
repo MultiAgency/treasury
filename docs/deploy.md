@@ -8,12 +8,12 @@ Verified November 12, 2026 (America/New_York). This is an observed snapshot; ins
 
 | Lane | Treasury host | Platform API | Funds | Railway environment | Observed app commit |
 | --- | --- | --- | --- | --- | --- |
-| Live | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `fe845b9` |
-| Live alias | `treasury.multiagency.ai` | Same live API and app | Same real mainnet funds | Same `production` service | Same `fe845b9` |
-| Synthetic staging | `server-staging-3c433768.up.railway.app` | `synthetic-platform-staging.up.railway.app` | Synthetic fixtures | `staging` | `62faea4` |
+| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `fe845b9` |
+| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `synthetic-platform-staging.up.railway.app` | Synthetic fixtures | `staging` | `62faea4` |
 
-The live alias is not an independent deployment. `TREASURY_PUBLIC_ORIGIN` remains `https://treasury.dev.multiagency.ai`: it controls the sign-in recipient and accepted write Origin. Serving a hostname successfully over HTTPS does not establish that sign-in and writes are configured for that alias. Use the configured origin for authenticated live operations until an explicit origin migration is reviewed.
+The hostname convention is **live at `treasury.multiagency.ai`, synthetic staging at `treasury.dev.multiagency.ai`**. Both DNS/TLS routes and configured sign-in/write origins are active and verified. Each app rejects the other environment's write Origin. The Railway staging hostname remains a diagnostic alias; it is not the accepted write Origin and does not identify another environment.
 
+`TREASURY_PUBLIC_ORIGIN` controls the sign-in recipient and accepted write Origin. HTTPS health alone is insufficient: verify the challenge recipient and rejection of the former/cross-environment Origin after each cutover. Existing sessions need a fresh sign-in after app restart. The hostname migration preserves the platform API, credentials, source versions and financial state in each environment.
 The live watch file currently contains two Ballast entries and no risk blocks. The staging watch file is empty and its synthetic agent is frozen. A missing `risk` block only means automatic risk assessment is off; it does not establish that the Ballast proposer is off. Do not infer automation state from the risk card or a filename alone. These counts describe configuration, not proof that each tick succeeds.
 
 The app service ID is shared across Railway environments, so **service ID alone is insufficient deployment scope**. The live app volume, staging app volume and synthetic platform volume are separate. Never duplicate the live environment's credentials or volume contents into staging.
@@ -22,7 +22,7 @@ The app service ID is shared across Railway environments, so **service ID alone 
 
 - Call the current real-money lane **live/mainnet**, even though its API is named `api.dev`. Call the other lane **synthetic staging**.
 - `api.multiagency.ai` is not configured for this Treasury deployment. An API host migration requires separately verified availability, fresh host-scoped credentials, ownership/consent checks and fund boundaries; a hostname change alone is not a migration.
-- The desired public live hostname can be `treasury.multiagency.ai`, but changing the configured sign-in origin is a separate release with session and write-origin checks. Do not silently change it while organizing documentation.
+- The live public origin is `treasury.multiagency.ai`; `.dev` is reserved for synthetic staging. Both canonical origins are verified; any later hostname migration needs the same DNS, TLS, recipient and cross-environment Origin checks.
 - `main` at `62faea4` and a successful staging deployment do not mean that commit serves live traffic. The release ledger above distinguishes source, staging and live state.
 - The old `dao/treasury` prototype is another service in the platform project. It is not either lane in this map.
 

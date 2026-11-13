@@ -19,7 +19,7 @@ For an agent whose `watch` entry enables `ballast` and `risk`, a stabilization a
 
 ## Operating environments
 
-Use the [environment map](docs/deploy.md#environment-map) and [exact target inventory](.railway/environments.json) before operational work. The live app uses real mainnet funds through `api.dev.multiagency.ai`; its `.dev` hostname does not make it synthetic. Synthetic staging has its own API, credentials and volumes. A merged commit, staging deployment and live deployment are distinct release states.
+Use the [environment map](docs/deploy.md#environment-map) and [exact target inventory](.railway/environments.json) before operational work. Production is `treasury.multiagency.ai`; synthetic staging is `treasury.dev.multiagency.ai`. The live API remains `api.dev.multiagency.ai` and uses real mainnet funds; its `.dev` suffix does not make it synthetic. Staging has a separate API, credentials and volumes. A merged commit, staging deployment and live deployment are distinct release states.
 
 ## Running it locally
 
