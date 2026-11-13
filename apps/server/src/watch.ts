@@ -1,3 +1,4 @@
+import { unreconciledUsd, type BooksRow } from "../../../packages/core/src/index.ts";
 import type { OwnerOutput } from "@multiagency/sdk";
 import type { Ballast, BallastSettings } from "./ballast.ts";
 import { liveConsents } from "./consent.ts";
@@ -12,7 +13,7 @@ import { memoryHolds, type HoldReason, type Holds, type NoticeKind, type Proposa
  * is live; the platform allows the deployment 1,200 calls an hour for every owner and `watch` together, so a 5-minute
  * interval spends 36 an hour per agent. After a refused proposal it waits `backoffTicks` intervals before quoting again.
  */
-export const WATCH = { intervalS: 300, minIntervalS: 60, driftPoints: 5, proposalHours: 24, backoffTicks: 6 } as const;
+export const WATCH = { intervalS: 300, minIntervalS: 60, driftPoints: 5, proposalHours: 24, backoffTicks: 6, booksEveryMs: 3_600_000 } as const;
 /** The platform refuses a proposal valid for a minute or less (`expiry_invalid`). */
 const MIN_VALIDITY_MS = 60_000;
 
@@ -109,11 +110,31 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
   holds?: Holds;
 }) {
   const ticking = new Set<string>();
-  const agents = new Map<string, { backoffUntil: number; stopped?: Stop }>();
+  const agents = new Map<string, { backoffUntil: number; stopped?: Stop; books?: { at: number; rows: BooksRow[] } }>();
   const stateOf = ({ organization, agent }: WatchedAgent) => {
     const key = `${organization}/${agent}`;
     if (!agents.has(key)) agents.set(key, { backoffUntil: 0 });
     return agents.get(key)!;
+  };
+
+  /**
+   * How far a Ballast agent's holdings are off its records, in USD (`unreconciledUsd`), for the agent-malfunction
+   * detector (H9): `reconcileBooks` read at most once an hour, valued at this tick's overview prices. A failed read or a
+   * difference that can't be valued is null, which the detector ranks as L3. Failed reads aren't cached; raw evidence is revalued on every tick.
+   */
+  const reconciled = async (watched: WatchedAgent, overview: OwnerOutput<"overview">): Promise<number | null> => {
+    const state = stateOf(watched);
+    if (!state.books || now() < state.books.at || now() - state.books.at >= WATCH.booksEveryMs) {
+      const read = await platform.books(watched.organization, watched.agent);
+      if (!read.ok) { state.books = undefined; return null; }
+      state.books = { at: now(), rows: read.value };
+    }
+    const at = now();
+    const prices = [...overview.book, ...overview.unmanaged].filter(row =>
+      row.priceUpdatedAt !== null && row.priceExpiresAt !== null &&
+      Number.isFinite(Date.parse(row.priceUpdatedAt)) && Date.parse(row.priceUpdatedAt) <= at &&
+      Number.isFinite(Date.parse(row.priceExpiresAt)) && Date.parse(row.priceExpiresAt) > at);
+    return unreconciledUsd(state.books.rows, prices);
   };
 
   const agentPage = (agent: string) => `${publicOrigin}/agents/${agent}`;
@@ -312,7 +333,7 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
           await settleHold(watched, "autopilot-on", event);
           // The risk agent still assesses an agent whose autopilot runs, and may recommend pausing it; Ballast proposes nothing.
           const assessed = watched.risk && watched.ballast && ballast
-            ? await (watched.ballast.diversification ? ballast.decideDiversified : ballast.decide)(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, true) : undefined;
+            ? await (watched.ballast.diversification ? ballast.decideDiversified : ballast.decide)(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, true, false, await reconciled(watched, overview.value)) : undefined;
           const risk = assessed && "risk" in assessed ? assessed.risk : undefined;
           return event({ held: "autopilot", ...(risk !== undefined && { risk }) });
         }
@@ -324,9 +345,10 @@ export function createWatch({ platform, requests, publicOrigin, now = Date.now, 
           if (!ballast) { state.stopped = { reason: "ballast is configured but the server has no engine", resumable: false }; return event({ stopped: state.stopped.reason }); }
           // A `diversification` block runs the multi-sleeve book (#221); without it, the two-asset step. Either runs the
           // stabilization agent beside it when the entry has a `risk` block (#220): on the book it has.
-          const decided = watched.ballast.diversification
-            ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on)
-            : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on);
+          const books = await reconciled(watched, overview.value);
+        const decided = watched.ballast.diversification
+            ? await ballast.decideDiversified(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on, false, books)
+            : await ballast.decide(organization, agent, watched.ballast, overview.value, watched.proposalHours, watched.risk, autopilot.value.on, false, books);
           if ("skipped" in decided) return event(decided);
           // Ballast records the proposal before its request is stored, under the requestId its decision was logged with: a
           // crash between the two, or a full store, counts a proposal never made, which only holds back more; never one

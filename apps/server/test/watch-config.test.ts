@@ -157,3 +157,8 @@ test("a hedge block that can't be planned is refused at load: an unknown or cash
     [{ sleeves: [sleeve], extra: true }, /extra|Unrecognized/],
   ] as const) await assert.rejects(loadWatchConfig(await bad(hedge as never)), pattern, JSON.stringify(hedge));
 });
+
+test("Ballast read budget includes reconciliation retries on every tick", () => {
+  assert.equal(readsPerHour([{ intervalS: 300, ballast: {} as never }]), 48);
+  assert.equal(readsPerHour([{ intervalS: 300 }]), 36);
+});

@@ -8,9 +8,11 @@
 // stays untradable until the platform lists it (#62's gap table).
 //
 // Asset ids, chains and routes are NEAR Intents' own token list (1Click `GET /v0/tokens`, read 2026-11-09). Price
-// sources were each read once the same day; like H5's, every one is public, keyless and quoted in USD.
+// sources were each read live on 2026-11-11; like H5's, every one is public, keyless and quoted in USD, and the server
+// reads them (`price-feeds.ts`).
 
 import { PROPOSAL_ASSETS } from "./legs.ts";
+import { feedUrl, type PriceFeed } from "./price-feeds.ts";
 import { isPositive, report } from "./validate.ts";
 
 /** Volatile assets are traded by the bands; stablecoins are reserve and cash; real-world assets are a reserve sleeve. */
@@ -44,8 +46,11 @@ export const VENUES: Readonly<Record<string, Venue>> = {
   [VENUE_IDS.omftSolana]: { id: VENUE_IDS.omftSolana, kind: "bridge", label: "Solana bridge (omft)" },
 };
 
-/** One public, keyless USD quote: who, the read, and where its history comes from when it has one. */
-export type PriceSource = { name: string; read: string; history?: string };
+/**
+ * One public, keyless USD quote: who, the read, and where its history comes from when it has one. `feed` is the venue and
+ * market the server reads it from; a source without one (a product not yet chosen) can't be read.
+ */
+export type PriceSource = { name: string; read: string; history?: string; feed?: PriceFeed };
 
 /** A real-world asset's terms. Days are calendar days from asking to cash in hand. */
 export type RwaTerms = {
@@ -88,55 +93,58 @@ export type AssetEntry = {
   rwa?: RwaTerms;
 };
 
-const PYTH = (feed: string, id: string): PriceSource => ({ name: `Pyth ${feed}`, read: `hermes.pyth.network/v2/updates/price/latest?ids[]=${id}` });
-const COINBASE = (product: string): PriceSource => ({ name: `Coinbase Exchange ${product}`, read: `api.exchange.coinbase.com/products/${product}/ticker`, history: `…/products/${product}/candles?granularity=3600` });
-const KRAKEN = (pair: string): PriceSource => ({ name: `Kraken ${pair}`, read: `api.kraken.com/0/public/Ticker?pair=${pair}`, history: `…/OHLC?pair=${pair}&interval=60` });
-const GEMINI = (symbol: string): PriceSource => ({ name: `Gemini ${symbol}`, read: `api.gemini.com/v1/pubticker/${symbol}` });
+const source = (name: string, feed: PriceFeed, history?: string): PriceSource => ({ name, read: feedUrl(feed), ...(history && { history }), feed });
+const COINBASE = (product: string) => source(`Coinbase Exchange ${product}`, { venue: "coinbase", market: product }, `…/products/${product}/candles?granularity=3600`);
+const KRAKEN = (pair: string) => source(`Kraken ${pair}`, { venue: "kraken", market: pair }, `…/OHLC?pair=${pair}&interval=60`);
+// Bitstamp stands where Pyth stood: Pyth's Hermes answers 401 without an API key (read 2026-11-11), and H5's sources are keyless.
+const BITSTAMP = (pair: string) => source(`Bitstamp ${pair}`, { venue: "bitstamp", market: pair }, `…/ohlc/${pair}/?step=3600`);
+const GEMINI = (symbol: string) => source(`Gemini ${symbol}`, { venue: "gemini", market: symbol });
+const BITFINEX = (symbol: string) => source(`Bitfinex ${symbol}`, { venue: "bitfinex", market: symbol });
 
 /** Every asset the registry knows, by symbol. */
 export const ASSET_REGISTRY: Readonly<Record<string, AssetEntry>> = {
   wNEAR: {
     symbol: "wNEAR", id: PROPOSAL_ASSETS.wNEAR, class: "volatile", chain: "near", route: "native", venues: [VENUE_IDS.intents], decimals: 24,
-    priceSources: [COINBASE("NEAR-USD"), KRAKEN("NEARUSD"), PYTH("Crypto.NEAR/USD", "c415de8d2eba7db216527dff4b60e8f3a5311c740dadb233e13e12547e226750")],
+    priceSources: [COINBASE("NEAR-USD"), KRAKEN("NEARUSD"), BITSTAMP("nearusd")],
     liquidity: { maxOrderUsd: 50_000 },
   },
   ETH: {
     symbol: "ETH", id: PROPOSAL_ASSETS.ETH, class: "volatile", chain: "eth", route: "omft", venues: [VENUE_IDS.intents, VENUE_IDS.omftEthereum], decimals: 18,
-    priceSources: [COINBASE("ETH-USD"), KRAKEN("ETHUSD"), PYTH("Crypto.ETH/USD", "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace")],
+    priceSources: [COINBASE("ETH-USD"), KRAKEN("ETHUSD"), BITSTAMP("ethusd")],
     liquidity: { maxOrderUsd: 250_000 },
   },
   BTC: {
     symbol: "BTC", id: "nep141:btc.omft.near", class: "volatile", chain: "btc", route: "omft", venues: [VENUE_IDS.intents, VENUE_IDS.omftBitcoin], decimals: 8,
-    priceSources: [COINBASE("BTC-USD"), KRAKEN("XBTUSD"), PYTH("Crypto.BTC/USD", "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43")],
+    priceSources: [COINBASE("BTC-USD"), KRAKEN("XBTUSD"), BITSTAMP("btcusd")],
     liquidity: { maxOrderUsd: 250_000 },
   },
   SOL: {
     // On NEAR Intents' token list (1Click `GET /v0/tokens`, read 2026-11-10) as `sol.omft.near`, 9 decimals.
     symbol: "SOL", id: "nep141:sol.omft.near", class: "volatile", chain: "sol", route: "omft", venues: [VENUE_IDS.intents, VENUE_IDS.omftSolana], decimals: 9,
-    priceSources: [COINBASE("SOL-USD"), KRAKEN("SOLUSD"), PYTH("Crypto.SOL/USD", "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d")],
+    priceSources: [COINBASE("SOL-USD"), KRAKEN("SOLUSD"), BITSTAMP("solusd")],
     liquidity: { maxOrderUsd: 100_000 },
   },
   USDC: {
     symbol: "USDC", id: PROPOSAL_ASSETS.USDC, class: "stable", chain: "near", route: "native", venues: [VENUE_IDS.intents], decimals: 6, pegUsd: 1,
     // Coinbase quotes no USDC-USD book (USDC is its USD), so Gemini stands in.
-    priceSources: [KRAKEN("USDCUSD"), GEMINI("usdcusd"), PYTH("Crypto.USDC/USD", "eaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a")],
+    priceSources: [KRAKEN("USDCUSD"), GEMINI("usdcusd"), BITSTAMP("usdcusd")],
     liquidity: { maxOrderUsd: 250_000 },
   },
   USDT: {
     symbol: "USDT", id: "nep141:usdt.tether-token.near", class: "stable", chain: "near", route: "native", venues: [VENUE_IDS.intents], decimals: 6, pegUsd: 1,
-    priceSources: [COINBASE("USDT-USD"), KRAKEN("USDTUSD"), PYTH("Crypto.USDT/USD", "2b89b9dc8fdf9f34709a5b106b472f0f39bb6ca9ce04b0fd7f2e971688e2e53b")],
+    priceSources: [COINBASE("USDT-USD"), KRAKEN("USDTUSD"), BITSTAMP("usdtusd")],
     liquidity: { maxOrderUsd: 250_000 },
   },
   "USDC.e": {
     symbol: "USDC.e", id: "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near", class: "stable", chain: "eth", route: "omft",
     venues: [VENUE_IDS.intents, VENUE_IDS.omftEthereum], decimals: 6, pegUsd: 1,
-    priceSources: [KRAKEN("USDCUSD"), GEMINI("usdcusd"), PYTH("Crypto.USDC/USD", "eaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a")],
+    priceSources: [KRAKEN("USDCUSD"), GEMINI("usdcusd"), BITSTAMP("usdcusd")],
     liquidity: { maxOrderUsd: 250_000 },
   },
   XAUT: {
     symbol: "XAUT", id: "nep141:eth-0x68749665ff8d2d112fa859aa293f07a622782f38.omft.near", class: "rwa", chain: "eth", route: "omft",
     venues: [VENUE_IDS.intents, VENUE_IDS.omftEthereum], decimals: 6,
-    priceSources: [KRAKEN("XAUTUSD"), GEMINI("xautusd"), PYTH("Crypto.XAUT/USD", "44465e17d2e9d390e70c999d5a11fda4f092847fcd2e3e5aa089d96c98a30e67")],
+    priceSources: [KRAKEN("XAUTUSD"), GEMINI("xautusd"), BITFINEX("tXAUT:USD")],
     liquidity: { maxOrderUsd: 25_000 },
     // Tether Gold trades, so a sale through NEAR Intents is its redemption in time; physical delivery isn't modelled.
     rwa: {

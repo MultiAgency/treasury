@@ -18,6 +18,7 @@ export * from "./validate.ts";
 export * from "./legs.ts";
 export * from "./decisions.ts";
 export * from "./assets.ts";
+export * from "./price-feeds.ts";
 export * from "./sleeves.ts";
 export * from "./stables.ts";
 export * from "./intents.ts";

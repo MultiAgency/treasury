@@ -1,5 +1,6 @@
 import { PROPOSAL_ASSETS } from "../../../packages/core/src/index.ts";
 import { createBallast, type BallastSettings, type EngineStates, type PriceHistory } from "./ballast.ts";
+import type { PriceFeeds } from "./prices.ts";
 import type { ChainRecord } from "./chain.ts";
 import type { WatchPlatform } from "./platform.ts";
 import type { RiskEntry, StoredRisk } from "./risk.ts";
@@ -8,9 +9,9 @@ export class AssessmentBusy extends Error {}
 export const MAX_ACTIVE_ASSESSMENTS = 8;
 
 /** Explicit local recording: only platform reads, no watcher or proposal capability. */
-export function createAssessment({ platform, history, states, audit, now = Date.now }: {
+export function createAssessment({ platform, history, states, audit, prices, now = Date.now }: {
   platform: Pick<WatchPlatform, "overview" | "autopilot">;
-  history: PriceHistory; states: EngineStates;
+  history: PriceHistory; states: EngineStates; prices: PriceFeeds;
   audit: { appendRecord(entry: RiskEntry): Promise<ChainRecord<RiskEntry>> };
   now?: () => number;
 }) {
@@ -32,7 +33,7 @@ export function createAssessment({ platform, history, states, audit, now = Date.
         !Number.isFinite(Date.parse(row.priceUpdatedAt ?? "")) || Date.parse(row.priceUpdatedAt!) > at ||
         !Number.isFinite(Date.parse(row.priceExpiresAt ?? "")) || Date.parse(row.priceExpiresAt!) <= at)) return null;
       let recorded: StoredRisk | null = null;
-      const engine = createBallast({ history, states, now: () => at, audit: {
+      const engine = createBallast({ history, states, prices, now: () => at, audit: {
         append: async entry => {
           if (entry.kind !== "risk") throw new Error("assessment attempted a decision record");
           const record = await audit.appendRecord(entry);

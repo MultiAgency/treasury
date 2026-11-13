@@ -3,6 +3,8 @@ import { parseConsentMessage, parseSetupMessage, type ProposalView } from "@mult
 import { generateKey } from "near-kit";
 import type { ConsentRecord, IdentityAnswer, Platform, PreparedAnswer, ProposalAnswer, ReadAnswer, SetupAnswer, StatusAnswer, SweepRun } from "../src/platform.ts";
 import type { Challenge } from "../src/signin.ts";
+import type { PriceFeeds } from "../src/prices.ts";
+import type { PriceQuote } from "../../../packages/core/src/index.ts";
 
 export const HOST = "treasury.test";
 export const ORIGIN = `https://${HOST}`;
@@ -560,3 +562,21 @@ export const OVERVIEW: Extract<ReadAnswer<"overview">, { ok: true }>["value"] = 
       timelock: { delay_ms: 0, scheduled_count: 0 } } },
   digest: null, notInForce: null, agreed: [], grants: [],
 };
+
+/**
+ * Three sources that each quote a book row's own price at its `priceUpdatedAt` (H5): the oracle's three, agreeing with the
+ * platform, so a test that moves the overview's price moves the oracle's. `quotes` overrides an asset's answer.
+ */
+export function feedsFromBook(overview: () => { book: readonly { asset: string; price: number | null; priceUpdatedAt: string | null }[] },
+  quotes: Record<string, PriceQuote[]> = {}): PriceFeeds {
+  return {
+    async quotes(entry) {
+      if (entry.id === null) return [];
+      if (quotes[entry.id]) return quotes[entry.id]!;
+      const row = overview().book.find(r => r.asset === entry.id);
+      if (!row || row.price === null) return [];
+      const observedAt = Date.parse(row.priceUpdatedAt ?? "");
+      return ["Coinbase Exchange", "Kraken", "Bitstamp"].map(source => ({ source, asset: entry.id!, price: row.price!, observedAt }));
+    },
+  };
+}
