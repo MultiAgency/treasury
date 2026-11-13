@@ -55,6 +55,7 @@ async function world({ pct = 50, risk = true, autopilotOn = false }: { pct?: num
   const platform: WatchPlatform = {
     overview: async () => ({ ok: true, value: overview(T0) }),
     unresolved: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["unresolved"]>>,
+    books: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["books"]>>,
     autopilot: async () => ({ ok: true, value: { on: autopilotOn, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
     strategy: async () => ({ ok: true, value: { strategy: { targetBps: { [USDC]: 6_000, [WNEAR]: 2_000, [ETH]: 2_000 }, minLegUsd: 1, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } },
       digest: `sha256:${"c".repeat(64)}` } }) as unknown as Awaited<ReturnType<WatchPlatform["strategy"]>>,

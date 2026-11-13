@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectFaults, FAULT_DEFAULTS, faultProblems, highestFaultLevel, regimeFrom, type FaultConfig, type FaultObservations } from "../src/faults.ts";
+import { detectFaults, FAULT_DEFAULTS, faultProblems, highestFaultLevel, regimeFrom, unreconciledUsd, type FaultConfig, type FaultObservations } from "../src/faults.ts";
 import { detectMarketMoves } from "../src/detectors.ts";
 import { gate } from "../src/whipsaw.ts";
 
 const healthy: FaultObservations = {
   oracleFrozen: null, quotedSlippageBps: 10, venueUp: true, stablecoinPrices: { USDC: 1, USDT: 0.999 },
-  cashUsd: 100_000, cashFloorUsd: 60_000, unknownOutcomes: 0, expectedUsd: 1_000_000, reportedUsd: 1_000_000,
+  cashUsd: 100_000, cashFloorUsd: 60_000, unknownOutcomes: 0, bookUsd: 1_000_000, unreconciledUsd: 0,
 };
 const names = (o: Partial<FaultObservations>) => detectFaults({ ...healthy, ...o }).map(d => d.detector);
 const level = (o: Partial<FaultObservations>) => highestFaultLevel(detectFaults({ ...healthy, ...o }));
@@ -57,13 +57,30 @@ test("cash floor breach: under the floor triggers, exactly at it does not", () =
   assert.deepEqual(names({ cashFloorUsd: null }), ["cash-floor-breach"]);
 });
 
-test("agent malfunction: an unknown outcome or a mismatch over 0.1% is L3", () => {
+test("agent malfunction: an unknown outcome, or holdings off the records by over 0.1% of the book, is L3", () => {
   assert.equal(level({ unknownOutcomes: 1 }), 3);
-  assert.deepEqual(names({ reportedUsd: 999_000 }), []); // exactly 0.1% off
-  assert.deepEqual(names({ reportedUsd: 998_999 }), ["agent-malfunction"]);
-  assert.equal(level({ reportedUsd: 1_001_001 }), 3);
+  assert.deepEqual(names({ unreconciledUsd: 1_000 }), []); // exactly 0.1% of the book
+  assert.deepEqual(names({ unreconciledUsd: 1_001 }), ["agent-malfunction"]);
+  assert.equal(level({ unreconciledUsd: 1_001 }), 3);
   assert.deepEqual(names({ unknownOutcomes: null }), ["agent-malfunction"]);
-  assert.deepEqual(names({ expectedUsd: null }), ["agent-malfunction"]);
+  // Unread or unvalued is unknown, which ranks as the worst case.
+  for (const o of [{ unreconciledUsd: null }, { bookUsd: null }, { bookUsd: 0 }, { unreconciledUsd: -1 }, { unreconciledUsd: Number.NaN }])
+    assert.deepEqual(names(o), ["agent-malfunction"], JSON.stringify(o));
+});
+
+test("the books' differences are valued at each asset's price, and never net across assets", () => {
+  const WNEAR = "nep141:wrap.near", USDC = "nep141:usdc";
+  const prices = [{ asset: WNEAR, decimals: 24, price: 2 }, { asset: USDC, decimals: 6, price: 1 }];
+  const row = (asset: string, drift: string, unattributed: string) => ({ asset, public: { drift }, confidential: { unattributed } });
+  assert.equal(unreconciledUsd([row(WNEAR, "0", "0"), row(USDC, "0", "0")], prices), 0);
+  // One wNEAR of public drift ($2) and half a USDC missing from the confidential records ($0.50): $2.50, not $1.50.
+  assert.equal(unreconciledUsd([row(WNEAR, String(10n ** 24n), "0"), row(USDC, "0", "-500000")], prices), 2.5);
+  // An asset no price covers counts only when it differs: then the difference can't be valued.
+  assert.equal(unreconciledUsd([row("nep141:other", "0", "0")], prices), 0);
+  assert.equal(unreconciledUsd([row("nep141:other", "1", "0")], prices), null);
+  assert.equal(unreconciledUsd([row(USDC, "1", "0")], [{ asset: USDC, decimals: 6, price: null }]), null);
+  assert.equal(unreconciledUsd([row(USDC, "1", "0")], [{ asset: USDC, decimals: null, price: 1 }]), null);
+  for (const bad of ["1.5", "", " 1"]) assert.equal(unreconciledUsd([row(USDC, bad, "0")], prices), null, JSON.stringify(bad));
 });
 
 test("the highest level among several detections is returned", () => {
@@ -152,4 +169,10 @@ test("faults-config maps to system-fault", () => {
 test("detections are deterministic", () => {
   const o = { ...healthy, venueUp: false, quotedSlippageBps: 200 };
   assert.deepEqual(detectFaults(o), detectFaults(o));
+});
+
+test("reconciliation valuation refuses nonfinite results and unusable precision", () => {
+  const row = { asset: "a", public: { drift: "9".repeat(400) }, confidential: { unattributed: "0" } };
+  assert.equal(unreconciledUsd([row], [{ asset: "a", price: 1, decimals: 6 }]), null);
+  assert.equal(unreconciledUsd([{ ...row, public: { drift: "1" } }], [{ asset: "a", price: 1, decimals: 1000 }]), null);
 });

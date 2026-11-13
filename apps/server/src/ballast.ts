@@ -152,8 +152,8 @@ const PROPOSED_MS = 8 * DAY_MS;
  */
 export const OVERVIEW_ORACLE: OracleLimits = { ...ORACLE_DEFAULTS, minSources: 1 };
 const OVERVIEW_SOURCE = "platform-overview";
-/** Fault detectors whose inputs `watch` can't observe; what bounds each instead is in `createBallast`. */
-const NOT_JUDGED_HERE = new Set(["thin-liquidity", "agent-malfunction"]);
+/** The fault detector whose input `watch` can't observe; what bounds it instead is in `createBallast`. */
+const NOT_JUDGED_HERE = new Set(["thin-liquidity"]);
 
 const sample = z.strictObject({ asset: z.string().min(1), at: z.number().int(), price: z.number().positive() });
 
@@ -302,7 +302,8 @@ export function riskEventOf(assessment: RiskAssessment): RiskEvent {
  * is the reserve the DCA draws on, so a buy never reaches into the floor. Slippage isn't quoted before proposing (app
  * access has no quote): it's bounded by the leg's `minAmountOut` at the mandate's limit, which the platform refuses if the
  * quote is worse, so the policy's own slippage rule is given 0 and thin liquidity isn't a detection here. Unresolved
- * operations already hold `watch` before this runs, and holdings aren't reconciled here.
+ * operations already hold `watch` before this runs, so none are unknown here; `unreconciled` is how far the holdings are
+ * off the platform's records (`reconcileBooks`, read by `watch`), null when unread, and over 0.1% of the book is L3.
  */
 export function createBallast({ history, states, audit, now = Date.now }: {
   history: PriceHistory; states: EngineStates;
@@ -312,7 +313,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
 }) {
   return {
     async decide(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null): Promise<Decision> {
       const at = now();
       const row = (asset: string) => overview.book.find(h => h.asset === asset) as Holding | undefined;
       const volatile = row(VOLATILE), stable = row(STABLE);
@@ -337,11 +338,11 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       const hourlySeen = hourly(before).concat(checked.frozen ? [] : [{ at, price: checked.median }]);
 
       const market = detectMarketMoves(hourlySeen, at);
-      // Thin liquidity and agent malfunction need a quote and a reconciliation this step doesn't have (see above): their
-      // inputs are given as unknown, and their detections are the only ones left out.
+      // Thin liquidity needs a quote this step doesn't have (see above): its input is given as unknown, and its detection
+      // is the only one left out.
       const faults = detectFaults({
         oracleFrozen: reading.frozen ? reading.reason : null, quotedSlippageBps: null, venueUp: true,
-        stablecoinPrices: { USDC: stable.price }, cashUsd: stable.usd, cashFloorUsd, unknownOutcomes: null, expectedUsd: null, reportedUsd: null,
+        stablecoinPrices: { USDC: stable.price }, cashUsd: stable.usd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled,
       }).filter(d => !NOT_JUDGED_HERE.has(d.detector));
       const baseLevel = Math.max(highestLevel(market), highestFaultLevel(faults), m.governance.startLevel) as Level;
       const reserveUsd = Math.max(0, stable.usd! - cashFloorUsd), cashUsd = stable.usd! - reserveUsd;
@@ -381,7 +382,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         };
         riskAssessment = assessRisk(riskInput);
         // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
-        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly && !faults.some(f => f.detector === "agent-malfunction")) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
         await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
           ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
       }
@@ -411,7 +412,9 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         volatile: VOLATILE, reserve: STABLE, prices, decimals, maxSlippageBps: m.limits.policy.maxSlippageBps,
       });
       const { intent, policy: verdict, proposal } = record;
-      const detail = { zone: intent.zone, level, ...(reading.frozen ? { frozen: reading.reason } : { twap: reading.twap15m, ema: reading.ema30d }) };
+      // The faults behind a system-fault regime, by reason: the regime alone doesn't say which.
+      const detail = { zone: intent.zone, level, ...(reading.frozen ? { frozen: reading.reason } : { twap: reading.twap15m, ema: reading.ema30d }),
+        ...(faults.length > 0 && { faults: faults.map(f => f.reason) }) };
       const ballastDecision = ((): Decision => {
         if (intent.action === "hold") return { skipped: "ballast holds", reason: intent.reason, ...detail };
         if (verdict?.result.ok === false) return { skipped: "policy refused", rule: verdict.result.rule, reason: verdict.result.detail, ...detail };
@@ -466,7 +469,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
      * and a cash-like real-world asset only when the RWA phase is on and it can be redeemed inside its horizon.
      */
     async decideDiversified(organization: string, agent: string, settings: BallastSettings, overview: OwnerOutput<"overview">, proposalHours: number,
-      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false): Promise<Decision> {
+      risk?: RiskSettings, autopilotOn: boolean | null = null, assessmentOnly = false, unreconciled: number | null = null): Promise<Decision> {
       const at = now();
       if (!settings.diversification) return { skipped: "no diversification terms" };
 
@@ -538,12 +541,12 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       const stablecoinPrices = Object.fromEntries(stableEntries.map(({ entry, row }) => [entry.symbol, row.price]));
       const faults = detectFaults({
         oracleFrozen: null, quotedSlippageBps: null, venueUp: true, stablecoinPrices,
-        cashUsd: runway.cashUsd, cashFloorUsd, unknownOutcomes: null, expectedUsd: null, reportedUsd: null,
+        cashUsd: runway.cashUsd, cashFloorUsd, unknownOutcomes: 0, bookUsd: total, unreconciledUsd: unreconciled,
       }).filter(d => !NOT_JUDGED_HERE.has(d.detector));
       // What a frozen sleeve's own reading adds: source disagreement or a missing source, never another sleeve's fault.
       const sourceFaults = (reading: OracleReading | undefined) => reading?.frozen
         ? detectFaults({ oracleFrozen: reading.reason, quotedSlippageBps: 0, venueUp: true, stablecoinPrices: { USDC: 1 }, cashUsd: 1, cashFloorUsd: 1,
-          unknownOutcomes: 0, expectedUsd: null, reportedUsd: null }).filter(d => !NOT_JUDGED_HERE.has(d.detector))
+          unknownOutcomes: 0, bookUsd: 1, unreconciledUsd: 0 }).filter(d => !NOT_JUDGED_HERE.has(d.detector))
         : [];
       const allFaults = [...faults, ...Object.values(readings).flatMap(sourceFaults)];
       const baseLevel = Math.max(...Object.values(markets).map(highestLevel), highestFaultLevel(allFaults), m.governance.startLevel) as Level;
@@ -587,7 +590,7 @@ export function createBallast({ history, states, audit, now = Date.now }: {
         };
         riskAssessment = assessRisk(riskInput);
         // While autopilot runs nothing is proposed (two proposers would race), so a de-risk names no request.
-        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
+        if (riskAssessment.derisk?.proposal && autopilotOn !== true && !assessmentOnly && !faults.some(f => f.detector === "agent-malfunction")) { riskIntent = riskAssessment.derisk.intent; riskRequestId = newRequestId(agent); }
         await audit.append({ kind: "risk", organization, agent, input: riskInput, assessment: riskAssessment,
           ...(riskRequestId !== undefined && { requestId: riskRequestId }) });
       }
@@ -637,7 +640,8 @@ export function createBallast({ history, states, audit, now = Date.now }: {
       const detailsOf = (d: (typeof decided)[number]) => {
         const reading = readings[d.asset];
         return { asset: d.asset, zone: d.intent.zone, level,
-          ...(reading?.frozen ? { frozen: reading.reason } : reading ? { twap: reading.twap15m, ema: reading.ema30d } : {}) };
+          ...(reading?.frozen ? { frozen: reading.reason } : reading ? { twap: reading.twap15m, ema: reading.ema30d } : {}),
+          ...(faults.length > 0 && { faults: faults.map(f => f.reason) }) };
       };
 
       /** The tick's decision with the risk agent's event beside it, as the two-asset step reports it. */

@@ -53,6 +53,7 @@ async function world({ max }: { max?: number } = {}) {
   const platform: WatchPlatform = {
     overview: async () => { calls.push("overview"); return answers.overview; },
     unresolved: async () => { calls.push("unresolved"); return answers.unresolved; },
+    books: async () => { calls.push("reconcileBooks"); return { ok: true, value: [] } as Awaited<ReturnType<WatchPlatform["books"]>>; },
     autopilot: async () => { calls.push("autopilot/get"); return answers.autopilot; },
     strategy: async () => { calls.push("strategy/get"); return { ok: false, kind: "unavailable" } as Awaited<ReturnType<WatchPlatform["strategy"]>>; },
     list: async () => { calls.push("proposals/list"); return { ok: true, value: { proposals: [...stored.values()] } }; },

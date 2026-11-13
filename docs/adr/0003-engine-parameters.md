@@ -123,3 +123,11 @@ The plan also had a raised level held until a human lowers it one step at a time
 - **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
 - **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
 - **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.
+
+## Reconciliation malfunction evidence (#253)
+
+Watch reads reconciliation evidence at most hourly after a successful read. It caches raw public drift and confidential unattributed amounts, not USD values. Every tick revalues those amounts against that tick's overview prices; missing, expired or future-dated price observations make a nonzero difference unknown. Failed reconciliation reads are not cached and are retried on the next eligible tick. The conservative request budget includes that retry on every Ballast tick (four base reads rather than three), even though successful cached evidence costs fewer calls.
+
+Absolute differences are summed across assets and across public/confidential evidence, so a surplus cannot cancel a shortfall. Unreadable amounts, unusable prices, invalid decimals or nonfinite valuation are unknown. Unknown reconciliation or mismatch strictly over 0.1% of the current book raises the existing L3 agent-malfunction fault and holds Ballast trades. Exactly 0.1% is within the configured tolerance. This compares the platform's reported balances with its records; it does not establish independent provider custody or settlement.
+
+The manual assessment-only API has no reconciliation-read capability; absent reconciliation remains unknown and creates no trade. Its assessment-only exit and no-proposal guarantee remain intact. Production activation and detector changes require a reviewed release; this branch does not enable watch or modify production state. The original agent-malfunction checkpoint remains preserved.

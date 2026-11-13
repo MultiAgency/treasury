@@ -50,12 +50,18 @@ async function world({ seeded = true, seedEth = false, failAudit = false, max, p
   const states = await createEngineState(join(dir, "requests.json.engine"));
   if (seeded) await history.seed(WNEAR, fallingHistory(T0), T0);
   if (seedEth) await history.seed(ETH, fallingHistory(T0), T0);
-  const answers: { overview: OwnerOutput<"overview">; refuse?: string; create?: ProposalAnswer; consented?: boolean } = { overview: overviewValue ?? overview(3.12, T0) };
+  const answers: { overview: OwnerOutput<"overview">; books: OwnerOutput<"reconcileBooks"> | null; refuse?: string; create?: ProposalAnswer; consented?: boolean } =
+    { overview: overviewValue ?? overview(3.12, T0), books: [] };
+  const reads = { books: 0 };
   const stored = new Map<string, ProposalView>();
   const sent: unknown[] = [];
   const platform: WatchPlatform = {
     overview: async () => ({ ok: true, value: answers.overview }),
     unresolved: async () => ({ ok: true, value: [] }) as Awaited<ReturnType<WatchPlatform["unresolved"]>>,
+    books: async () => {
+      reads.books++;
+      return (answers.books ? { ok: true, value: answers.books } : { ok: false, kind: "unavailable", error: "down" }) as Awaited<ReturnType<WatchPlatform["books"]>>;
+    },
     autopilot: async () => ({ ok: true, value: { on: false, everyMin: 60, maxUsd: 0, lastRun: null, nextRun: null } }) as Awaited<ReturnType<WatchPlatform["autopilot"]>>,
     strategy: async () => ({ ok: true, value: { strategy: { targetBps: { [USDC]: 8_500, [WNEAR]: 1_500, [ETH]: 0 }, minLegUsd: 1, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } },
       digest: `sha256:${"c".repeat(64)}` } }) as unknown as Awaited<ReturnType<WatchPlatform["strategy"]>>,
@@ -85,7 +91,7 @@ async function world({ seeded = true, seedEth = false, failAudit = false, max, p
   const strategyProposals = proposals ? createStrategyProposals(memoryProposalRecords(), { audit: { append: async () => {} }, now: () => clock.now }) : undefined;
   const start = () => createWatch({ platform, requests, holds, publicOrigin: "https://treasury.test", now: () => clock.now, ballast, ...(strategyProposals && { strategyProposals }) });
   let watch = start();
-  return { dir, clock, answers, stored, sent, history, states, requests, audit, strategyProposals, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent), settings,
+  return { dir, clock, answers, reads, stored, sent, history, states, requests, audit, strategyProposals, log: () => readFile(audit.file, "utf8"), tick: (agent = WATCHED) => watch.tick(agent), settings,
     /** A restart: a new watch, with nothing in memory, over the same files. */
     restart: () => { watch = start(); } };
 }
@@ -112,6 +118,33 @@ test("a warmed-up history 22% under its reference proposes one DCA buy of explic
   const next = await w.tick();
   assert.equal(next.skipped, "live proposal", "one proposal at a time");
   assert.equal(w.sent.length, 1);
+});
+
+test("holdings off the records by over 0.1% of the book are a malfunction at L3: Ballast holds; the books are read at most hourly, and again next tick after a failed read (H9)", async () => {
+  const w = await world();
+  // 200 USDC the API's records don't account for: 0.2% of a 100,000 USD book.
+  w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" }, confidential: { api: "85200000000", recorded: "85000000000", unattributed: "200000000" } }];
+  const tick = async (minutes: number) => { w.clock.now += minutes * 60_000; w.answers.overview = overview(3.12, w.clock.now); return w.tick(); };
+  const held = (event: Record<string, unknown>, why: RegExp) => {
+    assert.deepEqual([event.skipped, event.reason, event.level], ["ballast holds", "regime system-fault: not trading", 3], JSON.stringify(event));
+    assert.ok((event.faults as string[] | undefined)?.some(f => why.test(f)), JSON.stringify(event));
+  };
+  const off = /holdings are off the records by more than 0\.1% of the book/;
+  held(await tick(0), off);
+  assert.equal(w.sent.length, 0);
+
+  w.answers.books = [];
+  held(await tick(30), off); // the last reading stands until an hour has passed
+  assert.equal(w.reads.books, 1);
+
+  w.answers.books = null;
+  held(await tick(31), /holdings can't be reconciled/); // an unread book is unknown: the worst case
+  assert.equal(w.reads.books, 2);
+
+  w.answers.books = [];
+  const proposed = await tick(5);
+  assert.equal(w.reads.books, 3, "a failed read is tried again on the next tick");
+  assert.ok("proposed" in proposed, JSON.stringify(proposed));
 });
 
 test("an executed buy spends its DCA units once; afterwards its zone waits to re-arm", async () => {
@@ -552,4 +585,23 @@ test("assessment-only with missing history records an explicit unusable projecti
   assert.equal(record.entry.assessment.projection.usable, false);
   assert.ok(record.entry.assessment.projection.reasons.length > 0);
   assert.deepEqual(w.sent, []);
+});
+
+test("cached reconciliation evidence is revalued with current prices and refuses expired prices", async () => {
+  const w = await world();
+  w.answers.books = [{ asset: USDC, symbol: "USDC", public: { api: "0", chain: "0", drift: "0" },
+    confidential: { api: "85200000000", recorded: "85000000000", unattributed: "200000000" } }];
+  const first = await w.tick();
+  assert.match(JSON.stringify(first.faults), /holdings are off the records/);
+  const stable = w.answers.overview.book.find(row => row.asset === USDC)!;
+  stable.price = 0.25;
+  const second = await w.tick();
+  assert.equal(w.reads.books, 1);
+  assert.doesNotMatch(JSON.stringify(second.faults), /holdings are off the records/);
+  stable.price = 1;
+  stable.priceExpiresAt = new Date(w.clock.now - 1).toISOString();
+  const stale = await w.tick();
+  assert.equal(w.reads.books, 1);
+  assert.match(JSON.stringify(stale.faults), /holdings can't be reconciled/);
+  assert.equal(w.sent.length, 0);
 });

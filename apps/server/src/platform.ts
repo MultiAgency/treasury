@@ -46,6 +46,8 @@ export type IdentityRead = { answer: IdentityAnswer; cached: boolean };
 export type WatchPlatform = {
   overview(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"overview">>>;
   unresolved(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"unresolved">>>;
+  /** The agent's holdings against its records (`reconcileBooks`): read for Ballast's agent-malfunction detector, at most hourly (H9). */
+  books(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"reconcileBooks">>>;
   autopilot(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"autopilot/get">>>;
   /** The saved strategy: read only when the mandate proposer has a strategy to propose (#206). */
   strategy(organization: string, agent: string): Promise<OwnerResult<OwnerOutput<"strategy/get">>>;
@@ -347,6 +349,7 @@ export function createPlatform({ origin, credential, timeoutMs, executeTimeoutMs
     watch: {
       overview: async (organization, agent) => (await client()).agent(organization, agent).call("overview"),
       unresolved: async (organization, agent) => (await client()).agent(organization, agent).call("unresolved"),
+      books: async (organization, agent) => (await client()).agent(organization, agent).call("reconcileBooks"),
       autopilot: async (organization, agent) => (await client()).agent(organization, agent).call("autopilot/get"),
       strategy: async (organization, agent) => (await client()).agent(organization, agent).call("strategy/get"),
       list: proposals.list,
