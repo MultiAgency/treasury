@@ -19,3 +19,16 @@ test("a window can be a day, for rare actions such as a new consent", () => {
   clock.now += 3_600_001;
   assert.equal(perDay("owner.near"), true);
 });
+
+test("a limit says how long until a key's next request would be let through", () => {
+  const clock = { now: 0 };
+  const perMinute = createRateLimit({ limit: 2, now: () => clock.now });
+  assert.equal(perMinute.waitMs("a"), 0, "nothing counted yet");
+  perMinute("a");
+  clock.now += 10_000;
+  perMinute("a");
+  assert.equal(perMinute.waitMs("a"), 50_000, "until the oldest counted request leaves the window");
+  assert.equal(perMinute.waitMs("b"), 0, "per key");
+  clock.now += 50_000;
+  assert.equal(perMinute.waitMs("a"), 0);
+});

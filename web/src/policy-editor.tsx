@@ -24,7 +24,7 @@ const PHASE_WORDS: PhaseWords = {
 
 function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: string }) {
   return <label className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-secondary/40 px-3 text-sm has-[:checked]:border-brand/45 md:min-h-9">
-    <input type="checkbox" className="size-4 accent-[var(--brand-mint)]" checked={checked} onChange={event => onChange(event.target.checked)} /> {children}</label>;
+    <input type="checkbox" className="size-4 accent-[var(--brand-primary)]" checked={checked} onChange={event => onChange(event.target.checked)} /> {children}</label>;
 }
 
 /** A group of the editor's fields: its legend, then its fields. */

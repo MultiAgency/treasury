@@ -19,7 +19,7 @@ import type { agentReads } from "./queries";
 import { Sweep } from "./sweep";
 import { ReviewDialog, when } from "./ui";
 import { fund, WrongAccount } from "./wallet";
-import { readReceipt, type FundingReceipt } from "./funding-receipt";
+import { clearReceipt, readReceipt, type FundingReceipt } from "./funding-receipt";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
 import { failureText } from "./words";
@@ -253,6 +253,16 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
     setReceipt(value);
     try { localStorage.setItem(receiptKey, JSON.stringify(value)); } catch { /* Keep the visible receipt when storage is unavailable. */ }
   };
+  /**
+   * An uncertain receipt holds new transfers, and no read can settle it (a balance doesn't prove one transfer), so the
+   * owner releases it: after checking for themselves, they clear it, which changes nothing but this browser's note.
+   */
+  const [clearing, setClearing] = useState<FundingReceipt["state"]>();
+  const clear = () => {
+    try { clearReceipt(receiptKey, localStorage); } catch { /* Storage is unavailable: only the visible receipt is dropped. */ }
+    setReceipt(undefined);
+    setClearing(undefined);
+  };
   const canFund = mayCall(identity.access, "deposit") && !blocked && receipt?.state !== "unknown";
   const [asset, setAsset] = useState<FundingAsset>("USDC");
   const [value, setValue] = useState("");
@@ -327,13 +337,20 @@ function Fund({ reads, identity, linked }: { reads: Reads; identity: Identity; l
       <p>{receipt.amount} {receipt.symbol} from <span className="break-all">{receipt.account}</span></p>
       <p className="text-xs text-muted-foreground">Recorded {when(receipt.at)} in this browser. This receipt does not confirm arrival.</p>
       <details><summary className="cursor-pointer">Deposit address</summary><code className="break-all text-xs">{receipt.address}</code></details>
-      <p>{receipt.state === "unknown" ? "Check the source account and the agent’s balances before sending again. A new transfer is blocked while this outcome is uncertain." : receipt.dao ? "Awaiting the DAO’s approval and deposit arrival. Check the request in Trezu, then check balances here." : "Awaiting deposit arrival. Check the agent’s balances before continuing."}</p>
+      <p>{receipt.state === "unknown" ? "Check the source account and the agent’s balances before sending again. A new transfer is blocked while this outcome is uncertain. Once you have checked both, clear this receipt to send again." : receipt.dao ? "Awaiting the DAO’s approval and deposit arrival. Check the request in Trezu, then check balances here." : "Awaiting deposit arrival. Check the agent’s balances before continuing."}</p>
       {receipt.dao && <a className="underline" href={`https://trezu.app/${encodeURIComponent(receipt.account)}/requests`} target="_blank" rel="noopener noreferrer">View requests in Trezu</a>}
       <Button variant="outline" disabled={balances.isFetching} onClick={() => void balances.refetch()}>{balances.isFetching ? "Checking balances…" : "Check agent balances"}</Button>
       {balances.isError && <QueryError error={balances.error} retry={() => balances.refetch()} />}
       {balances.dataUpdatedAt > 0 && <p className="text-xs text-muted-foreground">Balances last checked {when(new Date(balances.dataUpdatedAt).toISOString())}. Balance changes cannot confirm this individual transfer.</p>}
+      <Button variant="ghost" className="self-start" onClick={() => setClearing(receipt.state)}>Clear this receipt</Button>
       <PageLink to={agentAddress(reads.name)} className="underline">Return to transaction readiness</PageLink>
     </section>}
+    {/* Outside the receipt it clears, so it closes as any dialog does once the receipt is gone. */}
+    <ReviewDialog open={clearing !== undefined} onClose={() => setClearing(undefined)} title="Clear this funding receipt?"
+      description={clearing === "unknown"
+        ? "Clearing it changes no transfer, and lets you send again. If the earlier transfer did go out, a new one moves funds a second time: clear it only after checking the source account and the agent’s balances."
+        : "Clearing it changes no transfer. It only removes this note from this browser."}
+      actions={<Button onClick={clear}>Clear the receipt</Button>} />
     {review ? <div role="group" aria-label="Funding transfer to sign" className="flex flex-col gap-3 rounded-lg border border-border-strong bg-background/40 p-4">
       <p>{dao ? "The proposal pays" : "Your wallet signs a transfer of"} exactly <span className="font-medium tabular-nums">{review.transfer.amount} {review.transfer.symbol}</span>
         {review.transfer.symbol === "NEAR" && " (wrapped as wNEAR)"} from <span className="break-all">{review.account}</span> to the deposit address:</p>

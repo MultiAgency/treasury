@@ -19,7 +19,7 @@ const ICONS: Record<AgentPage, Icon> = { home: House, proposals: Stack, strategy
 
 /**
  * A page's item in the sidebar: its icon and its name, the current page marked by the router (`aria-current="page"`)
- * with a mint bar, a tint and a mint icon. Its text is the page's name alone, which the icon (hidden) doesn't add to.
+ * with a gold bar, a tint and a gold icon. Its text is the page's name alone, which the icon (hidden) doesn't add to.
  */
 const ITEM = "relative h-11 gap-2.5 rounded-lg px-2.5 text-sm text-muted-foreground hover:text-foreground md:h-9 [&>svg]:size-[18px]! "
   + "aria-[current=page]:bg-sidebar-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground aria-[current=page]:[&>svg]:text-primary "

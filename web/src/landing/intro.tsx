@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * The intro while the vault loads: its wireframe draws itself in mint hairlines, the core swells from a point of
+ * The intro while the vault loads: its wireframe draws itself in gold hairlines, the core swells from a point of
  * light, and a readout counts to 100 as the real stages land (code, renderer, first frames). It takes at least
  * MIN_MS so a fast load still reads as an opening, and never waits on anything but the load itself.
  */

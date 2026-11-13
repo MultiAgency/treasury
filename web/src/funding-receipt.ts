@@ -8,3 +8,7 @@ export function readReceipt(key: string, storage: Pick<Storage, "getItem"> | und
   return undefined;
 }
 
+/** Forgets a receipt the owner has checked and cleared. Storage may be unavailable: the page drops its own copy either way. */
+export function clearReceipt(key: string, storage: Pick<Storage, "removeItem"> | undefined): void {
+  try { storage?.removeItem(key); } catch { /* Nothing was stored, or it can't be reached: there is nothing to forget. */ }
+}

@@ -55,6 +55,14 @@ export const fileTokenRecords = (path: string) => createRecords(path, "tokens", 
 export function createAgentTokens(records: TokenRecords, { now = Date.now }: { now?: () => number } = {}) {
   const lastPersistedUse = new Map<string, number>();
   const prune = (all: readonly StoredAgentToken[], at: number) => all.filter(token => live(token, at) || (token.revokedAt ?? token.expiresAt) + KEEP_ENDED_MS > at);
+  /** The record whose secret `presented` carries, live or ended. The secret is compared in constant time. */
+  const matching = (presented: string): StoredAgentToken | undefined => {
+    const parts = TOKEN.exec(presented);
+    if (!parts) return undefined;
+    const record = records.all().find(token => token.id === parts[1]);
+    const want = Buffer.from(record?.hash ?? "0".repeat(64), "hex"), got = Buffer.from(hashOf(parts[2]!), "hex");
+    return record && timingSafeEqual(want, got) ? record : undefined;
+  };
 
   return {
     /**
@@ -74,14 +82,19 @@ export function createAgentTokens(records: TokenRecords, { now = Date.now }: { n
     },
     /**
      * The record a token presents, or undefined: a token that doesn't parse, names no record, has the wrong secret, was
-     * revoked or has lapsed. The secret is compared in constant time.
+     * revoked or has lapsed.
      */
     find(presented: string): StoredAgentToken | undefined {
-      const parts = TOKEN.exec(presented);
-      if (!parts) return undefined;
-      const record = records.all().find(token => token.id === parts[1]);
-      const want = Buffer.from(record?.hash ?? "0".repeat(64), "hex"), got = Buffer.from(hashOf(parts[2]!), "hex");
-      return record && timingSafeEqual(want, got) && live(record, now()) ? record : undefined;
+      const record = matching(presented);
+      return record && live(record, now()) ? record : undefined;
+    },
+    /**
+     * Why a token `find` doesn't answer has ended, when its secret is right: told only to whoever holds the secret, and
+     * only while the ended record is kept. Undefined for a live token and for one that matches no record.
+     */
+    ended(presented: string): "revoked" | "expired" | undefined {
+      const record = matching(presented);
+      return !record || live(record, now()) ? undefined : record.revokedAt !== null ? "revoked" : "expired";
     },
     /** Notes a use. In memory at once, on disk at most once a minute; a failed write loses only the time of use. */
     async used(id: string): Promise<void> {

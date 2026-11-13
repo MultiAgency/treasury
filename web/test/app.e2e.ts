@@ -650,7 +650,14 @@ test("the owner links their own account to fund the agent, sends exactly the rev
   await visible(receipt.getByText(/Balances last checked/));
   assert.equal(await funding.getByRole("button", { name: "Review transfer" }).isDisabled(), true, "balance reads cannot prove this transfer settled");
   assert.equal(sent.length, 1, "reloads and balance checks never resend funding");
-  await page.evaluate(key => localStorage.removeItem(key), receiptKey);
+  // Only the owner releases the hold, by clearing the receipt they have checked.
+  await receipt.getByRole("button", { name: "Clear this receipt" }).click();
+  const clearing = dialog("Clear this funding receipt?");
+  assert.match(await clearing.innerText(), /a new one moves funds a second time/);
+  await clearing.getByRole("button", { name: "Clear the receipt" }).click();
+  assert.equal(await receipt.count(), 0, "cleared");
+  assert.equal(await funding.getByRole("button", { name: "Review transfer" }).isDisabled(), false, "a new transfer is offered again");
+  assert.equal(await page.evaluate(key => localStorage.getItem(key), receiptKey), null);
   await page.reload();
 
   await funding.getByText("Other ways to fund the agent").click();
@@ -1271,6 +1278,13 @@ test("the emergency stop is in the frame of every page, with its own region and 
     await visible(stop.getByRole("button", { name: "Freeze" }));
     await visible(stop.getByText("Not frozen."));
     assert.equal(await stop.getByRole("button", { name: "Freeze" }).isEnabled(), true, `${path || "home"}: offered and enabled`);
+    // It closes the page, and the top bar's link reaches it from the top: clear of the bar, on the same page.
+    await page.getByRole("banner").getByRole("link", { name: "Emergency stop" }).click();
+    await page.waitForFunction(() => {
+      const box = document.getElementById("emergency-stop")?.getBoundingClientRect();
+      return box !== undefined && box.top >= 56 && box.top < innerHeight;
+    }, undefined, { timeout: 5_000 });
+    assert.equal(new URL(page.url()).pathname, new URL(here(path)).pathname, `${path || "home"}: the link stays on the page`);
   }
   assert.deepEqual(await axe(), [], "the stop, on a page");
   assert.deepEqual(unexpected, []);
@@ -1798,8 +1812,27 @@ test("the owner issues a token for software acting for them: it reads and propos
   await dialog("Revoke this token?").getByRole("button", { name: "Revoke the token" }).click();
   await visible(access.getByText("No tokens yet."));
   const refused = await call("GET", "overview");
-  assert.deepEqual([refused.status, await refused.json()], [401, { ok: false, kind: "refused", code: "invalid_token" }]);
+  assert.deepEqual([refused.status, await refused.json()], [401, { ok: false, kind: "refused", code: "token_revoked" }]);
   assert.deepEqual(unexpected, []);
+});
+
+test("revoking the grant that binds the strategy is read by the Strategy page at once, moved to without a reload", { timeout: 150_000 }, async () => {
+  await ensureConnected();
+  // The Strategy page reads that the grant binds the strategy. The pages are then moved between without a reload, so
+  // that read is kept for a minute: only the revocation's own refresh corrects it. No test after this one needs the grant.
+  await page.goto(here("/strategy"));
+  const autopilot = page.getByRole("region", { name: "Autopilot" });
+  await visible(autopilot.getByText("Authorized: the agent's grant binds this strategy."));
+  await nav("Policy").click();
+  const grants = page.getByRole("region", { name: "Grants" });
+  const binding = grants.getByRole("list", { name: "Live grants" }).getByRole("button", { name: /^Revoke grant treasury:[a-f0-9]{32}$/ });
+  await binding.click();
+  await dialog("Revoke this grant?").getByRole("button", { name: "Sign and revoke" }).click();
+  await grants.getByText("Done: the platform has the revocation, and the grant no longer acts.").waitFor({ timeout: 45_000 });
+  assert.equal(await binding.count(), 0, "no longer live");
+  await nav("Strategy").click();
+  await visible(autopilot.getByText(/^Not authorized: autopilot can't run it/));
+  assert.equal(await autopilot.getByText("Authorized: the agent's grant binds this strategy.").count(), 0);
 });
 
 test("hosted creation: the exact intent is reviewed, reread before signing, and wallet refusal resumes without another preparation", { timeout: 60_000 }, async () => {
@@ -1977,4 +2010,33 @@ test("hosted creation: a lost unsigned review explains expiry recovery instead o
     assert.deepEqual(await messages(), []);
     assert.equal(calls.submit, 0);
   });
+});
+
+test("a DAO's creation already waiting for its vote is shown with its deadline to a member who reloads or arrives later, and isn't prepared again", { timeout: 60_000 }, async () => {
+  const base = `${origin}/api/agents/${target.agent}`, id = "mock-dao-creation", dao = "council.sputnik-dao.near";
+  const expiresAt = new Date(Date.now() + 240_000).toISOString();
+  let prepared = 0;
+  const routes: [string, (route: Route) => Promise<void>][] = [
+    [base, route => route.fulfill({ json: { ok: true, value: { agent: target.agent, owner: dao, agentId: null, host: new URL(stack.state().dashboard).host, signer: "dao", account: owner,
+      access: { canSign: false, canPropose: true, canVote: true, canExecute: false, canManage: false } } } })],
+    [`${base}/owner/actions`, route => route.fulfill({ json: { ok: true, value: [{ correlationId: id, type: "agent_create", signer: "dao", stage: "prepared", phase: "open",
+      expiresAt, ownerSucceeded: false, status: null, failureCode: null, payment: null }] } })],
+    [`${base}/creation`, async route => { prepared++; await route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "action_pending" } }); }],
+    [`${base}/creation/${id}`, route => route.fulfill({ json: { ok: true, value: { stage: "unknown", phase: "open" } } })],
+  ];
+  for (const [path, handler] of routes) await page.route(path, handler);
+  try {
+    await page.goto(here());
+    const creation = page.getByRole("region", { name: "Create the agent", exact: true });
+    await signInIfAsked(creation);
+    await visible(creation.getByText(/^A creation of this agent is already waiting for the DAO's vote/));
+    assert.equal(await creation.getByRole("button", { name: "Create the agent", exact: true }).count(), 0, "not offered while one waits");
+    assert.equal(await creation.getByText(/Follow it rather than sending another/).count(), 0, "no refusal with nothing to follow");
+    assert.equal(prepared, 0, "nothing was prepared again");
+    assert.deepEqual(await axe(), [], "a creation waiting for its vote");
+  } finally {
+    await page.goto(`${origin}/`);
+    await page.waitForLoadState("networkidle");
+    for (const [path, handler] of routes) await page.unroute(path, handler);
+  }
 });

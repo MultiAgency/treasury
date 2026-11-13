@@ -6,7 +6,7 @@ export function createRateLimit({ limit, windowMs = 60_000, now = Date.now }: { 
   const seen = new Map<string, number[]>();
   let cleanedAt = -Infinity;
   /** Counts a request for `key` and answers whether it's allowed; a refused request isn't counted. */
-  return (key: string) => {
+  const allow = (key: string) => {
     const at = now();
     if (at - cleanedAt >= 10_000) {
       cleanedAt = at;
@@ -20,5 +20,11 @@ export function createRateLimit({ limit, windowMs = 60_000, now = Date.now }: { 
     seen.set(key, [...times, at]);
     return true;
   };
+  /** How long until `key`'s next request would be allowed: 0 when one would be now. Counts nothing. */
+  const waitMs = (key: string) => {
+    const at = now(), times = (seen.get(key) ?? []).filter(time => time > at - windowMs);
+    return times.length < limit ? 0 : times[times.length - limit]! + windowMs - at;
+  };
+  return Object.assign(allow, { waitMs });
 }
 export type RateLimit = ReturnType<typeof createRateLimit>;

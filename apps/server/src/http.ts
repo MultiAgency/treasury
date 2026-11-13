@@ -46,8 +46,12 @@ export const COOKIE = "__Host-treasury_session";
 const TOKEN_ROUTES = ["GET /api/agents/:agent/overview", "GET /api/agents/:agent/activity", "GET /api/agents/:agent/unresolved",
   "GET /api/agents/:agent/strategy", "GET /api/agents/:agent/autopilot", "GET /api/agents/:agent/proposals", "GET /api/agents/:agent/proposals/:id",
   "POST /api/agents/:agent/proposals", "POST /api/agents/:agent/strategy-proposals"] as const;
+/** What a token may call, described for software: the one other route that answers a request carrying a token. */
+const TOKEN_API = "GET /api/agent-api";
 const BEARER = /^Bearer (\S+)$/;
 const MAX_BODY = 16 * 1024;
+/** A token's calls an hour, where the deployment sets none (`TOKEN_REQUESTS_PER_HOUR`). */
+const TOKEN_REQUESTS_PER_HOUR = 60;
 
 export type Deps = {
   platform: Platform; signIn: SignIn; sessions: Sessions;
@@ -145,6 +149,8 @@ type Call = { req: IncomingMessage; body: unknown; token: string | undefined; ac
  * The body of a download is never read as JSON, so it carries no value.
  */
 type Reply = { status: number; body: contract.Answer<unknown>; cookie?: string; csv?: { filename: string; text: string };
+  /** Seconds until the same call may be made again (`Retry-After`), on a limit whose end the server knows. */
+  retryAfterS?: number;
   /** Opened only after the route's admission and request validation, never for an authentication failure. */
   stream?: (res: ServerResponse) => Promise<void> };
 /**
@@ -1061,7 +1067,7 @@ export const routes: Route[] = [
   {
     // What a token may call, from this server's own schemas, so software that holds one needs nothing else to use it.
     method: "GET", path: "/api/agent-api", access: "public",
-    handle: async () => ok(agentApi()),
+    handle: async (_call, context) => ok(agentApi(context.tokenRequestsPerHour ?? TOKEN_REQUESTS_PER_HOUR)),
   },
   {
     // The agent's proposals, under the owner's own Organization: an owner reaches only proposals made under their consent.
@@ -1651,7 +1657,7 @@ const tokenShown = (view: { id: string; label: string; createdAt: number; expire
 /** A schema as JSON Schema, or undefined when it can't be shown as one (an amount is a `bigint` string in the SDK's). */
 const described = (schema: z.ZodType) => { try { return z.toJSONSchema(schema, { unrepresentable: "any", io: "output" }); } catch { return undefined; } };
 /** The routes a token may call, with the schemas of what they answer and take (`GET /api/agent-api`). */
-function agentApi() {
+function agentApi(requestsPerHour: number) {
   const route = (call: (typeof TOKEN_ROUTES)[number], summary: string, response?: z.ZodType, request?: z.ZodType) => {
     const [method, path] = call.split(" ") as [string, string];
     return { method, path, summary, ...(request && { request: described(request) }), ...(response && { response: described(response) }) };
@@ -1671,6 +1677,31 @@ function agentApi() {
       route("POST /api/agents/:agent/strategy-proposals", "Proposes a strategy, with your reasons, for the owner to adopt or decline. Name the digest of the saved strategy you read (`GET …/strategy`): adopting it saves over that one, or not at all. Targets may name only the policy's assets (`strategy_not_allowed`). Your next proposal replaces your open one, so a lost answer is safe to send again", contract.strategyProposed, contract.strategyProposalRequest),
     ],
     refused: "Verdicts, execution, owner actions, funding, sweeps, strategy and autopilot changes and consents are not available to a token: the owner does those in the app, and adopts or declines the strategies a token proposes.",
+    /** A token's own limits. */
+    limits: { requestsPerHour, bodyBytes: MAX_BODY },
+    /** What a failure means and what to do next, by its `code` (`kind: "refused"`) or, without one, its `kind`. */
+    refusals: {
+      invalid_token: "401. No such token, or it wasn't sent as `Authorization: Bearer <token>`. Ask the owner for a token.",
+      token_expired: "401. The token passed its date. Ask the owner for a new one.",
+      token_revoked: "401. The owner revoked the token, or disconnected the agent. Ask the owner for a new one.",
+      token_not_allowed: "403. The route isn't one of these, or the token is for another agent.",
+      rate_limited: "429. Over the token's hourly limit, or the one every token of this deployment shares. Nothing was done; `Retry-After` gives the seconds to wait.",
+      platform_rate_limited: "429. The platform is limiting this deployment. Nothing was done; try again in a few minutes.",
+      bad_request: "400. The address or the body doesn't match the route's schema.",
+      content_type: "415. A POST needs `Content-Type: application/json`.",
+      too_large: "413. The body is over `limits.bodyBytes`.",
+      not_connected: "409. No live consent connects the agent to this app, so nothing is read or proposed until its owner connects it.",
+      not_permitted: "403. The account that issued the token may not do this for the agent.",
+      no_proposal: "404. No proposal of the agent's by that ID.",
+      nothing_to_propose: "409. The saved strategy picks no swap worth its cost now. Nothing was proposed.",
+      not_proposable: "409. No rebalance can be proposed for the agent now: its strategy or policy needs the owner. Nothing was proposed.",
+      too_many_proposals: "409. The agent has as many open proposals as it may. Wait for the owner to decide some.",
+      request_conflict: "409. That `requestId` was already used for a different proposal. Use a new one.",
+      policy_not_in_force: "409. The agent's policy isn't in force. Nothing was proposed; the owner has to fix it first.",
+      strategy_not_allowed: "409. The strategy targets an asset outside the policy's. Nothing was stored.",
+      not_owner: "403. The account that issued the token no longer owns the agent, or no such agent exists.",
+      unavailable: "503. The platform or this server didn't answer. A read is safe to make again; after a POST, read before sending it again.",
+    },
   };
 }
 
@@ -1780,12 +1811,12 @@ async function decide(answer: IdentityAnswer, agent: string, account: string, de
 /** The server's request handler, built from its dependencies so tests can run it in-process with fakes. */
 export function createServer(deps: Deps) {
   const admissions = createRateLimit({ limit: deps.ownerRequestsPerMinute });
-  const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? 60, windowMs: 3_600_000 });
+  const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? TOKEN_REQUESTS_PER_HOUR, windowMs: 3_600_000 });
   const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), strategyProposals: deps.strategyProposals ?? createStrategyProposals(memoryProposalRecords(), { audit: deps.audit }), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
     daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), creationReviews: creationReviews(), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
-    const send = async ({ status, body, cookie, csv, stream }: Reply) => {
+    const send = async ({ status, body, cookie, csv, stream, retryAfterS }: Reply) => {
       if (stream) { await stream(res); return; }
       if (csv) {
         // A file for the owner to keep: it is only ever offered as a download, never rendered as a page.
@@ -1796,7 +1827,7 @@ export function createServer(deps: Deps) {
       }
       res.writeHead(status, {
         "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff",
-        ...(cookie && { "set-cookie": cookie }),
+        ...(cookie && { "set-cookie": cookie }), ...(retryAfterS !== undefined && { "retry-after": String(retryAfterS) }),
       });
       // A `bigint` (the SDK's amounts) goes out as its exact decimal string: `JSON.stringify` would throw on one.
       res.end(JSON.stringify(body, (_key, value) => typeof value === "bigint" ? value.toString() : value));
@@ -1821,14 +1852,21 @@ export function createServer(deps: Deps) {
       const token = tokenOf(req);
       let call: Call = { req, body: read.body, token, account: deps.sessions.account(token), params: found.params };
       // An agent's token (#139): only on the routes it may call, for the agent it was issued for, and counted on its own.
-      if (req.headers.authorization !== undefined) {
-        if (!TOKEN_ROUTES.includes(`${found.route.method} ${found.route.path}` as (typeof TOKEN_ROUTES)[number])) return send(refused(403, "token_not_allowed"));
+      // The description of those routes is public and answers whatever is sent with it, so software that sends its token
+      // with every call can read it; the token isn't looked at or counted there.
+      const asked = `${found.route.method} ${found.route.path}`;
+      if (req.headers.authorization !== undefined && asked !== TOKEN_API) {
+        if (!TOKEN_ROUTES.includes(asked as (typeof TOKEN_ROUTES)[number])) return send(refused(403, "token_not_allowed"));
         const presented = BEARER.exec(req.headers.authorization);
         const record = presented ? context.tokens.find(presented[1]!) : undefined;
-        if (!record) return send(refused(401, "invalid_token"));
+        if (!record) {
+          const ended = presented && context.tokens.ended(presented[1]!);
+          return send(refused(401, ended ? `token_${ended}` : "invalid_token"));
+        }
         if (found.params.agent !== record.agent) return send(refused(403, "token_not_allowed"));
         // Its own hourly limit, then the one all tokens share, so tokens never spend more than their part of the platform's budget.
-        if (!tokenRequests(record.id) || !tokenBudget("tokens")) return send(refused(429, "rate_limited"));
+        if (!tokenRequests(record.id) || !tokenBudget("tokens"))
+          return send({ ...refused(429, "rate_limited"), retryAfterS: Math.ceil(Math.max(tokenRequests.waitMs(record.id), tokenBudget.waitMs("tokens")) / 1_000) });
         // Admitted as the account that issued it would be: still the agent's owner, or still a DAO member who may propose.
         call = { req, body: read.body, token: undefined, account: record.account, params: found.params, actor: `token:${record.id}`, viaToken: record };
       }

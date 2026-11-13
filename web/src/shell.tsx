@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { CaretRight } from "@phosphor-icons/react";
+import { CaretRight, Snowflake } from "@phosphor-icons/react";
 import { createContext, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarProvider, SidebarRail, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
 import { Assistant } from "./assistant";
@@ -21,6 +21,19 @@ function AgentSection({ agent }: { agent: string }) {
   const reads = useMemo(() => agentReads(agent), [agent]);
   const identity = useQuery(reads.identity);
   return identity.data ? <AgentNav agent={agent} /> : null;
+}
+
+/**
+ * The way to the emergency stop from anywhere on a page: the stop closes every page of an agent that exists (`Gate` in
+ * `app.tsx`), and this stays in the top bar however far the page is scrolled. Not shown until the agent is known to exist.
+ */
+function StopLink({ agent }: { agent: string }) {
+  const reads = useMemo(() => agentReads(agent), [agent]);
+  const identity = useQuery(reads.identity);
+  if (!identity.data || identity.data.agentId === null) return null;
+  return <a href="#emergency-stop" className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground md:min-h-8">
+    <Snowflake aria-hidden="true" /><span className="max-sm:sr-only">Emergency stop</span>
+  </a>;
 }
 
 function AppSidebar({ here, onSlot }: { here: Place; onSlot: (slot: HTMLElement | null) => void }) {
@@ -57,7 +70,7 @@ function TopBar({ here }: { here: Place }) {
       <span className="truncate font-medium">{here.title}</span>
     </p>
     {/* The treasury assistant (#219), on an agent's pages once the server answers questions and the account may read the agent. */}
-    {agent !== undefined && <Assistant agent={agent} />}
+    {agent !== undefined && <span className="ml-auto flex shrink-0 items-center gap-2"><StopLink agent={agent} /><Assistant agent={agent} /></span>}
   </header>;
 }
 
