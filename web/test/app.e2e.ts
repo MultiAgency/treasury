@@ -34,6 +34,12 @@ import { tempDir } from "../../scripts/temp-dirs.ts";
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
 // The store the server records through (`main.ts`): a hash chain, checked before the first append.
 const audit = chainedFileAudit(join(tempDir("treasury-proposals-"), "audit.jsonl"));
+/**
+ * The account's request limit isn't what this suite tests, and one browser session here loads pages far faster than an
+ * owner does: over 1,100 requests in its busiest minute on a fast machine, which a limit of 1,000 answered now and then
+ * with "Too many requests from this account", failing whichever test came next. Set out of the suite's reach.
+ */
+const OWNER_REQUESTS_PER_MINUTE = 100_000;
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
@@ -60,7 +66,7 @@ before(async () => {
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: OWNER_REQUESTS_PER_MINUTE, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(join(import.meta.dirname, "..", "dist")),
     // The treasury assistant (#219), answered by its deterministic local model: nothing leaves the server in a stack test.
     assistant: createAssistant({ model: rulesModel(), audit: { append: entry => audit.append(entry) }, questionsPerHour: 1_000, platformReadsPerHour: 1_000 }),
