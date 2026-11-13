@@ -44,7 +44,7 @@ const sessions = createSessions({ idleMs: settings.SESSION_IDLE_MS, maxMs: setti
 setInterval(sessions.sweep, 60_000).unref();
 
 const rpcUrl = rpcUrlFor(settings.NEAR_RPC_URL, secrets.FASTNEAR_API_KEY);
-const keyLookup = chainKeyLookup({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
+const keyLookup = chainKeyLookup({ rpcUrl: settings.TREASURY_SIGNIN_RPC_URL ?? rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
 const daos = chainDaos({ rpcUrl, apiKey: secrets.FASTNEAR_API_KEY, timeoutMs: settings.CHAIN_TIMEOUT_MS });
 // The audit anchor writes to its own account through FastData, under `audit/<deployment>` (A7.3, #55). Testnet anchors
 // go to FastNEAR's testnet RPC; sign-in and DAO reads stay on mainnet. Refuse to start without a readable 0600 key.

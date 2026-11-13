@@ -64,6 +64,8 @@ const Settings = z.object({
   PORT: z.coerce.number().int().min(0).max(65_535).default(8787),
   /** Overrides the chain RPC; otherwise FastNEAR's, as the platform's `src/chain.ts` does. */
   NEAR_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),
+  /** Wallet ownership verification only; leaves DAO reads and synthetic transaction services unchanged. */
+  TREASURY_SIGNIN_RPC_URL: z.url({ protocol: /^https?$/ }).optional(),
   SESSION_IDLE_MS: duration(minutes(30)),
   SESSION_MAX_MS: duration(minutes(12 * 60)),
   CHALLENGE_TTL_MS: duration(minutes(5)),
