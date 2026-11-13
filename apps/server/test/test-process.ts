@@ -25,16 +25,25 @@ export function testChild(t: TestContext, args: string[], options: SpawnOptions,
   t.signal.throwIfAborted();
   const child = spawn(process.execPath, args, options);
   let stderr = "", ended = false;
+  let failure: Error | undefined, reportError!: (error: Error) => void;
   child.stderr?.on("data", chunk => { stderr = (stderr + chunk).slice(-8_192); });
-  const outcome = new Promise<{ code: number | null; signal: NodeJS.Signals | null; error?: Error }>(resolve => {
-    child.once("error", error => { ended = true; resolve({ code: null, signal: null, error }); });
-    child.once("exit", (code, signal) => { ended = true; resolve({ code, signal }); });
+  const errored = new Promise<Error>(resolve => { reportError = resolve; });
+  // Cleanup waits for actual termination, independently of operational errors such as failed IPC sends.
+  const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(resolve => {
+    const finish = (code: number | null, signal: NodeJS.Signals | null) => { ended = true; resolve({ code, signal }); };
+    child.once("exit", finish);
+    child.on("error", error => {
+      failure ??= error;
+      reportError(error);
+      // A failed spawn has no process to kill and may never emit exit. Other errors leave ownership intact.
+      if (child.pid === undefined) finish(null, null);
+    });
   });
   const kill = () => { if (!ended) child.kill("SIGKILL"); };
   let stopping: Promise<void> | undefined;
   const stop = () => stopping ??= (async () => {
     kill();
-    try { await deadline(outcome, cleanupMs, "Worker cleanup"); }
+    try { await deadline(exited, cleanupMs, "Worker cleanup"); }
     finally {
       t.signal.removeEventListener("abort", kill);
       if (child.connected) child.disconnect();
@@ -50,17 +59,20 @@ export function testChild(t: TestContext, args: string[], options: SpawnOptions,
       t.signal.throwIfAborted();
       const listening = new AbortController();
       try {
+        if (failure) throw failure;
         return await deadline(Promise.race([
           once(child, "message", { signal: listening.signal }).then(([message]) => message as T),
-          outcome.then(result => { throw result.error ?? new Error(`Worker exited before evidence (${result.code ?? result.signal}): ${stderr}`); }),
+          exited.then(result => { throw new Error(`Worker exited before evidence (${result.code ?? result.signal}): ${stderr}`); }),
+          errored.then(error => { throw error; }),
         ]), messageMs, "Worker evidence", t.signal);
       } catch (error) { kill(); throw error; }
       finally { listening.abort(); }
     },
     async exit(): Promise<[number | null, NodeJS.Signals | null]> {
       try {
-        const result = await deadline(outcome, exitMs, "Worker exit", t.signal);
-        if (result.error) throw result.error;
+        if (failure) throw failure;
+        const result = await deadline(Promise.race([exited, errored.then(error => { throw error; })]), exitMs, "Worker exit", t.signal);
+        if (failure) throw failure;
         return [result.code, result.signal];
       } catch (error) { kill(); throw error; }
     },

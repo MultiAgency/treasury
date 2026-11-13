@@ -11,7 +11,7 @@ const alive = (pid: number) => {
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; return false; }
 };
 
-for (const scenario of ["before-message", "after-message", "exit-deadline", "late-resource", "spawn-error", "normal"]) {
+for (const scenario of ["before-message", "after-message", "exit-deadline", "late-resource", "spawn-error", "normal", "ipc-error-next", "ipc-error-exit", "ipc-error-stop"]) {
   test(`test-process: ${scenario} leaves no worker or resource alive`, async t => {
     const directory = tempDir(`treasury-lifecycle-${scenario}-`);
     const pidFile = join(directory, "worker.pid"), resourceFile = join(directory, "resource.txt");
@@ -35,11 +35,11 @@ for (const scenario of ["before-message", "after-message", "exit-deadline", "lat
     runner.stderr.on("data", chunk => { output += chunk; });
     const [code, signal] = await once(runner, "close");
     assert.equal(signal, null, `watchdog killed a hung test runner: ${output}`);
-    assert.equal(code, scenario === "normal" ? 0 : 1, output);
+    assert.equal(code, scenario === "normal" || scenario.startsWith("ipc-error") ? 0 : 1, output);
     if (scenario === "before-message" || scenario === "after-message" || scenario === "late-resource") assert.match(output, /test timed out/);
     if (scenario === "exit-deadline") assert.match(output, /Worker exit timed out/);
     if (scenario === "spawn-error") assert.match(output, /ENOENT/);
-    if (["after-message", "exit-deadline", "normal"].includes(scenario)) assert.equal(readFileSync(`${pidFile}.ready`, "utf8"), "ready", "worker evidence arrived before the exit wait");
+    if (["after-message", "exit-deadline", "normal"].includes(scenario) || scenario.startsWith("ipc-error")) assert.equal(readFileSync(`${pidFile}.ready`, "utf8"), "ready", "worker evidence arrived before the exit wait");
     const pid = workerPid();
     if (pid !== undefined) assert.equal(alive(pid), false, `worker ${pid} survived ${scenario}`);
     assert.equal(readFileSync(resourceFile, "utf8"), "disposed\n", "resource disposed exactly once, including late startup");
