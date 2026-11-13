@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plugs, PlugsConnected } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconTile, InfoTip } from "@/components/ui/stat";
 import { Button, Card, ErrorBox, errorMessage, Loading, Note, QueryError } from "./shared/ui";
 import { AgentAccess } from "./agent-access";
@@ -31,6 +31,14 @@ export function Connection({ reads, identity }: { reads: Reads; identity: Identi
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const refresh = () => client.invalidateQueries({ queryKey: reads.consent.queryKey });
+  // Once the DAO's consent request is seen settling (voted, expired or replaced), the DAO's requests are read anew, so
+  // "Needs your decision" stops listing a vote that is over.
+  const waiting = consent.data?.request?.id;
+  const seen = useRef(waiting);
+  useEffect(() => {
+    if (seen.current !== undefined && waiting !== seen.current) void client.invalidateQueries({ queryKey: reads.daoRequests.queryKey });
+    seen.current = waiting;
+  }, [waiting, client, reads]);
 
   /**
    * Asks the server for the consent text, built from the agent as the platform answers it now. A text asked for again
