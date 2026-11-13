@@ -72,6 +72,8 @@ export function createStrategyProposals(records: ProposalRecords, { audit, now =
       .sort((a, b) => a.createdAt - b.createdAt).map(({ agent: _, closed: __, ...view }) => view),
     /** An open proposal of the agent's, by its ID. */
     find: (agent: string, id: string) => records.all().find(p => p.agent === agent && p.id === id && !p.closed),
+    /** A proposal of the agent's by its ID, open or closed, while it is kept: every open one, and each source's last closed one. */
+    get: (agent: string, id: string) => records.all().find(p => p.agent === agent && p.id === id),
     /** The source's last proposal for the agent, open or closed. */
     last: (agent: string, from: ProposalSource) => records.all().filter(p => p.agent === agent && p.source === from).sort((a, b) => b.createdAt - a.createdAt)[0],
 
