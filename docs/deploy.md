@@ -132,8 +132,33 @@ Read-only, from outside:
 
 ### Audit anchor monitor
 
-`anchor-check.yml` is configured for minute 17 of every hour, UTC. GitHub can
-[delay or drop scheduled runs](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows#scheduled-workflows-running-at-unexpected-times).
+`anchor-check.yml` runs hourly, started by the anchor clock (`anchor-clock.yml`). Its own schedule, minute 17 of every
+hour, is only the fallback: GitHub can
+[delay or drop scheduled runs](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows#scheduled-workflows-running-at-unexpected-times),
+and measured over 6 to 14 November 2026 it started this organisation's scheduled runs four to ten hours late and ran
+15% of this workflow's hourly slots, about one every seven hours.
+
+The clock is a chain: each run waits 59 minutes on the `anchor-clock` environment's wait timer (no runner is used while
+it waits), starts the check, then starts the next run, all with the run's own token. One chain runs at a time: a run
+that finds an older one waiting stops. The clock's own schedule starts the chain again if it ever breaks, so a broken
+chain falls back to the old cadence within hours and is never silent for longer than that.
+
+- **The environment is a repository setting, not code.** `anchor-clock` must exist with a 59 minute wait timer and be
+  limited to `main`. A run released sooner than 50 minutes fails with that instruction and starts nothing, so a missing
+  timer can't become a loop. To set it (it changes nothing else):
+
+  ```sh
+  gh api -X PUT repos/MultiAgency/treasury/environments/anchor-clock -F wait_timer=59 \
+    -F 'deployment_branch_policy[protected_branches]=false' -F 'deployment_branch_policy[custom_branch_policies]=true'
+  gh api -X POST repos/MultiAgency/treasury/environments/anchor-clock/deployment-branch-policies -f name=main
+  ```
+- **Start it** once, or after stopping it: `gh workflow run anchor-clock.yml --repo MultiAgency/treasury --ref main`.
+  Starting it twice is safe: the second run finds the first waiting and stops.
+- **Stop it** by cancelling the run that is waiting (`gh run list --workflow anchor-clock.yml --status waiting`, then
+  `gh run cancel`), and disable the workflow if it should stay stopped; otherwise its schedule starts it again.
+- **Each hour leaves a deployment record** on the repository for the `anchor-clock` environment: that is how the wait
+  timer is recorded, and it deploys nothing.
+
 Failed-run alerts cover runs that execute. The optional external heartbeat below detects missing successful checks
 only after its check, GitHub secret and alert routing are configured and verified. Inspect the recent runs, including
 their event, commit and all statuses:
