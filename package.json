@@ -21,7 +21,7 @@
   },
   "packageManager": "pnpm@12.16.1",
   "devDependencies": {
-    "@multiagency/sdk": "file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz",
+    "@multiagency/sdk": "file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz",
     "railway": "3.16.0",
     "typescript": "7.0.2"
   }

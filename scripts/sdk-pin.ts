@@ -4,16 +4,16 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Exact 0.6.0 platform/SDK pair. Production qualification is recorded separately. */
-export const HANDOFF_SHA256 = "9ed12bfd365d3feedd5ffe5418d05e20ea9ab93736fc610ceed5fb992eafcca5";
-export const PLATFORM_COMMIT = "ff4a17ffa6a0f6055692f9147e147ab01b03a58d";
-export const CANDIDATE = "78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea";
-export const SDK_SHA256 = "b7c45afaa4a3605eae9bcd9c174e3d1b0fbfb55b8285b2405828a9024f6a9f0c";
-export const PROVENANCE_SHA256 = "228a70074bb2a0b064c1e04a896f0276dd2ad90a257d35c4eb63642bd7bc376f";
-export const GATEWAY_MANIFEST_SHA256 = "05580d0356c7fef1b6c4e73ed5c3d665a53883261cb6d008b52cb0a0f1572837";
-export const RELEASE_MANIFEST_SHA256 = "49dc6cb89b474825f98f542ec4d82604c93f9252b0bffe859d8bd525e295832d";
-export const GATEWAY_IMAGE_ID = "sha256:087b9c2fec23f02290f0ccca03b4c42df15b6d503ce7b8d8470466428fe92f0d";
-export const GATEWAY_IMAGE_ARCHIVE_SHA256 = "45c25d943a928803e4261fc08296c962abf3e3858f95edb6a3042189ad79b017";
-export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "candidate-78902f13");
+export const HANDOFF_SHA256 = "10912c1b95a595ee4ef9aa06fcc9450eb4b836e3b20c7cd79a6f8c375d21ff65";
+export const PLATFORM_COMMIT = "f4729f4a7244a4e415d03678535328960b695d71";
+export const CANDIDATE = "c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509";
+export const SDK_SHA256 = "aa3d4325bde4f74604280c577fac99b50acea805d27214a89899a77e1132af9a";
+export const PROVENANCE_SHA256 = "b54a4a7a7e0d1ebdcf3ef9447f3356ec37fad211d6c3fac650a1e41f18bca699";
+export const GATEWAY_MANIFEST_SHA256 = "0e9e6e437c8e38dbda478540f4204e4a35391939e92eec6f0d164c77977509b6";
+export const RELEASE_MANIFEST_SHA256 = "717b6223c1fa65f1d9ff3f0b3b4128888162b738e71ed3b3b37ffacdd4664d9b";
+export const GATEWAY_IMAGE_ID = "sha256:42cc85bd61eb2b6b1e978698be98e81061a887e00a688b74e82a159d70b2fac1";
+export const GATEWAY_IMAGE_ARCHIVE_SHA256 = "4820ecd0de73ca5b5d9f448339e538d28247d1529de6e7435d6b273f5d089fbd";
+export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "candidate-c1a3ae61");
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const check = (condition: boolean, message: string) => { if (!condition) throw new Error(message); };
 

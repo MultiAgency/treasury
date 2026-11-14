@@ -1,0 +1,21 @@
+{
+  "scope": "Treasury exact-pair offline qualification; hosted remains open",
+  "source": "f4729f4a7244a4e415d03678535328960b695d71",
+  "candidate": "c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509",
+  "gateway": {
+    "image": {
+      "imageId": "sha256:42cc85bd61eb2b6b1e978698be98e81061a887e00a688b74e82a159d70b2fac1",
+      "platform": "linux/arm64",
+      "tag": "multiagency-platform-check:13552",
+      "archive": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/releases/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/platform-image.tar",
+      "archiveSha256": "4820ecd0de73ca5b5d9f448339e538d28247d1529de6e7435d6b273f5d089fbd",
+      "scope": "Local image checked offline; no registry publication or deployed-host claim"
+    }
+  },
+  "sdk": {
+    "tarball": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/.test-artifacts/contract/multiagency-sdk-0.6.0.tgz",
+    "sha256": "aa3d4325bde4f74604280c577fac99b50acea805d27214a89899a77e1132af9a",
+    "provenance": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/.test-artifacts/contract/multiagency-sdk-0.6.0.provenance.json",
+    "provenanceSha256": "b54a4a7a7e0d1ebdcf3ef9447f3356ec37fad211d6c3fac650a1e41f18bca699"
+  }
+}

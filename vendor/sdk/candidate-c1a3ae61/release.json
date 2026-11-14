@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "startedAt": "2026-11-14T14:44:52.436Z",
+  "ref": "HEAD",
+  "commit": "f4729f4a7244a4e415d03678535328960b695d71",
+  "node": "v24.22.3",
+  "gates": {
+    "typecheck": {
+      "command": "pnpm -s typecheck",
+      "status": 0
+    },
+    "offline": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/test.mjs offline",
+      "status": 0,
+      "tests": 1536,
+      "pass": 1536,
+      "fail": 0
+    },
+    "evidence": {
+      "command": "pnpm -s evidence:check",
+      "status": 0
+    },
+    "build-web": {
+      "command": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/staging-65987/node_modules/.bin/rsbuild build --root web",
+      "status": 0
+    },
+    "browser": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/browser/run.cjs",
+      "status": 0,
+      "scenarios": [
+        {
+          "suite": "approval-confirm",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "harness",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "hosted-payee",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "invoices",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "wallet-stop",
+          "ran": 8,
+          "of": 8
+        },
+        {
+          "suite": "work-orders",
+          "ran": 2,
+          "of": 2
+        }
+      ],
+      "failedSuites": 0
+    },
+    "e2e": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-Wxp3Qm",
+      "stats": {
+        "startTime": "2026-11-14T14:50:31.137Z",
+        "duration": 201832.24,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "c360403149f835e2e0d5b43aa9734efd692a86fdd9593ccfe443b35be0e3cfd7",
+      "challenges": []
+    },
+    "challenges": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --challenge --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-JXk3F9",
+      "stats": {
+        "startTime": "2026-11-14T14:53:54.642Z",
+        "duration": 202483.801,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "c360403149f835e2e0d5b43aa9734efd692a86fdd9593ccfe443b35be0e3cfd7",
+      "challenges": [
+        {
+          "id": "duplicate-transfer",
+          "outcome": "detected"
+        },
+        {
+          "id": "premature-paid",
+          "outcome": "detected"
+        },
+        {
+          "id": "approve-only-bypass",
+          "outcome": "detected"
+        },
+        {
+          "id": "agent-route-unrestricted",
+          "outcome": "detected"
+        }
+      ]
+    },
+    "sdk": {
+      "command": "pnpm -s contract:pack",
+      "status": 0
+    },
+    "sdk-skills": {
+      "command": "pnpm -s contract:skills",
+      "status": 0
+    },
+    "platform-image": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/check-platform-image.mjs /private/tmp/sdk060-market-history-20261114/source/.test-artifacts/releases/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/platform /private/tmp/sdk060-market-history-20261114/source/.test-artifacts/releases/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/platform-image.tar",
+      "status": 0,
+      "packagedFiles": 257,
+      "stateFiles": 16,
+      "stateDirectories": 15
+    }
+  },
+  "frontend": {
+    "source": "2d23602dc4ceec4c4ab03db072dde665cefdbded9a624edf7e4f3f388378818e",
+    "build": "c360403149f835e2e0d5b43aa9734efd692a86fdd9593ccfe443b35be0e3cfd7"
+  },
+  "dependencyTree": "9519b0c0d6220d5ee235a1d360e788c9740e66d4f8d4fd1ebedd55dc96793e43",
+  "runDigest": "c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509",
+  "snapshot": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509",
+  "inputs": {
+    "treasury-skill": {
+      "path": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "digest": "7eb06c9c5d5f46f32ee1063a13f1e80aeb2d2ec5f787b06644c19e5ba3f2f7f7"
+    }
+  },
+  "packages": {
+    "platform": {
+      "path": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/releases/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/platform",
+      "manifestSha256": "0e9e6e437c8e38dbda478540f4204e4a35391939e92eec6f0d164c77977509b6",
+      "image": {
+        "imageId": "sha256:42cc85bd61eb2b6b1e978698be98e81061a887e00a688b74e82a159d70b2fac1",
+        "platform": "linux/arm64",
+        "tag": "multiagency-platform-check:13552",
+        "archive": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/releases/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/platform-image.tar",
+        "archiveSha256": "4820ecd0de73ca5b5d9f448339e538d28247d1529de6e7435d6b273f5d089fbd",
+        "scope": "Local image checked offline; no registry publication or deployed-host claim"
+      }
+    }
+  },
+  "sdk": {
+    "tarball": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/.test-artifacts/contract/multiagency-sdk-0.6.0.tgz",
+    "sha256": "aa3d4325bde4f74604280c577fac99b50acea805d27214a89899a77e1132af9a",
+    "provenance": "/private/tmp/sdk060-market-history-20261114/source/.test-artifacts/stack-snapshots/c1a3ae617f7c2ff64dc4a976e1493b96bceec56cf6c98d675d1c863cbd817509/.test-artifacts/contract/multiagency-sdk-0.6.0.provenance.json",
+    "provenanceSha256": "b54a4a7a7e0d1ebdcf3ef9447f3356ec37fad211d6c3fac650a1e41f18bca699"
+  },
+  "result": "passed",
+  "finishedAt": "2026-11-14T14:58:08.657Z"
+}

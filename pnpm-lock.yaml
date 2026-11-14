@@ -170,8 +170,8 @@ importers:
   .:
     devDependencies:
       '@multiagency/sdk':
-        specifier: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz
-        version: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
+        specifier: file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz
+        version: file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
       railway:
         specifier: 3.16.0
         version: 3.16.0
@@ -185,8 +185,8 @@ importers:
         specifier: 1.0.3
         version: 1.0.3(zod@4.6.7)
       '@multiagency/sdk':
-        specifier: file:../../vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz
-        version: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
+        specifier: file:../../vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz
+        version: file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
       near-kit:
         specifier: 0.20.2
         version: 0.20.2
@@ -228,8 +228,8 @@ importers:
         specifier: ^5.3.0
         version: 5.3.0
       '@multiagency/sdk':
-        specifier: file:../vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz
-        version: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
+        specifier: file:../vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz
+        version: file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
       '@phosphor-icons/react':
         specifier: ^2.1.10
         version: 2.1.10(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -556,8 +556,8 @@ packages:
     peerDependencies:
       three: '>= 0.159.0'
 
-  '@multiagency/sdk@file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz':
-    resolution: {integrity: sha512-8eYfhHT7zZrmCbbGCgfERJn3+XVAg4mY5osH7n8IRM4C5uGF8ZmFlhM4uTrBadYdiWKpoa4fj6plPDBSBdmdkQ==, tarball: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz}
+  '@multiagency/sdk@file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz':
+    resolution: {integrity: sha512-J7+pL9b/7JDHx4kWH5DhleiZy+Hd4yYCGb+dNheRdthF2h/qLH4wiYHlus9t+f9slWiNJNaB+UzeJQrrmBbUkA==, tarball: file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz}
     version: 0.6.0
     hasBin: true
     peerDependencies:
@@ -3438,7 +3438,7 @@ snapshots:
       promise-worker-transferable: 1.0.4
       three: 0.187.0
 
-  '@multiagency/sdk@file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)':
+  '@multiagency/sdk@file:vendor/sdk/candidate-c1a3ae61/multiagency-sdk-0.6.0.tgz(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47
