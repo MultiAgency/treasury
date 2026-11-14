@@ -1,0 +1,21 @@
+{
+  "scope": "Isolated exact-pair consolidated 0.6.0 consumer reacceptance; no deployment or payment claim",
+  "source": "ff4a17ffa6a0f6055692f9147e147ab01b03a58d",
+  "candidate": "78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea",
+  "gateway": {
+    "image": {
+      "imageId": "sha256:087b9c2fec23f02290f0ccca03b4c42df15b6d503ce7b8d8470466428fe92f0d",
+      "platform": "linux/arm64",
+      "tag": "multiagency-platform-check:60780",
+      "archive": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/releases/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/platform-image.tar",
+      "archiveSha256": "45c25d943a928803e4261fc08296c962abf3e3858f95edb6a3042189ad79b017",
+      "scope": "Local image checked offline; no registry publication or deployed-host claim"
+    }
+  },
+  "sdk": {
+    "tarball": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/.test-artifacts/contract/multiagency-sdk-0.6.0.tgz",
+    "sha256": "b7c45afaa4a3605eae9bcd9c174e3d1b0fbfb55b8285b2405828a9024f6a9f0c",
+    "provenance": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/.test-artifacts/contract/multiagency-sdk-0.6.0.provenance.json",
+    "provenanceSha256": "228a70074bb2a0b064c1e04a896f0276dd2ad90a257d35c4eb63642bd7bc376f"
+  }
+}

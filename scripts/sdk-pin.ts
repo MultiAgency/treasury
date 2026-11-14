@@ -3,17 +3,17 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-/** Final combined candidate, isolated offline consumer validation only. Version 0.5.9 alone never identifies this candidate. */
-export const HANDOFF_SHA256 = "67d6a3fdd5b2858803485e29c4c6c29693b14bb47760f39c144992a5fb87c634";
-export const PLATFORM_COMMIT = "252cba1d1e6642a5ea9f42ea4927f982423ed8e1";
-export const CANDIDATE = "822346ac5b50313d493c951971695abbbab5cc1d5a48ca8868bc73421a609a40";
-export const SDK_SHA256 = "4ae53dce669664bcf90e0c5939e0ac617db0ab24c101e3792fc659ac4494475a";
-export const PROVENANCE_SHA256 = "9feb6034ccddf90c6cc16c81247c10d265094eef6d457e17cbe3f3ce5de8dd3c";
-export const GATEWAY_MANIFEST_SHA256 = "8043058f5e55bf176597d70d3b83ebfebbef33eff436bb5739a602176d19b17a";
-export const RELEASE_MANIFEST_SHA256 = "e61553bdaa541f2a6201d71f499062bafd342012efadb9c77692008352000066";
-export const GATEWAY_IMAGE_ID = "sha256:9daf951d59ba40eb944d53a595ed214180254534b2e5c8cff93b448ad95dd195";
-export const GATEWAY_IMAGE_ARCHIVE_SHA256 = "6e891b6502f574d34482a3e508b9acd95b146955ecdf387ff6beb4c3cd745f4e";
-export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "final-252cba1");
+/** Exact 0.6.0 platform/SDK pair. Production qualification is recorded separately. */
+export const HANDOFF_SHA256 = "9ed12bfd365d3feedd5ffe5418d05e20ea9ab93736fc610ceed5fb992eafcca5";
+export const PLATFORM_COMMIT = "ff4a17ffa6a0f6055692f9147e147ab01b03a58d";
+export const CANDIDATE = "78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea";
+export const SDK_SHA256 = "b7c45afaa4a3605eae9bcd9c174e3d1b0fbfb55b8285b2405828a9024f6a9f0c";
+export const PROVENANCE_SHA256 = "228a70074bb2a0b064c1e04a896f0276dd2ad90a257d35c4eb63642bd7bc376f";
+export const GATEWAY_MANIFEST_SHA256 = "05580d0356c7fef1b6c4e73ed5c3d665a53883261cb6d008b52cb0a0f1572837";
+export const RELEASE_MANIFEST_SHA256 = "49dc6cb89b474825f98f542ec4d82604c93f9252b0bffe859d8bd525e295832d";
+export const GATEWAY_IMAGE_ID = "sha256:087b9c2fec23f02290f0ccca03b4c42df15b6d503ce7b8d8470466428fe92f0d";
+export const GATEWAY_IMAGE_ARCHIVE_SHA256 = "45c25d943a928803e4261fc08296c962abf3e3858f95edb6a3042189ad79b017";
+export const VENDOR = join(import.meta.dirname, "..", "vendor", "sdk", "candidate-78902f13");
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const check = (condition: boolean, message: string) => { if (!condition) throw new Error(message); };
 
@@ -22,9 +22,9 @@ export function verifySdk() {
   check(digest(readFileSync(join(VENDOR, "release.json"))) === RELEASE_MANIFEST_SHA256, "Release manifest checksum mismatch");
   const handoff = JSON.parse(readFileSync(join(VENDOR, "handoff.json"), "utf8"));
   check(handoff.gateway.image.imageId === GATEWAY_IMAGE_ID && handoff.gateway.image.archiveSha256 === GATEWAY_IMAGE_ARCHIVE_SHA256, "Gateway image pin mismatch");
-  const tarball = join(VENDOR, "multiagency-sdk-0.5.9.tgz");
+  const tarball = join(VENDOR, "multiagency-sdk-0.6.0.tgz");
   check(digest(readFileSync(tarball)) === SDK_SHA256, "SDK tarball checksum mismatch");
-  const sidecar = readFileSync(join(VENDOR, "multiagency-sdk-0.5.9.provenance.json"));
+  const sidecar = readFileSync(join(VENDOR, "multiagency-sdk-0.6.0.provenance.json"));
   check(digest(sidecar) === PROVENANCE_SHA256, "SDK provenance checksum mismatch");
   const embedded = execFileSync("tar", ["-xOf", tarball, "package/provenance.json"]);
   check(embedded.equals(sidecar), "Embedded SDK provenance differs from sidecar");

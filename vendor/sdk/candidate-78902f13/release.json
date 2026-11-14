@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "startedAt": "2026-11-14T13:03:58.612Z",
+  "ref": "HEAD",
+  "commit": "ff4a17ffa6a0f6055692f9147e147ab01b03a58d",
+  "node": "v24.22.3",
+  "gates": {
+    "typecheck": {
+      "command": "pnpm -s typecheck",
+      "status": 0
+    },
+    "offline": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/test.mjs offline",
+      "status": 0,
+      "tests": 1533,
+      "pass": 1533,
+      "fail": 0
+    },
+    "evidence": {
+      "command": "pnpm -s evidence:check",
+      "status": 0
+    },
+    "build-web": {
+      "command": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/staging-6121/node_modules/.bin/rsbuild build --root web",
+      "status": 0
+    },
+    "browser": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/browser/run.cjs",
+      "status": 0,
+      "scenarios": [
+        {
+          "suite": "approval-confirm",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "harness",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "hosted-payee",
+          "ran": 1,
+          "of": 1
+        },
+        {
+          "suite": "invoices",
+          "ran": 3,
+          "of": 3
+        },
+        {
+          "suite": "wallet-stop",
+          "ran": 8,
+          "of": 8
+        },
+        {
+          "suite": "work-orders",
+          "ran": 2,
+          "of": 2
+        }
+      ],
+      "failedSuites": 0
+    },
+    "e2e": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-mUWqiR",
+      "stats": {
+        "startTime": "2026-11-14T13:09:19.888Z",
+        "duration": 206563.84100000001,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "7985437cd73e7ca1ee66f228b46c4e9fb7083fff631d9572c3f031b4c9e6911b",
+      "challenges": []
+    },
+    "challenges": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node test/e2e/run.mjs --challenge --prebuilt-web --treasury-skill /Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "status": 0,
+      "run": "run-iVLU7M",
+      "stats": {
+        "startTime": "2026-11-14T13:12:48.190Z",
+        "duration": 205184.82,
+        "expected": 38,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "assets": "7985437cd73e7ca1ee66f228b46c4e9fb7083fff631d9572c3f031b4c9e6911b",
+      "challenges": [
+        {
+          "id": "duplicate-transfer",
+          "outcome": "detected"
+        },
+        {
+          "id": "premature-paid",
+          "outcome": "detected"
+        },
+        {
+          "id": "approve-only-bypass",
+          "outcome": "detected"
+        },
+        {
+          "id": "agent-route-unrestricted",
+          "outcome": "detected"
+        }
+      ]
+    },
+    "sdk": {
+      "command": "pnpm -s contract:pack",
+      "status": 0
+    },
+    "sdk-skills": {
+      "command": "pnpm -s contract:skills",
+      "status": 0
+    },
+    "platform-image": {
+      "command": "/Users/jlwaugh/.nvm/versions/node/v24.22.3/bin/node scripts/check-platform-image.mjs /private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/releases/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/platform /private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/releases/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/platform-image.tar",
+      "status": 0,
+      "packagedFiles": 257,
+      "stateFiles": 16,
+      "stateDirectories": 15
+    }
+  },
+  "frontend": {
+    "source": "2d23602dc4ceec4c4ab03db072dde665cefdbded9a624edf7e4f3f388378818e",
+    "build": "7985437cd73e7ca1ee66f228b46c4e9fb7083fff631d9572c3f031b4c9e6911b"
+  },
+  "dependencyTree": "9519b0c0d6220d5ee235a1d360e788c9740e66d4f8d4fd1ebedd55dc96793e43",
+  "runDigest": "78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea",
+  "snapshot": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea",
+  "inputs": {
+    "treasury-skill": {
+      "path": "/Users/jlwaugh/agencies/dao/sdk/.test-artifacts/e2e/run-JF1zHs/snapshot/.consumer-fixtures/treasury-skill",
+      "digest": "7eb06c9c5d5f46f32ee1063a13f1e80aeb2d2ec5f787b06644c19e5ba3f2f7f7"
+    }
+  },
+  "packages": {
+    "platform": {
+      "path": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/releases/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/platform",
+      "manifestSha256": "05580d0356c7fef1b6c4e73ed5c3d665a53883261cb6d008b52cb0a0f1572837",
+      "image": {
+        "imageId": "sha256:087b9c2fec23f02290f0ccca03b4c42df15b6d503ce7b8d8470466428fe92f0d",
+        "platform": "linux/arm64",
+        "tag": "multiagency-platform-check:60780",
+        "archive": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/releases/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/platform-image.tar",
+        "archiveSha256": "45c25d943a928803e4261fc08296c962abf3e3858f95edb6a3042189ad79b017",
+        "scope": "Local image checked offline; no registry publication or deployed-host claim"
+      }
+    }
+  },
+  "sdk": {
+    "tarball": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/.test-artifacts/contract/multiagency-sdk-0.6.0.tgz",
+    "sha256": "b7c45afaa4a3605eae9bcd9c174e3d1b0fbfb55b8285b2405828a9024f6a9f0c",
+    "provenance": "/private/tmp/sdk060-consolidated-20261114/source/.test-artifacts/stack-snapshots/78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea/.test-artifacts/contract/multiagency-sdk-0.6.0.provenance.json",
+    "provenanceSha256": "228a70074bb2a0b064c1e04a896f0276dd2ad90a257d35c4eb63642bd7bc376f"
+  },
+  "result": "passed",
+  "finishedAt": "2026-11-14T13:17:01.728Z"
+}

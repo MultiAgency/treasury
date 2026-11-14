@@ -1,0 +1,13 @@
+diff --git a/build/popups/NearWalletsPopup.js b/build/popups/NearWalletsPopup.js
+index c794fc5998723b92205ac11103072ea35e8307c1..72f4df5789956dd1f7807be603c29f2cebfda6f5 100644
+--- a/build/popups/NearWalletsPopup.js
++++ b/build/popups/NearWalletsPopup.js
+@@ -140,7 +140,7 @@ class NearWalletsPopup extends Popup_1.Popup {
+       <div class="modal-content">
+         <div class="modal-header">
+           <p>Select wallet</p>
+-          <button class="settings-button">
++          <button class="settings-button" aria-label="Wallet settings">
+             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <circle cx="12" cy="12" r="2" fill="rgba(255,255,255,0.5)" />
+               <circle cx="19" cy="12" r="2" fill="rgba(255,255,255,0.5)" />

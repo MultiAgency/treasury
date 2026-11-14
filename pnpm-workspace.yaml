@@ -2,6 +2,8 @@ packages:
   - web
   - apps/*
   - packages/*
+patchedDependencies:
+  '@fastnear/near-connect@0.14.1': patches/@fastnear__near-connect@0.14.1.patch
 permissions:
   '@multiagency/sdk':
     skills: true
