@@ -61,3 +61,37 @@ test('SIGKILL after settlement commit preserves exactly one operation and balanc
   assert.deepEqual(store.read('agent','crash').balances,{USDC:'90',NEAR:'2'});
  }finally{store?.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+
+test('a missing persisted receipt refuses replay and new execution without changing balances',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'synthetic-corrupt-receipt-')),store=new SyntheticStore(join(dir,'state.sqlite'));
+ const terms={agent:'a',from:'USDC',to:'NEAR',amount:'10',output:'2'};
+ try {
+  store.create('agent','a',{frozen:false,balances:{USDC:'100'}});
+  store.swap('original',terms);
+  store.db.prepare('UPDATE operations SET result=NULL WHERE id=?').run('original');
+  const before=store.read('agent','a');
+  assert.throws(()=>store.swap('original',terms),/Invalid stored JSON/);
+  assert.throws(()=>store.swap('replacement',terms),/Invalid stored JSON/);
+  assert.deepEqual(store.read('agent','a'),before);
+  assert.equal(store.operation('replacement'),null);
+ }finally{store.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('a failed intent effect rolls back its writes and leaves the exact reviewed intent open',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'synthetic-intent-rollback-')),store=new SyntheticStore(join(dir,'state.sqlite'));
+ const intent={status:'PENDING_SIGNATURE',expiresAt:Date.now()+60000,type:'agent_freeze',request:{agent_id:'a'},
+  owner:{type:'near',account_id:'owner.near',public_key:'test'},payload:{message:'exact reviewed freeze',recipient:'synthetic.test',nonce:'test'}};
+ try {
+  store.create('agent','a',{frozen:false,balances:{USDC:'100'}});
+  store.create('intent','freeze',intent);
+  assert.throws(()=>store.completeIntent('freeze',intent,{agent_id:'a'},()=>{
+   const agent=store.read('agent','a');agent.frozen=true;store.replace('agent','a',agent);
+   throw Error('effect failed');
+  }),/effect failed/);
+  assert.equal(store.read('agent','a').frozen,false);
+  assert.deepEqual(store.read('intent','freeze'),intent);
+  store.completeIntent('freeze',intent,{agent_id:'a'});
+  assert.equal(store.read('intent','freeze').status,'SUCCESS');
+ }finally{store.close();rmSync(dir,{recursive:true,force:true});}
+});
