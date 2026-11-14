@@ -4,12 +4,12 @@ The Treasury app has two operating lanes: **live/mainnet** and **synthetic stagi
 
 ## Environment map
 
-Verified November 12, 2026 (America/New_York). This is an observed snapshot; inspect Railway and runtime origins again before any deployment or configuration change.
+Verified November 12, 2026 (America/New_York); the app commits and the staging platform API were observed again on November 13, after the release of `88e6c2e` to both lanes. This is an observed snapshot; inspect Railway and runtime origins again before any deployment or configuration change.
 
 | Lane | Treasury host | Platform API | Funds | Railway environment | Observed app commit |
 | --- | --- | --- | --- | --- | --- |
-| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `fe845b9` |
-| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `synthetic-platform-staging.up.railway.app` | Synthetic fixtures | `staging` | `62faea4` |
+| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `88e6c2e` |
+| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `persistent-synthetic-gateway-staging.up.railway.app` | Synthetic fixtures | `staging` | `88e6c2e` |
 
 The hostname convention is **live at `treasury.multiagency.ai`, synthetic staging at `treasury.dev.multiagency.ai`**. Both DNS/TLS routes and configured sign-in/write origins are active and verified. Each app rejects the other environment's write Origin. The Railway staging hostname remains a diagnostic alias; it is not the accepted write Origin and does not identify another environment.
 
