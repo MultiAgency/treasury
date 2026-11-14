@@ -1,0 +1,73 @@
+name: Anchor clock
+
+# The clock the audit anchor check runs by (`anchor-check.yml`). GitHub starts this organisation's scheduled runs four to
+# ten hours late and drops the slots that pass meanwhile, so an hourly `schedule` ran the check about every seven hours.
+# This workflow waits an hour on its environment's wait timer, which uses no runner, starts the check, then starts
+# itself again: a chain that needs no outside service and no token but the run's own.
+#
+# One chain runs at a time: a run that finds an older one waiting stops. Its own `schedule` is only there to start the
+# chain again if it ever breaks, so the worst case is the old cadence, never silence. The `anchor-clock` environment
+# must carry a 59 minute wait timer (docs/deploy.md); a run released sooner than that starts nothing, so a missing
+# timer can never turn the chain into a loop.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 * * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  WORKFLOW: anchor-clock.yml
+
+jobs:
+  turn:
+    name: One clock at a time
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mine: ${{ steps.turn.outputs.mine }}
+      started: ${{ steps.turn.outputs.started }}
+    steps:
+      # An older run waiting on the timer is a live chain: this one stops. An older run still finishing is the one that
+      # started this one, so it is waited out. The oldest of several started together goes on, by its run ID.
+      - id: turn
+        run: |
+          mine=false
+          for _ in $(seq 1 30); do
+            older=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$WORKFLOW/runs?per_page=50" \
+              --jq "[.workflow_runs[] | select(.id < $GITHUB_RUN_ID and .status != \"completed\") | .status] | join(\" \")")
+            if [ -z "$older" ]; then mine=true; break; fi
+            case " $older " in *" waiting "*) echo "An older clock run is waiting on its timer: this one stops."; break;; esac
+            echo "An older clock run is still finishing ($older); looking again shortly."
+            sleep 10
+          done
+          echo "mine=$mine" >> "$GITHUB_OUTPUT"
+          echo "started=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
+  tick:
+    name: Wait an hour, start the check, start the next hour
+    needs: turn
+    if: needs.turn.outputs.mine == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The wait timer on this environment is the hour.
+    environment: anchor-clock
+    steps:
+      - name: The hour has passed
+        id: hour
+        run: |
+          waited=$(( $(date -u +%s) - ${{ needs.turn.outputs.started }} ))
+          echo "Waited $waited seconds."
+          if [ "$waited" -lt 3000 ]; then
+            echo "::error::The anchor-clock environment released this run after $waited seconds. Set its wait timer to 59 minutes (docs/deploy.md). Nothing was started."
+            exit 1
+          fi
+      # Each start is tried a few times: a refused start would otherwise leave the chain to the slow schedule.
+      - name: Start the anchor check
+        run: for _ in 1 2 3 4 5; do gh workflow run anchor-check.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" && exit 0; sleep 20; done; exit 1
+      - name: Start the next hour
+        if: always() && steps.hour.outcome != 'failure'
+        run: for _ in 1 2 3 4 5; do gh workflow run "$WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" && exit 0; sleep 20; done; exit 1
