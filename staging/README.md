@@ -10,7 +10,7 @@ The replacement provider and gateway are deployed alongside the retained backend
 
 All three are in synthetic staging environment `343dceb7-e189-409d-bf96-9cc0be45d10b`, project `7113126f-e45d-4ce1-ab6c-8604ade66134`. Reverify serving releases before operational changes. Provider and gateway have separate new volumes. The old synthetic backend remains running with its old volume.
 
-The provider stores agents, funding receipts, signed intents, grants, balances and operation receipts in SQLite WAL with FULL synchronization. A swap's balance changes and receipt commit in one transaction. Replay binds the original terms and signed floor. Owner intent effects and consumption commit together. Funding controls require a separate staging token and an idempotent identity.
+The provider stores agents, funding receipts, signed intents, grants, balances and operation receipts in SQLite WAL with FULL synchronization. A swap's balance changes and receipt commit in one transaction. Replay binds the original terms and signed floor. Owner intent effects and consumption commit together. The hosted provider credits each agent 10 synthetic USDC as it is created, recorded as a deposit. Further funding requires a separate staging token and an idempotent identity.
 
 The service has no transaction RPC, provider signing key or mainnet submission client. Wallet-key and DAO-policy ownership checks use restricted final reads against a pinned FastNEAR RPC. The gateway's network guard routes transaction-history requests to explicitly synthetic evidence; other external fetches are blocked. Managed workers inherit the guard using their standard provider URL, which is tested separately.
 

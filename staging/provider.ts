@@ -7,8 +7,20 @@ import type {SyntheticStore} from './store.mjs';
 import { verifyOwner } from './verify-owner.ts';
 import type { KeyLookup } from '../apps/server/src/keys.ts';
 
-/** Synthetic provider transport. No transaction client, mainnet sender or private key exists in this process. */
-export function providerServer({store,lookup,recipient,controlToken,chainRead}: {store:SyntheticStore;lookup:KeyLookup;recipient:string;controlToken:string;chainRead?:(body:any)=>Promise<any>}) {
+type Funding={agent:string;asset:string;amount:string;requestId:string};
+/** One synthetic credit with its funding record, inside the caller's transaction. A repeated identity with the same terms credits nothing. */
+function credit(store:SyntheticStore,terms:Funding){
+ const prior=store.read('funding',terms.requestId);if(prior){if(JSON.stringify(prior.terms)!==JSON.stringify(terms))throw Error('Funding identity conflict');return;}
+ const agent=store.read('agent',terms.agent);if(!agent)throw Error('Unknown agent');
+ agent.balances[terms.asset]=(BigInt(agent.balances[terms.asset]??'0')+BigInt(terms.amount)).toString();
+ store.replace('agent',agent.id,agent);store.create('funding',terms.requestId,{...terms,terms,at:new Date().toISOString()});
+}
+
+/**
+ * Synthetic provider transport. No transaction client, mainnet sender or private key exists in this process.
+ * `startingFunds` credits every agent as it is created, so an owner needs no operator to fund a first proposal.
+ */
+export function providerServer({store,lookup,recipient,controlToken,chainRead,startingFunds}: {store:SyntheticStore;lookup:KeyLookup;recipient:string;controlToken:string;chainRead?:(body:any)=>Promise<any>;startingFunds?:Pick<Funding,'asset'|'amount'>}) {
  if(controlToken.length<32) throw Error('A separate staging control token is required');
  return createServer(async(req,res)=>{
   const send=(status:number,value:unknown)=>{res.writeHead(status,{'content-type':'application/json','x-treasury-environment':'synthetic-staging'});res.end(JSON.stringify(value));};
@@ -29,12 +41,7 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead}: 
     const actual=Buffer.from(req.headers.authorization??''),expected=Buffer.from(`Bearer ${controlToken}`);
     if(actual.length!==expected.length||!timingSafeEqual(actual,expected))return send(401,{error:'Staging control authorization required'});
     if(!/^[1-9][0-9]*$/.test(body.amount)||typeof body.asset!=='string'||typeof body.requestId!=='string'||!body.requestId)return send(400,{error:'Invalid synthetic funding terms'});
-    store.transaction(()=>{
-     const prior=store.read('funding',body.requestId);if(prior){if(JSON.stringify(prior.terms)!==JSON.stringify(body))throw Error('Funding identity conflict');return;}
-     const agent=store.read('agent',body.agent);if(!agent)throw Error('Unknown agent');
-     agent.balances[body.asset]=(BigInt(agent.balances[body.asset]??'0')+BigInt(body.amount)).toString();
-     store.replace('agent',agent.id,agent);store.create('funding',body.requestId,{...body,terms:body,at:new Date().toISOString()});
-    });return send(200,{synthetic:true});
+    store.transaction(()=>credit(store,body));return send(200,{synthetic:true});
    }
    if(req.method==='POST'&&url.pathname==='/v1/generate-intent'){
     if(!['agent_create','grant_issue','agent_freeze','agent_unfreeze'].includes(body.type))return send(400,{error:'Unsupported synthetic intent'});
@@ -58,7 +65,10 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead}: 
     if(signed?.standard!=='nep413'||signed.public_key!==intent.owner.public_key||JSON.stringify(signed.payload)!==JSON.stringify(intent.payload))return send(400,{error:'Signed intent differs from review'});
     await verifyOwner({...intent.payload,account:intent.owner.account_id,publicKey:signed.public_key,signature:signed.signature,expiresAt:intent.expiresAt,lookup});
     const id=randomBytes(32).toString('hex');
-    if(intent.type==='agent_create')store.completeIntent(body.correlation_id,intent,{agent_id:id},()=>store.create('agent',id,{id,owner:intent.owner,policy:intent.request.policy,frozen:!!intent.request.policy.frozen,balances:{},grants:[],wallet:{wallet_id:`synthetic-${id}`,near_account_id:`synthetic-${id.slice(0,16)}.near`}}));
+    if(intent.type==='agent_create')store.completeIntent(body.correlation_id,intent,{agent_id:id},()=>{
+     store.create('agent',id,{id,owner:intent.owner,policy:intent.request.policy,frozen:!!intent.request.policy.frozen,balances:{},grants:[],wallet:{wallet_id:`synthetic-${id}`,near_account_id:`synthetic-${id.slice(0,16)}.near`}});
+     if(startingFunds)credit(store,{agent:id,...startingFunds,requestId:`starting-${id}`});
+    });
     else store.completeIntent(body.correlation_id,intent,{agent_id:intent.request.agent_id},()=>{
      const agent=store.read('agent',intent.request.agent_id);
      if(intent.type==='grant_issue')agent.grants.push({grant_id:id,agent_id:agent.id,wallet_id:agent.wallet.wallet_id,label:intent.request.label??'treasury',issued_at:new Date().toISOString(),credential:intent.request.credential,expires_at:intent.request.expires_at,revoked_at:null,revoked_reason:null,owner_epoch:1,

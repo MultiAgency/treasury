@@ -85,3 +85,22 @@ test('HTTP create verifies owner signature, refuses changed terms, and retains a
 assert.equal((await(await fetch(base+'/v1/status?correlation_id=swap-1')).json()).status,'SUCCESS');
  }finally{await stop();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('starting funds credit a new agent once, as a synthetic deposit in its history',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'synthetic-starting-')),store=new SyntheticStore(join(dir,'state.sqlite')),owner=wallet('owner.near');
+ const usdc='nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1';
+ const server=providerServer({store,lookup:async()=>'full',recipient:'synthetic.test',controlToken:'x'.repeat(32),startingFunds:{asset:usdc,amount:'10000000'}});
+ server.listen(0,'127.0.0.1');await once(server,'listening');const base=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+ const post=async(route:string,body:any)=>{const r=await fetch(base+route,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {status:r.status,value:await r.json()};};
+ try{
+  const prepared=await post('/v1/generate-intent',{type:'agent_create',owner:{type:'near',account_id:owner.accountId,public_key:owner.publicKey},policy:{frozen:false,owner_approval:false,assets:'any',actions:['swap']}});
+  const payload=prepared.value.intent.payload,signed=owner.sign(payload);
+  const body={correlation_id:prepared.value.correlation_id,signed_data:{standard:'nep413',payload,public_key:signed.publicKey,signature:signed.signature}};
+  assert.equal((await post('/v1/submit-intent',body)).status,200);
+  assert.equal((await post('/v1/submit-intent',body)).status,409);
+  const agent=(await (await fetch(base+`/v1/status?correlation_id=${body.correlation_id}`)).json()).details.agent_id;
+  assert.equal(store.read('agent',agent).balances[usdc],'10000000');
+  const history=await (await fetch(base+`/v1/agents/${agent}/history`)).json();
+  assert.deepEqual(history.data.map((row:any)=>[row.type,row.details.deposit_tx_hash]),[['deposit',`synthetic-starting-${agent}`]]);
+ }finally{await new Promise<void>(r=>server.close(()=>r()));store.close();rmSync(dir,{recursive:true,force:true});}
+});
