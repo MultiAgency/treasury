@@ -58,6 +58,10 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Verify exact SDK artifacts and platform source before stack tests
+        run: |
+          pnpm verify:sdk
+          node --input-type=module -e "import { verifyPlatform } from './scripts/sdk-pin.ts'; verifyPlatform(process.env.TREASURY_PLATFORM)"
       - name: The platform's stack, its confirm page and its browser
         working-directory: platform
         # The stack serves the platform's confirm page from web/dist but doesn't build it; unbuilt, /confirm/<token> answers 404.
