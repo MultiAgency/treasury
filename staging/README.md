@@ -4,9 +4,9 @@ The replacement provider and gateway are deployed alongside the retained backend
 
 | Component | Staging service ID | Serving deployment observed (November 14, 2026) |
 | --- | --- | --- |
-| Provider | `4766bb85-e9b3-4cab-900e-2286585a717d` | `0c0b1f27-6434-443c-8cb3-c8f5a1675bf5` |
-| Gateway | `c53df1f5-2cf7-4757-b553-43893077ec55` | `d90a6b33-93ea-4532-a72a-3fc6d0d688d9` |
-| Treasury app | `d6734b71-4e83-4e74-8995-2ca7570c454a` | `00b7f33d-e291-4915-81da-73f6cd732852` |
+| Provider | `4766bb85-e9b3-4cab-900e-2286585a717d` | `603ef88a-0f6e-46d0-a0b5-2d664a67931a` |
+| Gateway | `c53df1f5-2cf7-4757-b553-43893077ec55` | `033f52cd-a3f8-4418-bd6a-d1f43992d89c` |
+| Treasury app | `d6734b71-4e83-4e74-8995-2ca7570c454a` | `051ec510-c936-4b20-8c5f-7f3483a015e7` |
 
 All three are in synthetic staging environment `343dceb7-e189-409d-bf96-9cc0be45d10b`, project `7113126f-e45d-4ce1-ab6c-8604ade66134`. Reverify serving releases before operational changes. Provider and gateway have separate new volumes. The old synthetic backend remains running with its old volume.
 
