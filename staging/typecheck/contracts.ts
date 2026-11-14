@@ -1,10 +1,17 @@
 // Compile-only contracts: pnpm typecheck:staging checks these; no database is opened.
 import { SyntheticStore } from '../store.mjs';
 import { decimalMicros, enforcePolicy, quote } from '../policy.mjs';
+import type { OwnerOutput } from '@multiagency/sdk';
 import type { Agent, Intent, SwapResult } from '../types.ts';
 
 export function checkContracts(store: SyntheticStore, agent: Agent, intent: Intent) {
- store.create('agent', agent.id, agent);
+ // The shared contract must remain assignable in both directions.
+ const platformPolicy: NonNullable<OwnerOutput<'overview'>['policy']['policy']> = agent.policy;
+ store.create('agent', agent.id, {...agent, policy: platformPolicy});
+ // @ts-expect-error Reject actions outside the platform policy contract.
+ store.replace('agent', agent.id, {...agent, policy: {...agent.policy, actions: ['invented-action']}});
+ // @ts-expect-error Platform budget values remain decimal strings or null.
+ store.replace('agent', agent.id, {...agent, policy: {...agent.policy, budget: {...agent.policy.budget, daily_usd: 1}}});
  const found = store.read('agent', agent.id);
  if (found) { const balances: Record<string, string> = found.balances; void balances; }
  // @ts-expect-error Missing records must be checked before accessing balances.

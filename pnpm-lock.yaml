@@ -166,6 +166,9 @@ importers:
 
   .:
     devDependencies:
+      '@multiagency/sdk':
+        specifier: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz
+        version: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
       railway:
         specifier: 3.16.0
         version: 3.16.0
