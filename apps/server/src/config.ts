@@ -70,8 +70,13 @@ const Settings = z.object({
   SESSION_MAX_MS: duration(minutes(12 * 60)),
   CHALLENGE_TTL_MS: duration(minutes(5)),
   CHALLENGES_PER_MINUTE: z.coerce.number().int().positive().default(10),
-  /** Owner-route requests per signed-in account a minute; each may cost a call against the platform's shared quota. */
-  OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
+  /**
+   * Owner-route requests per signed-in account a minute; each may cost a call against the platform's shared quota. Set
+   * for the pages as measured (2026-11-14): one tab peaks at 44 in a minute, a full page load is 15 and an action waiting
+   * for its signature polls 26, so two tabs on an agent while a freeze waits make about 90. The limit stops a runaway
+   * client; the platform's own limit is what guards its quota.
+   */
+  OWNER_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(120),
   /** Calls per agent token an hour, apart from the account's own: each costs a call against the platform's hourly budget. */
   TOKEN_REQUESTS_PER_HOUR: z.coerce.number().int().positive().default(60),
   /** Calls every agent token together may make an hour: a quarter of the platform's 1,200, so software can't spend the rest. */
