@@ -47,7 +47,7 @@ pnpm --filter @treasury/server test:stack
 pnpm test:compatibility
 ```
 
-The compatibility runner requires Node 24 and invokes only the platform’s existing offline test launcher, which discards inherited application credentials and guards external networking. It prints hashes of the exact platform test files used. The browser suites simulate the provider, chain and wallets, and include accessibility scans. These tests do not prove real-provider behavior or hosted settlement.
+The compatibility runner requires Node 24 or later and invokes only the platform’s existing offline test launcher, which discards inherited application credentials and guards external networking. It prints hashes of the exact platform test files used. The browser suites simulate the provider, chain and wallets, and include accessibility scans. These tests do not prove real-provider behavior or hosted settlement.
 
 Fresh Node 24 results: 1,214 Treasury unit tests (631 server, 181 web, 402 core), 67 wallet/DAO browser tests including accessibility scans, 24 server stack tests passed with three existing TODOs, and 187 exact-source platform compatibility tests passed. Typechecks, the production web build, frozen-lockfile install and local Docker build passed. A network-disabled container inspection verified the installed SDK source/candidate and tarball hash; it did not start the app.
 
