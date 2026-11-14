@@ -14,7 +14,7 @@ import { tempDir } from "../../../scripts/temp-dirs.ts";
 
 const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1", WNEAR = "nep141:wrap.near", ETH = "nep141:eth.omft.near";
 const DIGEST = `sha256:${"a".repeat(64)}`, DAO = "agentic.sputnik-dao.near";
-const strategy = { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, minLegUsd: 2, maxCostBps: 50, autopilot: { everyMin: 60, maxUsd: 0 } };
+const strategy = { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, minLegUsd: 2, maxCostBps: 150, autopilot: { everyMin: 60, maxUsd: 0 } };
 const SETTINGS: BallastSettings = { profile: "balanced", monthlySpendUsd: 2_000, operatingCashMonths: 6, destinations: ["ops.near"], approvers: ["owner.near"] };
 
 const store = () => {
@@ -74,7 +74,7 @@ test("kept in a file, a declined proposal outlives a restart, so its strategy is
 });
 
 /** An agent's overview: 100,000 USD in USDC and wNEAR at the saved targets, under a policy of `assets`. */
-const overviewOf = (target: Record<string, number>, assets: "any" | string[] = "any", maxCostBps = 50) => ({
+const overviewOf = (target: Record<string, number>, assets: "any" | string[] = "any", maxCostBps = 150) => ({
   book: [{ asset: USDC, usd: 85_000 }, { asset: WNEAR, usd: 15_000 }], target, rebalance: { minLegUsd: 2, maxCostBps }, policy: { policy: { assets } },
 }) as unknown as OwnerOutput<"overview">;
 const savedRead = (saved: object, digest = DIGEST) => async () => {
@@ -90,10 +90,12 @@ test("the mandate proposer proposes what the profile compiles to, with the other
   const note = await proposeMandate({ agent: "portfolio", settings: SETTINGS, overview: overviewOf({ [USDC]: 0.85, [WNEAR]: 0.15, [ETH]: 0 }, [USDC, WNEAR], 120), strategy: savedRead(saved), proposals });
   assert.ok("proposed" in note, JSON.stringify(note));
   const [open] = proposals.open("portfolio");
-  // Balanced: 40% volatile in wNEAR, 35% reserve and 25% cash in USDC; ETH 0; the cost limit its 0.5% slippage limit.
-  assert.deepEqual(open!.strategy, { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, maxCostBps: 50, minLegUsd: 7, autopilot: { everyMin: 30, maxUsd: 500 }, cashFloor: { usd: 12_000, assets: [USDC] } });
+  // Balanced: 40% volatile in wNEAR, 35% reserve and 25% cash in USDC; ETH 0; the cost limit its 0.5% slippage limit
+  // over the 1% the quote's minimum received sits under the quote, where the platform measures cost.
+  assert.deepEqual(open!.strategy, { targetBps: { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 }, maxCostBps: 150, minLegUsd: 7, autopilot: { everyMin: 30, maxUsd: 500 }, cashFloor: { usd: 12_000, assets: [USDC] } });
   assert.equal(open!.against, DIGEST, "compared against the saved strategy's digest");
   assert.match(open!.reasons, /^Ballast's balanced profile: 40% volatile in wNEAR/);
+  assert.match(open!.reasons, /The cost limit is 1\.5%: the profile's 0\.5% slippage limit, plus the 1% the quote's minimum received allows/);
   assert.match(open!.reasons, /monthly spend 2000 USD, 6 months of operating cash, approvers owner\.near, destinations ops\.near/);
   assert.equal(reads.count, 1);
 });

@@ -1707,7 +1707,8 @@ export const routes: Route[] = [
       else {
         // Refused before any claim, or the answer was lost: read the proposal, never ask for its execution again.
         const notExecutable = ran.kind === "refused" && ran.code === "not_executable";
-        if (!notExecutable) log("platform_execute_unanswered", { agent, proposal: id, ...failure(ran as { kind: string }) });
+        if (notExecutable) log("platform_execute_refused", { agent, proposal: id, code: ran.code, ...failure(ran) });
+        else log("platform_execute_unanswered", { agent, proposal: id, ...failure(ran as { kind: string }) });
         const now = await relay(() => platform.proposals.get(organization, agent, id), agent);
         reply = !now.ok ? executed("pending", null)
           : executed(notExecutable && now.value.state === "approved" ? "not_executable" : outcomeOf(now.value.state), now.value);
