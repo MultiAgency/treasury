@@ -3,7 +3,7 @@ import type { TransactionOutcome } from "./wallet-transaction";
 import { fileLabel, filesAndVotes, filingHeld } from "./dao-filing";
 import { Button, errorMessage } from "./shared/ui";
 import { votesText, type Approver } from "./dao-votes-view";
-import type { DaoOffer, DaoRequest } from "./server-api";
+import type { DaoRequest } from "./server-api";
 import { when } from "./ui";
 import { file, WrongAccount } from "./wallet";
 
@@ -11,22 +11,18 @@ import { file, WrongAccount } from "./wallet";
 const lines = (description: string) => description.split(/\s*<br>\s*/).filter(Boolean);
 
 /**
- * What a member can do now about a DAO's proposal, and who has approved it: file it (the platform's transaction, from
- * the member's own wallet, never twice), vote on it in Trezu once it is filed, or wait once the DAO approved it. Shared
- * by a DAO request and by an owner action's vote. Where the page that prepared it offers its own filing, `mayFile` is
- * false and an unfiled one shows nothing here, so one transaction is never offered in two places. After a filing,
- * `onChanged` reads it again, and the DAO's proposal shows up once it's on chain.
+ * A DAO request waiting for its vote: what the DAO's proposal says, the platform's page that checks the exact text and
+ * hash the DAO signs, the deadline, and what this member can do now (treasury#100, "A request waiting for its vote").
+ * Filing sends the platform's transaction from the member's own wallet; afterwards, `onChanged` reads the request
+ * again, and the DAO's proposal shows up there once it's on chain.
  */
-export function DaoOfferView({ offer, approvedBy, approvers, account, onChanged, approved = "This server completes it on its next read.", mayFile = true }: {
-  offer: DaoOffer | null; approvedBy?: readonly string[] | undefined; approvers?: readonly Approver[] | undefined; account: string; onChanged: () => void;
-  /** What happens next once the DAO approved it. */
-  approved?: string; mayFile?: boolean;
-}) {
+export function DaoRequestView({ request, account, onChanged, approvers }: { request: DaoRequest; account: string; onChanged: () => void; approvers?: readonly Approver[] | undefined }) {
   const [filing, setFiling] = useState(false);
   const [notice, setNotice] = useState<{ tone: "status" | "alert"; text: string }>();
   /** The wallet's last answer to filing, while the offer it answered is still the one shown. */
   const [last, setLast] = useState<{ outcome: TransactionOutcome["kind"]; offer: string }>();
-  const votes = votesText(approvedBy, approvers);
+  const offer = request.offer;
+  const votes = votesText(request.approvedBy, approvers);
   const held = last?.offer === JSON.stringify(offer) && filingHeld(last.outcome);
 
   const send = async () => {
@@ -48,9 +44,14 @@ export function DaoOfferView({ offer, approvedBy, approvers, account, onChanged,
     }
   };
 
-  return <>
+  return <div className="flex flex-col gap-3 text-sm">
+    <ul aria-label="What the DAO votes on" className="flex flex-col gap-1 rounded-md border p-3 font-mono text-xs break-words">
+      {lines(request.description).map((line, i) => <li key={i}>{line}</li>)}
+    </ul>
+    <p>The vote must pass by {when(new Date(request.votingUntil).toISOString())}. <a className="underline" href={request.check}>Check the exact text and hash the DAO signs</a>.</p>
+    <p>The DAO's proposal and every vote on it are public and permanent: they stay on chain for anyone to read.</p>
     {offer === null ? <p role="status">The DAO couldn't be read just now, so what's filed isn't known. Check again shortly.</p>
-      : offer.state === "file" ? (!mayFile ? null : offer.transaction
+      : offer.state === "file" ? (offer.transaction
         ? held ? <p role="status">Waiting for the DAO's proposal to show here. Check again shortly; nothing is offered for filing meanwhile, so it isn't filed twice.</p>
         : <div className="flex flex-col items-start gap-2">
           <p role="status">No DAO proposal is filed for this yet. Your wallet files it{filesAndVotes(offer.transaction) ? " and casts your approval" : ""}; the DAO's threshold still applies.</p>
@@ -58,24 +59,9 @@ export function DaoOfferView({ offer, approvedBy, approvers, account, onChanged,
         </div>
         : <p role="status">No DAO proposal is filed for this yet, and your roles in the DAO can't file one: a member who may file proposals does.</p>)
       : offer.state === "filed" ? <p role="status">Filed as the DAO's proposal #{offer.proposal}. <a className="underline" href={offer.vote}>Vote on it in Trezu</a>.</p>
-      : offer.state === "approved" ? <p role="status">The DAO approved proposal #{offer.proposal}. {approved}</p>
+      : offer.state === "approved" ? <p role="status">The DAO approved proposal #{offer.proposal}. This server completes it on its next read.</p>
       : <p role="alert">The DAO's proposal #{offer.proposal} failed when it ran. A member who may finalize proposals can run it again: <a className="underline" href={offer.vote}>open it in Trezu</a>.</p>}
     {votes && <p role="status" aria-label="Votes so far">{votes}</p>}
     {notice && <p role={notice.tone} className="text-sm">{notice.text}</p>}
-  </>;
-}
-
-/**
- * A DAO request waiting for its vote: what the DAO's proposal says, the platform's page that checks the exact text and
- * hash the DAO signs, the deadline, and what this member can do now (treasury#100, "A request waiting for its vote").
- */
-export function DaoRequestView({ request, account, onChanged, approvers }: { request: DaoRequest; account: string; onChanged: () => void; approvers?: readonly Approver[] | undefined }) {
-  return <div className="flex flex-col gap-3 text-sm">
-    <ul aria-label="What the DAO votes on" className="flex flex-col gap-1 rounded-md border p-3 font-mono text-xs break-words">
-      {lines(request.description).map((line, i) => <li key={i}>{line}</li>)}
-    </ul>
-    <p>The vote must pass by {when(new Date(request.votingUntil).toISOString())}. <a className="underline" href={request.check}>Check the exact text and hash the DAO signs</a>.</p>
-    <p>The DAO's proposal and every vote on it are public and permanent: they stay on chain for anyone to read.</p>
-    <DaoOfferView offer={request.offer} approvedBy={request.approvedBy} approvers={approvers} account={account} onChanged={onChanged} />
   </div>;
 }

@@ -28,6 +28,7 @@ import { createSignIn } from "../src/signin.ts";
 import { createWatch } from "../src/watch.ts";
 import { HOST, ORIGIN, wallet } from "./fakes.ts";
 import { tempDir } from "../../../scripts/temp-dirs.ts";
+import { signOnConfirmPage } from "../../../web/test/confirm-page.ts";
 import { unreconciledUsd } from "../../../packages/core/src/index.ts";
 
 const intruder = wallet("intruder.near");
@@ -40,9 +41,9 @@ const audit = chainedFileAudit(join(tempDir("treasury-stack-"), "audit.jsonl"));
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string, server: Server, base: string;
 let platform: ReturnType<typeof createPlatform>;
 
-before(async () => {
+async function boot(held = false) {
   await audit.check();
-  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test"] });
+  stack = await startStack({ args: ["--no-browser", "--app", "treasury-test", ...(held ? ["--on-chain-policy-edits"] : [])] });
   target = stack.target;
   const state = stack.state();
   owner = state.ownerAccount;
@@ -66,16 +67,20 @@ before(async () => {
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}, { timeout: 180_000 });
+}
 
-after(async () => {
+before(() => boot(), { timeout: 180_000 });
+
+async function shutdown() {
   try {
     if (server) await new Promise<void>((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve());
       server.closeAllConnections();
     });
   } finally { await stack?.stop(); }
-});
+}
+
+after(shutdown);
 
 const write = { origin: ORIGIN, "content-type": "application/json" };
 const post = (path: string, body: unknown, cookie?: string) =>
@@ -506,10 +511,6 @@ test("freeze and unfreeze (#133): prepared in the form the platform chooses, an 
   assert.equal(await frozen(), false);
 });
 
-// The provider sends freeze and unfreeze as NEP-366 (the platform's docs/app-access.md), so in production a wallet owner
-// freezes through the platform's confirm page, a path this stack never answers with: it waits for the confirm-page helper.
-test.todo("a freeze answered with the platform's confirm page is signed there, and takes effect (#140)");
-
 test("while the agent is frozen nothing is sent: an earlier approval is invalidated, a new one is refused; after unfreeze a new proposal runs (#133)", { timeout: 150_000 }, async () => {
   const { cookie, agent, frozen, act } = await freezing();
   const host = new URL(stack.state().dashboard).host;
@@ -565,11 +566,6 @@ test("the owner saves a strategy through the server over the one they saw: autop
   assert.deepEqual(await stale.json(), { ok: false, kind: "refused", code: "strategy_changed" }, "saved over the strategy the owner saw, never another");
 });
 
-// The pinned platform stack's simulated provider prepares only a grant's issue and a freeze, so a revocation can't be
-// prepared against it: the route is covered with the fake platform (owner-actions.test.ts), and this joins the suite when
-// the stack prepares one (#142), signed through the confirm page where the platform chooses that form (#140).
-test.todo("grant revocation (#142): prepared in the form the platform chooses, signed, and the grant reads revoked (needs the stack to prepare grant_revoke, and #140 for the confirm page)");
-
 test("a policy edit (#134): prepared in the form the platform chooses, an intent signed here and relayed once, the overview reads the new revision; a no-op edit is refused", { timeout: 120_000 }, async () => {
   const { cookie, agent } = await freezing();
   const overview = async () => ((await (await get(`${agent}/overview`, cookie)).json()) as { value: { policy: { revision: number | null; policy: { max_actions_per_hour: number | null } | null }; digest: string } }).value;
@@ -581,7 +577,7 @@ test("a policy edit (#134): prepared in the form the platform chooses, an intent
   assert.equal(prepared.status, 200, JSON.stringify(body));
   const made = contract.ownerActionPrepared.parse(body.value);
   assert.equal([made.intent, made.confirm, made.dao].filter(Boolean).length, 1, `exactly one form: ${JSON.stringify(made)}`);
-  if (!made.intent) return void console.log("the edit answered a confirm page: its signed path waits for #140");
+  assert.ok(made.intent, "the readable-policy stack must actually return an intent");
   const signed = await signOwner(target, made.intent.payload);
   const submitted = await post(`${agent}/owner/actions/${made.correlationId}/submit`, { signedData: { ...made.intent, public_key: signed.publicKey, signature: signed.signature } }, cookie);
   assert.equal(submitted.status, 200, await submitted.clone().text());
@@ -597,7 +593,145 @@ test("a policy edit (#134): prepared in the form the platform chooses, an intent
   assert.deepEqual(await nothing.json(), { ok: false, kind: "refused", code: "no_change" }, "an edit that changes nothing is refused by the server");
 });
 
-// A policy edit the provider enforces itself comes back as a confirm page, signed with the helper of #140 (web/test/confirm-page.ts).
-// The pinned stack never holds an edit for the confirm page (its provider turns that on only in the platform's own harness), so the
-// signed path joins this file when the stack can produce one.
-test.todo("a policy edit held for the confirm page is signed through its helper, and the overview reads the new revision (needs #140 and a stack that holds edits for the confirm page)");
+/** Signs only the form selected by the platform; the confirm page retains the delegate bytes. */
+async function signPrepared(made: z.infer<typeof contract.ownerActionPrepared>, agent: string, cookie: string) {
+  assert.equal([made.intent, made.confirm, made.dao].filter(Boolean).length, 1);
+  if (made.intent) {
+    const signed = await signOwner(target, made.intent.payload);
+    const submitted = await post(`${agent}/owner/actions/${made.correlationId}/submit`, { signedData: { ...made.intent, public_key: signed.publicKey, signature: signed.signature } }, cookie);
+    assert.equal(submitted.status, 200, await submitted.clone().text());
+  } else {
+    assert.ok(made.confirm, "a wallet action must provide its supported signing form");
+    assert.equal(new URL(made.confirm.url).origin, target.origin);
+    const signed = await signOnConfirmPage({ target, platform: process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "..", "platform"), url: made.confirm.url,
+      owner: { accountId: owner, publicKey: stack.state().testPublicKey } });
+    assert.deepEqual(signed.unexpected, []);
+    assert.deepEqual(signed.asked.map(item => item.delegate), [false, true], "the actual confirm page asks for its opening signature, then its delegate");
+  }
+  await eventually(async () => {
+    const response = await get(`${agent}/owner/actions/${made.correlationId}`, cookie);
+    assert.equal(response.status, 200);
+    const status = contract.ownerActionStatus.parse((await response.json() as { value: unknown }).value);
+    assert.equal(status.stage, "submitted", JSON.stringify(status));
+  });
+}
+
+async function eventually(check: () => Promise<void>) {
+  const until = Date.now() + 45_000;
+  for (;;) {
+    try { await check(); return; }
+    catch (error) {
+      if (Date.now() >= until) throw error;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+  }
+}
+
+async function overviewOf(agent: string, cookie: string) {
+  const response = await get(`${agent}/overview`, cookie);
+  assert.equal(response.status, 200);
+  return contract.overviewRead.parse((await response.json() as { value: unknown }).value);
+}
+
+test("grant revocation: the platform-selected signature ends the active grant and refuses scheduled authority", { timeout: 120_000 }, async () => {
+  const { cookie, agent } = await freezing();
+  await setTargets(target, { [USDC]: 6_000, [WNEAR]: 4_000, [ETH]: 0 });
+  const strategyNow = async () => contract.strategyRead.parse((await (await get(`${agent}/strategy`, cookie)).json() as { value: unknown }).value);
+  // Bind the current strategy through the real grant preparation and signature, rather than revoking an already unbound grant.
+  const before = await strategyNow();
+  const prepared = await post(`${agent}/grant`, { expectedDigest: before.digest }, cookie);
+  assert.equal(prepared.status, 200);
+  const issued = contract.grantPrepared.parse((await prepared.json() as { value: unknown }).value);
+  assert.ok(issued.intent, "the simulator selects NEP-413 for grant issue");
+  const signature = await signOwner(target, issued.intent.payload);
+  assert.equal((await post(`${agent}/grant/${issued.correlationId}/submit`, { signedData: { ...issued.intent, public_key: signature.publicKey, signature: signature.signature } }, cookie)).status, 200);
+  await eventually(async () => { assert.equal((await strategyNow()).grantMatches, true); });
+  const active = (await strategyNow()).grant;
+  assert.ok(active);
+  const live = (await overviewOf(agent, cookie)).grants.find(grant => grant.grant_id === active.id);
+  assert.ok(live);
+  assert.equal(live.revoked_at, null);
+  assert.equal((await strategyNow()).readiness.canEnable, true);
+  const response = await post(`${agent}/grants/revoke`, { grantId: active.id }, cookie);
+  assert.equal(response.status, 200, await response.clone().text());
+  const made = contract.ownerActionPrepared.parse((await response.json() as { value: unknown }).value);
+  await signPrepared(made, agent, cookie);
+  await eventually(async () => {
+    const revoked = (await overviewOf(agent, cookie)).grants.find(grant => grant.grant_id === active.id);
+    assert.ok(revoked?.revoked_at, "the exact grant reads revoked from the provider");
+    assert.equal(revoked.revoked_reason, "owner");
+    assert.deepEqual({ ...revoked, revoked_at: null, revoked_reason: null }, live, "the revocation preserves the grant's other terms");
+    const after = await strategyNow();
+    assert.equal(after.grantMatches, false);
+    assert.equal(after.grant, null);
+    assert.equal(after.readiness.canEnable, false);
+  });
+  const previous = contract.runsRead.parse((await (await get(`${agent}/runs`, cookie)).json() as { value: unknown }).value).ticks.map(tick => tick.id);
+  const ran = await post(`${agent}/autopilot/tick`, {}, cookie);
+  assert.equal(ran.status, 200, await ran.clone().text());
+  const summary = contract.tickRead.parse((await ran.json() as { value: unknown }).value).summary;
+  const runs = contract.runsRead.parse((await (await get(`${agent}/runs`, cookie)).json() as { value: unknown }).value);
+  const fresh = runs.ticks.filter(tick => !previous.includes(tick.id));
+  assert.equal(fresh.length, 1, "the refused run has its own real execution evidence");
+  assert.equal(fresh[0]!.grant, null);
+  assert.ok(fresh[0]!.end);
+  assert.deepEqual([fresh[0]!.end.steps, fresh[0]!.end.shields], [[], []], "revoked authority sends neither swaps nor shields");
+  console.log("revocation execution evidence", JSON.stringify({ summary, grant: fresh[0]!.grant, end: fresh[0]!.end }));
+  assert.match(summary, /owner's grant doesn't approve this strategy/, "an opaque HTTP failure is not a proven authority refusal");
+});
+
+test("held owner actions use a fresh confirm-page stack after the readable stack stops", { timeout: 240_000 }, async t => {
+  // These stacks are deliberately sequential: no default-stack state or authority leaks into the held-policy fixture.
+  await shutdown();
+  await boot(true);
+  const { cookie, agent, frozen } = await freezing();
+
+  await t.test("confirm-page freeze applies the exact policy and refuses new execution with no operations", { timeout: 120_000 }, async () => {
+    const before = await overviewOf(agent, cookie);
+    assert.equal(await frozen(), false);
+    const app = appClient({ base: stack.state().dashboard as `https://${string}`, credential: readFileSync(stack.state().app!.credentialFile, "utf8").trim(), fetch: stackFetch(readFileSync(target.ca)) });
+    const proposal = await app.agent(owner.replaceAll(".", "--"), target.agent).call("proposals/create", { requestId: `confirm-freeze-${Date.now()}`, legs: [{ from: USDC, to: WNEAR, amount: "1000000" }], expiresAt: new Date(Date.now() + 86_400_000).toISOString() });
+    assert.ok(proposal.ok, JSON.stringify(proposal));
+    const view = proposal.value as ProposalView;
+    const message = proposalText(view, "approve"), nonce = randomBytes(32).toString("base64");
+    const signed = await signOwner(target, { message, recipient: new URL(stack.state().dashboard).host, nonce });
+    assert.equal((await post(`${agent}/proposals/${view.id}/approve`, { message, nonce, publicKey: signed.publicKey, signature: signed.signature }, cookie)).status, 200);
+    const prepared = await post(`${agent}/freeze`, {}, cookie);
+    assert.equal(prepared.status, 200);
+    const made = contract.ownerActionPrepared.parse((await prepared.json() as { value: unknown }).value);
+    assert.ok(made.confirm);
+    assert.equal(made.intent, undefined, "the Treasury server never receives delegate bytes");
+    assert.deepEqual((await overviewOf(agent, cookie)).policy, before.policy, "preparing is not applying");
+    await signPrepared(made, agent, cookie);
+    const after = await overviewOf(agent, cookie);
+    assert.equal(after.policy.revision, before.policy.revision, "freeze changes the frozen flag, not this provider's policy revision");
+    assert.equal(after.policy.status, "APPLIED");
+    assert.deepEqual(after.policy.policy, { ...before.policy.policy, frozen: true });
+    const execution = await post(`${agent}/proposals/${view.id}/execute`, {}, cookie);
+    assert.equal(execution.status, 200);
+    const stopped = (await execution.json() as { value: { result: string; proposal: ProposalView } }).value;
+    assert.deepEqual([stopped.result, stopped.proposal.state, stopped.proposal.operations], ["final", "invalidated", []]);
+    const balances = (view: Awaited<ReturnType<typeof overviewOf>>) => view.book.map(({ asset, public: publicAmount, confidential }) => ({ asset, public: publicAmount, confidential }));
+    assert.deepEqual(balances(await overviewOf(agent, cookie)), balances(after), "the refused send changes no balances");
+    const unfreeze = await post(`${agent}/unfreeze`, {}, cookie);
+    assert.equal(unfreeze.status, 200);
+    await signPrepared(contract.ownerActionPrepared.parse((await unfreeze.json() as { value: unknown }).value), agent, cookie);
+    assert.equal(await frozen(), false);
+  });
+
+  await t.test("held policy edit signs on the confirm page and reads the exact next revision and full policy", { timeout: 120_000 }, async () => {
+    const before = await overviewOf(agent, cookie);
+    const rate = before.policy.policy!.max_actions_per_hour === 7 ? 8 : 7;
+    const response = await post(`${agent}/policy`, { expectedPolicy: { revision: before.policy.revision!, digest: before.digest }, changes: { max_actions_per_hour: rate } }, cookie);
+    assert.equal(response.status, 200, await response.clone().text());
+    const made = contract.ownerActionPrepared.parse((await response.json() as { value: unknown }).value);
+    assert.ok(made.confirm);
+    assert.equal(made.intent, undefined);
+    assert.deepEqual((await overviewOf(agent, cookie)).policy, before.policy, "held changes remain unapplied before signing");
+    await signPrepared(made, agent, cookie);
+    const after = await overviewOf(agent, cookie);
+    assert.equal(after.policy.revision, before.policy.revision! + 1);
+    assert.deepEqual(after.policy.policy, { ...before.policy.policy, max_actions_per_hour: rate }, "every other policy field is preserved");
+    assert.notEqual(after.digest, before.digest);
+  });
+});

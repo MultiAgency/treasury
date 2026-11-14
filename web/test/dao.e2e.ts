@@ -29,12 +29,6 @@ import { daoConfidentialSetup, daoVote, stackFetch, startStack, USDC, WNEAR, typ
 import { tempDir } from "../../scripts/temp-dirs.ts";
 
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
-/**
- * The account's request limit isn't what this suite tests, and one browser session here loads pages far faster than an
- * owner does: over 1,100 requests in its busiest minute on a fast machine, which a limit of 1,000 answered now and then
- * with "Too many requests from this account", failing whichever test came next. Set out of the suite's reach.
- */
-const OWNER_REQUESTS_PER_MINUTE = 100_000;
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, dao: string, council: ReturnType<typeof wallet>;
 let chainProposals: DaoProposal[] | undefined;
 let server: Server, origin: string, browser: Browser, page: Page;
@@ -75,7 +69,7 @@ before(async () => {
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: OWNER_REQUESTS_PER_MINUTE,
+    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup,
     daos: { ...daos, proposals: async (dao, from) => chainProposals ? { next: chainProposals.length, proposals: chainProposals.filter(p => p.id >= from) } : daos.proposals(dao, from) },
     daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
@@ -141,6 +135,11 @@ const fileButton = (scope: ReturnType<Page["getByRole"]>) => scope.getByRole("bu
 test("a council member asks the DAO to connect the agent, files its proposal from their wallet, and the page shows it connected once the vote passes", { timeout: 120_000 }, async () => {
   await page.goto(`${origin}/agents/${target.agent}`);
   await page.getByRole("button", { name: "Sign in with wallet" }).click();
+  // Keep the real connector popup open so its accessible names cannot escape the scan through close timing.
+  await page.locator(".settings-button").waitFor({ state: "visible" });
+  const walletNames = await new AxeBuilder({ page }).withRules(["button-name"]).analyze();
+  console.log("wallet popup name evidence", JSON.stringify(walletNames.violations));
+  assert.deepEqual(walletNames.violations, [], "wallet selector buttons have accessible names while open");
   await page.getByText("Local test wallet", { exact: true }).click();
   await visible(page.getByText(`Signed in as ${council.accountId}`));
   const connection = page.getByRole("region", { name: "Connection" });
@@ -362,51 +361,6 @@ test("a council member proposes to freeze the DAO's agent from the frame: filed 
   await back.getByRole("button", { name: "File in your wallet" }).click();
   await stop.getByText("Not frozen.").waitFor({ timeout: 60_000 });
   assert.equal(sent.length, filedBefore + 2);
-  assert.deepEqual(unexpected, []);
-});
-
-test("a freeze prepared before the page was opened is found by any member: its DAO proposal, who approved and where to vote, or how it ended; unfiled, it is filed from here once", { timeout: 240_000 }, async () => {
-  await page.goto(`${origin}/agents/${target.agent}`);
-  const stop = page.getByRole("region", { name: "Emergency stop" });
-  await visible(stop.getByText("Not frozen."));
-  // Prepared and never filed from this page: as after a reload before filing, or as another member finds it.
-  const prepared = await page.evaluate(async agent =>
-    (await fetch(`/api/agents/${agent}/freeze`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json(), target.agent);
-  assert.equal(prepared.ok, true, JSON.stringify(prepared));
-  const filedBefore = sent.length;
-  const fileIt = stop.getByRole("button", { name: /^File/ });
-
-  // The DAO holds a matching proposal a member filed: its number, where to vote, who approved, and nothing to file.
-  chainProposals = [{ id: 0, status: "InProgress", submission_time: String(BigInt(Date.now()) * 1_000_000n),
-    kind: prepared.value.dao.transaction.actions[0].params.args.proposal.kind, votes: { "alice.near": "Approve", "bob.near": "Reject" } }];
-  await page.reload();
-  const link = stop.getByRole("link", { name: "Vote on it in Trezu" });
-  await visible(link);
-  assert.equal(await link.getAttribute("href"), `https://trezu.app/${dao}/requests/0`);
-  const votes = await stop.getByRole("status", { name: "Votes so far" }).innerText();
-  assert.ok(votes.includes("Approved by alice.near") && !votes.includes("bob.near"), votes);
-  assert.equal(await fileIt.count(), 0, "one already filed is never offered again");
-  assert.deepEqual(await axe(), [], "a freeze waiting for the DAO's vote, filed");
-
-  // The DAO voted it down: said, with the proposal, rather than left as a wait.
-  chainProposals[0]!.status = "Rejected";
-  await page.reload();
-  await visible(stop.getByRole("alert").filter({ hasText: "The DAO's proposal #0 was rejected, so this doesn't take effect." }));
-  assert.equal(await fileIt.count(), 0);
-
-  // Nothing is filed for it: this member's own transaction is offered, filed once, and the freeze takes effect.
-  chainProposals = undefined;
-  await page.reload();
-  await visible(stop.getByText(/^No DAO proposal is filed for this yet\. Your wallet files it/));
-  assert.deepEqual(await axe(), [], "a freeze waiting for the DAO's vote, unfiled");
-  await fileIt.click();
-  await stop.getByText("Frozen: the agent refuses every send.").waitFor({ timeout: 90_000 });
-  assert.equal(sent.length, filedBefore + 1, "filed once, from the member's wallet");
-  assert.deepEqual([sent.at(-1)!.signerId, sent.at(-1)!.receiverId], [council.accountId, dao]);
-
-  await stop.getByRole("button", { name: "Propose to unfreeze" }).click();
-  await dialog("Unfreeze this agent?").getByRole("button", { name: "File in your wallet" }).click();
-  await stop.getByText("Not frozen.").waitFor({ timeout: 90_000 });
   assert.deepEqual(unexpected, []);
 });
 

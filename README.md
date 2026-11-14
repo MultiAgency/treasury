@@ -1,6 +1,6 @@
 # treasury
 
-The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.5.9, pinned to the bytes verified against the final frozen handoff, against the platform's app route (`/apps/v1`).
+The Treasury app for [MultiAgency](https://github.com/MultiAgency/platform): an agent runs an Organization's treasury, and its owner decides what it may do. The owner approves each proposal, or delegates to autopilot under a grant and the signed policy, and can freeze the agent. It's built on [`@multiagency/sdk`](https://www.npmjs.com/package/@multiagency/sdk) 0.6.0, pinned to the exact private candidate in `scripts/sdk-pin.ts`, against the platform's app route (`/apps/v1`).
 
 The owner can also ask the [treasury assistant](docs/assistant.md) about the treasury in plain language: it answers from the agent's own records, each figure citing the read it came from, and drafts a change for the owner to review and sign. It holds no key and sends nothing (#219).
 
@@ -23,7 +23,7 @@ Use the [environment map](docs/deploy.md#environment-map) and [exact target inve
 
 ## Running it locally
 
-This repository uses the exact vendored SDK and matching platform commit described in [the final compatibility handoff](docs/sdk-final-compatibility.md). SDK 0.5.9 is published, and the coordinator verified that the public tarball is byte-identical to this tested pin. The local stack described below simulates provider, chain, signatures and settlement; this does not describe the live service. See the environment map for deployed release state. Use Node 24 for compatibility receipts and pnpm 12.16.1. Use the supplied verified source archive or an isolated exact-commit checkout. GitHub resolves the exact pinned platform commit. For a new isolated checkout (keep shared checkouts unchanged):
+This release uses the exact vendored SDK 0.6.0 and platform pair recorded in `scripts/sdk-pin.ts`: platform source `ff4a17ffa6a0f6055692f9147e147ab01b03a58d`, candidate `78902f135e5f23018bfc3a03ebfa105eb6ebb72ce03fade5720aebeef183b9ea`, SDK SHA-256 `b7c45afaa4a3605eae9bcd9c174e3d1b0fbfb55b8285b2405828a9024f6a9f0c`. This private candidate has local offline and container qualification; hosted qualification and platform-wide acceptance remain open. The [0.5.9 compatibility handoff](docs/sdk-final-compatibility.md) is historical evidence for its own pair. The local stack described below simulates provider, chain, signatures and settlement; this does not describe the live service. See the environment map for deployed release state. Use Node 24 for compatibility receipts and pnpm 12.16.1. Use the supplied verified source archive or an isolated exact-commit checkout. GitHub resolves the exact pinned platform commit. For a new isolated checkout (keep shared checkouts unchanged):
 
 ```sh
 git clone https://github.com/MultiAgency/platform.git /tmp/treasury-platform-final

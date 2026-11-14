@@ -218,10 +218,6 @@ export function ProposalDetail({ reads, id, identity }: { reads: Reads; id: stri
           <p role="status" className="font-medium">{owner} votes to {vote.verdict} this proposal.</p>
           <DaoRequestView request={vote} account={identity.account} onChanged={recheck} approvers={treasury.data?.dao?.approvers} />
         </div>}
-        {/* The DAO's last vote on it ended without a verdict: said, so it doesn't read as if nothing had been asked. */}
-        {dao && verdictOffered(view) && !vote && proposal.data.voteEnded && <p role="alert" className="text-sm">{proposal.data.voteEnded === "expired"
-          ? "The DAO's last vote on this proposal didn't pass in time, so nothing was decided."
-          : "The DAO voted its last proposal on this down, so nothing was decided."} Ask again if a verdict is still wanted.</p>}
         {dao && verdictOffered(view) && !vote && !identity.access.canPropose && <p className="text-sm">A member who may file proposals asks the DAO to approve or reject it.</p>}
         {notice && <div role={notice.tone} aria-atomic="true" className="text-sm">{notice.body}</div>}
         <div className="flex flex-wrap gap-3">

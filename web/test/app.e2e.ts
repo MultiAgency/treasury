@@ -3,10 +3,10 @@
 // with its operator-issued `tap_` credential and serves the app's build (`dist/`). The owner's wallet is near-connect's
 // injected-wallet interface, as the platform's own specs install it (`test/e2e/wallet.mjs`), signing through the stack's
 // `signOwner` control; the stack doesn't publish its chain RPC, so the server's key check is a stand-in for the owner's key.
-import { after, before, test } from "node:test";
+import { after, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { checkStrategyReview } from "./strategy-review.ts";
-import { readFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { join } from "node:path";
@@ -34,18 +34,23 @@ import { tempDir } from "../../scripts/temp-dirs.ts";
 const PLATFORM = process.env.TREASURY_PLATFORM ?? join(import.meta.dirname, "..", "..", "..", "platform");
 // The store the server records through (`main.ts`): a hash chain, checked before the first append.
 const audit = chainedFileAudit(join(tempDir("treasury-proposals-"), "audit.jsonl"));
-/**
- * The account's request limit isn't what this suite tests, and one browser session here loads pages far faster than an
- * owner does: over 1,100 requests in its busiest minute on a fast machine, which a limit of 1,000 answered now and then
- * with "Too many requests from this account", failing whichever test came next. Set out of the suite's reach.
- */
-const OWNER_REQUESTS_PER_MINUTE = 100_000;
 let stack: Awaited<ReturnType<typeof startStack>>, target: Stack, owner: string;
 let server: Server, origin: string, browser: Browser, page: Page;
 /** Requests the page made anywhere but this server and the wallet's boundary: none are expected. */
 const unexpected: string[] = [];
 /** What the owner's wallet was asked to send, in order: it sends nothing on the stack, whose chain takes no transactions. */
 const sent: { signerId: string; receiverId: string; actions: { params: { methodName: string; args: Record<string, unknown>; deposit: string } }[] }[] = [];
+
+// Sixty independent cases share one account and credential. Bound their combined fixture load without
+// making a late case depend on how quickly earlier cases used the production-shaped rate limiters.
+// The traffic assertions below retain a tighter per-case bound so a request loop cannot hide in this capacity.
+const OWNER_SUITE_REQUESTS_PER_MINUTE = 2_000;
+const GATEWAY_SUITE_REQUESTS_PER_HOUR = 3_000;
+const MAX_SUITE_API_REQUESTS = 2_000;
+const MAX_CASE_API_REQUESTS = 150;
+let activeCase = "bootstrap";
+const traffic: { at: number; path: string; test: string; status: number }[] = [];
+beforeEach(t => { activeCase = t.name; });
 
 before(async () => {
   await audit.check();
@@ -55,9 +60,24 @@ before(async () => {
   const state = stack.state();
   owner = state.ownerAccount;
   assert.ok(state.app, "the stack was started with --app");
+  // Supported operator configuration on this fresh simulated gateway; no platform source or limiter is replaced.
+  const credentials = stack.appCredential("list").trim().split("\n");
+  assert.equal(credentials.length, 1, "only this stack's generated app credential");
+  const [credentialId, deployment] = credentials[0]!.split(/\s+/);
+  assert.equal(deployment, state.app.deployment);
+  assert.ok(credentialId);
+  stack.appCredential("limit", credentialId, String(GATEWAY_SUITE_REQUESTS_PER_HOUR));
+  assert.match(stack.appCredential("list"), new RegExp(` ${GATEWAY_SUITE_REQUESTS_PER_HOUR}/h `));
   // The server's origin names its port, so it's listening before it's built.
   let handle: (req: IncomingMessage, res: ServerResponse) => void = (_, res) => { res.writeHead(503).end(); };
-  server = createHttpServer((req, res) => handle(req, res));
+  server = createHttpServer((req, res) => {
+    if (req.url?.startsWith("/api/")) {
+      const entry = { at: Date.now(), path: req.url, test: activeCase, status: 0 };
+      traffic.push(entry);
+      res.once("finish", () => { entry.status = res.statusCode; });
+    }
+    handle(req, res);
+  });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   // localhost, which a browser treats as secure, so the `Secure`, `__Host-` session cookie is kept over plain HTTP.
   origin = `http://localhost:${(server.address() as AddressInfo).port}`;
@@ -66,7 +86,7 @@ before(async () => {
     platform: createPlatform({ origin: state.dashboard, credential: createCredential(state.app.credentialFile), timeoutMs: 15_000, fetch: stackFetch(readFileSync(target.ca)) }),
     signIn: createSignIn({ recipient: new URL(origin).host, ttlMs: 5 * 60_000, perMinute: 100, keyLookup }),
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
-    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: OWNER_REQUESTS_PER_MINUTE, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
+    publicOrigin: origin, deployment: state.app.deployment, trustedProxyHops: 0, ownerRequestsPerMinute: OWNER_SUITE_REQUESTS_PER_MINUTE, audit, consentsPerDay: 100, daoFilingsPerDay: 1_000, keyLookup, daos: standInDaos({}), daoRequests: await createDaoRequests(join(tempDir("treasury-dao-requests-"), "dao-requests.json")),
     page: await loadPage(join(import.meta.dirname, "..", "dist")),
     // The treasury assistant (#219), answered by its deterministic local model: nothing leaves the server in a stack test.
     assistant: createAssistant({ model: rulesModel(), audit: { append: entry => audit.append(entry) }, questionsPerHour: 1_000, platformReadsPerHour: 1_000 }),
@@ -111,6 +131,22 @@ after(async () => {
   await browser?.close().catch(() => {});
   server?.close();
   await stack?.stop();
+  const ownerReads = traffic.filter(entry => entry.path.startsWith("/api/agents/"));
+  let peak = 0, oldest = 0;
+  ownerReads.forEach((entry, index) => {
+    while (ownerReads[oldest]!.at <= entry.at - 60_000) oldest++;
+    peak = Math.max(peak, index - oldest + 1);
+  });
+  const perCase: Record<string, number> = {};
+  for (const entry of traffic) perCase[entry.test] = (perCase[entry.test] ?? 0) + 1;
+  const evidence = { budgets: { ownerPerMinute: OWNER_SUITE_REQUESTS_PER_MINUTE, gatewayPerHour: GATEWAY_SUITE_REQUESTS_PER_HOUR, suiteApiRequests: MAX_SUITE_API_REQUESTS, caseApiRequests: MAX_CASE_API_REQUESTS }, peakOwnerRequestsPerMinute: peak, perCase, traffic };
+  const directory = join(import.meta.dirname, "..", "..", ".test-artifacts", "browser-budget");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "latest.json"), JSON.stringify(evidence, null, 2));
+  console.log("browser request budget", JSON.stringify({ peakOwnerRequestsPerMinute: peak, total: traffic.length, perCase }));
+  assert.ok(traffic.length <= MAX_SUITE_API_REQUESTS, `${traffic.length} API requests exceeded the bounded suite workload`);
+  for (const [name, count] of Object.entries(perCase)) assert.ok(count <= MAX_CASE_API_REQUESTS, `${name}: ${count} API requests exceeded the per-case budget`);
+  assert.deepEqual(traffic.filter(entry => entry.status === 429), [], "a shared fixture budget must not throttle another acceptance case");
 });
 
 const visible = (locator: ReturnType<Page["getByRole"]>) => locator.waitFor({ state: "visible", timeout: 20_000 });
@@ -1703,19 +1739,40 @@ test("a wallet that refuses the edit's signature leaves Review the changes enabl
   assert.equal(await terms.getByRole("button", { name: "Review the changes" }).isEnabled(), true);
 });
 
-test("a refusal because the policy isn't in force links to the Policy page", { timeout: 90_000 }, async () => {
+test("a refusal because the policy isn't in force links to the Policy page", { timeout: 90_000 }, async t => {
+  const requests: { method: string; url: string }[] = [], responses: { status: number; url: string }[] = [], errors: string[] = [];
+  const requested = (request: import("playwright").Request) => { requests.push({ method: request.method(), url: request.url() }); };
+  const responded = (response: import("playwright").Response) => { responses.push({ status: response.status(), url: response.url() }); };
+  const failed = (error: Error) => { errors.push(error.message); };
+  const path = "**/api/agents/*/proposals/*/approve";
+  const refuse = (route: Route) => route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "policy_not_in_force" } });
+  page.on("request", requested);
+  page.on("response", responded);
+  page.on("pageerror", failed);
+  t.after(async () => {
+    page.off("request", requested);
+    page.off("response", responded);
+    page.off("pageerror", failed);
+    await page.unroute(path, refuse);
+  });
   await ensureConnected();
   const made = await propose(`policy-link-${Date.now()}`);
-  await page.route("**/api/agents/*/proposals/*/approve", route => route.fulfill({ status: 409, json: { ok: false, kind: "refused", code: "policy_not_in_force" } }));
-  await page.goto(here(`/proposals/${made.id}`));
-  const state = page.getByRole("region", { name: "Transaction progress" });
-  await state.getByRole("button", { name: "Approve" }).click();
-  await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
-  const link = page.getByRole("link", { name: "Open the Policy page" });
-  await visible(link);
-  await link.click();
-  await visible(page.getByRole("heading", { level: 1, name: "Policy", exact: true }));
-  await page.unroute("**/api/agents/*/proposals/*/approve");
+  await page.route(path, refuse);
+  try {
+    await page.goto(here(`/proposals/${made.id}`));
+    const state = page.getByRole("region", { name: "Transaction progress" });
+    await state.getByRole("button", { name: "Approve" }).click();
+    await dialog("Approve this proposal?").getByRole("button", { name: "Sign and approve" }).click();
+    const link = page.getByRole("link", { name: "Open the Policy page" });
+    await visible(link);
+    await link.click();
+    await visible(page.getByRole("heading", { level: 1, name: "Policy", exact: true }));
+  } catch (error) {
+    // Failure-only reads keep the timing of the failing sequence intact. Record both the rendered state and the real proposal.
+    console.log("policy-link failure", JSON.stringify({ made, url: page.url(), requests, responses, errors, page: await page.locator("body").innerText(),
+      proposal: await page.evaluate(async url => (await fetch(url)).json(), `${origin}/api/agents/${target.agent}/proposals/${made.id}`) }));
+    throw error;
+  }
 });
 
 test("the policy page lists the treasury grant, and the owner revokes it by keyboard, told first what it does: signed once, it reads ended", { timeout: 150_000 }, async () => {

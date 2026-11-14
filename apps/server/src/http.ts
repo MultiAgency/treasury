@@ -8,7 +8,6 @@ import { verifyNep413Signature } from "near-kit";
 import { z } from "zod";
 import { createAgentTokens, memoryTokenRecords, type AgentTokens, type StoredAgentToken } from "./agent-tokens.ts";
 import { creationReviews, type CreationReviews } from "./creation-reviews.ts";
-import { ownerFilings, type OwnerFilings } from "./owner-filings.ts";
 import { ballastSettings, type BallastSettings } from "./ballast.ts";
 import { buildHedge } from "./hedge.ts";
 import type { Intents } from "./intents.ts";
@@ -20,7 +19,7 @@ import type { DaoRequests, StoredAgentRequest, StoredDaoRequest } from "./dao-re
 import { createSettle, type Settle } from "./dao-settle.ts";
 import { actionPhase, awaiting, holdsEach, statusPhase } from "./owner-action.ts";
 import { changesNothing } from "./policy-edit.ts";
-import { memberAccess, type DaoChain, type ProposalsFrom } from "./dao.ts";
+import { memberAccess, type DaoChain } from "./dao.ts";
 import type { KeyLookup } from "./keys.ts";
 import type { Page } from "./page.ts";
 import { checkVerdict, outcomeOf, type Verdict } from "./proposals.ts";
@@ -129,7 +128,7 @@ export type Deps = {
  * What a handler reads: the dependencies, the limits the server keeps across requests, and the DAO filings in flight
  * per agent, so two members' clicks file once.
  */
-type Context = Deps & { settle: Settle; tokens: AgentTokens; strategyProposals: StrategyProposals; creationReviews: CreationReviews; ownerFilings: OwnerFilings; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
+type Context = Deps & { settle: Settle; tokens: AgentTokens; strategyProposals: StrategyProposals; creationReviews: CreationReviews; consentsToday: RateLimit; daoFilingsToday: RateLimit; filing: Map<string, Promise<Filing>>;
   /** The account's owner-route requests a minute (`ownerRequestsPerMinute`), shared with the setup routes, which reach the platform too. */
   requests: RateLimit };
 
@@ -248,8 +247,7 @@ const readId = (value: string | undefined) => value !== undefined && /^[A-Za-z0-
 type OwnerActionInput = Parameters<Platform["owner"]["prepare"]>[2]["action"];
 const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant-revoke" | "policy-update", action: (body: unknown) => OwnerActionInput | undefined): Route => ({
   method: "POST", path, access: "owner-fresh", needs: "file",
-  async handle({ body, account, identity }, context) {
-    const { platform, audit } = context;
+  async handle({ body, account, identity }, { platform, audit }) {
     const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
     const asked = action(body);
     if (asked === undefined) return refused(400, "bad_request");
@@ -270,7 +268,7 @@ const ownerActionRoute = (path: string, audited_: "freeze" | "unfreeze" | "grant
       if (!allowed) return refused(409, "owner_not_allowed");
     }
     await audit.append({ who: account!, action: audited_, agent, stage: "attempt" });
-    const prepared = await preparingForDao(identity!, context, () => relay(() => platform.owner.prepare(organization, agent, { action: asked, signer }), agent));
+    const prepared = await relay(() => platform.owner.prepare(organization, agent, { action: asked, signer }), agent);
     const reply = preparedReply(prepared, { signer, access, agent, what: "owner_action", refusal: "action_refused" });
     await recordResult(audit, { who: account!, action: audited_, agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
     return reply;
@@ -567,40 +565,6 @@ type DaoTarget = { owner: string; host: string; access: contract.Access; agent?:
  * null when the DAO couldn't be read. Null when the DAO's proposal for it ended (rejected, expired or moved): the
  * platform keeps such a request pending until its vote window closes, so it's closed here, and a member may ask again.
  */
-/** Who has approved the DAO's proposal `id`, as Sputnik records it; whether that meets the threshold is the platform's to say. */
-const approversOf = (read: ProposalsFrom, id: number) => {
-  const filed = read.proposals.find(proposal => proposal.id === id);
-  return filed && Object.entries(filed.votes ?? {}).filter(([, vote]) => vote === "Approve").map(([account]) => account).sort();
-};
-
-/** How long a prepared DAO owner action waits for the DAO's next proposal number, once the platform has answered. */
-const DAO_NEXT_GRACE_MS = 1_000;
-/**
- * Prepares a DAO owner action while reading the DAO's next proposal number, and keeps what the platform answered
- * (`ownerFilings`), so the proposal a member files for it can be found by every member. The number is read beside the
- * preparation, never before it, and once the platform has answered it is waited for a second at most: a DAO that can't
- * be read, or is slow, must not hold up a freeze, and the action is then prepared with no filing kept. The read starts
- * before the member is answered, so the proposal they file has that number or a later one.
- */
-async function preparingForDao<Answer extends PreparedAnswer | { ok: false; kind: "unavailable" }>(identity: Admitted, { daos, ownerFilings }: Context, prepare: () => Promise<Answer>): Promise<Answer> {
-  if (identity.signer !== "dao") return prepare();
-  const reading = daos.next(identity.owner).catch(() => "unavailable" as const);
-  const prepared = await prepare();
-  let timer: NodeJS.Timeout | undefined;
-  const next = await Promise.race([reading, new Promise<"unavailable">(resolve => { timer = setTimeout(() => resolve("unavailable"), DAO_NEXT_GRACE_MS); })]);
-  clearTimeout(timer);
-  const dao = prepared.ok ? prepared.value.dao : undefined;
-  const transactions = dao && parse(contract.daoTransactions, { proposal: dao.proposal, proposalAndVote: dao.proposalAndVote ?? null });
-  if (prepared.ok && transactions && next !== "unavailable")
-    ownerFilings.keep({ organization: organizationOf(identity.owner), agent: identity.agent, correlationId: prepared.value.correlationId, expiresAt: prepared.value.expiresAt,
-      filed: { dao: identity.owner, next, transactions } });
-  else if (prepared.ok) {
-    ownerFilings.forget(organizationOf(identity.owner), identity.agent, prepared.value.correlationId);
-    log("dao_owner_filing_unkept", { agent: identity.agent, dao: identity.owner, correlationId: prepared.value.correlationId });
-  }
-  return prepared;
-}
-
 async function daoView(stored: StoredDaoRequest, target: DaoTarget, { daos, daoRequests }: Context) {
   const [policy, read] = await Promise.all([daos.policy(stored.filed.dao), daos.proposals(stored.filed.dao, stored.filed.next)]);
   if (policy === "unavailable" || read === "unavailable") log("dao_unreadable", { agent: target.agent, dao: stored.filed.dao });
@@ -609,7 +573,9 @@ async function daoView(stored: StoredDaoRequest, target: DaoTarget, { daos, daoR
     await daoRequests.close(stored.id, offer.outcome === "Expired" ? "expired" : "rejected");
     return null;
   }
-  const approvedBy = offer && offer.state !== "file" && read !== "unavailable" ? approversOf(read, offer.proposal) : undefined;
+  // Who has approved the DAO's proposal, as Sputnik records it; whether that meets the threshold is the platform's to say.
+  const filed = offer && offer.state !== "file" && read !== "unavailable" ? read.proposals.find(proposal => proposal.id === offer.proposal) : undefined;
+  const approvedBy = filed && Object.entries(filed.votes ?? {}).filter(([, vote]) => vote === "Approve").map(([account]) => account).sort();
   return { id: stored.id, description: stored.description, votingUntil: stored.votingUntil, check: `https://${target.host}/confirm/dao/${stored.id}`,
     ...(stored.kind === "vote" && { verdict: stored.verdict }), offer, ...(approvedBy && { approvedBy }) };
 }
@@ -881,7 +847,7 @@ export const routes: Route[] = [
       if (earlier) return signer === "wallet" && actionPhase(earlier) === "open"
         ? creationReview(identity!, earlier.correlationId, context) : refused(409, "action_pending");
       await audit.append({ who: account!, action: "create", agent, stage: "attempt" });
-      const prepared = await preparingForDao(identity!, context, () => relay(() => platform.creation.prepare(organization, agent, input), agent));
+      const prepared = await relay(() => platform.creation.prepare(organization, agent, input), agent);
       let reply: Reply;
       if (prepared.ok) {
         const { correlationId, expiresAt, intent, confirm, dao } = prepared.value;
@@ -1139,11 +1105,7 @@ export const routes: Route[] = [
       const waiting = open && (await context.settle(open)).result === "pending" ? open : undefined;
       const read = await context.platform.proposals.get(organization, agent, id);
       if (!read.ok) return proposalFailure(read, agent);
-      if (identity!.signer !== "dao") return ok({ proposal: read.value });
-      // Read after the vote's own view, which closes one whose DAO proposal ended and keeps why.
-      const vote = waiting ? await daoView(waiting, identity!, context) : null;
-      const ended = vote ? undefined : context.daoRequests.voteEnded(organization, agent, id);
-      return ok({ proposal: read.value, vote, ...((ended === "expired" || ended === "rejected") && { voteEnded: ended }) });
+      return ok({ proposal: read.value, ...(identity!.signer === "dao" && { vote: waiting ? await daoView(waiting, identity!, context) : null }) });
     },
   },
   readRoute("/api/agents/:agent/account", "account"),
@@ -1515,8 +1477,7 @@ export const routes: Route[] = [
      * Recorded before the platform is asked and after.
      */
     method: "POST", path: "/api/agents/:agent/grant", access: "owner-fresh", needs: "file",
-    async handle({ body, account, identity }, context) {
-      const { platform, audit } = context;
+    async handle({ body, account, identity }, { platform, audit }) {
       const { agent, owner, signer, access } = identity!, organization = organizationOf(owner);
       const input = parse(contract.grantRequest, body);
       if (input === undefined) return refused(400, "bad_request");
@@ -1537,8 +1498,8 @@ export const routes: Route[] = [
         if (!allowed) return refused(409, "owner_not_allowed");
       }
       await audit.append({ who: account!, action: "grant", agent, stage: "attempt" });
-      const prepared = await preparingForDao(identity!, context, () => relay(() => platform.grant.prepare(organization, agent,
-        { action: { type: "grant_issue", label: "treasury", expectedStrategyDigest: input.expectedDigest }, signer }), agent));
+      const prepared = await relay(() => platform.grant.prepare(organization, agent,
+        { action: { type: "grant_issue", label: "treasury", expectedStrategyDigest: input.expectedDigest }, signer }), agent);
       const reply = preparedReply(prepared, { signer, access, agent, what: "grant", refusal: "grant_refused" });
       await recordResult(audit, { who: account!, action: "grant", agent, ...(prepared.ok && { subject: prepared.value.correlationId }), stage: "result", answer: audited(prepared, reply) });
       return reply;
@@ -1600,33 +1561,6 @@ export const routes: Route[] = [
     // Where an owner action stands, by the correlation ID its preparation answered.
     method: "GET", path: "/api/agents/:agent/owner/actions/:id", access: "owner", needs: "read",
     handle: ({ identity, params }, { platform }) => ownerStatus(identity!, params.id, platform.owner.status, { missing: "no_action", forbidden: "not_connected" }),
-  },
-  {
-    /**
-     * The DAO's vote on an owner action (a freeze, an unfreeze, a grant, a revocation, a policy edit, a creation), for
-     * every member the agent admits: the DAO's proposal a member filed for it, where to vote on it and who has approved,
-     * so the members whose votes it needs can find it within its minutes; unfiled, the transaction this member's roles
-     * may file, read from the DAO's own proposals, so one already filed is never offered again; ended, which proposal
-     * and how. Read from the chain, at no cost to the platform. `vote` is null when no filing is kept for the action.
-     */
-    method: "GET", path: "/api/agents/:agent/owner/actions/:id/vote", access: "owner", needs: "read",
-    async handle({ identity, params }, { daos, ownerFilings }) {
-      const id = readId(params.id);
-      if (!id) return refused(400, "bad_request");
-      const { agent, owner, signer, access } = identity!;
-      const filing = signer === "dao" ? ownerFilings.get(organizationOf(owner), agent, id) : undefined;
-      if (!filing) return ok({ vote: null });
-      const votingUntil = Date.parse(filing.expiresAt), { filed } = filing;
-      const [policy, read] = await Promise.all([daos.policy(filed.dao), daos.proposals(filed.dao, filed.next)]);
-      if (policy === "unavailable" || read === "unavailable") {
-        log("dao_unreadable", { agent, dao: filed.dao });
-        return ok({ vote: { votingUntil, offer: null } });
-      }
-      const offer = offerFor(filed, read, policy, access, Date.now());
-      if (offer.state === "ended") return ok({ vote: { votingUntil, offer: null, ended: { proposal: offer.proposal, vote: offer.vote, outcome: offer.outcome } } });
-      const approvedBy = offer.state === "file" ? undefined : approversOf(read, offer.proposal);
-      return ok({ vote: { votingUntil, offer, ...(approvedBy && { approvedBy }) } });
-    },
   },
   autopilotAction("/api/agents/:agent/autopilot/enable", "autopilot-on", "enable", contract.enableRequest,
     (platform, organization, agent, { expectedDigest }) => platform.autopilot.enable(organization, agent, expectedDigest), () => ({})),
@@ -1897,7 +1831,7 @@ export function createServer(deps: Deps) {
   const tokenRequests = createRateLimit({ limit: deps.tokenRequestsPerHour ?? TOKEN_REQUESTS_PER_HOUR, windowMs: 3_600_000 });
   const tokenBudget = createRateLimit({ limit: deps.tokenBudgetPerHour ?? 300, windowMs: 3_600_000 });
   const context: Context = { ...deps, settle: deps.settle ?? createSettle(deps), tokens: deps.agentTokens ?? createAgentTokens(memoryTokenRecords()), strategyProposals: deps.strategyProposals ?? createStrategyProposals(memoryProposalRecords(), { audit: deps.audit }), consentsToday: createRateLimit({ limit: deps.consentsPerDay, windowMs: 86_400_000 }),
-    daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), creationReviews: creationReviews(), ownerFilings: ownerFilings(), filing: new Map(), requests: admissions };
+    daoFilingsToday: createRateLimit({ limit: deps.daoFilingsPerDay, windowMs: 86_400_000 }), creationReviews: creationReviews(), filing: new Map(), requests: admissions };
   return async (req: IncomingMessage, res: ServerResponse) => {
     const send = async ({ status, body, cookie, csv, stream, retryAfterS }: Reply) => {
       if (stream) { await stream(res); return; }

@@ -170,8 +170,8 @@ importers:
   .:
     devDependencies:
       '@multiagency/sdk':
-        specifier: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz
-        version: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)
+        specifier: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz
+        version: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)
       railway:
         specifier: 3.16.0
         version: 3.16.0
@@ -559,13 +559,6 @@ packages:
   '@multiagency/sdk@file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz':
     resolution: {integrity: sha512-8eYfhHT7zZrmCbbGCgfERJn3+XVAg4mY5osH7n8IRM4C5uGF8ZmFlhM4uTrBadYdiWKpoa4fj6plPDBSBdmdkQ==, tarball: file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz}
     version: 0.6.0
-    hasBin: true
-    peerDependencies:
-      zod: ^4.6.5
-
-  '@multiagency/sdk@file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz':
-    resolution: {integrity: sha512-vxV7/oY7yVF/eYlcw9YaoHlwiaJM0DHjTSGQzc/na94MccSHc1xvIfupHyxzleyddl2yzj21VNXFlkDdA1qlSg==, tarball: file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz}
-    version: 0.5.9
     hasBin: true
     peerDependencies:
       zod: ^4.6.5
@@ -3446,12 +3439,6 @@ snapshots:
       three: 0.187.0
 
   '@multiagency/sdk@file:vendor/sdk/candidate-78902f13/multiagency-sdk-0.6.0.tgz(zod@4.6.7)':
-    dependencies:
-      '@ag-ui/core': 1.0.3(zod@4.6.7)
-      '@orpc/contract': 2.0.0-beta.47
-      zod: 4.6.7
-
-  '@multiagency/sdk@file:vendor/sdk/final-252cba1/multiagency-sdk-0.5.9.tgz(zod@4.6.7)':
     dependencies:
       '@ag-ui/core': 1.0.3(zod@4.6.7)
       '@orpc/contract': 2.0.0-beta.47

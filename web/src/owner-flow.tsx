@@ -4,7 +4,6 @@ import { actionPhase, isFinal, outcomeOf, statusText, type OwnerOutcome, type Ow
 import { ErrorBox, errorMessage } from "./shared/ui";
 import { waitingOn } from "./freeze-view";
 import type { Identity, OwnerActionPrepared, Result } from "./server-api";
-import { OwnerActionVote } from "./owner-vote";
 import { refreshPortfolio, type agentReads } from "./queries";
 import { when } from "./ui";
 import { file, signIntent, WrongAccount } from "./wallet";
@@ -73,8 +72,6 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
-  /** A DAO member's filing from here proved to have sent nothing (it failed, or the wallet never sent it): it may be filed again. */
-  const [unfiled, setUnfiled] = useState(false);
   const status = useQuery({
     queryKey: [...reads.ownerActions.queryKey.slice(0, 2), "owner-action", current?.correlationId],
     queryFn: async () => {
@@ -113,19 +110,6 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
     }
   }, [current?.correlationId, outcome]);
 
-  /**
-   * An earlier one this page didn't start (prepared before a reload, in another tab, or by another member) has stopped
-   * waiting: it took effect, failed or lapsed, and nothing here followed it, so what the pages read is read again.
-   */
-  const waited = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (waiting) { waited.current = waiting.correlationId; return; }
-    if (waited.current === undefined) return;
-    const ended = waited.current;
-    waited.current = undefined;
-    if (ended !== current?.correlationId) refresh();
-  }, [waiting?.correlationId]);
-
   const dao = identity.signer === "dao";
   const running = useRef(false);
   const mounted = useRef(true);
@@ -158,14 +142,11 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
           ? "The answer was lost: it may have been submitted. Its status below says; nothing is sent again." : failureText(submitted, "owner-action"));
       } else if (prepared.dao) {
         const outcome = await file(prepared.dao.transaction, identity.account);
-        setUnfiled(outcome.kind === "failed");
         setNotice(outcome.kind === "succeeded" ? filedText(prepared.dao.transaction, when(prepared.expiresAt), "or it expires and nothing takes effect")
           : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Ask again."
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }
     } catch (problem) {
-      // A DAO filing that threw never left the wallet.
-      if (prepared.dao) setUnfiled(true);
       if (submissionAttempted) {
         // A transport can throw after the POST left. Keep the action and read its durable status.
         setError("The answer was lost: it may have been submitted. Its status below says; nothing is sent again.");
@@ -189,7 +170,6 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
     setBusy(true);
     setNotice(undefined);
     setError(undefined);
-    setUnfiled(false);
     const prepared = await prepare();
     if (!prepared.ok) { running.current = false; setBusy(false); setError(failureText(prepared, "owner-action")); refresh(); return; }
     if (reviewWallet && prepared.value.intent) { running.current = false; setBusy(false); setToSign(prepared.value); setReviewEnded(false); return; }
@@ -204,7 +184,6 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
     running.current = true;
     setToFile(undefined);
     setBusy(true);
-    setUnfiled(false);
     setAction(prepared);
     await sendFiled(prepared);
   };
@@ -219,16 +198,12 @@ export function useOwnerFlow<T extends OwnerActionPrepared = OwnerActionPrepared
   };
   const dropSigning = () => { if (!running.current) setToSign(undefined); };
 
-  /** The DAO owner action whose vote is shown: this page's own, or an earlier one waiting for the DAO's vote. */
-  const voting = dao ? action?.correlationId ?? (waiting?.why === "vote" ? waiting.correlationId : undefined) : undefined;
   const progress: ReactNode = <>
     {(waiting || inFlight) && !toFile && <p role="status" className="text-sm text-muted-foreground">{waiting?.why === "vote" ? "Waiting for the vote or signature on an earlier one." : "An earlier one's outcome isn't known yet."} Nothing more of its kind can be sent until it is.</p>}
     {action?.confirm && <p className="text-sm">Sign it on the platform's own page, which shows exactly what you sign: <a className="underline" href={action.confirm.url} target="_blank" rel="noopener noreferrer">open the confirm page</a>. It expires {when(action.confirm.expiresAt)}.</p>}
     {current && <p role="status" className="text-sm">{statusText(status.data, words)}</p>}
     {notice && <p role="status" className="text-sm">{notice}</p>}
     <ErrorBox error={error} />
-    {/* The DAO's vote on it, for every member. One this page prepared is filed above, so it is offered here only once that proved to have sent nothing. */}
-    {voting && !toFile && !busy && <OwnerActionVote reads={reads} account={identity.account} correlationId={voting} mayFile={action === undefined || unfiled} />}
   </>;
   return { start, fileNow, dropFiling, toFile, signNow, dropSigning, toSign, reviewEnded, action: current, outcome, error, notice, busy, holding, waiting, reading: records.reading, recordsError: records.error, progress };
 }

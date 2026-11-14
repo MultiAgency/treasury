@@ -92,16 +92,6 @@ export const daoRequest = z.strictObject({ id: z.string(), description: z.string
   /** The accounts that have voted to approve the DAO's proposal for this request, once it is filed (#262); absent until then. */
   approvedBy: z.array(z.string()).optional() });
 /**
- * The DAO's vote on an owner action a member was handed to file (a freeze, an unfreeze, a grant, a revocation, a policy
- * edit, a creation), for every member: the time it must pass by (ms), the member's offer as for a DAO request (null when
- * the DAO couldn't be read, or once its proposal ended), who has approved it, and, once the DAO's proposal ended
- * without passing, which proposal and how. `vote` is null when this server holds no filing for the action: a wallet
- * owner's, one prepared while the DAO couldn't be read, or one forgotten by a restart.
- */
-export const ownerActionVote = z.strictObject({ vote: z.strictObject({ votingUntil: z.number(), offer: daoOffer.nullable(),
-  approvedBy: z.array(z.string()).optional(),
-  ended: z.strictObject({ proposal: z.number(), vote: z.string(), outcome: z.enum(["Rejected", "Expired", "Moved"]) }).optional() }).nullable() });
-/**
  * What filing a DAO request answers (its consent, or its vote on a proposal): the request, filed now or already open
  * for the same subject. An open vote may carry the other verdict: a member who disagrees votes against it in Trezu.
  */
@@ -113,11 +103,10 @@ export const daoFiled = z.strictObject({ request: daoRequest });
 export const daoAgentRequest = daoRequest.extend({ kind: z.enum(["consent", "vote"]), proposal: proposalId.optional() });
 export const daoAgentRequests = z.strictObject({ requests: z.array(daoAgentRequest) });
 /**
- * One proposal, as the platform shows it, and for a DAO-owned agent the DAO's vote on it while one waits (`vote`), or,
- * when its last vote ended without a verdict and none has been asked for since, why (`voteEnded`: it didn't pass in
- * time, or the DAO voted it down). The list is the SDK's own `proposalList`.
+ * One proposal, as the platform shows it, and for a DAO-owned agent the DAO's vote on it while one waits (`vote`).
+ * The list is the SDK's own `proposalList`.
  */
-export const proposalRead = z.object({ proposal: proposalView, vote: daoRequest.nullable().optional(), voteEnded: z.enum(["expired", "rejected"]).optional() });
+export const proposalRead = z.object({ proposal: proposalView, vote: daoRequest.nullable().optional() });
 /**
  * The agent's live consent for this deployment, if any: what the owner granted and until when (ms since the epoch).
  * For a DAO-owned agent, also its consent request waiting for the vote (`request`), and, when one just ended without

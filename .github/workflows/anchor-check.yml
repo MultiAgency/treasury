@@ -2,10 +2,8 @@ name: Audit anchor check
 
 # The outside check A7.3 needs (#55), away from the server: every anchor FastData KV lists under the key, each confirmed
 # on chain by its transaction, the sequence never going back, and the newest anchor no older than a heartbeat and two
-# intervals. It runs hourly by the anchor clock (`anchor-clock.yml`), which starts it; its own schedule is the fallback
-# should the clock stop, and GitHub delivers that hours late. The optional success heartbeat lets an outside service
-# notice missing checks. Which anchors it checks comes from repository variables, so moving from testnet to mainnet
-# changes no code.
+# intervals. GitHub scheduling is best effort; the optional success heartbeat lets an outside service notice missing
+# checks. Which anchors it checks comes from repository variables, so moving from testnet to mainnet changes no code.
 on:
   schedule:
     - cron: "17 * * * *"

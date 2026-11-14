@@ -247,10 +247,6 @@ test("a DAO's creation is its vote: a member who may file gets the proposal to f
     const created = contract.creation.parse(body.value);
     assert.equal(created.confirm, undefined);
     assert.deepEqual(created.dao, { transaction: daoTransaction(DAO, created.correlationId.padStart(64, "c"), voteOn) }, who.accountId);
-    // The creation's filing is kept, so every member reads its vote: unfiled, this member's own transaction again; a reader's, nothing to file.
-    const vote = (as: ReturnType<typeof wallet>) => signIn(as).then(cookie => call("GET", `/api/agents/dao-new/owner/actions/${created.correlationId}/vote`, { cookie })).then(json);
-    assert.deepEqual((await vote(who)).body.value.vote.offer, { state: "file", transaction: created.dao!.transaction }, who.accountId);
-    assert.deepEqual((await vote(reader)).body.value.vote.offer, { state: "file", transaction: null });
   }
   const refused = await json(await call("POST", "/api/agents/dao-new/creation", { cookie: await signIn(reader), body: {} }));
   assert.deepEqual([refused.status, refused.body], [403, { ok: false, kind: "refused", code: "not_permitted" }]);

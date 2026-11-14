@@ -51,12 +51,6 @@ export function agentReads(name: string) {
     policyHistory: queryOptions({ queryKey: [...key, "policy-history"], queryFn: async () => answered(await agent.policyHistory()), retry: false, staleTime: 60_000 }),
     runs: queryOptions({ queryKey: [...key, "runs"], queryFn: async () => answered(await agent.runs()), retry: false }),
     ownerActions: queryOptions({ queryKey: [...key, "owner-actions"], queryFn: async () => answered(await agent.ownerActions()), retry: false, staleTime: 30_000 }),
-    /**
-     * The DAO's vote on one owner action, which the server reads from the DAO's own proposals at no cost to the platform:
-     * read again every ten seconds while the vote is open, since the members whose votes it needs have only minutes.
-     */
-    ownerVote: (id: string) => queryOptions({ queryKey: [...key, "owner-actions", id, "vote"], queryFn: async () => answered(await agent.ownerActionVote(id)).vote, retry: false, staleTime: 5_000,
-      refetchInterval: query => query.state.data && !query.state.data.ended ? 10_000 : false }),
     /** The stabilization agent's latest record (#220), from the server's own audit log: no platform read, no computation. */
     risk: queryOptions({ queryKey: [...key, "risk"], queryFn: async () => answered(await agent.risk()).risk, retry: false, staleTime: 30_000 }),
     /** What the stabilization agent has been doing (#220): its recent records and whether watch runs it, from the server's own log. */
