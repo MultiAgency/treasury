@@ -38,3 +38,24 @@ test('other contract calls, arguments and unfinalized reads are refused without 
   await assert.rejects(readOwnershipQuery(request,never));
  }
 });
+const signerKey=(args:object)=>({jsonrpc:'2.0',id:'key',method:'query',params:{request_type:'call_function',finality:'final',account_id:'v1.signer',method_name:'derived_public_key',args_base64:Buffer.from(JSON.stringify(args)).toString('base64')}});
+test('the chain status and v1.signer key for a DAO reach the pinned read-only RPC',async()=>{
+ for(const request of [{jsonrpc:'2.0',id:'s',method:'status',params:[]},signerKey({path:'agent-owner',predecessor:'agentic.sputnik-dao.near',domain_id:1})]){
+  const forwarded=await readOwnershipQuery(request,async(url,options)=>{
+   assert.equal(url,'https://free.rpc.fastnear.com');
+   const sent=JSON.parse(String(options?.body));
+   assert.equal(sent.method,request.method);assert.deepEqual(sent.params,request.params);
+   return new Response(JSON.stringify({result:{}}));
+  });
+  assert.deepEqual(forwarded,{result:{}});
+ }
+});
+test('other v1.signer calls, key arguments and status parameters are refused without a request',async()=>{
+ const never=async()=>{throw Error('no request expected');};
+ const key={path:'agent-owner',predecessor:'agentic.sputnik-dao.near',domain_id:1};
+ for(const request of [{method:'status',params:['x']},signerKey({...key,domain_id:0}),signerKey({path:'agent-owner',predecessor:'agentic.sputnik-dao.near'}),signerKey({...key,extra:1}),
+  signerKey({...key,predecessor:'Not An Account'}),{...signerKey(key),params:{...signerKey(key).params,method_name:'sign'}},
+  {...signerKey(key),params:{...signerKey(key).params,account_id:'agentic.sputnik-dao.near'}},{...daoView('get_policy'),params:{...daoView('get_policy').params,account_id:'v1.signer'}}]){
+  await assert.rejects(readOwnershipQuery(request,never));
+ }
+});

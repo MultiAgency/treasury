@@ -28,13 +28,29 @@ function daoViewArgs(method:string,argsBase64:unknown){
   &&Number.isSafeInteger(args.from_index)&&args.from_index>=0&&Number.isSafeInteger(args.limit)&&args.limit>=1&&args.limit<=100;
 }
 
-/** Ownership and DAO reads only: access keys, and a DAO's policy and proposals. Transaction methods and other contract calls are refused. */
+/** `v1.signer`'s key for a DAO: exactly a path, the DAO as predecessor, and the Ed25519 domain. */
+function derivedKeyArgs(argsBase64:unknown){
+ if(typeof argsBase64!=='string')return false;
+ let args:any;try{args=JSON.parse(Buffer.from(argsBase64,'base64').toString('utf8'));}catch{return false;}
+ return args!==null&&typeof args==='object'&&Object.keys(args).sort().join()==='domain_id,path,predecessor'&&args.domain_id===1
+  &&typeof args.path==='string'&&args.path.length>0&&args.path.length<=64&&typeof args.predecessor==='string'&&/^([a-z0-9]+[._-])*[a-z0-9]+$/.test(args.predecessor);
+}
+
+/**
+ * Ownership and DAO reads only: access keys, a DAO's policy and proposals, `v1.signer`'s key for a DAO, and the chain's
+ * status (where a DAO's signature search starts). Transaction methods and other contract calls are refused.
+ */
 export async function readOwnershipQuery(request: any,fetcher:typeof fetch=fetch){
+ if(request?.method==='status'&&(request.params===undefined||Array.isArray(request.params)&&request.params.length===0)){
+  const response=await fetcher('https://free.rpc.fastnear.com',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(10000),body:JSON.stringify({jsonrpc:'2.0',id:request.id,method:'status',params:[]})});
+  if(!response.ok)throw Error('Ownership RPC unavailable');return response.json();
+ }
  const p=request?.params;
  if(request?.method!=='query'||!p||p.finality!=='final'||typeof p.account_id!=='string'||!/^([a-z0-9]+[._-])*[a-z0-9]+$/.test(p.account_id))throw Error('Unsupported ownership query');
  const allowed=p.request_type==='view_access_key'&&typeof p.public_key==='string'
-  ||p.request_type==='call_function'&&typeof p.method_name==='string'&&daoViewArgs(p.method_name,p.args_base64);
- if(!allowed)throw Error('Only access-key and DAO policy and proposal reads are supported');
+  ||p.request_type==='call_function'&&p.account_id==='v1.signer'&&p.method_name==='derived_public_key'&&derivedKeyArgs(p.args_base64)
+  ||p.request_type==='call_function'&&p.account_id!=='v1.signer'&&typeof p.method_name==='string'&&daoViewArgs(p.method_name,p.args_base64);
+ if(!allowed)throw Error('Only access-key, DAO, v1.signer key and status reads are supported');
  const response=await fetcher('https://free.rpc.fastnear.com',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(10000),body:JSON.stringify({jsonrpc:'2.0',id:request.id,method:'query',params:p})});
  if(!response.ok)throw Error('Ownership RPC unavailable');return response.json();
 }
