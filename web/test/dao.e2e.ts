@@ -141,6 +141,11 @@ const fileButton = (scope: ReturnType<Page["getByRole"]>) => scope.getByRole("bu
 test("a council member asks the DAO to connect the agent, files its proposal from their wallet, and the page shows it connected once the vote passes", { timeout: 120_000 }, async () => {
   await page.goto(`${origin}/agents/${target.agent}`);
   await page.getByRole("button", { name: "Sign in with wallet" }).click();
+  // Keep the real connector popup open so its accessible names cannot escape the scan through close timing.
+  await page.locator(".settings-button").waitFor({ state: "visible" });
+  const walletNames = await new AxeBuilder({ page }).withRules(["button-name"]).analyze();
+  console.log("wallet popup name evidence", JSON.stringify(walletNames.violations));
+  assert.deepEqual(walletNames.violations, [], "wallet selector buttons have accessible names while open");
   await page.getByText("Local test wallet", { exact: true }).click();
   await visible(page.getByText(`Signed in as ${council.accountId}`));
   const connection = page.getByRole("region", { name: "Connection" });
