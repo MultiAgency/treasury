@@ -4,17 +4,17 @@ The Treasury app has two operating lanes: **live/mainnet** and **synthetic stagi
 
 ## Environment map
 
-Verified November 12, 2026 (America/New_York); the app commits and the staging platform API were observed again on November 14, after the release of `3a43489` to both lanes. This is an observed snapshot; inspect Railway and runtime origins again before any deployment or configuration change.
+Verified November 12, 2026 (America/New_York); the app commits and the staging platform API were observed again on November 14, after the release of `bdd4617` to both lanes. This is an observed snapshot; inspect Railway and runtime origins again before any deployment or configuration change.
 
 | Lane | Treasury host | Platform API | Funds | Railway environment | Observed app commit |
 | --- | --- | --- | --- | --- | --- |
-| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `3a43489` |
-| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `persistent-synthetic-gateway-staging.up.railway.app` | Synthetic fixtures | `staging` | `3a43489` |
+| Live | `treasury.multiagency.ai` (configured sign-in/write origin) | `api.dev.multiagency.ai` | Real mainnet | `production` | `bdd4617` |
+| Synthetic staging | `treasury.dev.multiagency.ai` (configured sign-in/write origin) | `persistent-synthetic-gateway-staging.up.railway.app` | Synthetic fixtures | `staging` | `bdd4617` |
 
 The hostname convention is **live at `treasury.multiagency.ai`, synthetic staging at `treasury.dev.multiagency.ai`**. Both DNS/TLS routes and configured sign-in/write origins are active and verified. Each app rejects the other environment's write Origin. The Railway staging hostname remains a diagnostic alias; it is not the accepted write Origin and does not identify another environment.
 
 `TREASURY_PUBLIC_ORIGIN` controls the sign-in recipient and accepted write Origin. HTTPS health alone is insufficient: verify the challenge recipient and rejection of the former/cross-environment Origin after each cutover. Existing sessions need a fresh sign-in after app restart. The hostname migration preserves the platform API, credentials, source versions and financial state in each environment.
-The live watch file currently contains two Ballast entries and no risk blocks. The staging watch file is empty and its synthetic agent is frozen. A missing `risk` block only means automatic risk assessment is off; it does not establish that the Ballast proposer is off. Do not infer automation state from the risk card or a filename alone. These counts describe configuration, not proof that each tick succeeds.
+The live watch file contains two Ballast entries, each with a risk block (November 14). The staging watch file contains one Ballast entry with a risk block, for `harrydhillon--near`'s agent; the synthetic `portfolio` agent is frozen and not watched. A missing `risk` block only means automatic risk assessment is off; it does not establish that the Ballast proposer is off. Do not infer automation state from the risk card or a filename alone. These counts describe configuration, not proof that each tick succeeds.
 
 The app service ID is shared across Railway environments, so **service ID alone is insufficient deployment scope**. The live app volume, staging app volume and synthetic platform volume are separate. Never duplicate the live environment's credentials or volume contents into staging.
 
