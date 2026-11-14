@@ -42,3 +42,36 @@ test("explicit sign-in still opens the wallet chooser", async () => {
   await h.sign(request, { chooseWallet: true });
   assert.deepEqual(h.counts(), { connections: 1, signatures: 1 });
 });
+
+// The creation and grant intent signer, run the same way.
+const intentEntry = source.slice(source.indexOf("export async function signIntent("), source.indexOf("/**\n * A DAO acting through Trezu"));
+const intentJs = stripTypeScriptTypes(intentEntry.replaceAll("export ", "").replace(": NonNullable<GrantPrepared[\"intent\"]>", "").replace(": string", "").replace(": () => Promise<void>", ""));
+function intentHarness(accounts: { accountId: string }[] | null, signedAs = "owner.near") {
+  let connections = 0;
+  let signatures = 0;
+  const wallet = {
+    connect: async () => { connections++; },
+    connector: { getConnectedWallet: async () => {
+      if (accounts === null) throw new Error("No wallet selected");
+      return { accounts, wallet: { signMessage: async () => { signatures++; return { accountId: signedAs, publicKey: "key", signature: "signature" }; } } };
+    } },
+  };
+  const signIntent = new Function("wallet", "fromBase64", `${intentJs}; return signIntent;`)(wallet, () => new Uint8Array());
+  return { signIntent, counts: () => ({ connections, signatures }) };
+}
+const intent = { payload: { message: "agent_create", recipient: "platform.example", nonce: "AA==" } };
+
+test("creation signing reuses an existing wallet even when it exposes multiple accounts", async () => {
+  for (const accounts of [[{ accountId: "owner.near" }], [{ accountId: "other.near" }, { accountId: "owner.near" }]]) {
+    const h = intentHarness(accounts);
+    assert.equal((await h.signIntent(intent, "owner.near")).signature, "signature");
+    assert.deepEqual(h.counts(), { connections: 0, signatures: 1 });
+  }
+});
+test("creation signing refuses a wallet without the owner, or a signature by another account", async () => {
+  const absent = intentHarness([{ accountId: "other.near" }]);
+  await assert.rejects(absent.signIntent(intent, "owner.near"), /not the owner owner\.near\. Nothing was signed/);
+  assert.deepEqual(absent.counts(), { connections: 0, signatures: 0 });
+  const other = intentHarness([{ accountId: "owner.near" }, { accountId: "other.near" }], "other.near");
+  await assert.rejects(other.signIntent(intent, "owner.near"), /signed as other\.near, not the owner owner\.near\. Nothing was sent/);
+});
