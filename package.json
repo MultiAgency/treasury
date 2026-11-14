@@ -16,7 +16,7 @@
     "backtest:stabilization": "node scripts/stabilization-backtest.ts run",
     "verify:sdk": "node scripts/verify-sdk.ts",
     "test:compatibility": "node scripts/test-compatibility.ts",
-    "typecheck:staging": "tsc -p staging",
+    "typecheck:staging": "tsc -p staging && tsc -p staging/tsconfig.money.json",
     "test:staging": "node staging/run-acceptance.mjs"
   },
   "packageManager": "pnpm@12.16.1",

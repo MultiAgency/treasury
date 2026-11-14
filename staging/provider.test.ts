@@ -43,7 +43,8 @@ test('HTTP create verifies owner signature, refuses changed terms, and retains a
   assert.equal((await execute()).status,200);
   const settled=await(await fetch(base+'/v1/status?correlation_id=swap-1')).json();
   assert.equal(settled.status,'SUCCESS');
-  assert.equal(store.read('agent',agent).balances[usdc],'9000000');
+  const persisted=store.read('agent',agent);assert.ok(persisted);
+  assert.equal(persisted.balances[usdc],'9000000');
 
   await stop();store=new SyntheticStore(path);base=await start();
   assert.equal((await post('/v1/submit-intent',body)).status,409);
@@ -99,7 +100,8 @@ test('starting funds credit a new agent once, as a synthetic deposit in its hist
   assert.equal((await post('/v1/submit-intent',body)).status,200);
   assert.equal((await post('/v1/submit-intent',body)).status,409);
   const agent=(await (await fetch(base+`/v1/status?correlation_id=${body.correlation_id}`)).json()).details.agent_id;
-  assert.equal(store.read('agent',agent).balances[usdc],'10000000');
+  const persisted=store.read('agent',agent);assert.ok(persisted);
+  assert.equal(persisted.balances[usdc],'10000000');
   const history=await (await fetch(base+`/v1/agents/${agent}/history`)).json();
   assert.deepEqual(history.data.map((row:any)=>[row.type,row.details.deposit_tx_hash]),[['deposit',`synthetic-starting-${agent}`]]);
  }finally{await new Promise<void>(r=>server.close(()=>r()));store.close();rmSync(dir,{recursive:true,force:true});}

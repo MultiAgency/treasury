@@ -3,6 +3,7 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from 'node:crypt
 import { depositView,depositTransaction,auditEvents } from './evidence.mjs';
 import { tokens,operationView,policyView } from './views.mjs';
 import {assetPrices,quote} from './policy.mjs';
+import type { Intent } from './types.ts';
 import type {SyntheticStore} from './store.mjs';
 import { verifyOwner } from './verify-owner.ts';
 import type { KeyLookup } from '../apps/server/src/keys.ts';
@@ -53,7 +54,7 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead,st
     if(body.owner?.type!=='near'||(body.type==='agent_create'&&!body.policy?.actions?.includes('swap')))return send(400,{error:'Unsupported synthetic owner or policy'});
     if(await lookup(body.owner.account_id,body.owner.public_key)!=='full')return send(403,{error:'Full-access owner key required'});
     const id=randomUUID(),expiresAt=Date.now()+300000;
-    const intent={status:'PENDING_SIGNATURE',expiresAt,type:body.type,owner:body.owner,request:body,
+    const intent:Intent={status:'PENDING_SIGNATURE',expiresAt,type:body.type,owner:body.owner,request:body,
      payload:{message:JSON.stringify(body),recipient,nonce:randomBytes(32).toString('base64')}};
     store.create('intent',id,intent);
     return send(200,{correlation_id:id,type:body.type,signer:body.owner,expires_at:new Date(expiresAt).toISOString(),intent:{standard:'nep413',payload:intent.payload},preview:{summary:'Create an isolated synthetic Treasury'}});
@@ -71,6 +72,7 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead,st
     });
     else store.completeIntent(body.correlation_id,intent,{agent_id:intent.request.agent_id},()=>{
      const agent=store.read('agent',intent.request.agent_id);
+     if(!agent)throw Error('Unknown agent');
      if(intent.type==='grant_issue')agent.grants.push({grant_id:id,agent_id:agent.id,wallet_id:agent.wallet.wallet_id,label:intent.request.label??'treasury',issued_at:new Date().toISOString(),credential:intent.request.credential,expires_at:intent.request.expires_at,revoked_at:null,revoked_reason:null,owner_epoch:1,
       owner_message:{domain:'near-intents-agent-api.agent-grant.v6',owner:agent.owner,tenant_id:'synthetic',agent_id:agent.id,wallet_id:agent.wallet.wallet_id,label:intent.request.label??'treasury',credential:intent.request.credential,network:'mainnet',issued_at_ms:Date.now(),expires_at_ms:Date.parse(intent.request.expires_at),owner_epoch:1,nonce:intent.payload.nonce,recipient:intent.payload.recipient}});
      else {agent.frozen=intent.type==='agent_freeze';agent.policy.frozen=agent.frozen;}
@@ -79,9 +81,11 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead,st
     return send(200,{correlation_id:body.correlation_id,status:'SUCCESS'});
    }
    if(req.method==='GET'&&url.pathname==='/v1/status'){
-    const operation=store.operation(url.searchParams.get('correlation_id'));
+    const correlationId=url.searchParams.get('correlation_id');
+    if(correlationId===null)return send(404,{error:'Unknown operation'});
+    const operation=store.operation(correlationId);
     if(operation)return send(200,operationView(JSON.parse(String(operation.result))));
-    const intent=store.read('intent',url.searchParams.get('correlation_id'));
+    const intent=store.read('intent',correlationId);
     return intent?send(200,{correlation_id:url.searchParams.get('correlation_id'),type:intent.type,status:intent.status,agent_id:intent.result?.agent_id??intent.request.agent_id??null,details:intent.result??null}):send(404,{error:'Unknown operation'});
    }
    const match=/^\/v1\/agents\/([a-f0-9]{64})(\/.*)?$/.exec(url.pathname);
@@ -110,13 +114,13 @@ export function providerServer({store,lookup,recipient,controlToken,chainRead,st
    if(agent&&req.method==='POST'&&route==='/swap'){
     const token=req.headers['x-grant-token'];
     const commitment=typeof token==='string'?createHash('sha256').update(token).digest('hex'):null;
-    if(!agent.grants.some((g:any)=>g.credential===commitment&&!g.revoked_at&&Date.parse(g.expires_at)>Date.now()))return send(403,{error:'Live grant required'});
-    if(agent.frozen||!agent.policy.actions.includes('swap')||agent.policy.owner_approval!==false)return send(403,{error:'Policy refuses unattended swap'});
+    if(!agent.grants.some(g=>g.credential===commitment&&!g.revoked_at&&Date.parse(g.expires_at)>Date.now()))return send(403,{error:'Live grant required'});
+    if(agent.frozen||!agent.policy.actions?.includes('swap')||agent.policy.owner_approval!==false)return send(403,{error:'Policy refuses unattended swap'});
     const from=body.origin_asset,to=body.destination_asset;
     const assets={USDC:'nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1',NEAR:'nep141:wrap.near'};
     if(!Object.hasOwn(assetPrices,from)||!Object.hasOwn(assetPrices,to)||from===to||body.confidential!==true||!/^[1-9][0-9]*$/.test(body.amount))return send(400,{error:'Unsupported synthetic swap'});
     if(agent.policy.assets!=='any'&&(!agent.policy.assets?.includes(from)||!agent.policy.assets?.includes(to)))return send(403,{error:'Asset outside policy'});
-    if(agent.policy.timelock_ms>0)return send(403,{error:'Synthetic timelock execution is unsupported'});
+    if((agent.policy.timelock_ms??0)>0)return send(403,{error:'Synthetic timelock execution is unsupported'});
     const cap=agent.policy.limits?.per_transaction?.[from];
     if(cap!=null&&BigInt(body.amount)>BigInt(cap))return send(403,{error:'Transaction cap exceeded'});
     // Synthetic fixed quote: 1 wNEAR = 2 USDC. These are test prices, never market data.
