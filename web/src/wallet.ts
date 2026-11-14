@@ -29,29 +29,37 @@ export async function sign({ message, recipient, nonce }: SignRequest, { chooseW
 export type MemberTransaction = NonNullable<Extract<NonNullable<DaoRequest["offer"]>, { state: "file" }>["transaction"]>;
 
 /**
- * Sends a DAO member's filing from their wallet, connecting it first, only when the connected account is `member`, the
- * account signed in here (else it throws, having sent nothing). Only a success the wallet reports proves it executed; a
- * failure reverted it whole, so nothing was filed.
+ * Sends a DAO member's filing from their wallet, connecting it only when none is, only when its first account is
+ * `member`, the account signed in here (else it throws, having sent nothing). Only a success the wallet reports proves it
+ * executed; a failure reverted it whole, so nothing was filed.
  */
 export async function file(transaction: MemberTransaction, member: string): Promise<TransactionOutcome> {
-  if ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
-  const problem = signerProblem((await wallet.connector.getConnectedWallet()).accounts[0]?.accountId, member);
+  const problem = signerProblem((await connectedWallet()).accounts[0]?.accountId, member);
   if (problem) throw new WrongAccount(problem);
   return transactionOutcome(await wallet.send(transaction));
 }
 
 /**
- * Signs a grant's NEP-413 intent exactly as the platform prepared it, in the owner's wallet, connecting it first: only as
- * `owner` (else it throws, having signed nothing). Answers the intent with the key that signed it and its signature.
+ * Signs a grant's NEP-413 intent exactly as the platform prepared it, in the owner's wallet, connecting it only when none
+ * is: only when `owner` is a connected account (else it throws, having signed nothing), and answers it only when `owner`
+ * signed (else it throws, having sent nothing). Answers the intent with the key that signed it and its signature.
  */
 export async function signIntent(intent: NonNullable<GrantPrepared["intent"]>, owner: string, beforeSign?: () => Promise<void>) {
-  if ((await wallet.connector.getConnectedWallet().catch(() => null))?.accounts.length !== 1) await wallet.connect();
-  const { wallet: connected, accounts } = await wallet.connector.getConnectedWallet();
-  if (accounts[0]?.accountId !== owner) throw new WrongAccount(`Your wallet is connected as ${accounts[0]?.accountId ?? "no account"}, not the owner ${owner}. Nothing was signed. Switch the wallet to ${owner}.`);
+  const { wallet: connected, accounts } = await connectedWallet();
+  if (!accounts.some(({ accountId }) => accountId === owner)) throw new WrongAccount(`Your wallet is connected as ${accounts.map(({ accountId }) => accountId).join(", ") || "no account"}, not the owner ${owner}. Nothing was signed. Switch the wallet to ${owner}.`);
   // A review may become stale while the wallet connects. Recheck after connecting, immediately before signing.
   await beforeSign?.();
   const signed = await connected.signMessage({ ...intent.payload, nonce: fromBase64(intent.payload.nonce) });
+  if (signed.accountId !== owner) throw new WrongAccount(`Your wallet signed as ${signed.accountId}, not the owner ${owner}. Nothing was sent. Sign with ${owner}.`);
   return { ...intent, public_key: signed.publicKey, signature: signed.signature };
+}
+
+/** The wallet's connection, reused when it has any account (a wallet may expose several); connects only when it has none. */
+async function connectedWallet() {
+  const session = await wallet.connector.getConnectedWallet().catch(() => null);
+  if (session?.accounts.length) return session;
+  await wallet.connect();
+  return wallet.connector.getConnectedWallet();
 }
 
 /** The wallet is connected as another account than the member signed in: nothing was sent. */
