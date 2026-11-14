@@ -48,8 +48,8 @@ jobs:
         with:
           persist-credentials: false
           repository: MultiAgency/platform
-          # Final combined SDK 0.5.9 offline-consumer handoff; sdk-pin.ts verifies source bytes and provenance.
-          ref: 252cba1d1e6642a5ea9f42ea4927f982423ed8e1
+          # Exact SDK 0.6.0 source; sdk-pin.ts verifies source bytes and provenance.
+          ref: ff4a17ffa6a0f6055692f9147e147ab01b03a58d
           path: platform
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
