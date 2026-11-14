@@ -14,7 +14,6 @@ import type { TransactionOutcome } from "./wallet-transaction";
 import { agentAddress, DAO_TITLE, ROOT_TITLE } from "./pages";
 import { creationWords, failureText } from "./words";
 import { useOwnerFlow, useWaiting } from "./owner-flow";
-import { OwnerActionVote } from "./owner-vote";
 import { creationMatches, sameCreation } from "./creation-review";
 
 const agentLink = (agent: string) => `/agents/${encodeURIComponent(agent)}`;
@@ -364,8 +363,6 @@ function DaoCreation({ reads, identity }: { reads: Reads; identity: Identity }) 
                 ? <>A creation of this agent is already waiting for the DAO's vote. Its deadline is {when(earlier.expiresAt)}.</>
                 : "An earlier creation's outcome is still unknown. Another creation cannot be prepared yet."}</p>
               <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly." : statusText(status.data, creationWords)}</p>
-              {/* Prepared before this page was opened, or by another member: the DAO's own record says whether it is filed, so it can be filed from here if it isn't. */}
-              {earlier.why === "vote" && <OwnerActionVote reads={reads} account={identity.account} correlationId={earlier.correlationId} mayFile />}
             </>
             : canFile ? <Button disabled={busy} onClick={create}>{busy ? "Preparing…" : "Create the agent"}</Button>
             : <p className="text-sm">A member who may file proposals asks the DAO.</p>}
@@ -379,8 +376,6 @@ function DaoCreation({ reads, identity }: { reads: Reads; identity: Identity }) 
             </>}
             <p role="status">{status.isError ? "Its status couldn't be read just now; reading again shortly."
               : statusText(status.data, creationWords)}</p>
-            {/* The DAO's vote on it, for the members whose votes it needs. This page files it above, so nothing is offered for filing here. */}
-            {created.dao && <OwnerActionVote reads={reads} account={identity.account} correlationId={created.correlationId} mayFile={false} />}
             {(outcome === "expired" || outcome === "failed") && <Button variant="outline" disabled={busy} onClick={create}>Create it again</Button>}
           </>}
         {notice && <p role="status" className="text-sm">{notice}</p>}

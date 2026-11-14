@@ -3,7 +3,6 @@ import {join} from 'node:path';
 import {SyntheticStore} from './store.mjs';
 import {providerServer} from './provider.ts';
 import {walletLookup,readOwnershipQuery} from './ownership.ts';
-import {USDC} from './policy.mjs';
 
 if(process.env.STAGING_SYNTHETIC!=='true')throw Error('Explicit synthetic mode is required');
 if(process.env.NEAR_INTENTS_AGENT_API_KEY||process.env.TREASURY_CREDENTIAL_FILE)throw Error('Use an isolated environment without platform credentials');
@@ -18,9 +17,7 @@ if(!existsSync(marker)){
 }
 if(readFileSync(marker,'utf8')!=='persistent-synthetic-provider-v1\n')throw Error('Unknown synthetic volume format');
 const store=new SyntheticStore(join(data,'state.sqlite'));
-// 10 synthetic USDC: the amount the full journey funds before its first proposal.
-const startingFunds={asset:USDC,amount:'10000000'};
-const server=providerServer({store,lookup:walletLookup(),chainRead:readOwnershipQuery,recipient:origin.host,controlToken:process.env.STAGING_CONTROL_TOKEN??'',startingFunds});
+const server=providerServer({store,lookup:walletLookup(),chainRead:readOwnershipQuery,recipient:origin.host,controlToken:process.env.STAGING_CONTROL_TOKEN??''});
 server.listen(Number(process.env.PORT??3000),'0.0.0.0',()=>console.log(JSON.stringify({ready:true,synthetic:true,origin:origin.origin})));
 let stopping=false;
 for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{

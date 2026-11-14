@@ -1073,15 +1073,10 @@ test("a vote whose DAO proposal was rejected is closed, and a member may ask for
   fileOnChain(fake.daoVotes[0]!.id, "Rejected");
   const { body } = await json(await call("GET", `/api/agents/dao-treasury/proposals/${id}`, { cookie }));
   assert.equal(body.value.vote, null);
-  assert.equal(body.value.voteEnded, "rejected", "said, rather than the vote just vanishing");
   assert.equal(daoRequests.vote(DAO_ORG, "dao-treasury", id), undefined, "closed");
-  assert.equal((await json(await call("GET", `/api/agents/dao-treasury/proposals/${id}`, { cookie }))).body.value.voteEnded, "rejected", "kept until another vote is asked for");
   const again = await json(await call("POST", `/api/agents/dao-treasury/proposals/${id}/approve`, { cookie, body: {} }));
   assert.equal(again.status, 200, JSON.stringify(again.body));
   assert.equal(fake.daoVotes.length, 2, "filed anew");
-  const reread = (await json(await call("GET", `/api/agents/dao-treasury/proposals/${id}`, { cookie }))).body.value;
-  assert.ok(reread.vote, "the new vote is what is shown");
-  assert.equal(reread.voteEnded, undefined);
 });
 
 test("a DAO whose next proposal number can't be read files nothing; one whose proposals can't be read shows the request without an offer", async t => {

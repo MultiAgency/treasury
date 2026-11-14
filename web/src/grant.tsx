@@ -5,7 +5,6 @@ import { Button, ErrorBox, errorMessage, Spinner } from "./shared/ui";
 import { isFinal, outcomeOf, statusText } from "../../apps/server/src/owner-action.ts";
 import { FromAssistant } from "./assistant-note";
 import { useWaiting } from "./owner-flow";
-import { OwnerActionVote } from "./owner-vote";
 import { forgetGrant, keepGrant, keptGrant } from "./kept-outcomes";
 import { PageLink } from "./nav";
 import { agentAddress } from "./pages";
@@ -34,8 +33,6 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
-  /** A DAO member's filing from here proved to have sent nothing (it failed, or the wallet never sent it): it may be filed again. */
-  const [unfiled, setUnfiled] = useState(false);
   const status = useQuery({
     queryKey: [...reads.strategy.queryKey.slice(0, 2), "grant", grant?.correlationId],
     queryFn: async () => {
@@ -58,7 +55,6 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
   const authorize = async () => {
     setReviewing(false);
     setBusy(true);
-    setUnfiled(false);
     setNotice(undefined);
     setError(undefined);
     const prepared = await reads.agent.grant(strategy.digest);
@@ -87,14 +83,11 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
           ? "The answer was lost: the grant may have been submitted. Its status below says; nothing is sent again." : failureText(submitted, "autopilot"));
       } else if (prepared.value.dao) {
         const outcome = await file(prepared.value.dao.transaction, identity.account);
-        setUnfiled(outcome.kind === "failed");
         setNotice(outcome.kind === "succeeded" ? filedText(prepared.value.dao.transaction, when(prepared.value.expiresAt), "or the grant expires unsigned")
           : outcome.kind === "failed" ? "The transaction failed, so nothing was filed. Authorize the strategy again."
           : "The wallet didn't say whether it was sent. Its status below shows whether the DAO is voting; don't file again meanwhile.");
       }
     } catch (problem) {
-      // A DAO filing that threw never left the wallet.
-      if (prepared.value.dao) setUnfiled(true);
       setError(problem instanceof WrongAccount ? problem.message : `${dao ? "The wallet didn't send it" : "The wallet didn't sign"}: ${errorMessage(problem)}. Nothing took effect.`);
     } finally {
       setBusy(false);
@@ -104,8 +97,6 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
     }
   };
 
-  /** The DAO grant whose vote is shown: this page's own, or an earlier one waiting for the DAO's vote. */
-  const voting = dao ? grant?.correlationId ?? (earlier?.why === "vote" ? earlier.correlationId : undefined) : undefined;
   const canStart = (!grant || outcome === "expired" || outcome === "failed") && !earlier && !records.reading && !busy && (dao ? identity.access.canPropose : ownerAllowed);
   // The assistant's grant draft (#219) opens this review, as Authorize does; nothing is signed until the owner says so in it.
   const [fromAssistant, setFromAssistant] = useState(false);
@@ -125,8 +116,6 @@ export function Grant({ reads, identity, strategy, ownerAllowed, review = 0 }: {
     {grant && <p role="status" className="text-xs">{statusText(status.data, grantWords)}</p>}
     {notice && <p role="status" className="text-xs">{notice}</p>}
     <ErrorBox error={error} />
-    {/* The DAO's vote on the grant, for every member. One this page prepared is filed above, so it is offered here only once that proved to have sent nothing. */}
-    {voting && !busy && <OwnerActionVote reads={reads} account={identity.account} correlationId={voting} mayFile={grant === undefined || unfiled} />}
     <ReviewDialog open={reviewing} busy={busy} onClose={() => setReviewing(false)} title="Authorize this saved strategy?"
       description={`A grant bound to this strategy lets the agent act on it within the signed policy for 30 days: on autopilot once you turn it on, and on Run now. It doesn't turn autopilot on. ${dao
         ? "Your wallet files it as the DAO's proposal, with your approval if your roles let you vote; the vote must pass within minutes, before the grant's intent expires."

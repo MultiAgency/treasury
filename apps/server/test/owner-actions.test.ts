@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { AuditEntry } from "../src/audit.ts";
 import * as contract from "../src/contract.ts";
 import { createDaoRequests } from "../src/dao-requests.ts";
-import { standInDaos, type DaoProposal, type Policy } from "../src/dao.ts";
+import { standInDaos, type Policy } from "../src/dao.ts";
 import { createServer } from "../src/http.ts";
 import { standInKeyLookup } from "../src/keys.ts";
 import { createSessions } from "../src/sessions.ts";
@@ -23,9 +23,6 @@ const policy: Policy = {
     { name: "council", kind: { Group: ["council.near"] }, permissions: ["call:AddProposal", "call:VoteApprove", "call:VoteReject"], vote_policy: {} },
     { name: "voters", kind: { Group: ["voter.near"] }, permissions: ["call:VoteApprove"], vote_policy: {} }],
 };
-/** The DAO's proposals as the chain holds them: tests file one by pushing it, and make the DAO unreadable by removing its list. */
-const chain: Record<string, DaoProposal[]> = { [DAO]: [] };
-const daos = standInDaos({ [DAO]: policy }, chain);
 const audit: AuditEntry[] = [];
 const cookies: Record<string, string> = {};
 let server: Server, base: string;
@@ -38,7 +35,7 @@ before(async () => {
     sessions: createSessions({ idleMs: 30 * 60_000, maxMs: 12 * 60 * 60_000 }),
     publicOrigin: ORIGIN, deployment: "treasury", trustedProxyHops: 0, ownerRequestsPerMinute: 1_000,
     audit: { append: async entry => { audit.push(entry); } }, consentsPerDay: 1_000, daoFilingsPerDay: 1_000, keyLookup: async () => "full",
-    daos, daoRequests: await createDaoRequests(join(tempDir("treasury-owner-actions-"), "dao-requests.json")),
+    daos: standInDaos({ [DAO]: policy }, { [DAO]: [] }), daoRequests: await createDaoRequests(join(tempDir("treasury-owner-actions-"), "dao-requests.json")),
   }));
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -327,80 +324,4 @@ test("a policy edit that changes nothing is refused as no_change, with nothing p
     assert.deepEqual(audit, [], "refused before anything was attempted");
     assert.equal((await call("POST", "policy", { expectedPolicy: REVIEWED, changes: { owner_approval: false } })).status, 200, "a real change goes through");
   } finally { base.policy.policy = saved; }
-});
-
-/** The DAO's proposal a member filed from `transaction`, as the chain would hold it. */
-const filedOnChain = (transaction: { actions: { params: { args: object } }[] }, votes: Record<string, string> = {}): DaoProposal => {
-  const { description, kind } = (transaction.actions[0]!.params.args as { proposal: { description: string; kind: Record<string, unknown> } }).proposal;
-  return { id: chain[DAO]!.length, proposer: "council.near", description, kind, status: "InProgress", submission_time: String(BigInt(Date.now()) * 1_000_000n), vote_counts: {}, votes };
-};
-const voteOn = async (id: string, as = council, agent = "daoagent") => (await call("GET", `owner/actions/${id}/vote`, {}, as, agent)).body;
-
-test("a DAO's freeze waiting for its vote is read by every member: unfiled, what their roles may file; filed, its number, where to vote and who approved; ended, why", async () => {
-  reset(); chain[DAO] = [];
-  const prepared = await call("POST", "freeze", {}, council, "daoagent");
-  assert.equal(prepared.status, 200, prepared.text);
-  const made = contract.ownerActionPrepared.parse(prepared.body.value);
-
-  const unfiled = await voteOn(made.correlationId);
-  assert.equal(unfiled.ok, true, JSON.stringify(unfiled));
-  assert.equal(unfiled.value.vote.votingUntil, Date.parse(made.expiresAt));
-  assert.deepEqual(unfiled.value.vote.offer, { state: "file", transaction: made.dao!.transaction }, "the member who may file and vote is offered both again");
-  assert.deepEqual((await voteOn(made.correlationId, voter)).value.vote.offer, { state: "file", transaction: null }, "a member who may only vote is offered nothing to file");
-
-  chain[DAO]!.push(filedOnChain(made.dao!.transaction, { "council.near": "Approve" }));
-  for (const member of [council, voter]) {
-    const filed = (await voteOn(made.correlationId, member)).value.vote;
-    assert.deepEqual(filed.offer, { state: "filed", proposal: 0, vote: `https://trezu.app/${DAO}/requests/0` }, member.accountId);
-    assert.deepEqual(filed.approvedBy, ["council.near"]);
-  }
-
-  chain[DAO]![0]!.status = "Rejected";
-  assert.deepEqual((await voteOn(made.correlationId)).value.vote,
-    { votingUntil: Date.parse(made.expiresAt), offer: null, ended: { proposal: 0, vote: `https://trezu.app/${DAO}/requests/0`, outcome: "Rejected" } });
-  fake.grants.find(item => item.correlationId === made.correlationId)!.expiresAt = new Date(Date.now() - 1000).toISOString();
-});
-
-test("every DAO owner action keeps its filing: a revocation, a policy edit and a grant are each found once filed", async () => {
-  for (const [path, body] of [["grants/revoke", { grantId: "grant-1" }], ["policy", { expectedPolicy: { revision: 3, digest: DIGEST }, changes: { max_actions_per_hour: 5 } }], ["grant", { expectedDigest: DIGEST }]] as const) {
-    reset(); chain[DAO] = [];
-    fake.schedules.daoagent = { on: false, unbound: true };
-    const prepared = await call("POST", path, body, council, "daoagent");
-    assert.equal(prepared.status, 200, `${path}: ${prepared.text}`);
-    const made = contract.ownerActionPrepared.parse(prepared.body.value);
-    assert.equal((await voteOn(made.correlationId)).value.vote.offer.state, "file", path);
-    chain[DAO]!.push(filedOnChain(made.dao!.transaction));
-    assert.deepEqual((await voteOn(made.correlationId)).value.vote.offer, { state: "filed", proposal: 0, vote: `https://trezu.app/${DAO}/requests/0` }, path);
-    fake.grants.find(item => item.correlationId === made.correlationId)!.expiresAt = new Date(Date.now() - 1000).toISOString();
-  }
-});
-
-test("a DAO that can't be read never holds up an owner action: it is prepared all the same, and has no vote to show; a wallet owner's action has none either", async () => {
-  reset(); delete chain[DAO];
-  try {
-    const prepared = await call("POST", "freeze", {}, council, "daoagent");
-    assert.equal(prepared.status, 200, "the freeze is prepared without the DAO's proposal number");
-    const made = contract.ownerActionPrepared.parse(prepared.body.value);
-    assert.deepEqual(await voteOn(made.correlationId), { ok: true, value: { vote: null } });
-    fake.grants.find(item => item.correlationId === made.correlationId)!.expiresAt = new Date(Date.now() - 1000).toISOString();
-  } finally { chain[DAO] = []; }
-  const own = contract.ownerActionPrepared.parse((await call("POST", "freeze")).body.value);
-  assert.deepEqual(await voteOn(own.correlationId, owner, "portfolio"), { ok: true, value: { vote: null } }, "a wallet owner signs: no DAO votes");
-  assert.deepEqual(await voteOn("no-such-action"), { ok: true, value: { vote: null } });
-  assert.deepEqual((await voteOn(own.correlationId, council, "portfolio")), { ok: false, kind: "not_owner" }, "another account's agent");
-});
-
-test("a DAO whose proposal number never comes holds a freeze up for a second at most: prepared, with no vote to show", async () => {
-  reset(); chain[DAO] = [];
-  const next = daos.next;
-  daos.next = () => new Promise(() => {});
-  try {
-    const started = Date.now();
-    const prepared = await call("POST", "freeze", {}, council, "daoagent");
-    assert.equal(prepared.status, 200, prepared.text);
-    assert.ok(Date.now() - started < 2_500, `answered in ${Date.now() - started} ms, not held for the chain's own timeout`);
-    const made = contract.ownerActionPrepared.parse(prepared.body.value);
-    assert.deepEqual(await voteOn(made.correlationId), { ok: true, value: { vote: null } });
-    fake.grants.find(item => item.correlationId === made.correlationId)!.expiresAt = new Date(Date.now() - 1000).toISOString();
-  } finally { daos.next = next; }
 });

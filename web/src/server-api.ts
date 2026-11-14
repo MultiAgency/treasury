@@ -164,8 +164,6 @@ export function serverApi(fetcher: typeof fetch = (input, init) => fetch(input, 
           call(contract.grantSubmitted, `${base}/owner/actions/${correlation.parse(id)}/submit`, { method: "POST", body: contract.ownerActionSubmission.parse({ signedData }) }),
         /** Where an owner action stands, by its correlation ID: read, never sent again. */
         ownerActionStatus: (id: string) => call(contract.ownerActionStatus, `${base}/owner/actions/${correlation.parse(id)}`),
-        /** The DAO's vote on an owner action a member was handed to file: its proposal, where to vote, who approved, or what this member may file. */
-        ownerActionVote: (id: string) => call(contract.ownerActionVote, `${base}/owner/actions/${correlation.parse(id)}/vote`),
         grantStatus: (id: string) => call(contract.ownerActionStatus, `${base}/grant/${correlation.parse(id)}`),
         /** The saved strategy and whether the held grant binds it; the schedule. */
         strategy: () => call(contract.strategyRead, `${base}/strategy`),
@@ -226,7 +224,6 @@ export type ConsentText = z.output<typeof contract.consentText>;
 export type Identity = z.output<typeof contract.agent>;
 export type Connection = z.output<typeof contract.consent>;
 export type DaoRequest = z.output<typeof contract.daoRequest>;
-export type DaoOffer = z.output<typeof contract.daoOffer>;
 export type DaoSetup = z.output<typeof contract.daoSetup>;
 export type Creation = z.output<typeof contract.creation>;
 export type CreationStatus = z.output<typeof contract.creationStatus>;

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // The owner's signature on the platform's confirm page, for the stack tests (#140): an action the platform prepares as
 // NEP-366 (a policy edit it enforces itself, for one) comes back to the app only as a link. The owner opens it in a
 // browser, connects their wallet and presses "Sign and submit", as the platform's own `app-access.spec.mjs` does. The
@@ -5,7 +6,7 @@
 // page replaced.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Browser } from "playwright";
+import { chromium, type Browser } from "playwright";
 import { signOwner, signOwnerDelegate, type Stack } from "../../scripts/stack.ts";
 
 type Account = { accountId: string; publicKey: string };
@@ -15,8 +16,9 @@ type Account = { accountId: string; publicKey: string };
  * wallet and signs: first the link's readable text, then the delegate. Answers once the page says it submitted, with the
  * signatures asked of the wallet, so a test can check what was signed. The page's other requests go to the stack only.
  */
-export async function signOnConfirmPage({ browser, target, platform, url, owner }: { browser: Browser; target: Stack; platform: string; url: string; owner: Account }) {
-  const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block", reducedMotion: "reduce" });
+export async function signOnConfirmPage({ browser, target, platform, url, owner }: { browser?: Browser; target: Stack; platform: string; url: string; owner: Account }) {
+  const signingBrowser = browser ?? await chromium.launch();
+  const context = await signingBrowser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block", reducedMotion: "reduce" });
   const unexpected: string[] = [], asked: { delegate: boolean; message?: string }[] = [];
   try {
     await context.route("**/*", async route => {
@@ -67,5 +69,6 @@ export async function signOnConfirmPage({ browser, target, platform, url, owner 
     return { asked, unexpected };
   } finally {
     await context.close();
+    if (!browser) await signingBrowser.close();
   }
 }
