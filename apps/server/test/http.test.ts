@@ -823,7 +823,7 @@ test("execute is sent only for an approved proposal; any other state is answered
 });
 
 test("execute: once per click; its answer is final, pending or not executable, and a lost answer is read, never resent", async t => {
-  t.mock.method(console, "error", () => {});
+  const logged = t.mock.method(console, "error", () => {});
   const cookie = await signIn(owner);
   const execute = () => call("POST", `/api/agents/portfolio/proposals/${"a".repeat(32)}/execute`, { cookie, body: {} });
   const unknown = { ok: false, kind: "unknown", procedure: "proposals/execute", identity: {} } as never;
@@ -855,6 +855,10 @@ test("execute: once per click; its answer is final, pending or not executable, a
     assert.deepEqual(audited.map(entry => [entry.action, entry.stage]), [["execute", "attempt"], ["execute", "result"]], "a result even when the call threw");
     assert.ok(!JSON.stringify(body).includes("floor"), "no platform text reaches the browser");
   }
+  // Why the platform refused to start it stays in the log, as every other refusal's text does.
+  const refusals = logged.mock.calls.map(call => JSON.parse(String(call.arguments[0]))).filter(line => line.event === "platform_execute_refused");
+  assert.deepEqual(refusals.map(line => [line.proposal, line.code, line.error]),
+    [["a".repeat(32), "not_executable", "Price below a signed floor"], ["a".repeat(32), "not_executable", "claimed meanwhile"]]);
   cleanProposals();
   fake.proposals.push(mine({ state: "approved" }));
   fake.proposalAnswers.execute = [{ ok: false, kind: "forbidden", status: 403, error: "No live owner consent covers this Organization and agent" }];

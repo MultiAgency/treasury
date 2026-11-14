@@ -109,6 +109,14 @@ export function createStrategyProposals(records: ProposalRecords, { audit, now =
 }
 export type StrategyProposals = ReturnType<typeof createStrategyProposals>;
 
+/**
+ * How far the platform's cost limit sits above the profile's slippage limit. The platform measures a swap's cost at its
+ * quote's minimum received, which the swap API sets about 1% under the quote (`maxCostBps` in the platform's
+ * `strategy-digest.ts`), where the profile's limit is slippage against the oracle median. Without the margin, a quote no
+ * worse than the profile allows is still over the cost limit, and no swap executes.
+ */
+const FLOOR_MARGIN_BPS = 100;
+
 /** What the mandate proposer did on a tick, for `watch`'s log line. */
 export type MandateNote = { proposed: string } | { skipped: string; [detail: string]: unknown };
 
@@ -116,9 +124,9 @@ export type MandateNote = { proposed: string } | { skipped: string; [detail: str
  * The mandate proposer (#206), on `watch`'s tick for an agent configured with Ballast: proposes the strategy the agent's
  * profile compiles to, when that differs from the saved one, none of its own is open, and the owner didn't decline that
  * same strategy (a declined one isn't proposed again until what the profile compiles to changes). Its weights map as
- * volatile → wNEAR, reserve and cash → USDC, every other asset 0; the cost limit is the profile's slippage limit, and the
- * other fields stay as saved. The targets come from `overview`; the saved strategy is read when the last proposal's
- * floor differs from the compiled one, to preserve any stronger saved floor before comparing them.
+ * volatile → wNEAR, reserve and cash → USDC, every other asset 0; the cost limit is the profile's slippage limit over
+ * `FLOOR_MARGIN_BPS`, and the other fields stay as saved. The targets come from `overview`; the saved strategy is read
+ * when the last proposal's floor differs from the compiled one, to preserve any stronger saved floor before comparing them.
  */
 export async function proposeMandate({ agent, settings, overview, strategy, proposals }: {
   agent: string; settings: BallastSettings; overview: OwnerOutput<"overview">;
@@ -157,7 +165,7 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
     targetBps[PROPOSAL_ASSETS.wNEAR] = weights.volatilePct * 100;
     targetBps[PROPOSAL_ASSETS.USDC] = (weights.reservePct + weights.cashPct) * 100;
   }
-  const aim = { targetBps, maxCostBps: limits.policy.maxSlippageBps };
+  const aim = { targetBps, maxCostBps: limits.policy.maxSlippageBps + FLOOR_MARGIN_BPS };
   // The mandate's cash floor (ADR 4) on the platform: its months of operating cash times the monthly spend, rounded up to
   // the whole dollars the platform takes, counted in the stablecoins it manages for this book.
   const stableIds = diversification
@@ -204,7 +212,7 @@ export async function proposeMandate({ agent, settings, overview, strategy, prop
         ? ` across ${diversification.sleeves.map(s => `${s.asset} ${s.targetPct}%`).join(", ")}`
         : " in wNEAR"}, and ${weights.reservePct}% reserve and ${weights.cashPct}% operating cash${diversification
         ? ` across ${Object.entries(diversification.stableSplit).map(([coin, share]) => `${coin} ${share}%`).join(", ")}`
-        : " in USDC"}; every other asset 0. The cost limit is the profile's slippage limit, ${aim.maxCostBps / 100}%.${floor
+        : " in USDC"}; every other asset 0. The cost limit is ${aim.maxCostBps / 100}%: the profile's ${limits.policy.maxSlippageBps / 100}% slippage limit, plus the ${FLOOR_MARGIN_BPS / 100}% the quote's minimum received allows.${floor
         ? ` The cash floor is ${floor.usd} USD in ${floor.assets.map(symbolOf).join(", ")}; adopting a changed floor asks for the grant again.` : ""} The owner's answers: ${answers}.`).slice(0, MAX_PROPOSAL_REASONS),
   });
   if (proposed.ok) return { proposed: proposed.id };
