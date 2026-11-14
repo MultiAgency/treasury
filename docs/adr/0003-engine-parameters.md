@@ -118,8 +118,8 @@ The plan also had a raised level held until a human lowers it one step at a time
 ## Open
 
 - **A notice when the level rises,** through `watch`'s `notify`, asking the owner to freeze at L4: the part of H11's alerting worth keeping, as its own small change.
-- **The three price fetchers (H5)** aren't built, and no issue tracks them. Until they are, `watch` runs the oracle on the platform's `overview` alone.
-- **Agent malfunction (H9):** Ballast leaves this detector out (`NOT_JUDGED_HERE`), since its step has no reconciliation. `reconcileBooks` is an app read the server already wraps (`platform.books`), and unknown outcomes are effectively zero whenever Ballast runs, since `watch` holds while any are unresolved. Whether to feed the detector from it, at one more read a tick, is open.
+- **The three price fetchers (H5)** are implemented; see Independent live feeds (#252) below for their provenance and freshness limits.
+- **Agent malfunction (H9):** reconciliation evidence is implemented; see Reconciliation malfunction evidence (#253) below for valuation, coverage holds and read budgets.
 - **DCA budget replenishment** isn't specified. The replay never refills the 10 units, so buying stopped once they were spent. The proposal is to refill one unit for each trim sale's proceeds returned to the reserve, capped at 10 units. It needs its own change to sizing state, with tests.
 - **Oracle numbers against live quotes:** revisit 2%, 5 minutes and 5 seconds after a week of the three fetchers' readings.
 - **A second venue,** if one is ever added, brings back a real per-venue cap below the volatile ceiling.

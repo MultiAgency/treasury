@@ -895,6 +895,7 @@ test("each agent route asks for what it needs: a member who may only file is ref
   policies[DAO] = DAO_POLICY;
   t.after(() => { delete policies[DAO]; });
   const needs = Object.fromEntries(routes.flatMap(route => route.access === "owner" || route.access === "owner-fresh" ? [[`${route.method} ${route.path}`, route.needs]] : []));
+  assert.equal(needs["POST /api/agents/:agent/risk/assess"], "save", "recording risk terms requires strategy-management rights");
   const members = { council: await signIn(council), proposer: await signIn(proposer), reader: await signIn(reader) };
   // What each member's roles allow, per need: council may file, vote and execute; proposer only file; reader only read.
   const allowed: Record<string, Record<string, boolean>> = {

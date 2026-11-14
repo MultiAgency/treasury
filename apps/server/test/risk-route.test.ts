@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import type { Server } from "node:http";
 import { test } from "node:test";
 import { assessRisk, POLICY_CONFIG_DEFAULTS, PROPOSAL_ASSETS, PROJECTION_DEFAULTS, RISK_PROFILE_DEFAULTS, SCENARIO_DEFAULTS,
   type RiskInput } from "../../../packages/core/src/index.ts";

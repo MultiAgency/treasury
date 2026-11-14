@@ -6,7 +6,7 @@ import { request } from "node:https";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { verifyPlatform, PLATFORM_COMMIT } from "./sdk-pin.ts";
+import { verifyPlatform } from "./sdk-pin.ts";
 export { PLATFORM_COMMIT } from "./sdk-pin.ts";
 
 export const USDC = "nep141:17208628f84f5d6ad33f0da3bbbeb27ffcb398eac501a31bd6ad2011e36133a1";

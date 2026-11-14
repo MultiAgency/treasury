@@ -27,7 +27,7 @@ export type StableLimits = {
 export const STABLE_DEFAULTS: StableLimits = { depegPct: FAULT_DEFAULTS.depegPct, driftPoints: 5, maxMoveUsd: 25_000 };
 
 /** A swap from one stablecoin to another, in USD at the coins' own prices. */
-export type StableMove = { from: string; to: string; sizeUsd: number; reason: string };
+export type StableMove = { kind: "depeg-exit" | "rebalance"; from: string; to: string; sizeUsd: number; reason: string };
 export type StablePlan = {
   /** Each coin's peg level: 0 on peg, 2 or 3 off it (as `detectFaults`), 3 with no usable price. */
   peg: Record<string, Level>;
@@ -82,8 +82,8 @@ export function planStableMoves(holdings: readonly StableHolding[], split: Stabl
   const healthy = coins.filter(c => peg[c] === 0 && (split[c] ?? 0) > 0);
   const moves: StableMove[] = [], blocked: StablePlan["blocked"] = [];
   const tradable = (c: string) => proposable(registry[c]!);
-  const move = (from: string, to: string, sizeUsd: number, reason: string) => {
-    const wanted: StableMove = { from, to, sizeUsd: Math.min(sizeUsd, limits.maxMoveUsd), reason };
+  const move = (kind: StableMove["kind"], from: string, to: string, sizeUsd: number, reason: string) => {
+    const wanted: StableMove = { kind, from, to, sizeUsd: Math.min(sizeUsd, limits.maxMoveUsd), reason };
     for (const c of [from, to]) if (!tradable(c)) { blocked.push({ asset: c, reason: `${c} isn't among the platform's proposal assets: ${reason}`, move: wanted }); return; }
     moves.push(wanted);
   };
@@ -94,7 +94,7 @@ export function planStableMoves(holdings: readonly StableHolding[], split: Stabl
     const weight = healthy.reduce((s, c) => s + split[c]!, 0);
     for (const c of depegged) {
       const usd = held(c)!.usd;
-      for (const to of healthy) move(c, to, (usd * split[to]!) / weight, `${c} is off its peg (L${peg[c]}): moved into the coins on peg`);
+      for (const to of healthy) move("depeg-exit", c, to, (usd * split[to]!) / weight, `${c} is off its peg (L${peg[c]}): moved into the coins on peg`);
     }
     return { peg, moves, blocked };
   }
@@ -106,6 +106,6 @@ export function planStableMoves(holdings: readonly StableHolding[], split: Stabl
   const over = coins.filter(c => isPositive(held(c)?.price ?? null)).sort((a, b) => gap(b) - gap(a))[0];
   const under = [...healthy].sort((a, b) => gap(a) - gap(b))[0];
   if (over !== undefined && under !== undefined && over !== under && gap(over) >= limits.driftPoints && -gap(under) >= limits.driftPoints)
-    move(over, under, (Math.min(gap(over), -gap(under)) * total) / 100, `${over} is ${gap(over).toFixed(1)} points over its share, ${under} ${(-gap(under)).toFixed(1)} under`);
+    move("rebalance", over, under, (Math.min(gap(over), -gap(under)) * total) / 100, `${over} is ${gap(over).toFixed(1)} points over its share, ${under} ${(-gap(under)).toFixed(1)} under`);
   return { peg, moves, blocked };
 }

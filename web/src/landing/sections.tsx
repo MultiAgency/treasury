@@ -1,4 +1,4 @@
-import { ArrowUpRight, Check, LockSimple, ShieldCheck, Snowflake, Wallet } from "@phosphor-icons/react";
+import { ArrowUpRight, Check, ShieldCheck, Snowflake, Wallet } from "@phosphor-icons/react";
 import { motion, useInView, useMotionValueEvent, useScroll, useTransform, type MotionValue } from "motion/react";
 import { Suspense, useEffect, useRef, useState, type ElementType, type ReactNode, type RefObject } from "react";
 import { BorderBeam } from "@/components/ui/border-beam";

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
-const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
+const NaNv = Number.NaN;
  import { BAND_DEFAULTS } from "../src/bands.ts";
 import type { Intent } from "../src/bands.ts";
 import { ENGINE_DEFAULTS, evaluateBands } from "../src/engine.ts";

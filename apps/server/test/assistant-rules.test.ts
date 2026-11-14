@@ -18,7 +18,7 @@ const owner = wallet("owner.near");
 const fake = fakePlatform({ portfolio: "owner.near" });
 const BOOK = { ...OVERVIEW,
   book: [OVERVIEW.book[0]!, { asset: USDC, symbol: "USDC", decimals: 6, public: 0n, confidential: 691_360_000n, price: 1, priceUpdatedAt: "2026-11-05T00:00:00.000Z", priceExpiresAt: "2026-11-05T00:05:00.000Z", usd: 691.36 }],
-  target: { "nep141:wrap.near": 5000, [USDC]: 5000 },
+  target: { "nep141:wrap.near": 0.5, [USDC]: 0.5 },
   policy: { ...OVERVIEW.policy,
     policy: { budget: { daily_usd: "100.00", weekly_usd: null, monthly_usd: "1000.00" }, max_actions_per_hour: 12, owner_approval: false, actions: ["swap"], assets: "any", frozen: false } as never,
     usage: { ...OVERVIEW.policy.usage, budget: { daily: { limit_usd: "100.00", spent_usd: "40.000000", remaining_usd: "60.000000", resets_at: "2026-11-06T00:00:00.000Z" },

@@ -115,7 +115,7 @@ const overviewView = (overview: Overview) => ({
   holdings: overview.book.map(holding => ({ symbol: holding.symbol, asset: holding.asset, decimals: holding.decimals,
     public_units: String(holding.public), confidential_units: String(holding.confidential), price_usd: holding.price, price_at: holding.priceUpdatedAt, usd: holding.usd })),
   unmanaged: overview.unmanaged.map(holding => ({ symbol: holding.symbol, units: String(holding.amount), decimals: holding.decimals, usd: holding.usd })),
-  target_percent: Object.fromEntries(Object.entries(overview.target).map(([asset, bps]) => [symbolOf(asset), bps / 100])),
+  target_percent: Object.fromEntries(Object.entries(overview.target).map(([asset, share]) => [symbolOf(asset), share * 100])),
   rebalance: overview.rebalance,
   policy: { revision: overview.policy.revision, status: overview.policy.status, budget_usage: overview.policy.usage.budget,
     in_force: overview.policy.policy, not_in_force: overview.notInForce },
@@ -224,7 +224,7 @@ export const TOOLS = [
     noInput, EMPTY, async (_, scope) => {
       const overview = await scope.platform.reads.overview(scope.organization, scope.agent).catch(() => null);
       if (!overview?.ok) return { error: "The book could not be read, so nothing was drafted." };
-      const targets = Object.fromEntries(Object.entries(overview.value.target).map(([asset, bps]) => [symbolOf(asset), bps / 100]));
+      const targets = Object.fromEntries(Object.entries(overview.value.target).map(([asset, share]) => [symbolOf(asset), share * 100]));
       const legs = legsTo(overview.value.book.map(holding => ({ symbol: holding.symbol, usd: holding.usd })), targets);
       if (legs && legs.length === 0) return { error: "The book is at the saved strategy's targets already: there is nothing to rebalance." };
       const draft: Draft = { kind: "rebalance", ...(legs && { legs }),

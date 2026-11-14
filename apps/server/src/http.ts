@@ -1244,7 +1244,8 @@ export const routes: Route[] = [
     },
   },
   {
-    method: "POST", path: "/api/agents/:agent/risk/assess", access: "owner-fresh", needs: "read",
+    // Assessment terms become the latest recorded risk input, so require strategy-management authority.
+    method: "POST", path: "/api/agents/:agent/risk/assess", access: "owner-fresh", needs: "save",
     async handle({ identity, body, viaToken }, { recordRisk }) {
       if (viaToken) return refused(403, "owner_required");
       const input = parse(ballastSettings, body);

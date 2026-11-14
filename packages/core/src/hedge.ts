@@ -199,7 +199,7 @@ export function planHedge(input: HedgeInput, registry: Readonly<Record<string, A
       const intent: Intent = { id: "hedge", zone: "hold", action: "buy-volatile", sizeUsd: size, dcaUnits: 0, reason, at };
       const verdict = checkBookExposure(intent, { ...ctx, asset: { ...ctx.asset, proposable: true } }, caps);
       if (verdict.ok === false) for (const rule of verdict.failed) blocked.push({
-        code: rule === "VENUE_EXPOSURE" ? "venue_cap" : rule === "CLASS_EXPOSURE" ? "class_cap" : rule === "ORDER_SIZE" ? "order_size" : /no cap set/.test(verdict.detail) ? "no_cap" : "invalid",
+        code: rule === "VENUE_EXPOSURE" ? "venue_cap" : rule === "CLASS_EXPOSURE" ? "class_cap" : rule === "ORDER_SIZE" ? "order_size" : ctx.asset.venues.some(venue => caps.venueCapsPct[venue] === undefined) ? "no_cap" : "invalid",
         reason: rule === "CLASS_EXPOSURE" && caps.classCapsPct[to.class] === undefined ? `the mandate doesn't allow ${to.class} assets: it sets no ${to.class} cap` : verdict.detail,
       });
     }
@@ -259,10 +259,7 @@ export function planHedge(input: HedgeInput, registry: Readonly<Record<string, A
     else {
       const wanted: StableMove[] = [...plan.moves, ...plan.blocked.flatMap(b => b.move ? [b.move] : [])];
       const unique = new Map(wanted.map(m => [`${m.from}>${m.to}`, m]));
-      for (const m of unique.values()) {
-        const depeg = /off its peg/.test(m.reason);
-        add(depeg ? "depeg-exit" : "rebalance", registry[m.from]!, registry[m.to]!, m.sizeUsd, m.reason);
-      }
+      for (const m of unique.values()) add(m.kind, registry[m.from]!, registry[m.to]!, m.sizeUsd, m.reason);
       for (const b of plan.blocked) if (!b.move) notes.push(`${b.asset}: ${b.reason}`);
     }
   }

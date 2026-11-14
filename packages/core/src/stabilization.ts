@@ -183,7 +183,7 @@ const usdText = (n: number) => `${Math.round(n).toLocaleString("en-US")} USD`;
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 
 /** The de-risk sell's size: toward the target drawdown, within one order, the day's turnover left and the volatile floor. */
-function deriskSize(book: Book, p: Projection, t: RiskThresholds, trade: RiskTrade): { asset: string; into: string; sizeUsd: number; limit: string } | null {
+function deriskSize(book: Book, p: Projection, t: RiskThresholds, trade: RiskTrade): { asset: string; into: string; sizeUsd: number; limit: string; orderCap: boolean } | null {
   const byValue = (a: Book[number], b: Book[number]) => b.usd - a.usd || (a.asset < b.asset ? -1 : 1);
   // With the swap's pricing, only an asset it can price and size is sold or bought: a multi-asset book (#221) may hold
   // one the platform can't swap, and the sell would never have legs. A book without pricing is sized as before.
@@ -202,8 +202,9 @@ function deriskSize(book: Book, p: Projection, t: RiskThresholds, trade: RiskTra
     [volatileUsd - trade.bounds.volatileMinPct * total / 100, `the volatile floor (${trade.bounds.volatileMinPct}%)`],
     [sold.usd, `the ${sold.symbol ?? sold.asset} held`],
   ];
-  const [sizeUsd, limit] = candidates.reduce((min, c) => (c[0] < min[0] ? c : min));
-  return { asset: sold.asset, into: into.asset, sizeUsd: Math.max(0, sizeUsd), limit };
+  const orderCap = candidates[1]!;
+  const bound = candidates.reduce((min, c) => (c[0] < min[0] ? c : min));
+  return { asset: sold.asset, into: into.asset, sizeUsd: Math.max(0, bound[0]), limit: bound[1], orderCap: bound === orderCap };
 }
 
 /** `deriskSize`, failing closed: a book or limits it can't read size nothing. */
@@ -273,8 +274,8 @@ export function assessRisk(raw: RiskInput): RiskAssessment {
     const cooling = trade.lastActionAt !== null && at - trade.lastActionAt < trade.cooldownMs;
     // Nothing left within a limit is refused as that limit would refuse it: the day's turnover, else the order cap.
     const policy: PolicyResult = sized.sizeUsd > 0 ? checkPolicy(intent, ctx, trade.config)
-      : { ok: false, rule: sized.limit.startsWith("one order") ? "ORDER_SIZE" : "DAILY_TURNOVER", detail: `nothing left within ${sized.limit}`,
-        failed: [sized.limit.startsWith("one order") ? "ORDER_SIZE" : "DAILY_TURNOVER"] };
+      : { ok: false, rule: sized.orderCap ? "ORDER_SIZE" : "DAILY_TURNOVER", detail: `nothing left within ${sized.limit}`,
+        failed: [sized.orderCap ? "ORDER_SIZE" : "DAILY_TURNOVER"] };
     const cents = policy.ok !== false && !cooling ? centsDown(sized.sizeUsd) : undefined;
     const legs = cents !== undefined && trade.pricing
       ? legsFor({ decision: { action: "sell-volatile", sizeUsd: cents }, volatile: sized.asset, reserve: sized.into, ...trade.pricing }) : null;

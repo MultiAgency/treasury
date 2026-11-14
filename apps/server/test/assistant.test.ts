@@ -43,7 +43,7 @@ const owner = wallet("owner.near"), intruder = wallet("intruder.near");
 const fake = fakePlatform({ portfolio: "owner.near", theirs: "intruder.near" });
 const BUDGETED = { ...OVERVIEW,
   book: [OVERVIEW.book[0]!, { asset: USDC, symbol: "USDC", decimals: 6, public: 0n, confidential: 691_360_000n, price: 1, priceUpdatedAt: "2026-11-05T00:00:00.000Z", priceExpiresAt: "2026-11-05T00:05:00.000Z", usd: 691.36 }],
-  target: { "nep141:wrap.near": 5000, [USDC]: 5000 },
+  target: { "nep141:wrap.near": 0.5, [USDC]: 0.5 },
   policy: { ...OVERVIEW.policy, usage: { ...OVERVIEW.policy.usage, budget: { daily: { limit_usd: "100.00", spent_usd: "40.000000", remaining_usd: "60.000000", resets_at: "2026-11-06T00:00:00.000Z" },
     weekly: { limit_usd: null, spent_usd: "40.000000", remaining_usd: null, resets_at: null }, monthly: { limit_usd: "1000.00", spent_usd: "250.000000", remaining_usd: "750.000000", resets_at: "2026-12-01T00:00:00.000Z" } } } },
 } as typeof OVERVIEW;
@@ -88,6 +88,35 @@ test("a budget question is answered from the overview, its figures citing the re
   assert.ok(Number.isFinite(Date.parse(answer.sources[0]!.at)), "each source says when it was read");
   assert.deepEqual(answer.drafts, []);
   assert.deepEqual(fake.calls.filter(call => call.startsWith("reads.")), ["reads.overview owner--near portfolio"], "one read, under the owner's Organization");
+});
+
+test("overview fractions become percentages and a saved-strategy rebalance drafts the actual deficit without sending", async () => {
+  const scope = { platform: fake.platform, organization: "owner--near", agent: "portfolio", signer: "wallet" as const, daoRequests: { open: () => [] } as never, now: Date.now };
+  const overview = await runTool("get_overview", {}, scope);
+  assert.ok("content" in overview, JSON.stringify(overview));
+  assert.deepEqual((overview.content as { target_percent: unknown }).target_percent, { wNEAR: 50, USDC: 50 });
+  const result = await runTool("draft_rebalance", {}, scope);
+  assert.ok("draft" in result && result.draft?.kind === "rebalance", JSON.stringify(result));
+  assert.deepEqual(result.draft.legs, [{ sell: "USDC", buy: "wNEAR", usd: 191.36 }]);
+  assert.deepEqual((result.content as { target_percent: unknown }).target_percent, { wNEAR: 50, USDC: 50 });
+  assert.ok(fake.calls.every(call => call.startsWith("reads.overview ")), fake.calls.join(", "));
+});
+
+test("a book at its saved fractional targets does not draft unnecessary swaps", async () => {
+  (fake.reads as Record<string, unknown>).overview = { ...BUDGETED,
+    book: BUDGETED.book.map(holding => ({ ...holding, usd: 500 })),
+  };
+  const { status, body } = await ask("Rebalance", [
+    () => [use("draft_rebalance")],
+    request => {
+      const [result] = resultsOf(request);
+      assert.equal(result!.is_error, true);
+      assert.match(String(result!.content), /nothing to rebalance/);
+      return [say("Already at target.")];
+    },
+  ]);
+  assert.equal(status, 200, JSON.stringify(body));
+  assert.deepEqual(contract.assistantAnswer.parse(body.value).drafts, []);
 });
 
 test("the model is sent the frozen instructions, every tool, and the question: no credential, cookie or account key", async () => {
