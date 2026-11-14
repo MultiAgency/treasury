@@ -56,7 +56,7 @@ Each tick with a `risk` block records a `kind: "risk"` audit record **before any
 
 ## Explicit assessment without watch (#250)
 
-A signed-in owner or authorized DAO member can call `POST /api/agents/:agent/risk/assess` with the Ballast terms object (`profile`, `monthlySpendUsd`, `operatingCashMonths`, `destinations`, `approvers`, and optional diversification/risk terms). The request uses the existing fresh ownership, read-consent, agent-scope, JSON and same-origin checks. Agent tokens cannot invoke it.
+A signed-in owner or authorized DAO member can call `POST /api/agents/:agent/risk/assess` with the Ballast terms object (`profile`, `monthlySpendUsd`, `operatingCashMonths`, `destinations`, `approvers`, and optional diversification/risk terms). The request uses the existing fresh ownership, read-consent, agent-scope, JSON and same-origin checks. Recording an assessment requires the same `canManage` authority as saving strategy terms, because its supplied terms become the latest risk record read by the hedge planner. A DAO member with only read or call-proposal rights may read reports but cannot replace that record. Agent tokens cannot invoke it.
 
 The server reads current overview and autopilot status, validates the terms through the mandate compiler, and runs the same deterministic assessment with an explicit exit before proposal decisions. Missing, expired or future-dated prices refuse the request; an unsupported book or invalid mandate returns `assessment_unavailable`. Missing history is recorded honestly as an unusable projection with reasons. A successful response contains `risk` with its audit timestamp and sequence, and `proposed: false`.
 

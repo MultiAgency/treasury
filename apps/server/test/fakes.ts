@@ -555,7 +555,7 @@ export const OVERVIEW: Extract<ReadAnswer<"overview">, { ok: true }>["value"] = 
   book: [{ asset: "nep141:wrap.near", symbol: "wNEAR", decimals: 24, public: 0n, confidential: BIG, price: 2.5, priceUpdatedAt: "2026-11-05T00:00:00.000Z",
     priceExpiresAt: "2026-11-05T00:05:00.000Z", usd: 308.64 }],
   unmanaged: [{ asset: "nep141:usdt.tether-token.near", symbol: "USDT", decimals: 6, amount: 5_000_000n, price: null, priceUpdatedAt: null, priceExpiresAt: null, usd: null }],
-  target: { "nep141:wrap.near": 5000 }, rebalance: { minLegUsd: 10, maxCostBps: 50 },
+  target: { "nep141:wrap.near": 0.5 }, rebalance: { minLegUsd: 10, maxCostBps: 50 },
   policy: { wallet_id: "wallet-portfolio", revision: 3, status: "APPLIED", provider_policy_synced: true,
     cooldowns: { policy_change_available_at: null, unfreeze_available_at: null }, policy: null,
     usage: { budget: Object.fromEntries(["daily", "weekly", "monthly"].map(window => [window, { limit_usd: null, spent_usd: "0.000000", remaining_usd: null, resets_at: null }])) as never,

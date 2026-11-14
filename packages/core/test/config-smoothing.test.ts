@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 const NOW = 1_800_000_000_000;
-const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
+const NaNv = Number.NaN;
  import { ORACLE_DEFAULTS, readOracle, SMOOTHING_DEFAULTS, smoothingProblems, type PriceQuote } from "../src/oracle.ts";
 import { ema, twap } from "../src/smoothing.ts";
 

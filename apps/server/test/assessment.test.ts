@@ -86,7 +86,7 @@ test("an interleaved append cannot replace the assessment returned to its caller
   assert.equal(result?.entry.agent, "agent");
 });
 
-test("DAO assessment requires a current authorized member and records the DAO scope", async t => {
+test("DAO assessment requires current policy-management authority and records the DAO scope", async t => {
   const { fakePlatform, wallet, ORIGIN } = await import("./fakes.ts");
   const { testServer } = await import("./test-server.ts");
   const { standInDaos } = await import("../src/dao.ts");
@@ -103,7 +103,12 @@ test("DAO assessment requires a current authorized member and records the DAO sc
   const post = (as: string) => fetch(`${server.base}/api/agents/portfolio/risk/assess`, { method: "POST",
     headers: { cookie: as, origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(terms) });
   assert.equal((await post(other)).status, 403);
+  assert.equal((await post(cookie)).status, 403, "filing and voting on calls cannot replace the recorded risk terms");
+  policy.roles[0]!.permissions = [];
+  assert.equal((await post(cookie)).status, 403, "a read-only member cannot record an assessment");
   assert.deepEqual(w.calls, []);
+  assert.equal(w.audit.head().seq, 0, "refused requests append no risk record");
+  policy.roles[0]!.permissions = ["policy:AddProposal", "policy:VoteApprove"];
   const answer = await post(cookie);
   assert.equal(answer.status, 200, await answer.clone().text());
   const body = await answer.json() as { value: { proposed: boolean; risk: { seq: number } } };

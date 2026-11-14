@@ -32,7 +32,7 @@ test("a log whose chain holds and whose decisions replay passes, counting both",
 });
 
 /** A stabilization assessment as the server records it (#220): the balanced book, two calm weeks, and the policy. */
-const HOUR = 3_600_000, DAY = 24 * HOUR;
+const HOUR = 3_600_000;
 function riskInput(change: Partial<RiskInput> = {}): RiskInput {
   const history = Array.from({ length: 15 * 24 + 1 }, (_, i) => ({ at: AT - (15 * 24 - i) * HOUR, price: 4 }));
   return {

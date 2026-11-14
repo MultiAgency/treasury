@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-const NOW = 1_800_000_000_000;
 const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
  import type { Intent } from "../src/bands.ts";
 import { SIZING_DEFAULTS, sizeIntent, sizingProblems } from "../src/sizing.ts";

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-const NOW = 1_800_000_000_000;
-const NaNv = Number.NaN, INF = Number.POSITIVE_INFINITY;
+const NaNv = Number.NaN;
  import type { Intent } from "../src/bands.ts";
 import { checkPolicy, POLICY_CONFIG_DEFAULTS, type FullContext } from "../src/check.ts";
 import { EXPOSURE_CONFIG_DEFAULTS } from "../src/exposure.ts";

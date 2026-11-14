@@ -39,12 +39,14 @@ test("a depeg of one coin moves it into the coins on peg, but only between propo
   const p = plan(planStableMoves([{ asset: "USDC", usd: 30_000, price: 1 }, { asset: "USDT", usd: 20_000, price: 0.97 }], { USDC: 50, USDT: 50 }));
   assert.equal(p.peg.USDT, 3);
   assert.deepEqual(p.moves, []);
+  assert.equal(p.blocked[0]!.move!.kind, "depeg-exit");
   assert.match(p.blocked.map(b => b.reason).join(" "), /USDT isn't among the platform's proposal assets/);
 });
 
 test("once a second coin is proposable, a depeg of one moves it into the other, capped at the largest move", () => {
   const p = plan(planStableMoves([{ asset: "USDC", usd: 30_000, price: 1 }, { asset: "USDT", usd: 20_000, price: 0.985 }], { USDC: 50, USDT: 50 }, STABLE_DEFAULTS, listedUsdt));
   assert.equal(p.peg.USDT, 2);
+  assert.equal(p.moves[0]!.kind, "depeg-exit");
   assert.deepEqual(p.moves.map(m => [m.from, m.to, m.sizeUsd]), [["USDT", "USDC", 20_000]]);
   const big = plan(planStableMoves([{ asset: "USDC", usd: 30_000, price: 1 }, { asset: "USDT", usd: 90_000, price: 0.9 }], { USDC: 50, USDT: 50 }, STABLE_DEFAULTS, listedUsdt));
   assert.equal(big.moves[0]!.sizeUsd, STABLE_DEFAULTS.maxMoveUsd);
@@ -54,6 +56,7 @@ test("with every coin on peg, the split is restored only once both coins are pas
   const near = plan(planStableMoves([{ asset: "USDC", usd: 54_000, price: 1 }, { asset: "USDT", usd: 46_000, price: 1 }], { USDC: 50, USDT: 50 }, STABLE_DEFAULTS, listedUsdt));
   assert.deepEqual(near.moves, []);
   const far = plan(planStableMoves([{ asset: "USDC", usd: 70_000, price: 1 }, { asset: "USDT", usd: 30_000, price: 1 }], { USDC: 50, USDT: 50 }, STABLE_DEFAULTS, listedUsdt));
+  assert.equal(far.moves[0]!.kind, "rebalance");
   assert.deepEqual(far.moves.map(m => [m.from, m.to, m.sizeUsd]), [["USDC", "USDT", 20_000]]);
 });
 

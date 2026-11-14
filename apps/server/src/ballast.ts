@@ -1,11 +1,11 @@
 import { PROPOSAL_TOKENS, type OwnerOutput } from "@multiagency/sdk";
 import { z } from "zod";
 import {
-  assessRisk, ASSET_REGISTRY, assetById, assetBySymbol, bookContext, bookExposure, bookLimitProblems, checkQuotes, compileMandate, decide,
+  assessRisk, assetById, assetBySymbol, bookContext, bookLimitProblems, checkQuotes, compileMandate, decide,
   detectFaults, detectMarketMoves, deviationPct, diversifiedProblems, ENGINE_DEFAULTS, evaluateSleeves,
   hedgeTermsProblems, HEDGE_DEFAULTS, highestFaultLevel, highestLevel, mandateFrameOf, nextState, policyConfigOf, PROFILE_DEFAULTS,
   proposable, PROPOSAL_ASSETS, readOracle, regimeFrom, riskThresholdsOf, runwayCash, rwaOn, sleeveBookOf, VENUE_IDS, VENUES,
-  weightBoundsOf, type AssetEntry, type Book, type BookHoldings, type DecisionRecord, type DiversifiedTerms,
+  weightBoundsOf, type AssetEntry, type Book, type BookHoldings, type DecisionRecord,
   type EngineConfig, type HedgeTerms, type Intent, type Level, type OracleReading, type ProfileName,
   type Recommendation, type Regime, type RiskAssessment, type RiskInput, type Sample, type SleeveState,
   type WhipsawState,

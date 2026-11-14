@@ -8,7 +8,6 @@ export type StableView = DiversificationRead["stablecoins"][number] & { shareTex
 export type PhaseView = DiversificationRead["phases"][number] & { badge: "On" | "Off"; reasonsText: string };
 
 const CLASS: Record<string, string> = { volatile: "Volatile", stable: "Stablecoin", rwa: "Real-world asset" };
-const ROUTE: Record<string, string> = { native: "native to NEAR", omft: "NEAR Intents bridge (omft)", bridged: "another bridge" };
 const CAP_SOURCE: Record<string, string> = { mandate: "from the configured terms", "profile-default": "the profile's default", absent: "no cap configured" };
 
 /** A USD amount, or "—" when the value couldn't be read; never a partial total shown as one. */
